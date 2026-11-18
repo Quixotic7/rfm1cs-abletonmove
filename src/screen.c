@@ -815,6 +815,12 @@ static void thumb_from(rfm_move_t *m, const uint16_t *px)
     }
 }
 
+void rfm_move_thumb(rfm_move_t *m, const uint16_t *rgb565)
+{
+    if (rgb565)
+        thumb_from(m, rgb565);
+}
+
 int rfm_move_screen_timed(const rfm_move_t *m)
 {
     const rfm_move_seq_t *q = &m->seq;

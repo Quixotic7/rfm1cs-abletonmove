@@ -19,6 +19,9 @@ log. This code lived in RemoteFM1 (`host/src/move/`) until 0.1.0; its history ca
 | `src/project.c` | the project blob, the 32 project slots, the autosave |
 | `src/v2.c`, `src/v2.h` | the v2 screens' drawing |
 | `src/move_int.h` | what those files share (not an API; the tests read the data model through it) |
+| `include/rfm1cs/session.h`, `src/session.c` | the link to the Move, transport-free (below, "The session") |
+| `include/rfm1cs/store.h`, `src/store.c` | the 32 project slots as slot I/O: cut / copy / paste / colour |
+| `include/rfm1cs/posix_tcp.h`, `src/posix_tcp.c` | optional non-blocking TCP for native hosts |
 | `third_party/moveremote/` | libmoveremote's host side, vendored (upstream `bf01bb9`, MPL-2.0) |
 | `web/build.sh`, `web/move_web.c` | the core in WebAssembly (`rfm_move.mjs`, one ES module) and its flat API |
 | `web/move-core.js`, `web/move-seq.js` | the wasm wrapper and the sequencer's audio clock (SeqClock), for a web host |
@@ -26,6 +29,9 @@ log. This code lived in RemoteFM1 (`host/src/move/`) until 0.1.0; its history ca
 | `tests/test_move_seq.c` | ctest `move_seq`: the sequencer |
 | `tests/test_move_v2.c`, `move_v2_ref.*` | ctest `move_v2`: the v2 screens against the mockup's pixels |
 | `tests/move_e2e.c`, `move_e2e.sh` | ctest `move_e2e`: against Move Remote's simulator |
+| `tests/test_session.c` | ctest `session`: the session and the store against a fake Move |
+| `tests/session_e2e.c` | ctest `session_e2e`: the session over posix_tcp against the simulator |
+| `tests/web_smoke.mjs` | the wasm build in Node (CI) |
 
 ## Building
 
@@ -34,11 +40,25 @@ cmake -S . -B build-asan -DRFM1CS_SANITIZE=ON && cmake --build build-asan -j && 
 web/build.sh [OUT_DIR]          # Emscripten: OUT_DIR/rfm_move.mjs (default build/web/)
 ```
 
-A host adds the directory and links the core: `add_subdirectory(vendor/rfm1cs-abletonmove)` then
-`target_link_libraries(app PRIVATE rfm1cs_move)` (the tests are built only when this is the top-level project, or
+A host adds the directory and links the core and the session: `add_subdirectory(vendor/rfm1cs-abletonmove)` then
+`target_link_libraries(app PRIVATE rfm1cs_session)` (it brings `rfm1cs_move`; add `rfm1cs_tcp` for the socket helper) (the tests are built only when this is the top-level project, or
 with `-DRFM1CS_TESTS=ON`). Hosts with their own build compile `src/*.c` and `third_party/moveremote/host/mr_gfx.c`,
 `third_party/moveremote/common/font5x7.c` with `include/` and `third_party/moveremote/include/` on the include path
-(and `mr_client.c` if they use Move Remote's socket client).
+(and `src/session.c`, `src/store.c` with `third_party/moveremote/host/mr_client.c`, whose `mr_decode` the session uses).
+
+## The session
+
+`session.h` is the link every host used to write itself (the web player's `move-link.js`, iOS's and Android's
+`MoveLink.cpp`), written once: HELLO and the Move's HELLO (its name, Wi-Fi / USB as `MR_VIA_*`), CONFIG audio clock
+off, every LED written again on a new connection and then only the changed ones, the screen at most every 33 ms and
+only when it changed, PING every second, 3 s of silence lost, BYE (exit / another host: off; power off: retried),
+retries after 1, 2, 4, 4 .. s (`give_up` tries before the first connection: the web uses 2), the project flushed and
+everything let go when the link goes, the battery from STATUS, a status struct with counters. The host moves the
+bytes (`_rx`, `EV_SEND`), opens and closes the transport when told (`EV_OPEN`, `EV_CLOSE`, `_opened`, `_closed`),
+calls `_tick` (or at `_next_ms`), gives the FM-1's LEDs / screen (`_panel`, `_frame`) and the audio clock
+(`_advance` per render chunk, the firmware's MIDI out through `_midi_in`), and answers the project actions (itself,
+or with `store.h`). One callback, no threads, no allocation; the web player runs it in WebAssembly (`web/move_web.c`
+`mw_sess_*`, `web/move-core.js` `sess*`), native hosts as C.
 
 ## The modes (Track 1..4)
 

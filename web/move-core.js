@@ -20,12 +20,33 @@
 //   core.projectLoad(slot, bytes | null) -> actions, or null (an invalid blob); core.projectDir(bits);
 //   core.projectFlush() -> actions; core.projectSlot(); core.projectSave() -> the current blob; core.projectCheck(bytes)
 //   core.projectInfo(slot, bytes): a stored project's content for the screen's project grid (0 ok)
+// The session (include/rfm1cs/session.h: the link to the Move, transport-free) and the store (store.h): every sess* /
+// store* call returns { evs, res }, evs in order:
+//   { type: "send", bytes }  { type: "open" }  { type: "close" }  { type: "action", act }  { type: "released" }
+//   { type: "lost", why (WHY.*), wasLive }  { type: "bye", reason (BYE_*), wasLive }  { type: "status", changed (CH.*) }
+//   { type: "loaded", slot, ok }   (the store's LOAD answer went to the session; ok false: not a valid project)
+//   core.sessStart(now) / sessStop(now) / sessOpened(now) / sessRx(now, bytes) / sessClosed(now, final) / sessTick(now)
+//   core.sessWait(now, ms, patient); core.sessGiveUp(tries); core.sessNextMs(now) -> ms | -1
+//   core.sessPanel(now, levels, green) / sessFrame(now, rgb565 | null) / sessRedraw(now) / sessFlushLeds(now)
+//   core.sessPumped(now) / sessUpdate(now) / sessFlush(now) / sessRelease(now)
+//   core.sessProjectsInit(now, bits, slot, bytes | null) / sessProjectAnswer(now, slot, bytes | null): res 0 / -1
+//   core.sessStatus() -> { state, everLive, waiting, retries, retryMs, via, proto, caps, battery, ... }; sessName(), sessShown()
+//   core.setStoreHost({ read(slot) -> STORE_PENDING | 0, write(slot, bytes) -> 0, remove(slot) -> 0 }); core.storeInit(used)
+//   core.storeAction(now, action) (a project action: kinds projectSave .. projectColor); core.storeAnswer(now, slot, bytes | null)
 export const ACT = { KEY: 1, PRESS: 2, BTN: 3, TURN: 4, MASTER: 5, MIDI: 6, SETTINGS: 7, PROJECT_SAVE: 8, PROJECT_LOAD: 9, PROJECT_DELETE: 10,
   CLICK: 11, AUDIO_REC: 12, PROJECT_CUT: 13, PROJECT_COPY: 14, PROJECT_PASTE: 15, PROJECT_COLOR: 16 };
 export const CLOCK = { AUTO: 0, INT: 1, EXT: 2 };
 export const PROJECTS = 32, PROJECT_MAX = 39072;   // (RFM_MOVE_PROJECT_MAX, version 3 blobs)
 export const MODE = { FM1: 0, MIDI: 1, CONTROL: 2, SEQ: 3 };
 export const MODE_NAMES = ["FM-1", "MIDI", "Control", "Sequencer"];
+// the session (session.h)
+export const STATE = { OFF: 0, CONNECTING: 1, CONNECTED: 2, RETRYING: 3, FAILED: 4 };
+export const WHY = { CLOSED: 1, NO_ANSWER: 2, SILENT: 3, GARBLED: 4, NOT_MOVE: 5, SHUTDOWN: 6, PROTO: 7 };
+export const CH = { STATE: 1, HELLO: 2, BATTERY: 4, PLAYING: 8, PROJECT: 16, CLOCK: 32, MODE: 64, WAITING: 128 };
+export const STORE_PENDING = -2;
+const EV_NAMES = { 1: "send", 2: "open", 3: "close", 4: "action", 5: "released", 6: "lost", 7: "bye", 8: "status", 100: "loaded" };
+const STORE_KINDS = { projectSave: ACT.PROJECT_SAVE, projectLoad: ACT.PROJECT_LOAD, projectDelete: ACT.PROJECT_DELETE,
+  projectCut: ACT.PROJECT_CUT, projectCopy: ACT.PROJECT_COPY, projectPaste: ACT.PROJECT_PASTE, projectColor: ACT.PROJECT_COLOR };
 export const SCREEN_BYTES = 1024, SETTINGS_BYTES = 80, NLEDS = 92, POPUP_MS = 1000;   // (RFM_MOVE_POPUP_MS: a popup stays this long)
 const ACT_BYTES = 10, LED_BYTES = 6;
 // pressure 0..127 as key_lean 0..100 (move.h rfm_move_lean)
@@ -51,7 +72,7 @@ export class MoveCore {
   // a fresh core with these settings (an rfm_move_save image; anything else: the defaults)
   load(settings) {
     const M = this.M;
-    if (this.w) M._mw_free(this.w);
+    if (this.w) { if (M.rfmHosts) delete M.rfmHosts[this.w]; M._mw_free(this.w); }
     let p = 0, n = 0;
     if (settings && settings.length) { n = settings.length; p = M._malloc(n); M.HEAPU8.set(settings, p); }
     this.w = M._mw_new(p, n);
@@ -61,34 +82,61 @@ export class MoveCore {
     if (!this.lv) this.lv = M._malloc(44);
     if (!this.km) this.km = M._malloc(66);
     if (!this.st) this.st = M._malloc(32);
+    if (!this.st2) this.st2 = M._malloc(4);
+    if (this.host) this.setStoreHost(this.host);
     return this;
   }
   _acts(n) {
-    const M = this.M, base = M._mw_acts(this.w), fr = M._mw_act_frames(this.w), out = [];
-    for (let i = 0; i < n; i++) {
-      const o = base + i * ACT_BYTES, b = M.HEAPU8, kind = b[o], index = b[o + 1], down = !!b[o + 2], vel = b[o + 3];
-      const value = (b[o + 4] | (b[o + 5] << 8)) << 16 >> 16, len = out.length;
-      if (kind === ACT.KEY) out.push({ kind: "key", k: index, down, vel });
-      else if (kind === ACT.PRESS) out.push({ kind: "press", k: index, value });
-      else if (kind === ACT.BTN) out.push({ kind: "btn", m: index, down });
-      else if (kind === ACT.TURN) out.push({ kind: "turn", enc: index, steps: value });
-      else if (kind === ACT.MASTER) out.push({ kind: "master", value });
-      else if (kind === ACT.MIDI) out.push({ kind: "midi", bytes: b.slice(o + 7, o + 7 + Math.min(3, b[o + 6])) });
-      else if (kind === ACT.SETTINGS) out.push({ kind: "settings" });
-      else if (kind === ACT.PROJECT_SAVE) {
-        const p = M._mw_blob(this.w, value), nb = M._mw_blob_len(this.w, value);
-        if (p && nb) out.push({ kind: "projectSave", slot: index, bytes: M.HEAPU8.slice(p, p + nb) });
-      } else if (kind === ACT.PROJECT_LOAD) out.push({ kind: "projectLoad", slot: index });
-      else if (kind === ACT.PROJECT_DELETE) out.push({ kind: "projectDelete", slot: index });
-      else if (kind === ACT.CLICK) out.push({ kind: "click", accent: !!value });          // the metronome
-      else if (kind === ACT.AUDIO_REC) out.push({ kind: "audioRec", on: !!value, bars: index });   // Sample's loop
-      else if (kind === ACT.PROJECT_CUT) out.push({ kind: "projectCut", slot: index });            // projects mode
-      else if (kind === ACT.PROJECT_COPY) out.push({ kind: "projectCopy", slot: index });
-      else if (kind === ACT.PROJECT_PASTE) out.push({ kind: "projectPaste", slot: index });
-      else if (kind === ACT.PROJECT_COLOR) out.push({ kind: "projectColor", slot: index, color: value });
-      if (out.length > len) out[len].frame = (b[fr + 4 * i] | (b[fr + 4 * i + 1] << 8) | (b[fr + 4 * i + 2] << 16) | (b[fr + 4 * i + 3] << 24)) >>> 0;
-    }
+    const out = [];
+    for (let i = 0; i < n; i++) { const a = this._act(i); if (a) out.push(a); }
     return out;
+  }
+  // the i-th action of the last call, or null (a kind this wrapper does not name)
+  _act(i) {
+    const M = this.M, base = M._mw_acts(this.w), fr = M._mw_act_frames(this.w), b = M.HEAPU8;
+    const o = base + i * ACT_BYTES, kind = b[o], index = b[o + 1], down = !!b[o + 2], vel = b[o + 3];
+    const value = (b[o + 4] | (b[o + 5] << 8)) << 16 >> 16;
+    let a = null;
+    if (kind === ACT.KEY) a = { kind: "key", k: index, down, vel };
+    else if (kind === ACT.PRESS) a = { kind: "press", k: index, value };
+    else if (kind === ACT.BTN) a = { kind: "btn", m: index, down };
+    else if (kind === ACT.TURN) a = { kind: "turn", enc: index, steps: value };
+    else if (kind === ACT.MASTER) a = { kind: "master", value };
+    else if (kind === ACT.MIDI) a = { kind: "midi", bytes: b.slice(o + 7, o + 7 + Math.min(3, b[o + 6])) };
+    else if (kind === ACT.SETTINGS) a = { kind: "settings" };
+    else if (kind === ACT.PROJECT_SAVE) {
+      const p = M._mw_blob(this.w, value), nb = M._mw_blob_len(this.w, value);
+      if (p && nb) a = { kind: "projectSave", slot: index, bytes: M.HEAPU8.slice(p, p + nb) };
+    } else if (kind === ACT.PROJECT_LOAD) a = { kind: "projectLoad", slot: index };
+    else if (kind === ACT.PROJECT_DELETE) a = { kind: "projectDelete", slot: index };
+    else if (kind === ACT.CLICK) a = { kind: "click", accent: !!value };          // the metronome
+    else if (kind === ACT.AUDIO_REC) a = { kind: "audioRec", on: !!value, bars: index };   // Sample's loop
+    else if (kind === ACT.PROJECT_CUT) a = { kind: "projectCut", slot: index };            // projects mode
+    else if (kind === ACT.PROJECT_COPY) a = { kind: "projectCopy", slot: index };
+    else if (kind === ACT.PROJECT_PASTE) a = { kind: "projectPaste", slot: index };
+    else if (kind === ACT.PROJECT_COLOR) a = { kind: "projectColor", slot: index, color: value };
+    if (a) a.frame = (b[fr + 4 * i] | (b[fr + 4 * i + 1] << 8) | (b[fr + 4 * i + 2] << 16) | (b[fr + 4 * i + 3] << 24)) >>> 0;
+    return a;
+  }
+  // the session's events of the last call (copied out: the next call reuses the buffers)
+  _evs(n, res = 0) {
+    const M = this.M, base = M._mw_evs(this.w) >> 2, tx = M._mw_tx(this.w), evs = [];
+    for (let i = 0; i < n; i++) {
+      const t = M.HEAP32[base + i * 4], a = M.HEAP32[base + i * 4 + 1], b = M.HEAP32[base + i * 4 + 2], type = EV_NAMES[t];
+      if (type === "send") evs.push({ type, bytes: M.HEAPU8.slice(tx + a, tx + a + b) });
+      else if (type === "action") { const act = this._act(a); if (act) evs.push({ type, act }); }
+      else if (type === "lost") evs.push({ type, why: a, wasLive: !!b });
+      else if (type === "bye") evs.push({ type, reason: a, wasLive: !!b });
+      else if (type === "status") evs.push({ type, changed: a });
+      else if (type === "loaded") evs.push({ type, slot: a, ok: b === 0 });
+      else if (type) evs.push({ type });
+    }
+    return { evs, res };
+  }
+  _withRes(fn) {
+    const M = this.M;
+    const n = fn(this.st2);
+    return this._evs(n, M.HEAP32[this.st2 >> 2]);
   }
   // a blob into the module's memory for one call: fn(ptr, n)
   _withBytes(bytes, fn) {
@@ -193,9 +241,70 @@ export class MoveCore {
     const s = new Int32Array(this.M.HEAPU8.buffer, p, 3);
     return { type: s[0], index: s[1], value: s[2] };
   }
+  // ---- the session (session.h) and the store (store.h)
+  sessStart(now) { return this._evs(this.M._mw_sess_start(this.w, now >>> 0)); }
+  sessStop(now) { return this._evs(this.M._mw_sess_stop(this.w, now >>> 0)); }
+  sessWait(now, ms, patient) { this.M._mw_sess_wait(this.w, now >>> 0, ms >>> 0, patient ? 1 : 0); }
+  sessGiveUp(tries) { this.M._mw_sess_give_up(this.w, tries | 0); }
+  sessHostName(name) {
+    const M = this.M, s = String(name || "").slice(0, 31), n = M.lengthBytesUTF8(s) + 1, p = M._malloc(n);
+    M.stringToUTF8(s, p, n); M._mw_sess_host_name(this.w, p); M._free(p);
+  }
+  sessOpened(now) { return this._evs(this.M._mw_sess_opened(this.w, now >>> 0)); }
+  sessRx(now, bytes) { return this._withBytes(bytes, (p, n) => this._evs(this.M._mw_sess_rx(this.w, now >>> 0, p, n))); }
+  sessClosed(now, final) { return this._evs(this.M._mw_sess_closed(this.w, now >>> 0, final ? 1 : 0)); }
+  sessTick(now) { return this._evs(this.M._mw_sess_tick(this.w, now >>> 0)); }
+  sessNextMs(now) { return this.M._mw_sess_next_ms(this.w, now >>> 0); }
+  sessPanel(now, levels, playGreen = 0) {
+    const b = new Uint8Array(44);
+    if (levels) b.set(levels.subarray ? levels.subarray(0, 44) : levels.slice(0, 44));
+    this.M.HEAPU8.set(b, this.lv);
+    return this._evs(this.M._mw_sess_panel(this.w, now >>> 0, this.lv, playGreen | 0));
+  }
+  sessFrame(now, rgb565) {
+    const M = this.M;
+    let p = 0;
+    if (rgb565 && rgb565.length >= 240 * 240) { new Uint16Array(M.HEAPU8.buffer, this.px, 240 * 240).set(rgb565.subarray(0, 240 * 240)); p = this.px; }
+    return this._evs(M._mw_sess_frame(this.w, now >>> 0, p));
+  }
+  sessRedraw(now) { return this._evs(this.M._mw_sess_redraw(this.w, now >>> 0)); }
+  sessFlushLeds(now) { return this._evs(this.M._mw_sess_flush_leds(this.w, now >>> 0)); }
+  sessPumped(now) { return this._evs(this.M._mw_sess_pumped(this.w, now >>> 0)); }
+  sessUpdate(now) { return this._evs(this.M._mw_sess_update(this.w, now >>> 0)); }
+  sessFlush(now) { return this._evs(this.M._mw_sess_flush(this.w, now >>> 0)); }
+  sessRelease(now) { return this._evs(this.M._mw_sess_release(this.w, now >>> 0)); }
+  sessProjectsInit(now, bits, slot, bytes) {
+    return this._withBytes(bytes, (p, n) => this._withRes((r) => this.M._mw_sess_projects_init(this.w, now >>> 0, bits >>> 0, slot | 0, p, n, r)));
+  }
+  sessProjectAnswer(now, slot, bytes) {
+    return this._withBytes(bytes, (p, n) => this._withRes((r) => this.M._mw_sess_project_answer(this.w, now >>> 0, slot | 0, p, n, r)));
+  }
+  sessStatus() {
+    const s = new Int32Array(this.M.HEAPU8.buffer, this.M._mw_sess_status(this.w), 28);
+    return { state: s[0], everLive: !!s[1], waiting: !!s[2], retries: s[3], retryMs: s[4], via: s[5], proto: s[6], caps: s[7],
+      battery: s[8], power: s[9], jacks: s[10], ledPending: s[11], mode: s[12], project: s[13], playing: !!s[14],
+      following: !!s[15], bpm10: s[16], connects: s[17], inputs: s[18], ledWrites: s[19], ledMsgs: s[20], screens: s[21],
+      pings: s[22], pongs: s[23], sent: s[24], midi: s[25], live: !!s[26], txOver: s[27] };
+  }
+  sessName() { const M = this.M, p = M._mw_sess_name(this.w); let e = p; while (M.HEAPU8[e]) e++; return new TextDecoder().decode(M.HEAPU8.slice(p, e)); }
+  sessShown() { const p = this.M._mw_sess_shown(this.w); return p ? this.M.HEAPU8.slice(p, p + SCREEN_BYTES) : null; }
+  setStoreHost(host) {
+    const M = this.M;
+    this.host = host;
+    M.rfmHosts = M.rfmHosts || {};
+    if (this.w) M.rfmHosts[this.w] = host;
+  }
+  storeInit(used) { this.M._mw_store_init(this.w, used >>> 0); }
+  storeAction(now, a) {
+    const kind = STORE_KINDS[a.kind];
+    if (!kind) return { evs: [], res: 0 };
+    return this._withBytes(a.kind === "projectSave" ? a.bytes : null,
+      (p, n) => this._evs(this.M._mw_store_request(this.w, now >>> 0, kind, a.slot | 0, a.color | 0, p, n)));
+  }
+  storeAnswer(now, slot, bytes) { return this._withBytes(bytes, (p, n) => this._evs(this.M._mw_store_answer(this.w, now >>> 0, slot | 0, p, n))); }
   // the library's version ("0.1.0": RFM1CS_VERSION)
   version() { const M = this.M, p = M._mw_version(); let e = p; while (M.HEAPU8[e]) e++; return String.fromCharCode(...M.HEAPU8.subarray(p, e)); }
-  free() { const M = this.M; if (this.w) M._mw_free(this.w); for (const k of ["px", "lv", "km", "st"]) if (this[k]) { M._free(this[k]); this[k] = 0; } this.w = 0; }
+  free() { const M = this.M; if (this.w) M._mw_free(this.w); if (this.w && M.rfmHosts) delete M.rfmHosts[this.w]; for (const k of ["px", "lv", "km", "st", "st2"]) if (this[k]) { M._free(this[k]); this[k] = 0; } this.w = 0; }
 }
 
 // a USB-MIDI packet (the surface's, cable 0) as INPUT carries it, as a LE uint32: bytes cin|status|d1|d2

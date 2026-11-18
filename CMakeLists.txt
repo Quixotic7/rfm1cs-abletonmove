@@ -4,10 +4,12 @@
 #   In a host:               add_subdirectory(vendor/rfm1cs-abletonmove) then link rfm1cs_move (alias rfm1cs::move)
 # Targets:
 #   rfm1cs_move      the core (src/): no OS calls, no allocation; links moveremote_gfx
+#   rfm1cs_session   the link (session.h) and the project slots (store.h); links rfm1cs_move, moveremote (mr_decode)
+#   rfm1cs_tcp       optional non-blocking TCP for native hosts (posix_tcp.h; UNIX only)
 #   moveremote_gfx   Move Remote's 1-bit graphics and font (third_party/moveremote, vendored)
 #   moveremote       Move Remote's POSIX socket client (hosts that talk TCP themselves need not link it)
 cmake_minimum_required(VERSION 3.16)
-project(rfm1cs_abletonmove VERSION 0.1.0 LANGUAGES C)
+project(rfm1cs_abletonmove VERSION 0.2.0 LANGUAGES C)
 
 set(RFM1CS_TOP OFF)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -50,6 +52,21 @@ target_link_libraries(rfm1cs_move PUBLIC moveremote_gfx)
 target_compile_options(rfm1cs_move PRIVATE -Wall -Wextra -Wshadow -Wstrict-prototypes)
 set_target_properties(rfm1cs_move PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
 add_library(rfm1cs::move ALIAS rfm1cs_move)
+
+# ---- the link (session.h) and the project slots (store.h): no OS calls; mr_decode comes from Move Remote's client
+add_library(rfm1cs_session STATIC src/session.c src/store.c)
+target_link_libraries(rfm1cs_session PUBLIC rfm1cs_move moveremote)
+target_compile_options(rfm1cs_session PRIVATE -Wall -Wextra -Wshadow -Wstrict-prototypes)
+set_target_properties(rfm1cs_session PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
+add_library(rfm1cs::session ALIAS rfm1cs_session)
+
+# ---- optional: non-blocking TCP for native hosts (posix_tcp.h)
+if(UNIX)
+    add_library(rfm1cs_tcp STATIC src/posix_tcp.c)
+    target_include_directories(rfm1cs_tcp PUBLIC ${RFM1CS_DIR}/include)
+    target_compile_options(rfm1cs_tcp PRIVATE -Wall -Wextra)
+    add_library(rfm1cs::tcp ALIAS rfm1cs_tcp)
+endif()
 
 # ---- tests
 if(RFM1CS_TESTS)
@@ -96,4 +113,19 @@ if(RFM1CS_TESTS)
     add_test(NAME move_e2e COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/move_e2e.sh $<TARGET_FILE:move_e2e>
         "${RFM_MOVEREMOTE_SIM}")
     set_tests_properties(move_e2e PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
+    # the session and the store against a fake Move
+    add_executable(test_session tests/test_session.c)
+    target_include_directories(test_session PRIVATE tests)
+    target_link_libraries(test_session PRIVATE rfm1cs_session)
+    target_compile_options(test_session PRIVATE -Wall -Wextra)
+    add_test(NAME session COMMAND test_session)
+    # the session over posix_tcp against Move Remote's simulator (skipped without it)
+    if(UNIX)
+        add_executable(session_e2e tests/session_e2e.c)
+        target_link_libraries(session_e2e PRIVATE rfm1cs_session rfm1cs_tcp)
+        target_compile_options(session_e2e PRIVATE -Wall -Wextra)
+        add_test(NAME session_e2e COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/move_e2e.sh
+            $<TARGET_FILE:session_e2e> "${RFM_MOVEREMOTE_SIM}")
+        set_tests_properties(session_e2e PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
+    endif()
 endif()

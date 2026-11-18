@@ -26,9 +26,9 @@ extern "C" {
 
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
-#define RFM1CS_VERSION_MINOR 1
+#define RFM1CS_VERSION_MINOR 2
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.1.0"
+#define RFM1CS_VERSION "0.2.0"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -498,6 +498,9 @@ void rfm_move_leds_invalidate(rfm_move_t *m);          /* a new connection: ever
 /* the Move's 128 x 64 screen, packed (MR_SCREEN_BYTES). rgb565: the FM-1's 240 x 240 screen, or NULL to keep the
  * last one. Popups time out on the sequencer's clock: call rfm_move_seq_advance in every mode */
 void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREEN_BYTES]);
+/* the FM-1's screen (240 x 240 RGB565) into the thumbnail now, as rfm_move_screen(m, rgb565, ..) takes it (a host that
+ * draws later, with NULL, keeps it current this way) */
+void rfm_move_thumb(rfm_move_t *m, const uint16_t *rgb565);
 /* 1: the screen changes with the clock now (a popup or a message up, the sequencer playing or counting in): draw it
  * again as rfm_move_seq_advance runs, not only after input or a new FM-1 frame */
 int rfm_move_screen_timed(const rfm_move_t *m);
