@@ -8,7 +8,7 @@
 
 #include "move_int.h"
 #include "moveremote/client.h"
-#include "rfm/move.h"
+#include "rfm1cs/move.h"
 #include "v2.h"
 #include "move_v2_ref.h"
 

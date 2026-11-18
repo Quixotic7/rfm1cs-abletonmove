@@ -2,7 +2,7 @@
  * Copyright (C) 2026 RemoteFM1 contributors */
 /* rfm_move's sequencer: the data (sorted note and lock arrays, clip lengths, tracks), the undo journal, the
  * clipboard, the clock (internal, or the firmware's MIDI clock) and the engine that plays the clips. Portable C99,
- * no allocation: everything is in rfm_move_t.seq. host/src/move/README.md, "Sequencer", has the decisions.
+ * no allocation: everything is in rfm_move_t.seq. README.md, "Sequencer", has the decisions.
  *
  * Time: a tick is 1/24 of a step (96 PPQN). `tl` counts every tick the clock gives (playing or not); `T` is the
  * song position while playing. A note sits at step*24 + micro in its clip; a clip of len steps loops every

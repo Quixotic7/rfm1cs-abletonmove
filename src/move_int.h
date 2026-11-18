@@ -6,7 +6,7 @@
 #ifndef RFM_MOVE_INT_H
 #define RFM_MOVE_INT_H
 #include "moveremote/gfx.h"
-#include "rfm/move.h"
+#include "rfm1cs/move.h"
 
 typedef struct { uint8_t r, g, b; } rfmv_rgb_t;
 

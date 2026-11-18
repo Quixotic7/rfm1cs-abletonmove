@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 RemoteFM1 contributors */
-/* rfm_move for the browser (host/src/move/README.md, "The web player"): a flat C API over the portable core, compiled
- * with Emscripten (web/move/build.sh). web/site/js/move-core.js is its only caller. Each instance is one malloc'd
+/* rfm_move for the browser (README.md, "The web player"): a flat C API over the portable core, compiled
+ * with Emscripten (web/build.sh). web/move-core.js is its only caller. Each instance is one malloc'd
  * block: the core and the actions it gave during the last call, which JS reads from mw_acts() after the call:
  *   10 bytes an action: kind, index, down, vel, value (int16 LE), n, bytes[3]
  * and, beside them, each action's frame (uint32, mw_act_frames(): the offset in mw_seq_advance's frames; 0 for
@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "rfm/move.h"
+#include "rfm1cs/move.h"
 
 #define MW_MAX_ACTS 1024
 #define MW_ACT_BYTES 10
@@ -64,6 +64,7 @@ EMSCRIPTEN_KEEPALIVE mw_t *mw_new(const uint8_t *settings, uint32_t n)
     rfm_move_init(&w->m, &s, on_act, w);
     return w;
 }
+EMSCRIPTEN_KEEPALIVE const char *mw_version(void) { return rfm_move_version(); }
 EMSCRIPTEN_KEEPALIVE void mw_free(mw_t *w) { free(w); }
 
 /* the actions of the last call */

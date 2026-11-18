@@ -2,7 +2,7 @@
  * Copyright (C) 2026 RemoteFM1 contributors */
 /* rfm_move: an Ableton Move (running Move Remote) as a RemoteFM1 host's panel. Portable C99, no OS calls, no
  * allocation: the state is a plain struct the host owns. The mapping is the owner's design
- * (design/remotefm1move.movedesign.json); host/src/move/README.md has the tables and the decisions.
+ * (design/remotefm1move.movedesign.json); README.md has the tables and the decisions.
  *
  *   rfm_move_t m;  rfm_move_init(&m, &settings_or_NULL, on_action, ctx);
  *   Move input  : rfm_move_input(&m, &mr_event, now_ms)        -> actions through the callback
@@ -23,6 +23,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
+#define RFM1CS_VERSION_MAJOR 0
+#define RFM1CS_VERSION_MINOR 1
+#define RFM1CS_VERSION_PATCH 0
+#define RFM1CS_VERSION "0.1.0"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -75,7 +81,7 @@ enum {
     RFM_MOVE_ACT_MASTER = 5,                            /* value 0..1023 */
     RFM_MOVE_ACT_MIDI = 6,                              /* n bytes: one whole message into the firmware's MIDI in */
     RFM_MOVE_ACT_SETTINGS = 7,                          /* the settings changed: save them when convenient */
-    /* the sequencer's projects (32 slots the host stores; host/src/move/README.md, "Projects") */
+    /* the sequencer's projects (32 slots the host stores; README.md, "Projects") */
     RFM_MOVE_ACT_PROJECT_SAVE = 8,                      /* index slot 0..31: store data/len (a project blob) */
     RFM_MOVE_ACT_PROJECT_LOAD = 9,                      /* index slot: answer with rfm_move_project_load(m, slot, ..) */
     RFM_MOVE_ACT_PROJECT_DELETE = 10,                   /* index slot: forget it */
@@ -145,7 +151,7 @@ typedef struct {
  * Delete) */
 #define RFM_MOVE_NLEDS 92                               /* (the last 16: the white icon LEDs under the steps, CC 16..31) */
 
-/* ---- the sequencer (Track 4; host/src/move/README.md, "Sequencer") */
+/* ---- the sequencer (Track 4; README.md, "Sequencer") */
 #define RFM_MOVE_SEQ_TRACKS 16                          /* track n plays MIDI channel n by default */
 #define RFM_MOVE_SEQ_SCENES 16
 #define RFM_MOVE_SEQ_CLIPS (RFM_MOVE_SEQ_TRACKS * RFM_MOVE_SEQ_SCENES)   /* clip id = track * 16 + scene */
@@ -442,7 +448,7 @@ typedef struct {
     uint32_t tbtn_ms[4];                                /* a Track button's press (a tap: its release soon after) */
     uint32_t tbtn_clk[4];                               /* .. on the popups' clock (its hold screen after RFM_MOVE_TAP_MS) */
     uint8_t tbtn_sw;                                    /* bits: that press changed the mode */
-    /* the screen's popup (host/src/move/README.md, "The screen"): what it shows, for which control, and since when */
+    /* the screen's popup (README.md, "The screen"): what it shows, for which control, and since when */
     uint8_t pop;                                        /* what (move_int.h POP_*), 0 none */
     uint8_t pop_i;                                      /* its knob (0..7, 8 volume), step, pad or project slot */
     int16_t pop_val;                                    /* an FM-1 encoder's detents in this gesture */
@@ -464,6 +470,8 @@ typedef struct {
 } rfm_move_t;
 
 /* settings NULL: the defaults. fn gets every action (it may be NULL). */
+/* the library's version, "MAJOR.MINOR.PATCH" (RFM1CS_VERSION when it was built) */
+const char *rfm_move_version(void);
 void rfm_move_init(rfm_move_t *m, const rfm_move_settings_t *settings, rfm_move_act_fn fn, void *ctx);
 void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms);
 /* every held FM-1 key, button and MIDI note let go (ups, pressure 0, note offs); the track buttons forgotten */

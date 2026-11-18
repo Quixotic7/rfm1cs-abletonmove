@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
-// rfm_move in the browser: the Ableton Move core (host/src/move/move.c, host/src/move/README.md has the mapping) as
-// WebAssembly (web/move/build.sh -> web/build/move/rfm_move.mjs), wrapped for js/move-link.js. No DOM: Node runs it
-// (web/site/test.mjs).
+// rfm_move in the browser: the Ableton Move core (src/move.c, README.md has the mapping) as
+// WebAssembly (web/build.sh -> rfm_move.mjs), wrapped for a web host (RemoteFM1 js/move-link.js). No DOM: Node runs it
+// (RemoteFM1 web/site/test.mjs).
 //   const core = await MoveCore.load(settingsBytes?)          (the module once per page, a core per call)
 //   core.input(packet, frame, nowMs) -> actions                packet: the INPUT record's 4 bytes as a LE uint32
 //   core.panel(levels44, playGreen); core.leds() -> [{ rgb, cc, number, r, g, b }]   (only the changed ones)
@@ -13,7 +13,7 @@
 //   { kind: "master", value }  { kind: "midi", bytes }  { kind: "settings" }
 //   { kind: "projectSave", slot, bytes }  { kind: "projectLoad", slot }  { kind: "projectDelete", slot }
 // and every action has `frame`: for seqAdvance's, the offset from the call's start it is due at (0 otherwise).
-// The sequencer (host/src/move/README.md, "Sequencer"):
+// The sequencer (README.md, "Sequencer"):
 //   core.seqAdvance(frames, rate) -> actions (every block, playing or not); core.seqMidiIn(bytes) -> actions
 //   core.seqPlay(on); core.setBpm(bpm10); core.setLead(us); core.setClock(mode); core.bpm10(); core.following(); core.playing()
 //   actions also: { kind: "click", accent } (the metronome), { kind: "audioRec", on, bars } (Sample's loop), frame-stamped
@@ -32,7 +32,7 @@ const ACT_BYTES = 10, LED_BYTES = 6;
 export const lean = (p) => Math.floor((Math.max(0, Math.min(127, p | 0)) * 100 + 63) / 127);
 
 let modP = null;
-// the module (once): url the built rfm_move.mjs (default: web/build/move/ beside the site)
+// the module (once): url the built rfm_move.mjs (default: RemoteFM1 web/build/move/, two levels above this file)
 export function loadModule(url) {
   if (!modP) {
     const u = url || new URL("../../build/move/rfm_move.mjs", import.meta.url).href;
@@ -193,6 +193,8 @@ export class MoveCore {
     const s = new Int32Array(this.M.HEAPU8.buffer, p, 3);
     return { type: s[0], index: s[1], value: s[2] };
   }
+  // the library's version ("0.1.0": RFM1CS_VERSION)
+  version() { const M = this.M, p = M._mw_version(); let e = p; while (M.HEAPU8[e]) e++; return String.fromCharCode(...M.HEAPU8.subarray(p, e)); }
   free() { const M = this.M; if (this.w) M._mw_free(this.w); for (const k of ["px", "lv", "km", "st"]) if (this[k]) { M._free(this[k]); this[k] = 0; } this.w = 0; }
 }
 

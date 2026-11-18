@@ -1,25 +1,44 @@
-# rfm_move: the Ableton Move as a RemoteFM1 panel
+# rfm1cs-abletonmove: the Ableton Move as a RemoteFM1 control surface
 
 An Ableton Move running [Move Remote](https://github.com/Quixotic7/abletonmoveremote) drives a RemoteFM1 host's
 emulated FM-1: its pads, buttons and knobs become the FM-1's keys, buttons, encoders and MASTER (or MIDI into the
 firmware), and the FM-1's LEDs and screen come back to the Move. `rfm_move` is the one portable C99 core every host
-compiles (no OS calls, no allocation), so the mapping and the sequencer are written once. The
+compiles (no OS calls, no allocation), so the mapping and the sequencer are written once: the RemoteFM1 web player,
+iOS and Android take this repository as a git submodule pinned to a tag. The
 design is the owner's: `design/remotefm1move.movedesign.json` (ableton-move-designer v3; `pad-<row>-<col>`, row 1 at
-the top). Licence: MPL-2.0, like the OMX-27 modules and the rest of the host library's core.
+the top). Licence: MPL-2.0 (`LICENSE`). The version is `RFM1CS_VERSION` / `rfm_move_version()`; `CHANGES.md` has the
+log. This code lived in RemoteFM1 (`host/src/move/`) until 0.1.0; its history came with it.
 
 | File | What |
 |---|---|
-| `host/include/rfm/move.h` | the API |
-| `host/src/move/move.c` | the mapping, the MIDI modes, the LEDs |
-| `host/src/move/screen.c` | the screen: FM-1, MIDI and Control mode, the popups, the held Track buttons' menus |
-| `host/src/move/seq.c` | the sequencer: its data, undo journal, clipboard, clock and engine |
-| `host/src/move/seq_ui.c` | Sequencer mode: the Move's controls on the sequencer, its LEDs and screens |
-| `host/src/move/project.c` | the project blob, the 32 project slots, the autosave |
-| `host/src/move/move_int.h` | what those five files share (not an API; the tests read the data model through it) |
-| `host/third_party/moveremote/` | libmoveremote's host side, vendored (upstream `bf01bb9`, MPL-2.0) |
-| `host/tests/test_move.c` | ctest `move` |
-| `host/tests/test_move_seq.c` | ctest `move_seq`: the sequencer |
-| `host/tests/move_e2e.c`, `move_e2e.sh` | ctest `move_e2e`: against Move Remote's simulator |
+| `include/rfm1cs/move.h` | the API (`include/rfm/move.h` includes it, for hosts written against RemoteFM1's path) |
+| `src/move.c` | the mapping, the MIDI modes, the LEDs |
+| `src/screen.c` | the screen: FM-1, MIDI and Control mode, the popups, the held Track buttons' menus |
+| `src/seq.c` | the sequencer: its data, undo journal, clipboard, clock and engine |
+| `src/seq_ui.c` | Sequencer mode: the Move's controls on the sequencer, its LEDs and screens |
+| `src/project.c` | the project blob, the 32 project slots, the autosave |
+| `src/v2.c`, `src/v2.h` | the v2 screens' drawing |
+| `src/move_int.h` | what those files share (not an API; the tests read the data model through it) |
+| `third_party/moveremote/` | libmoveremote's host side, vendored (upstream `bf01bb9`, MPL-2.0) |
+| `web/build.sh`, `web/move_web.c` | the core in WebAssembly (`rfm_move.mjs`, one ES module) and its flat API |
+| `web/move-core.js`, `web/move-seq.js` | the wasm wrapper and the sequencer's audio clock (SeqClock), for a web host |
+| `tests/test_move.c` | ctest `move` |
+| `tests/test_move_seq.c` | ctest `move_seq`: the sequencer |
+| `tests/test_move_v2.c`, `move_v2_ref.*` | ctest `move_v2`: the v2 screens against the mockup's pixels |
+| `tests/move_e2e.c`, `move_e2e.sh` | ctest `move_e2e`: against Move Remote's simulator |
+
+## Building
+
+```
+cmake -S . -B build-asan -DRFM1CS_SANITIZE=ON && cmake --build build-asan -j && (cd build-asan && ctest)
+web/build.sh [OUT_DIR]          # Emscripten: OUT_DIR/rfm_move.mjs (default build/web/)
+```
+
+A host adds the directory and links the core: `add_subdirectory(vendor/rfm1cs-abletonmove)` then
+`target_link_libraries(app PRIVATE rfm1cs_move)` (the tests are built only when this is the top-level project, or
+with `-DRFM1CS_TESTS=ON`). Hosts with their own build compile `src/*.c` and `third_party/moveremote/host/mr_gfx.c`,
+`third_party/moveremote/common/font5x7.c` with `include/` and `third_party/moveremote/include/` on the include path
+(and `mr_client.c` if they use Move Remote's socket client).
 
 ## The modes (Track 1..4)
 
@@ -532,11 +551,11 @@ drawing's touch marks follow our drawing's cells (the mockup's examples sit one 
 
 ## Tests
 
-`host/run_tests.sh` runs `move` (the mapping against the design's labels, every button and knob, MASTER's
+ctest runs `move` (the mapping against the design's labels, every button and knob, MASTER's
 clamping, mode changes and release-all, the four layouts' notes, drum editing and the settings round trip, the CC
 banks and reassignment, LED diffing; the screen: FM-1 mode at rest exactly the owner's drawing (the PNG's rows), the
 live encoders, buttons and keys, the popups' life (held, then a second), ten golden screens: their PBMs land in
-`host/build-asan/move_*.pbm`) and
+the build directory's `move_*.pbm`) and
 `move_e2e`: Move Remote's simulator (`make sim` in an abletonmoveremote checkout; found beside this repo, or
 `-DRFM_MOVEREMOTE_SIM=`, or `$MOVEREMOTE_SIM`) gets presses through its test FIFO, and the test checks the actions,
 the LED writes, and the simulator's screen shot against the frame sent, then a short sequencer run (Track 4, two
@@ -561,23 +580,23 @@ project popup, the Track 4 menu, the count-in, a message: `move_seq_*.pbm` in th
 - **FM1VST (Mac)**: a `MoveLink` beside `RemoteLink.cpp`: `mr_connect` / `mr_poll` on a thread, the actions into
   fm1panel_t, the LEDs and screen out each frame, sound on the Mac or (optional) the Move.
 - **iOS (RFMKit)** and **Android (NDK)**: compile `move.c` and the vendored client as they compile libremotefm1.
-- **The web player**: done over WebSocket (WEB-PLAN.md, "An Ableton Move as the controller": `web/move/build.sh`,
-  `web/site/js/move-core.js`, `move-link.js`; `mr_client.c` compiles under Emscripten and the linker drops its
+- **The web player**: done over WebSocket (RemoteFM1's WEB-PLAN.md, "An Ableton Move as the controller": `web/build.sh`,
+  `web/move-core.js`, RemoteFM1's `move-link.js`; `mr_client.c` compiles under Emscripten and the linker drops its
   sockets). From https: the `ws://` tried first (Chrome's Local Network Access), else Move Remote 0.1.1's bridge
   window (`MoveBridge`, WEB-PLAN.md).
 - **The sequencer in the web player**: done (below, "The web player").
 
 ## The web player
 
-`web/move/src/move_web.c` exports the sequencer (`mw_seq_*`, `mw_project_*`, `mw_act_frames`, `mw_blob`);
-`web/site/js/move-core.js` wraps it (kinds 8..10 as `projectSave` / `projectLoad` / `projectDelete`, every action
+`web/move_web.c` exports the sequencer (`mw_seq_*`, `mw_project_*`, `mw_act_frames`, `mw_blob`);
+`web/move-core.js` wraps it (kinds 8..10 as `projectSave` / `projectLoad` / `projectDelete`, every action
 with its `frame`).
 
 **What the host does there.** The core stays on the page's main thread (the pads, LEDs and screen need it), so
-`js/move-seq.js` (SeqClock) advances it ahead of the audio: every 10 ms and before each Move input, in blocks of 128
+`web/move-seq.js` (SeqClock) advances it ahead of the audio: every 10 ms and before each Move input, in blocks of 128
 frames at the context's rate, up to the AudioContext's frame plus 30 ms (`LEAD_S`). An action at `frame` in a block
 starting at absolute frame `pos` goes to the worklet as `{type: "midi", bytes, at: pos + frame}`; the worklet
-(`web/site/worklet/host.js`, TimedMidi) gives it to the engine before the render of the quantum nearest to `at`, so a
+(RemoteFM1's `web/site/worklet/host.js`, TimedMidi) gives it to the engine before the render of the quantum nearest to `at`, so a
 note lands within half a quantum (64 frames) of its frame, and the core only ever counts the frames it is given: no
 drift. Measured (move-e2e, Felucca at 44.1 kHz, 8 bars of 16ths at 120 BPM): every note in the engine within 63.5
 frames of its ideal, mean 0.3, none late. A gap over 250 ms (a frozen tab, a suspended context) is skipped, not caught
@@ -602,7 +621,7 @@ lead late too (the core runs that far ahead of what is heard); quantize takes it
 | fm1-base apps | only if the app sends it: the base's clock code (keremimo's, felucca-bsp `chip/usb.c`) is receive and transport sync |
 
 **Projects.** IndexedDB `remotefm1-move`, store `projects`, a record a slot `{ slot, bytes, saved }`
-(`js/move-projects.js`), apart from the firmwares' saves. At start the store's slots go to `rfm_move_project_dir`
+(RemoteFM1's `js/move-projects.js`), apart from the firmwares' saves. At start the store's slots go to `rfm_move_project_dir`
 and the last project opened (prefs `moveProject`) to `rfm_move_project_load`; PROJECT_SAVE / DELETE are written in
 order, PROJECT_LOAD is answered from the store; the autosave is flushed on disconnect and pagehide. The page's Move
 section lists the projects ("Project N": the blob has no name), with their size and date, Backup, Delete, Back up all

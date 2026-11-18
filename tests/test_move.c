@@ -10,7 +10,7 @@
 #include "check.h"
 #include "moveremote/client.h"
 #include "move_int.h"
-#include "rfm/move.h"
+#include "rfm1cs/move.h"
 
 static rfm_move_act_t acts[512];
 static int nact;

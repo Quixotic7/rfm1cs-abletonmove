@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: MPL-2.0
+# Every push and pull request: the tests under ASan + UBSan (move_e2e is skipped: it needs Move Remote's simulator,
+# MOVEREMOTE_SIM), and the WebAssembly build with its smoke test in Node.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  EMSDK_VERSION: "6.0.11"     # the version RemoteFM1's Pages workflow builds with
+
+jobs:
+  ctest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (ASan + UBSan)
+        run: |
+          cmake -S . -B build-asan -DRFM1CS_SANITIZE=ON
+          cmake --build build-asan -j
+      - name: ctest
+        run: cd build-asan && ctest --output-on-failure
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+      - name: web/build.sh
+        run: sh web/build.sh
+      - name: Smoke test in Node
+        run: node tests/web_smoke.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rfm_move.mjs
+          path: build/web/rfm_move.mjs

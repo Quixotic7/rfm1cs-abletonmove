@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 RemoteFM1 contributors */
 /* rfm_move's Sequencer mode (Track 4): the Move's controls on the sequencer, its LEDs and its screen. The data and
- * the engine are seq.c's; host/src/move/README.md, "Sequencer", has the gestures and the decisions (and where they
+ * the engine are seq.c's; README.md, "Sequencer", has the gestures and the decisions (and where they
  * follow Ableton Move's own sequencer). */
 #include <stdio.h>
 #include <string.h>

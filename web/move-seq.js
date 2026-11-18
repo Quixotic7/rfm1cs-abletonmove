@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // The Ableton Move's sequencer in the web player: rfm_move's clock (rfm_move_seq_advance) driven by the AUDIO clock.
-// No DOM: Node runs it (web/site/test.mjs). js/move-link.js owns one.
+// No DOM: Node runs it (RemoteFM1 web/site/test.mjs). RemoteFM1 js/move-link.js owns one.
 //
 // THE CLOCK. The core lives on the page's main thread (the controller's pads, LEDs and screen do), so the page
 // advances it ahead of the audio: every pump() (a 10 ms timer, plus every Move input) the core is advanced, in blocks

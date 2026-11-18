@@ -11,7 +11,7 @@
 #include <unistd.h>
 
 #include "moveremote/client.h"
-#include "rfm/move.h"
+#include "rfm1cs/move.h"
 
 static int g_fail, g_checks;
 #define CHECK(c, ...)                                                                                               \

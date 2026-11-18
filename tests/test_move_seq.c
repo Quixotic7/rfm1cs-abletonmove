@@ -12,7 +12,7 @@
 #include "check.h"
 #include "move_int.h"
 #include "moveremote/client.h"
-#include "rfm/move.h"
+#include "rfm1cs/move.h"
 
 /* ---- the actions, with absolute frames; the notes sounding; the host's project store */
 typedef struct { rfm_move_act_t a; uint64_t at; } act_t;

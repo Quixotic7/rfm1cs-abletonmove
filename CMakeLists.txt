@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: MPL-2.0
+# rfm1cs-abletonmove: an Ableton Move (running Move Remote) as a RemoteFM1 control surface. Portable C99.
+#   Standalone (the tests):  cmake -S . -B build -DRFM1CS_SANITIZE=ON && cmake --build build -j && ctest --test-dir build
+#   In a host:               add_subdirectory(vendor/rfm1cs-abletonmove) then link rfm1cs_move (alias rfm1cs::move)
+# Targets:
+#   rfm1cs_move      the core (src/): no OS calls, no allocation; links moveremote_gfx
+#   moveremote_gfx   Move Remote's 1-bit graphics and font (third_party/moveremote, vendored)
+#   moveremote       Move Remote's POSIX socket client (hosts that talk TCP themselves need not link it)
+cmake_minimum_required(VERSION 3.16)
+project(rfm1cs_abletonmove VERSION 0.1.0 LANGUAGES C)
+
+set(RFM1CS_TOP OFF)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(RFM1CS_TOP ON)
+endif()
+option(RFM1CS_TESTS "Build rfm1cs-abletonmove's tests" ${RFM1CS_TOP})
+option(RFM1CS_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer (top level only)" OFF)
+
+if(RFM1CS_TOP)
+    set(CMAKE_C_STANDARD 99)
+    set(CMAKE_C_STANDARD_REQUIRED ON)
+    if(NOT CMAKE_BUILD_TYPE)
+        set(CMAKE_BUILD_TYPE RelWithDebInfo)
+    endif()
+    if(RFM1CS_SANITIZE)
+        add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined)
+        add_link_options(-fsanitize=address,undefined)
+    endif()
+endif()
+
+set(RFM1CS_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+set(MR_DIR ${RFM1CS_DIR}/third_party/moveremote)
+
+# ---- Move Remote's client (vendored; third_party/moveremote/README.md names its upstream commit)
+if(NOT TARGET moveremote_gfx)
+    add_library(moveremote_gfx STATIC ${MR_DIR}/host/mr_gfx.c ${MR_DIR}/common/font5x7.c)
+    target_include_directories(moveremote_gfx PUBLIC ${MR_DIR}/include)
+endif()
+if(NOT TARGET moveremote)
+    add_library(moveremote STATIC ${MR_DIR}/host/mr_client.c)     # the POSIX socket client (hosts, the e2e test)
+    target_link_libraries(moveremote PUBLIC moveremote_gfx)
+endif()
+set_target_properties(moveremote_gfx moveremote PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
+
+# ---- the core
+add_library(rfm1cs_move STATIC
+    src/move.c src/screen.c src/v2.c src/seq.c src/seq_ui.c src/project.c)
+target_include_directories(rfm1cs_move PUBLIC ${RFM1CS_DIR}/include ${MR_DIR}/include)
+target_link_libraries(rfm1cs_move PUBLIC moveremote_gfx)
+target_compile_options(rfm1cs_move PRIVATE -Wall -Wextra -Wshadow -Wstrict-prototypes)
+set_target_properties(rfm1cs_move PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
+add_library(rfm1cs::move ALIAS rfm1cs_move)
+
+# ---- tests
+if(RFM1CS_TESTS)
+    enable_testing()
+    find_library(RFM1CS_LIBM m)
+    set(RFM1CS_M "")
+    if(RFM1CS_LIBM)
+        set(RFM1CS_M m)
+    endif()
+    # Move Remote's simulator for the end-to-end test (abletonmoveremote's `make sim`): -DRFM_MOVEREMOTE_SIM=..., or
+    # $MOVEREMOTE_SIM when the test runs, or found next to this repo. Without it the test is skipped.
+    if(NOT RFM_MOVEREMOTE_SIM)
+        foreach(cand ${RFM1CS_DIR}/../abletonmoveremote ${RFM1CS_DIR}/../../abletonmoveremote)
+            if(EXISTS ${cand}/build/sim/moveremote-sim AND NOT RFM_MOVEREMOTE_SIM)
+                get_filename_component(RFM_MOVEREMOTE_SIM ${cand}/build/sim/moveremote-sim ABSOLUTE)
+            endif()
+        endforeach()
+    endif()
+    set(RFM_MOVEREMOTE_SIM "${RFM_MOVEREMOTE_SIM}" CACHE FILEPATH "Move Remote's moveremote-sim, for the move_e2e test")
+
+    # the mapping, the MIDI layouts, settings, LED diffing, the screen's golden frame
+    add_executable(test_move tests/test_move.c)
+    target_include_directories(test_move PRIVATE src tests)
+    target_link_libraries(test_move PRIVATE rfm1cs_move moveremote)
+    target_compile_options(test_move PRIVATE -Wall -Wextra)
+    add_test(NAME move COMMAND test_move)
+    set_tests_properties(move PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    # the sequencer (Track 4): the data model, the clock, playback, recording, projects and their blobs (fuzzed)
+    add_executable(test_move_v2 tests/test_move_v2.c)
+    target_include_directories(test_move_v2 PRIVATE src tests)
+    target_link_libraries(test_move_v2 PRIVATE rfm1cs_move moveremote ${RFM1CS_M})
+    target_compile_options(test_move_v2 PRIVATE -Wall -Wextra)
+    add_test(NAME move_v2 COMMAND test_move_v2)
+    add_executable(test_move_seq tests/test_move_seq.c)
+    target_include_directories(test_move_seq PRIVATE src tests)
+    target_link_libraries(test_move_seq PRIVATE rfm1cs_move moveremote)
+    target_compile_options(test_move_seq PRIVATE -Wall -Wextra)
+    add_test(NAME move_seq COMMAND test_move_seq)
+    set_tests_properties(move_seq PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    # end to end against Move Remote's simulator (tests/move_e2e.sh; skipped, code 77, without the simulator)
+    add_executable(move_e2e tests/move_e2e.c)
+    target_link_libraries(move_e2e PRIVATE rfm1cs_move moveremote)
+    target_compile_options(move_e2e PRIVATE -Wall -Wextra)
+    add_test(NAME move_e2e COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/move_e2e.sh $<TARGET_FILE:move_e2e>
+        "${RFM_MOVEREMOTE_SIM}")
+    set_tests_properties(move_e2e PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
+endif()

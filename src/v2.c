@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "v2.h"
-#include "../../third_party/moveremote/common/font5x7.h"
+#include "../third_party/moveremote/common/font5x7.h"
 
 static const uint16_t V2_ICONS[V2I_N][11] = {
     { 0x100, 0x180, 0x1c0, 0x1e0, 0x1f0, 0x1f8, 0x1f0, 0x1e0, 0x1c0, 0x180, 0x100 },   /* play */

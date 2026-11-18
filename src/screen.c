@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 RemoteFM1 contributors */
-/* rfm_move's screen: the owner's design (host/src/move/README.md, "The screen"). The Move's screen is small, so at
+/* rfm_move's screen: the owner's design (README.md, "The screen"). The Move's screen is small, so at
  * rest every screen is symbols and pictures only; words come in large popups while a knob is touched or turned, a
  * step or a project pad is held (and RFM_MOVE_POPUP_MS after), or for a moment after an action (the sequencer's
  * messages). FM-1 mode is the owner's pixel drawing of the FM-1 (live: touched encoders, lit buttons, held keys) and
@@ -11,7 +11,7 @@
 
 #include "move_int.h"
 #include "v2.h"
-#include "../../third_party/moveremote/common/font5x7.h"
+#include "../third_party/moveremote/common/font5x7.h"
 
 #define clampi rfmv_clampi
 

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 RemoteFM1 contributors */
-/* rfm_move: an Ableton Move as a RemoteFM1 panel. See rfm/move.h and host/src/move/README.md (the tables, the
+/* rfm_move: an Ableton Move as a RemoteFM1 panel. See rfm1cs/move.h and README.md (the tables, the
  * decisions). Portable C99: no OS calls, no allocation. */
 #include <stdio.h>
 #include <string.h>
@@ -375,6 +375,8 @@ void rfm_move_set_keymap(rfm_move_t *m, const int8_t keymap[6][11])
                 m->led_of[id] = (int8_t)(c * 4 + (r - 1));
         }
 }
+
+const char *rfm_move_version(void) { return RFM1CS_VERSION; }
 
 void rfm_move_init(rfm_move_t *m, const rfm_move_settings_t *settings, rfm_move_act_fn fn, void *ctx)
 {
