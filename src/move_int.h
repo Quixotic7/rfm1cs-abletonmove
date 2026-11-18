@@ -197,4 +197,30 @@ void rfmv_seq_track_menu(const rfm_move_t *m, mr_canvas_t *cv);   /* Track 4 hel
 void rfmv_seq_msg(rfm_move_t *m, int msg);
 const char *rfmv_seq_msg_text(const rfm_move_t *m);    /* the message up now, NULL none */
 
+/* ---- fw.c: the firmware browser, FX setup, the library (0.4.0) */
+/* the view's popups (rfm_move_fw_state_t.pop: one at a time, RFM_MOVE_POPUP_MS after the last touch) */
+enum { FP_NONE, FP_TRACK, FP_LEVEL, FP_CATALOG, FP_UNLOAD, FP_LOADED, FP_FILTER, FP_BANK, FP_FAV, FP_COLOR, FP_MSG,
+       FP_STATE, FP_RPAGE, FP_PARAM, FP_RFILTER, FP_RLOADED };
+void rfmv_fw_init(rfm_move_t *m);
+void rfmv_fw_enter(rfm_move_t *m);                     /* the projects view entered: the track to show */
+void rfmv_view_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now);   /* the projects view's input */
+void rfmv_fw_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0], uint8_t white[13]);
+int rfmv_fw_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* 1: drawn (a firmware track, FX setup, a popup) */
+int rfmv_fw_timed(const rfm_move_t *m);
+int rfmv_fw_volume(rfm_move_t *m, int d);              /* Track 1..3 held + volume: the slot's level (1 taken) */
+void rfmv_fw_poll(rfm_move_t *m);                      /* the library's debounce (from advance) */
+void rfmv_emit_midi_t(rfm_move_t *m, int track, int status, int d1, int d2);   /* MIDI tagged with its track 1..16 */
+void rfmv_fxset_default(rfm_move_fxset_t *x);
+void rfmv_fxset_write(const rfm_move_fxset_t *x, uint8_t *p);   /* RFM_MOVE_FXSET_BYTES */
+int rfmv_fxset_check(const uint8_t *p);                /* 0 ok */
+void rfmv_fxset_read(rfm_move_fxset_t *x, const uint8_t *p);
+void rfmv_fx_resolve(rfm_move_t *m, rfm_move_fxslot_t *x, int kind);
+void rfmv_fx_loaded(rfm_move_t *m);                    /* a project loaded: modules found, the host told */
+int rfmv_fw_bank(const rfm_move_t *m, int ids[32]);   /* (tests) the bank shown, its size */
+int rfmv_fw_list_len(const rfm_move_t *m);
+int rfmv_fw_rec(const rfm_move_t *m, int fw);          /* the library record of list index fw, -1 */
+/* move.c, project.c for fw.c */
+void rfmv_master_turn(rfm_move_t *m, int d);           /* the volume knob as MASTER */
+void rfmv_proj_back(rfm_move_t *m);                    /* Back in the projects view: out */
+
 #endif

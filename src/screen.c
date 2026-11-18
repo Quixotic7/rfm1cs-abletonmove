@@ -830,7 +830,7 @@ int rfm_move_screen_timed(const rfm_move_t *m)
             return 1;
     return q->playing || q->start_pending || rfmv_seq_msg_text(m) != NULL || (m->pop && rfmv_pop_up(m, m->pop)) ||
            (m->menu_what && rfmv_now_ms(m) - m->menu_ms < RFM_MOVE_POPUP_MS) ||
-           (q->projects && q->proj_pending >= 0);
+           (q->projects && q->proj_pending >= 0) || rfmv_fw_timed(m);
 }
 
 void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREEN_BYTES])
@@ -839,9 +839,15 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
     int t, x, y;
     if (rgb565)
         thumb_from(m, rgb565);
+    if (rfmv_fw_screen(m, &cv)) {                       /* (0.4.0) the projects view's firmware tracks, FX setup,
+                                                         * its popups; a slot's level */
+        mr_gfx_pack(&cv, out);
+        return;
+    }
     mr_gfx_clear(&cv, 0);
-    for (t = 1; t < 4 && !rfmv_hold_shown(m, t); t++) {}   /* (Track 1 has no menu: FM-1 mode stays in view; a tap:
-                                                         * nothing of a hold screen) */
+    for (t = 1; t < 4 && (m->seq.projects || !rfmv_hold_shown(m, t)); t++) {}   /* (Track 1 has no menu: FM-1 mode
+                                                         * stays in view; a tap: nothing of a hold screen; the
+                                                         * projects view: the Track buttons pick its tracks) */
     if (t < 4) {
         held_menu(m, &cv, t);
         mr_gfx_pack(&cv, out);

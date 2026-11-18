@@ -94,7 +94,7 @@ static void on_core_act(void *ctx, const rfm_move_act_t *a)
     if (a->kind == RFM_MOVE_ACT_SETTINGS) {
         ev.len = rfm_move_save(&s->core.s, s->settings);
         ev.data = s->settings;
-    } else if (a->kind == RFM_MOVE_ACT_PROJECT_SAVE) {
+    } else if (a->kind == RFM_MOVE_ACT_PROJECT_SAVE || a->kind == RFM_MOVE_ACT_FW_LIBRARY) {
         ev.data = a->data;
         ev.len = a->len;
     } else if (a->kind == RFM_MOVE_ACT_MIDI) {
@@ -244,7 +244,11 @@ void rfm1cs_session_release(rfm1cs_session_t *s)
     s->st.playing = s->core.seq.playing != 0;     /* (a stop by the release: RELEASED says it, not PLAYING) */
     emit_simple(s, RFM1CS_EV_RELEASED);
 }
-void rfm1cs_session_flush(rfm1cs_session_t *s) { rfm_move_project_flush(&s->core); }
+void rfm1cs_session_flush(rfm1cs_session_t *s)
+{
+    rfm_move_project_flush(&s->core);
+    rfm_move_fw_flush(&s->core);                       /* (0.4.0: the library too) */
+}
 
 /* the transport and timers gone, everything held let go (the project saved first, if it changed) */
 static void teardown(rfm1cs_session_t *s)

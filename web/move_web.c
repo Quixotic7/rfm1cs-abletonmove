@@ -6,7 +6,10 @@
  * which JS reads after the call:
  *   the actions, at mw_acts(): 10 bytes each: kind, index, down, vel, value (int16 LE), n, bytes[3]; beside them
  *   each action's frame (uint32, mw_act_frames(): the offset in mw_seq_advance's frames; 0 for every other call). A
- *   PROJECT_SAVE action's blob is copied out: value = its index for mw_blob() / mw_blob_len();
+ *   PROJECT_SAVE (or FW_LIBRARY) action's blob is copied out: value = its index for mw_blob() / mw_blob_len(); and
+ *   (0.4.0) each action's new fields, MW_ACT_EXT bytes at mw_act_ext(): track, slot, fx, param, mix[5], then filt[6]
+ *   (uint16 LE). FW_* actions name their firmware by value (its index in the list given), FX_LOAD its module by value;
+ *   STATE_* by slot (the firmware there);
  *   the session's events (mw_sess_* calls), at mw_evs(): 4 int32 each: type (RFM1CS_EV_*, or MW_EV_LOADED), a, b, c:
  *   ACTION a = the action's index; SEND a = the offset in mw_tx(), b = the length; OPEN a = the attempt; LOST a = the
  *   reason, b = was it live; BYE a = the reason, b = was it live; STATUS a = the changed bits; MW_EV_LOADED a = the
@@ -26,6 +29,7 @@
 
 #define MW_MAX_ACTS 1024
 #define MW_ACT_BYTES 10
+#define MW_ACT_EXT 21
 #define MW_MAX_BLOBS 4                                  /* PROJECT_SAVEs in one call (a project switch makes 2) */
 #define MW_MAX_EVS 1024
 #define MW_TX_MAX 65536
@@ -38,6 +42,9 @@ typedef struct {
     int nacts;
     uint8_t acts[MW_MAX_ACTS * MW_ACT_BYTES];
     uint32_t frames[MW_MAX_ACTS];
+    uint8_t ext[MW_MAX_ACTS * MW_ACT_EXT];
+    /* (0.4.0) what the core points into: the catalog and the FX modules, owned here (mw_fw_*, mw_fx_*) */
+    struct mw_own *fw_own, *fx_own[2];
     int nblobs;
     uint32_t blob_len[MW_MAX_BLOBS];
     uint8_t blob[MW_MAX_BLOBS][RFM_MOVE_PROJECT_MAX];
@@ -67,7 +74,7 @@ static int add_act(mw_t *w, const rfm_move_act_t *a)
     int16_t value = a->value;
     if (w->nacts >= MW_MAX_ACTS)
         return -1;
-    if (a->kind == RFM_MOVE_ACT_PROJECT_SAVE) {
+    if (a->kind == RFM_MOVE_ACT_PROJECT_SAVE || a->kind == RFM_MOVE_ACT_FW_LIBRARY) {
         if (w->nblobs >= MW_MAX_BLOBS || !a->data || a->len > RFM_MOVE_PROJECT_MAX)
             return -1;
         memcpy(w->blob[w->nblobs], a->data, a->len);
@@ -79,6 +86,14 @@ static int add_act(mw_t *w, const rfm_move_act_t *a)
     o[0] = a->kind, o[1] = a->index, o[2] = a->down, o[3] = a->vel;
     o[4] = (uint8_t)((uint16_t)value & 0xFF), o[5] = (uint8_t)((uint16_t)value >> 8);
     o[6] = a->n, o[7] = a->bytes[0], o[8] = a->bytes[1], o[9] = a->bytes[2];
+    o = w->ext + w->nacts * MW_ACT_EXT;
+    o[0] = a->track, o[1] = a->slot, o[2] = a->fx, o[3] = a->param;
+    memcpy(o + 4, a->mix, 5);
+    {
+        int k;
+        for (k = 0; k < 6; k++)
+            o[9 + k * 2] = (uint8_t)(a->filt[k] & 0xFF), o[10 + k * 2] = (uint8_t)(a->filt[k] >> 8);
+    }
     return w->nacts++;
 }
 static void on_event(void *ctx, const rfm1cs_event_t *ev)
@@ -150,12 +165,20 @@ EMSCRIPTEN_KEEPALIVE mw_t *mw_new(const uint8_t *settings, uint32_t n)
     return w;
 }
 EMSCRIPTEN_KEEPALIVE const char *mw_version(void) { return rfm_move_version(); }
-EMSCRIPTEN_KEEPALIVE void mw_free(mw_t *w) { free(w); }
+static void own_free(struct mw_own *o);
+EMSCRIPTEN_KEEPALIVE void mw_free(mw_t *w)
+{
+    if (!w)
+        return;
+    own_free(w->fw_own), own_free(w->fx_own[0]), own_free(w->fx_own[1]);
+    free(w);
+}
 
 /* the actions of the last call */
 EMSCRIPTEN_KEEPALIVE int mw_nacts(const mw_t *w) { return w->nacts; }
 EMSCRIPTEN_KEEPALIVE const uint8_t *mw_acts(const mw_t *w) { return w->acts; }
 EMSCRIPTEN_KEEPALIVE const uint32_t *mw_act_frames(const mw_t *w) { return w->frames; }
+EMSCRIPTEN_KEEPALIVE const uint8_t *mw_act_ext(const mw_t *w) { return w->ext; }
 EMSCRIPTEN_KEEPALIVE const uint8_t *mw_blob(const mw_t *w, int i) { return i >= 0 && i < w->nblobs ? w->blob[i] : NULL; }
 EMSCRIPTEN_KEEPALIVE uint32_t mw_blob_len(const mw_t *w, int i) { return i >= 0 && i < w->nblobs ? w->blob_len[i] : 0; }
 
@@ -435,3 +458,203 @@ EMSCRIPTEN_KEEPALIVE int mw_store_answer(mw_t *w, uint32_t now, int slot, const 
     return SESS(rfm1cs_store_answer(&w->st, slot, b, n));
 }
 EMSCRIPTEN_KEEPALIVE int mw_store_pending(const mw_t *w) { return w->st.qn; }
+
+/* ---- (0.4.0) the firmware browser, the library, FX setup (move.h): the catalog and the modules are built here in
+ * wasm memory and handed to the core (its contract: they stay unchanged until the next list; the old one is freed
+ * after the core has the new). Calls that can give actions return their count. */
+struct mw_own {                                         /* everything one list allocated */
+    void **p;
+    int n, cap;
+    void *list;                                         /* the array the core keeps */
+    int count;
+};
+static void own_free(struct mw_own *o)
+{
+    int i;
+    if (!o)
+        return;
+    for (i = 0; i < o->n; i++)
+        free(o->p[i]);
+    free(o->p), free(o->list), free(o);
+}
+static void *own_keep(struct mw_own *o, void *x)
+{
+    if (!x)
+        return NULL;
+    if (o->n == o->cap) {
+        void **q = realloc(o->p, (size_t)(o->cap ? o->cap * 2 : 64) * sizeof *q);
+        if (!q) {
+            free(x);
+            return NULL;
+        }
+        o->p = q, o->cap = o->cap ? o->cap * 2 : 64;
+    }
+    return o->p[o->n++] = x;
+}
+static const char *own_str(struct mw_own *o, const char *s)
+{
+    char *c;
+    if (!s)
+        return NULL;
+    c = malloc(strlen(s) + 1);
+    if (c)
+        strcpy(c, s);
+    return own_keep(o, c);
+}
+static struct mw_own *g_fw_new, *g_fx_new[2];          /* (being built) */
+
+/* a new catalog of n entries: mw_fw_entry for each, then mw_fw_commit */
+EMSCRIPTEN_KEEPALIVE int mw_fw_begin(mw_t *w, int n)
+{
+    (void)w;
+    own_free(g_fw_new);
+    g_fw_new = calloc(1, sizeof *g_fw_new);
+    if (!g_fw_new || n < 0)
+        return -1;
+    g_fw_new->list = calloc((size_t)(n ? n : 1), sizeof(rfm_move_fw_t));
+    g_fw_new->count = n;
+    return g_fw_new->list ? 0 : -1;
+}
+/* entry i: strings (installed / desc may be NULL), thumb 512 bytes or NULL, the category bits, the main one 0..4 */
+EMSCRIPTEN_KEEPALIVE int mw_fw_entry(int i, const char *id, const char *name, const char *version, const char *installed,
+                                     const char *desc, const uint8_t *thumb, int cats, int cat)
+{
+    rfm_move_fw_t *e;
+    if (!g_fw_new || i < 0 || i >= g_fw_new->count)
+        return -1;
+    e = (rfm_move_fw_t *)g_fw_new->list + i;
+    e->id = own_str(g_fw_new, id), e->name = own_str(g_fw_new, name), e->version = own_str(g_fw_new, version);
+    e->installed = installed && installed[0] ? own_str(g_fw_new, installed) : NULL;
+    e->desc = own_str(g_fw_new, desc);
+    if (thumb) {
+        uint8_t *t = malloc(RFM_MOVE_FW_THUMB_BYTES);
+        if (t)
+            memcpy(t, thumb, RFM_MOVE_FW_THUMB_BYTES);
+        e->thumb = own_keep(g_fw_new, t);
+    }
+    e->cats = (uint8_t)cats, e->cat = (uint8_t)cat;
+    return 0;
+}
+EMSCRIPTEN_KEEPALIVE int mw_fw_commit(mw_t *w)
+{
+    struct mw_own *old = w->fw_own;
+    if (!g_fw_new)
+        return -1;
+    BEGIN(w);
+    w->fw_own = g_fw_new, g_fw_new = NULL;
+    rfm_move_fw_list(&w->s.core, w->fw_own->list, w->fw_own->count);
+    own_free(old);
+    return w->nacts;
+}
+EMSCRIPTEN_KEEPALIVE void mw_fw_installed(mw_t *w, int i, const char *version)
+{
+    if (!w->fw_own || i < 0 || i >= w->fw_own->count)
+        return;
+    rfm_move_fw_installed(&w->s.core, i, version && version[0] ? own_str(w->fw_own, version) : NULL);
+}
+EMSCRIPTEN_KEEPALIVE int mw_fw_slots(mw_t *w, const char *a, const char *b, const char *c)
+{
+    const char *const ids[3] = { a, b, c };
+    BEGIN(w);
+    rfm_move_fw_slots(&w->s.core, ids);
+    return w->nacts;
+}
+EMSCRIPTEN_KEEPALIVE int mw_fw_progress(mw_t *w, const char *id, int pct)
+{
+    BEGIN(w);
+    rfm_move_fw_progress(&w->s.core, id, pct);
+    return w->nacts;
+}
+EMSCRIPTEN_KEEPALIVE int mw_fw_library(mw_t *w, const uint8_t *b, uint32_t n) { return rfm_move_fw_library(&w->s.core, b, n); }
+/* the library now into mw_blob(w, 0): its length */
+EMSCRIPTEN_KEEPALIVE uint32_t mw_fw_library_save(mw_t *w)
+{
+    const uint32_t n = rfm_move_fw_library_save(&w->s.core, w->blob[0], RFM_MOVE_PROJECT_MAX);
+    w->nblobs = n > 0, w->blob_len[0] = n;
+    return n;
+}
+EMSCRIPTEN_KEEPALIVE int mw_fw_flush(mw_t *w)
+{
+    BEGIN(w);
+    rfm_move_fw_flush(&w->s.core);
+    return w->nacts;
+}
+EMSCRIPTEN_KEEPALIVE void mw_fw_voices(mw_t *w, int n) { rfm_move_fw_voices(&w->s.core, n); }
+EMSCRIPTEN_KEEPALIVE int mw_fw_sounding(const mw_t *w) { return rfm_move_fw_sounding(&w->s.core); }
+EMSCRIPTEN_KEEPALIVE int mw_fw_active(const mw_t *w) { return rfm_move_fw_active(&w->s.core); }
+EMSCRIPTEN_KEEPALIVE int mw_fw_level(const mw_t *w, int slot) { return rfm_move_fw_level(&w->s.core, slot); }
+EMSCRIPTEN_KEEPALIVE void mw_fw_states(mw_t *w, int slot, uint32_t used) { rfm_move_fw_states(&w->s.core, slot, used); }
+EMSCRIPTEN_KEEPALIVE int mw_fw_lib_bytes(void) { return RFM_MOVE_FW_LIB_BYTES; }
+
+/* the FX modules of a kind: mw_fx_begin(kind, n), mw_fx_module, mw_fx_param (and mw_fx_word), mw_fx_commit */
+EMSCRIPTEN_KEEPALIVE int mw_fx_begin(int kind, int n)
+{
+    if (kind < 0 || kind > 1 || n < 0)
+        return -1;
+    own_free(g_fx_new[kind]);
+    g_fx_new[kind] = calloc(1, sizeof *g_fx_new[kind]);
+    if (!g_fx_new[kind])
+        return -1;
+    g_fx_new[kind]->list = calloc((size_t)(n ? n : 1), sizeof(rfm_move_fx_module_t));
+    g_fx_new[kind]->count = n;
+    return g_fx_new[kind]->list ? 0 : -1;
+}
+EMSCRIPTEN_KEEPALIVE int mw_fx_module(int kind, int i, const char *name, int nparams)
+{
+    struct mw_own *o = kind >= 0 && kind < 2 ? g_fx_new[kind] : NULL;
+    rfm_move_fx_module_t *md;
+    if (!o || i < 0 || i >= o->count || nparams < 0)
+        return -1;
+    md = (rfm_move_fx_module_t *)o->list + i;
+    md->name = own_str(o, name);
+    md->params = own_keep(o, calloc((size_t)(nparams ? nparams : 1), sizeof(rfm_move_fx_param_t)));
+    md->nparams = md->params ? nparams : 0;
+    return md->params ? 0 : -1;
+}
+EMSCRIPTEN_KEEPALIVE int mw_fx_param(int kind, int i, int k, const char *name, int nwords, int def, int dry_wet)
+{
+    struct mw_own *o = kind >= 0 && kind < 2 ? g_fx_new[kind] : NULL;
+    rfm_move_fx_param_t *p;
+    if (!o || i < 0 || i >= o->count || k < 0 || k >= ((rfm_move_fx_module_t *)o->list)[i].nparams)
+        return -1;
+    p = (rfm_move_fx_param_t *)((rfm_move_fx_module_t *)o->list)[i].params + k;
+    p->name = own_str(o, name), p->def = (uint8_t)def, p->dry_wet = (uint8_t)(dry_wet != 0);
+    p->words = nwords > 0 ? own_keep(o, calloc((size_t)nwords, sizeof(char *))) : NULL;
+    p->nwords = p->words ? nwords : 0;
+    return 0;
+}
+EMSCRIPTEN_KEEPALIVE int mw_fx_word(int kind, int i, int k, int j, const char *word)
+{
+    struct mw_own *o = kind >= 0 && kind < 2 ? g_fx_new[kind] : NULL;
+    rfm_move_fx_param_t *p;
+    if (!o || i < 0 || i >= o->count || k < 0 || k >= ((rfm_move_fx_module_t *)o->list)[i].nparams)
+        return -1;
+    p = (rfm_move_fx_param_t *)((rfm_move_fx_module_t *)o->list)[i].params + k;
+    if (j < 0 || j >= p->nwords)
+        return -1;
+    ((const char **)p->words)[j] = own_str(o, word);
+    return 0;
+}
+EMSCRIPTEN_KEEPALIVE int mw_fx_commit(mw_t *w, int kind)
+{
+    struct mw_own *old;
+    if (kind < 0 || kind > 1 || !g_fx_new[kind])
+        return -1;
+    old = w->fx_own[kind];
+    w->fx_own[kind] = g_fx_new[kind], g_fx_new[kind] = NULL;
+    rfm_move_fx_modules(&w->s.core, kind, w->fx_own[kind]->list, w->fx_own[kind]->count);
+    own_free(old);
+    return 0;
+}
+EMSCRIPTEN_KEEPALIVE int mw_fx_refused(mw_t *w, int kind, int slot)
+{
+    BEGIN(w);
+    rfm_move_fx_refused(&w->s.core, kind, slot);
+    return w->nacts;
+}
+EMSCRIPTEN_KEEPALIVE int mw_fx_sync(mw_t *w)
+{
+    BEGIN(w);
+    rfm_move_fx_sync(&w->s.core);
+    return w->nacts;
+}

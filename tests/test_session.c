@@ -25,7 +25,7 @@ static rfm_move_act_t g_acts[1024];
 static int g_nacts, g_opens, g_closes, g_released, g_lost, g_lost_why, g_lost_live, g_bye, g_status;
 static uint32_t g_changed;
 static uint8_t g_saved[RFM_MOVE_PROJECT_MAX];
-static uint32_t g_saved_len, g_settings_len;
+static uint32_t g_saved_len, g_settings_len, g_lib_len;
 static int g_stop_on_lost;
 static uint32_t g_att;                                /* the last RFM1CS_EV_OPEN's attempt */
 static char g_conn_text[256];                         /* the status line when CONNECTED came */
@@ -63,6 +63,8 @@ static void on_event(void *ctx, const rfm1cs_event_t *ev)
             memcpy(g_saved, ev->data, ev->len), g_saved_len = ev->len;
         if (ev->act->kind == RFM_MOVE_ACT_SETTINGS)
             g_settings_len = ev->len;
+        if (ev->act->kind == RFM_MOVE_ACT_FW_LIBRARY && ev->data == ev->act->data)
+            g_lib_len = ev->len;
         break;
     }
 }
@@ -810,9 +812,10 @@ static void test_file(void)
     memcpy(g, f, n), g[n] = 0;
     bad_file(g, n + 1, "Not a Move project file: 1 bytes after the last project.");
     MUT(g[0] = 0x58, "Not a Move project file: it does not start with RMVP.");
-    memset(g, 0, RFM1CS_FILE_MAX + 1);                 /* (RFM_MOVE_PROJECT_MAX 39200: the web had 39072 written down) */
-    CHECK(RFM1CS_FILE_MAX == 8 + 32 * (10 + 39200));
-    bad_file(g, RFM1CS_FILE_MAX + 1, "Not a Move project file: it is 1254729 bytes, more than a full set (1254728).");
+    memset(g, 0, RFM1CS_FILE_MAX + 1);                 /* (RFM_MOVE_PROJECT_MAX 39416 since 0.4.0's FX setup, 39200
+                                                         * before: the web had 39072 written down) */
+    CHECK(RFM1CS_FILE_MAX == 8 + 32 * (10 + 39416));
+    bad_file(g, RFM1CS_FILE_MAX + 1, "Not a Move project file: it is 1261641 bytes, more than a full set (1261640).");
     MUT(g[40] ^= 0x55, "Not a Move project file: project 1 (slot 4) is damaged.");
     bad_file(f, 8, "Not a Move project file: project 1 is cut off.");
     bad_file(f, 0, "Not a Move project file: it does not start with RMVP.");
@@ -845,8 +848,39 @@ static void test_file(void)
     }
 }
 
+/* 0.4.0: the browser's actions pass through as EV_ACTION; FW_LIBRARY's blob in ev->data; the flush writes it */
+static void test_firmware_actions(void)
+{
+    rfm1cs_session_t *s = &S;
+    rfm_move_fw_t fw[2];
+    int i, loads = 0, active = 0;
+    memset(fw, 0, sizeof fw);
+    fw[0].id = "alpha", fw[0].name = "Alpha", fw[0].version = "1.0", fw[0].installed = "1.0", fw[0].cat = 0;
+    fw[1].id = "beta", fw[1].name = "Beta", fw[1].version = "2.0", fw[1].installed = "2.0", fw[1].cat = 1;
+    rfm1cs_session_init(s, NULL, 0, "x", on_event, s);
+    rfm_move_fw_list(&s->core, fw, 2);
+    connect(s, 100);
+    clear();
+    g_lib_len = 0;
+    input(s, 200, 0xB0, MR_CC_TRACK1, 127), input(s, 205, 0x90, MR_NOTE_STEP0, 127);   /* Track 1 + step 1 */
+    input(s, 210, 0x80, MR_NOTE_STEP0, 0), input(s, 215, 0xB0, MR_CC_TRACK1, 0);
+    input(s, 220, 0x90, MR_NOTE_STEP0 + 1, 127), input(s, 225, 0x80, MR_NOTE_STEP0 + 1, 0);   /* step 2: All */
+    input(s, 230, 0x90, MR_NOTE_PAD0 + 24, 100), input(s, 235, 0x80, MR_NOTE_PAD0 + 24, 0);   /* Alpha */
+    input(s, 240, 0xB0, MR_CC_SAMPLE, 127), input(s, 245, 0xB0, MR_CC_SAMPLE, 0);      /* a favourite */
+    input(s, 250, 0xB0, MR_CC_JOG_CLICK, 127), input(s, 255, 0xB0, MR_CC_JOG_CLICK, 0);   /* load it */
+    input(s, 260, 0xB0, MR_CC_TRACK1 - 1, 127), input(s, 265, 0xB0, MR_CC_TRACK1 - 1, 0);   /* Track 2 */
+    for (i = 0; i < g_nacts; i++)
+        loads += g_acts[i].kind == RFM_MOVE_ACT_FW_LOAD && g_acts[i].slot == 0 && g_acts[i].value == 0,
+        active += g_acts[i].kind == RFM_MOVE_ACT_FW_ACTIVE && g_acts[i].slot == 1;
+    CHECK(loads == 1 && active == 1 && g_lib_len == 0);
+    rfm1cs_session_flush(s);
+    CHECK(g_lib_len > 256);
+    rfm1cs_session_stop(s);
+}
+
 int main(void)
 {
+    test_firmware_actions();
     test_handshake();
     test_give_up_bye_garbled();
     test_leds_screen_input();

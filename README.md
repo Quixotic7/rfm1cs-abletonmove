@@ -410,6 +410,47 @@ Move's: a bar, Shift a 16th), a hold never clears a step, an empty slot makes a 
 - **Not here**: copying a range of steps, per-step automation shown as red steps, count-in on / off, the
   Move's Repeat for drums (step 11 is the arp).
 
+## Firmwares (0.4.0): the projects view's Tracks 1..3, FX setup, states
+
+The owner's design (move-firmware-browser-design.md, revision 2) and its mockup's screens (ported pixel for pixel,
+`src/fw.c`). It is on once the host calls `rfm_move_fw_list` (a Move-hosted RemoteFM1); a host that never does keeps
+the projects view as it was (Track 4, Session leaves). The API, the actions, the library blob and the threading are in
+the host guide's v0.4.0 section and `include/rfm1cs/move.h`.
+
+Shift + step 1 (Track 1 held + step 1 in FM-1 and MIDI mode) opens the view on the firmware track played (Track 4 if
+it was left there). Track 1..3: the three firmware slots (a tap shows it and makes it the one the controls play:
+`FW_ACTIVE`); Track 4: the projects, as before. Track LEDs: the loaded firmware's colour (full shown, dim otherwise),
+an empty slot faint white, a slot past the host's voices blinking slowly; in FX setup the pages' colours.
+
+| On a firmware track | Does |
+|---|---|
+| Pads | a bank of up to 32 (A-Z; Favorites in their order); a pad selects; this track's firmware breathes, on the screen a white cell; one on another track a dotted cell |
+| Jog press / turn | load into this track (`FW_LOAD`; a bar until the host says) / the description, a row a detent (0: the name view) |
+| Steps 1 / 2, 3..7, 8..16 | Favorites / All (installed), the catalog's five categories, nine user tags: any of the categories (OR), within Favorites / All (AND) |
+| Sampling, knob 1, Capture held + step | favourite, pad colour (16), tag (a free step makes "Tag N") |
+| Delete | unloads this track's firmware at once (`FW_UNLOAD`), with a message |
+| Left / Right | banks (lit when there is one) |
+| Mute | the catalog: steps 1 Updates / 2 New (toggles), 3..16 the same filters; an update breathes with an up arrow, a firmware not on the Move faint white, dashed under; a jog press downloads or updates (`FW_DOWNLOAD`) |
+| Loop | the firmware's states (Move's Set Overview): a stored state loads, an empty pad saves there, Copy + pad saves over, Delete + pad deletes (`STATE_*`); Loop or Back leaves |
+| Track 1..3 held + volume | that slot's level (`FW_LEVEL`; in any mode with the browser on); the volume alone stays MASTER |
+| Session | FX setup: Track 1 MIDI FX, 2 Routing, 3 Audio FX, 4 Mixer; pads 1..3 the page's slots; steps a MIDI FX slot's track (one, or all: the same step again) or a firmware's 16-track filter; the jog the module list and load; knobs the module's parameters (Mixer: 1 level, 2 pan, 3..5 sends); Delete empties an FX slot; Session or Back leaves. A host with no modules has no MIDI FX / Audio FX page |
+| Back | one level out (Capture, States, the description, the selection, the catalog), then out of the view |
+
+Decisions where the spec left a gap:
+
+- States sit in a mode inside a firmware track, on **Loop** (unused there; Move's Loop is a mode button), laid out as
+  Move's Set Overview (32 pads, top-left = 1, Copy / Delete + pad as there). The host names the stored ones with
+  `rfm_move_fw_states`.
+- The three levels are the library's (with the slots), not the project's; pan, sends, filters and modules are the
+  project's (version 5). `MIX` carries the level too; a level change alone is `FW_LEVEL`.
+- A MIDI FX slot's filter is one track or all; a firmware's filter any set. Live pads are not tagged (`track` 0) and go
+  straight to the shown firmware; the sequencer's MIDI has `track` 1..16.
+- The sounding rule for `voices`: the active slot always, then the others in slot order while voices are left.
+- The view's state (the track shown, Favorites / All, the filter, the catalog's toggles, the FX page) is in the
+  settings (version 4).
+- The mockup's text drew font5x7's first 7 rows; the core draws its 8-row cell (descenders), and the reference
+  (`tests/move_v2_ref.mjs`) is made the same way.
+
 ## Decisions where the design left a gap
 
 The sequencer's (the design gives labels only):
@@ -621,6 +662,13 @@ blob round trip and a fuzzed loader (every truncation, 3000 random blobs, 20000 
 the project info for the grid (from blobs, a broken one refused), the popups' life (a held step, Loop, tempo, CCs,
 a lock, messages over popups), and eight golden screens (track view, the step popup, session, project grid, the
 project popup, the Track 4 menu, the count-in, a message: `move_seq_*.pbm` in the build directory).
+
+`move_fw` (test_move_fw.c, 0.4.0): a host with no firmware list, the lists and filters (OR / AND), banks, load /
+unload / active, levels and voices (the slow blink), the library's edits and its blob (a round trip, every damaged
+byte refused), the catalog's marks and downloads, FX setup's pages and actions, the project's FX block (version 5,
+version 4 still loading), states, the sequencer's MIDI track; then the mockup's 34 gallery screens set up on a live
+core and compared with the mockup's pixels (`move_fwb_ref.h`; `fw_*.pbm` in the build directory). Regenerate the
+reference with `node tests/move_v2_ref.mjs move-firmware-browser-mockup.html [pbm-dir]`.
 
 ## Later phases
 

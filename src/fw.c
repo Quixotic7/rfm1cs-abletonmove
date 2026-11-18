@@ -1,0 +1,2270 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * Copyright (C) 2026 RemoteFM1 contributors */
+/* rfm_move's firmware browser (0.4.0): the projects view's Tracks 1..3 are three firmware slots, Track 4 the
+ * sequencer's projects as before; Mute there is the catalog, Loop the firmware's states, Session FX setup. The owner's
+ * design (move-firmware-browser-design.md) and its mockup's screens (move-firmware-browser-mockup.html), ported
+ * pixel for pixel: the mockup's own primitives below (its FB), font5x7 in its 8-row cell. Also the library blob, FX
+ * setup's part of the project blob, and the sequencer's MIDI tagged with its track. Portable C99, no allocation:
+ * the catalog and the FX modules are the host's arrays (move.h has the contract). */
+#include <stdio.h>
+#include <string.h>
+
+#include "move_int.h"
+#include "../third_party/moveremote/common/font5x7.h"
+
+#define clampi rfmv_clampi
+typedef rfmv_rgb_t rgb_t;
+typedef mr_canvas_t B;
+#define W 128
+#define H 64
+
+enum { BUSY_NONE, BUSY_LOAD, BUSY_DOWNLOAD, BUSY_UPDATE };
+enum { ST_NEW, ST_UPDATE, ST_OK };                      /* a firmware in the catalog: not on the Move, an update, current */
+#define CAT0 3                                          /* the first category step */
+#define CAP_MS 1200                                     /* Capture + step: the step's name this long */
+#define INFO_ROWS 5
+#define LINES 96                                        /* a description's rows at most (20 columns) */
+#define LW 22
+
+/* the projects' 16 colours (project.c's PROJ_RGB: the mockup's PAL) */
+static const rgb_t PAL[16] = {
+    { 255, 36, 36 },  { 255, 120, 0 },  { 255, 200, 0 },  { 190, 255, 40 }, { 40, 255, 70 },  { 0, 255, 170 },
+    { 20, 220, 255 }, { 40, 120, 255 }, { 90, 60, 255 },  { 170, 60, 255 }, { 255, 50, 210 }, { 255, 110, 150 },
+    { 255, 160, 100 }, { 160, 110, 60 }, { 150, 150, 160 }, { 255, 255, 255 },
+};
+static const char *const PALNAME[16] = { "Red", "Orange", "Yellow", "Lime", "Green", "Mint", "Cyan", "Blue",
+                                         "Indigo", "Purple", "Magenta", "Pink", "Peach", "Brown", "Grey", "White" };
+static const char *const CATS[5] = { "Synth", "Groovebox", "Chords", "Drums", "Other" };
+static const uint8_t CATCOL[5] = { 6, 1, 9, 0, 5 };    /* a category's default pad colour (palette index) */
+static const rgb_t FAVCOL = { 255, 70, 110 }, AMBER = { 255, 170, 30 }, WHITE = { 255, 255, 255 }, OFF = { 0, 0, 0 };
+static const rgb_t TRACK4 = { 255, 42, 42 };
+static const rgb_t FXCOL[4] = { { 0, 255, 170 }, { 255, 255, 255 }, { 255, 170, 30 }, { 255, 110, 150 } };
+static const char *const FXPAGE[4] = { "MIDI FX", "Routing", "Audio FX", "Mixer" };
+enum { PG_MIDI, PG_ROUTE, PG_AUDIO, PG_MIX };
+
+static int ifloor_div(int a, int b) { return a >= 0 ? a / b : -((-a + b - 1) / b); }
+
+/* ================================================================ the mockup's primitives === */
+static void px(B *g, int x, int y, int v)
+{
+    if (x >= 0 && x < W && y >= 0 && y < H)
+        g->px[y][x] = (uint8_t)(v != 0);
+}
+static void fill(B *g, int x, int y, int w, int h, int v)
+{
+    int i, j;
+    for (j = y; j < y + h; j++)
+        for (i = x; i < x + w; i++)
+            px(g, i, j, v);
+}
+static void rect(B *g, int x, int y, int w, int h)
+{
+    int i, j;
+    for (i = x; i < x + w; i++)
+        px(g, i, y, 1), px(g, i, y + h - 1, 1);
+    for (j = y; j < y + h; j++)
+        px(g, x, j, 1), px(g, x + w - 1, j, 1);
+}
+static void drect(B *g, int x, int y, int w, int h)  /* a dotted border: every other pixel */
+{
+    int i, j;
+    for (i = x; i < x + w; i += 2)
+        px(g, i, y, 1), px(g, i, y + h - 1, 1);
+    for (j = y; j < y + h; j += 2)
+        px(g, x, j, 1), px(g, x + w - 1, j, 1);
+}
+static void hline(B *g, int x, int y, int w, int dash)
+{
+    int i;
+    for (i = 0; i < w; i++)
+        if (!dash || ((i >> 1) & 1) == 0)
+            px(g, x + i, y, 1);
+}
+static int tw(const char *s, int sc) { const int n = (int)strlen(s); return n * 6 * sc - sc; }
+static void text(B *g, int x, int y, const char *s, int sc, int v)
+{
+    for (; *s; s++, x += 6 * sc) {
+        const uint8_t *gl = mr_glyph(*s);
+        int col, r;
+        for (col = 0; col < 5; col++)
+            for (r = 0; r < 8; r++)                     /* (the font's 8-row cell: descenders; the mockup drew 7) */
+                if (gl[col] >> r & 1)
+                    fill(g, x + col * sc, y + r * sc, sc, sc, v);
+    }
+}
+static void ctext_in(B *g, int y, const char *s, int sc, int x0, int w)
+{
+    text(g, x0 + ifloor_div(w - tw(s, sc), 2), y, s, sc, 1);
+}
+static void ctext(B *g, int y, const char *s, int sc) { ctext_in(g, y, s, sc, 0, W); }
+static void bits(B *g, const uint8_t *b, int n, int x0, int y0)
+{
+    const int st = n / 8;
+    int x, y;
+    for (y = 0; y < n; y++)
+        for (x = 0; x < n; x++)
+            if (b[y * st + (x >> 3)] & (0x80 >> (x & 7)))
+                px(g, x0 + x, y0 + y, 1);
+}
+static void icon(B *g, int x, int y, const char *const *rows, int n)
+{
+    int i, j;
+    for (j = 0; j < n; j++)
+        for (i = 0; rows[j][i]; i++)
+            if (rows[j][i] == '1')
+                px(g, x + i, y + j, 1);
+}
+static void strip(B *g, int n, int cur)
+{
+    int seg, i;
+    if (n < 2)
+        return;
+    seg = ifloor_div(W - (n - 1) * 2, n);
+    for (i = 0; i < n; i++)
+        fill(g, i * (seg + 2), i == cur ? 61 : 62, seg, i == cur ? 3 : 1, 1);
+}
+static void line(B *g, int x0, int y0, int x1, int y1)
+{
+    const int dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = -(y1 > y0 ? y1 - y0 : y0 - y1);
+    const int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    int e = dx + dy;
+    for (;;) {
+        int e2;
+        px(g, x0, y0, 1);
+        if (x0 == x1 && y0 == y1)
+            break;
+        e2 = 2 * e;
+        if (e2 >= dy)
+            e += dy, x0 += sx;
+        if (e2 <= dx)
+            e += dx, y0 += sy;
+    }
+}
+static const char *const HEART[5] = { "01010", "11111", "11111", "01110", "00100" };
+static const char *const HEARTO[5] = { "01010", "10101", "10001", "01010", "00100" };
+static const char *const UP[5] = { "00100", "01110", "11111", "00100", "00100" };
+static const char *const DOWN[5] = { "00100", "00100", "11111", "01110", "00100" };
+static const char *const CHEV[3] = { "10001", "01010", "00100" };
+static const char *const UPMARK[2] = { "010", "111" };
+
+/* ================================================================ words === */
+/* the printable ASCII of s, at most cap - 1 (the mockup's ascii(): the host gives ASCII; anything else is skipped) */
+static void asc(const char *s, char *o, int cap)
+{
+    int n = 0;
+    for (; s && *s && n < cap - 1; s++)
+        if ((unsigned char)*s >= 32 && (unsigned char)*s < 127)
+            o[n++] = *s;
+    o[n] = 0;
+}
+static void cut(char *s, int n)                         /* s.slice(0, n) */
+{
+    if (n >= 0 && (int)strlen(s) > n)
+        s[n] = 0;
+}
+static int is_ws(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'; }
+/* the mockup's wrap(s, n): words to rows of n, long words cut; rows [skip, skip + cap) into out; returns the rows */
+static int wrap(const char *s, int n, char out[][LW], int skip, int cap)
+{
+    int total = 0;
+    char ln[LW];
+    int ll = 0;
+#define PUSH(str, len) do { if (total >= skip && total - skip < cap) { memcpy(out[total - skip], str, (size_t)(len)); \
+                                out[total - skip][len] = 0; } total++; } while (0)
+    while (*s) {
+        ll = 0;
+        while (*s && *s != '\n') {                      /* a paragraph */
+            const char *w;
+            int wl;
+            while (*s && *s != '\n' && is_ws(*s))
+                s++;
+            if (!*s || *s == '\n')
+                break;
+            w = s;
+            while (*s && !is_ws(*s))
+                s++;
+            wl = (int)(s - w);
+            while (wl > n) {
+                if (ll) {
+                    PUSH(ln, ll);
+                    ll = 0;
+                }
+                PUSH(w, n);
+                w += n, wl -= n;
+            }
+            if (!ll)
+                memcpy(ln, w, (size_t)wl), ll = wl;
+            else if (ll + 1 + wl <= n)
+                ln[ll] = ' ', memcpy(ln + ll + 1, w, (size_t)wl), ll += 1 + wl;
+            else {
+                PUSH(ln, ll);
+                memcpy(ln, w, (size_t)wl), ll = wl;
+            }
+        }
+        if (ll)
+            PUSH(ln, ll);
+        if (*s == '\n')
+            s++;
+    }
+#undef PUSH
+    return total;
+}
+/* two letters of a name: the first two words' initials, or its first two (the first upper case) */
+static void abbr(const char *name, char o[3])
+{
+    char a[64], s[64];
+    int i, n = 0, w = 0;
+    const char *p;
+    asc(name, a, sizeof a);
+    for (i = 0; a[i]; i++)
+        if ((a[i] >= 'A' && a[i] <= 'Z') || (a[i] >= 'a' && a[i] <= 'z') || (a[i] >= '0' && a[i] <= '9') || a[i] == ' ')
+            s[n++] = a[i];
+    s[n] = 0;
+    for (p = s; *p == ' '; p++) {}
+    memmove(s, p, strlen(p) + 1);
+    for (n = (int)strlen(s); n > 0 && s[n - 1] == ' '; n--)
+        s[n - 1] = 0;
+    for (p = s; *p && *p != ' '; p++) {}
+    while (*p == ' ')
+        p++;
+    if (*p)                                             /* (two words or more) */
+        o[0] = s[0], o[1] = *p, o[2] = 0, w = 2;
+    else {
+        o[0] = s[0], o[1] = s[0] ? s[1] : 0, o[2] = 0;
+        w = (int)strlen(o);
+    }
+    if (w == 2 && o[0] >= 'a' && o[0] <= 'z')
+        o[0] = (char)(o[0] - 32);
+}
+
+/* ================================================================ the catalog, the library === */
+static rfm_move_fw_state_t *F(rfm_move_t *m) { return &m->fw; }
+static const rfm_move_fw_t *ent(const rfm_move_t *m, int i) { return i >= 0 && i < m->fw.n ? &m->fw.list[i] : NULL; }
+static const char *ename(const rfm_move_t *m, int i) { const rfm_move_fw_t *e = ent(m, i); return e && e->name ? e->name : "?"; }
+static int installed(const rfm_move_t *m, int i) { const rfm_move_fw_t *e = ent(m, i); return e && e->installed && e->installed[0]; }
+static int status(const rfm_move_t *m, int i)
+{
+    const rfm_move_fw_t *e = ent(m, i);
+    if (!installed(m, i))
+        return ST_NEW;
+    return e->version && strcmp(e->installed, e->version) ? ST_UPDATE : ST_OK;
+}
+static int find_id(const rfm_move_t *m, const char *id)
+{
+    int i;
+    if (!id || !id[0])
+        return -1;
+    for (i = 0; i < m->fw.n; i++)
+        if (m->fw.list[i].id && !strcmp(m->fw.list[i].id, id))
+            return i;
+    return -1;
+}
+static int rec_of(const rfm_move_t *m, int fw)
+{
+    int r;
+    if (fw < 0)
+        return -1;
+    for (r = 0; r < m->fw.nrec; r++)
+        if (m->fw.rec[r].fw == fw)
+            return r;
+    return -1;
+}
+static int fav_pos(const rfm_move_t *m, int r)
+{
+    int k;
+    for (k = 0; r >= 0 && k < m->fw.nfav; k++)
+        if (m->fw.fav[k] == r)
+            return k;
+    return -1;
+}
+static int rec_used(const rfm_move_t *m, int r)
+{
+    const rfm_move_lib_rec_t *c = &m->fw.rec[r];
+    return c->color || c->tag_set || fav_pos(m, r) >= 0;
+}
+/* the record of firmware fw, made if needed (-1: the library is full) */
+static int rec_make(rfm_move_t *m, int fw)
+{
+    rfm_move_fw_state_t *f = F(m);
+    int r = rec_of(m, fw), k;
+    const rfm_move_fw_t *e = ent(m, fw);
+    if (r >= 0 || !e || !e->id || strlen(e->id) >= RFM_MOVE_FW_ID_MAX)
+        return r;
+    if (f->nrec >= RFM_MOVE_FW_LIB_MAX)                 /* full: one that keeps nothing goes */
+        for (r = 0; r < f->nrec; r++)
+            if (!rec_used(m, r)) {
+                f->rec[r] = f->rec[--f->nrec];
+                for (k = 0; k < f->nfav; k++)
+                    if (f->fav[k] == f->nrec)
+                        f->fav[k] = (uint16_t)r;
+                break;
+            }
+    if (f->nrec >= RFM_MOVE_FW_LIB_MAX)
+        return -1;
+    r = f->nrec++;
+    memset(&f->rec[r], 0, sizeof f->rec[r]);
+    strcpy(f->rec[r].id, e->id);
+    f->rec[r].fw = (int16_t)fw;
+    return r;
+}
+static void lib_changed(rfm_move_t *m) { m->fw.lib_dirty = 1, m->fw.lib_ms = rfmv_now_ms(m); }
+static void resolve(rfm_move_t *m)                      /* the records' and the slots' list indexes */
+{
+    rfm_move_fw_state_t *f = F(m);
+    int r, s;
+    for (r = 0; r < f->nrec; r++)
+        f->rec[r].fw = (int16_t)find_id(m, f->rec[r].id);
+    for (s = 0; s < RFM_MOVE_FW_SLOTS; s++)
+        f->slot_fw[s] = (int16_t)find_id(m, f->slot_id[s]);
+}
+static int is_fav(const rfm_move_t *m, int fw) { return fav_pos(m, rec_of(m, fw)) >= 0; }
+static int color(const rfm_move_t *m, int fw)           /* palette index 0..15 */
+{
+    const int r = rec_of(m, fw);
+    const rfm_move_fw_t *e = ent(m, fw);
+    if (r >= 0 && m->fw.rec[r].color)
+        return m->fw.rec[r].color - 1;
+    return e && e->cat < 5 ? CATCOL[e->cat] : 14;
+}
+static int has_tag_r(const rfm_move_t *m, int fw, int r, int step);
+static int has_tag(const rfm_move_t *m, int fw, int step) { return has_tag_r(m, fw, rec_of(m, fw), step); }
+static int tag_defined(const rfm_move_t *m, int step)
+{
+    return (step >= CAT0 && step < CAT0 + 5) || (step >= 8 && step <= 16 && m->fw.tag[step - 8][0]);
+}
+static void tag_name(const rfm_move_t *m, int step, char *o, int cap)
+{
+    const int c = step - CAT0;
+    if (c >= 0 && c < 5)
+        snprintf(o, (size_t)cap, "%s", CATS[c]);
+    else if (step >= 8 && step <= 16 && m->fw.tag[step - 8][0])
+        snprintf(o, (size_t)cap, "%s", m->fw.tag[step - 8]);
+    else
+        snprintf(o, (size_t)cap, "Tag %d", step - 7);
+}
+static int track_of(const rfm_move_t *m, int fw)        /* the first slot holding it, -1 */
+{
+    int s;
+    for (s = 0; fw >= 0 && s < RFM_MOVE_FW_SLOTS; s++)
+        if (m->fw.slot_fw[s] == fw)
+            return s;
+    return -1;
+}
+
+/* ---- the list the pads show: the catalog (Mute) or Favorites / All, then the category / tag filter */
+static int has_tag_r(const rfm_move_t *m, int fw, int r, int step)
+{
+    const int c = step - CAT0;
+    const rfm_move_fw_t *e = ent(m, fw);
+    if (r >= 0 && (m->fw.rec[r].tag_set >> (step - 1) & 1))
+        return m->fw.rec[r].tag_on >> (step - 1) & 1;
+    return c >= 0 && c < 5 && e && (e->cats >> c & 1);
+}
+static int passes(const rfm_move_t *m, int fw)
+{
+    const uint16_t fl = m->s.fw_filter;
+    int s, r;
+    if (m->fw.catalog && m->s.fw_cat_scope) {
+        const int st = status(m, fw);
+        if (!(((m->s.fw_cat_scope & 1) && st == ST_UPDATE) || ((m->s.fw_cat_scope & 2) && st == ST_NEW)))
+            return 0;
+    }
+    if (!fl)
+        return 1;
+    r = rec_of(m, fw);
+    for (s = CAT0; s <= 16; s++)
+        if ((fl >> (s - 1) & 1) && has_tag_r(m, fw, r, s))
+            return 1;
+    return 0;
+}
+static int in_list(const rfm_move_t *m, int fw)
+{
+    if (fw < 0 || fw >= m->fw.n)
+        return 0;
+    if (m->fw.catalog)
+        return passes(m, fw);
+    return installed(m, fw) && (m->s.fw_scope == 1 || is_fav(m, fw)) && passes(m, fw);
+}
+/* the list's length; its rows [from, from + cnt) into out (list indexes, -1 past the end) */
+static int walk(const rfm_move_t *m, int from, int cnt, int *out)
+{
+    int i, n = 0;
+    for (i = 0; i < cnt; i++)
+        out[i] = -1;
+    if (m->fw.catalog || m->s.fw_scope == 1) {
+        for (i = 0; i < m->fw.n; i++)
+            if ((m->fw.catalog || installed(m, i)) && passes(m, i)) {
+                if (n >= from && n < from + cnt)
+                    out[n - from] = i;
+                n++;
+            }
+    } else
+        for (i = 0; i < m->fw.nfav; i++) {
+            const int fw = m->fw.rec[m->fw.fav[i]].fw;
+            if (fw >= 0 && installed(m, fw) && passes(m, fw)) {
+                if (n >= from && n < from + cnt)
+                    out[n - from] = fw;
+                n++;
+            }
+        }
+    return n;
+}
+static int list_len(const rfm_move_t *m) { return walk(m, 0, 0, NULL); }
+static int nbanks_n(int n) { return n > 32 ? (n + 31) / 32 : 1; }
+static int nbanks(const rfm_move_t *m) { return nbanks_n(list_len(m)); }
+static int bank_key(const rfm_move_t *m) { return m->fw.catalog ? 2 : m->s.fw_scope ? 1 : 0; }
+static int cur_bank(const rfm_move_t *m)
+{
+    const int b = m->fw.bank[bank_key(m)], n = nbanks(m);
+    return b < n - 1 ? b : n - 1;
+}
+static int bank_ids(const rfm_move_t *m, int ids[32])   /* the bank shown (list indexes, -1 past its end); its size */
+{
+    const int n = walk(m, cur_bank(m) * 32, 32, ids);
+    const int left = n - cur_bank(m) * 32;
+    return left < 0 ? 0 : left > 32 ? 32 : left;
+}
+
+/* ================================================================ actions === */
+static void send(rfm_move_t *m, rfm_move_act_t *a)
+{
+    a->frame = m->seq.frame;
+    if (m->fn)
+        m->fn(m->ctx, a);
+}
+static void act_fw(rfm_move_t *m, int kind, int slot, int fw, int value)
+{
+    rfm_move_act_t a;
+    const rfm_move_fw_t *e = ent(m, fw);
+    memset(&a, 0, sizeof a);
+    a.kind = (uint8_t)kind, a.index = (uint8_t)(slot < 0 ? 0 : slot), a.slot = a.index, a.value = (int16_t)value;
+    if (e && e->id)
+        a.data = (const uint8_t *)e->id, a.len = (uint32_t)strlen(e->id);
+    send(m, &a);
+}
+static void act_mix(rfm_move_t *m, int slot)
+{
+    const rfm_move_fxset_t *x = &m->seq.fx;
+    rfm_move_act_t a;
+    int k;
+    memset(&a, 0, sizeof a);
+    a.kind = RFM_MOVE_ACT_MIX, a.index = (uint8_t)slot, a.slot = (uint8_t)slot;
+    a.mix[0] = m->fw.level[slot], a.mix[1] = x->pan[slot];
+    for (k = 0; k < RFM_MOVE_FX_SLOTS; k++)
+        a.mix[2 + k] = x->send[slot][k];
+    send(m, &a);
+}
+static void act_route(rfm_move_t *m)
+{
+    const rfm_move_fxset_t *x = &m->seq.fx;
+    rfm_move_act_t a;
+    int k;
+    memset(&a, 0, sizeof a);
+    a.kind = RFM_MOVE_ACT_ROUTE;
+    for (k = 0; k < 3; k++)
+        a.filt[k] = x->ffilt[k], a.filt[3 + k] = x->mfx[k].filt;
+    send(m, &a);
+}
+static rfm_move_fxslot_t *fxslot(rfm_move_t *m, int kind, int slot)
+{
+    return kind == RFM_MOVE_FX_MIDI ? &m->seq.fx.mfx[slot] : &m->seq.fx.afx[slot];
+}
+static const rfm_move_fx_module_t *module(const rfm_move_t *m, int kind, int mod)
+{
+    return mod >= 0 && mod < m->fw.nmods[kind] ? &m->fw.mods[kind][mod] : NULL;
+}
+static int nparams(const rfm_move_fx_module_t *md) { return !md ? 0 : md->nparams < RFM_MOVE_FX_PARAMS ? md->nparams : RFM_MOVE_FX_PARAMS; }
+static void act_fx_load(rfm_move_t *m, int kind, int slot)
+{
+    const rfm_move_fxslot_t *x = fxslot(m, kind, slot);
+    rfm_move_act_t a;
+    memset(&a, 0, sizeof a);
+    a.kind = RFM_MOVE_ACT_FX_LOAD, a.fx = (uint8_t)kind, a.index = (uint8_t)slot, a.slot = (uint8_t)slot;
+    a.value = x->mod;
+    if (x->mod >= 0)
+        a.data = (const uint8_t *)x->name, a.len = (uint32_t)strlen(x->name);
+    send(m, &a);
+}
+static void act_fx_param(rfm_move_t *m, int kind, int slot, int k)
+{
+    const rfm_move_fxslot_t *x = fxslot(m, kind, slot);
+    rfm_move_act_t a;
+    memset(&a, 0, sizeof a);
+    a.kind = RFM_MOVE_ACT_FX_PARAM, a.fx = (uint8_t)kind, a.index = (uint8_t)slot, a.slot = (uint8_t)slot;
+    a.param = (uint8_t)k, a.value = x->val[k];
+    send(m, &a);
+}
+
+/* the sequencer's MIDI, tagged with its track 1..16 (0: not the sequencer's) */
+void rfmv_emit_midi_t(rfm_move_t *m, int track, int status, int d1, int d2)
+{
+    rfm_move_act_t a;
+    memset(&a, 0, sizeof a);
+    a.frame = m->seq.frame;
+    a.kind = RFM_MOVE_ACT_MIDI, a.n = 3, a.track = (uint8_t)track;
+    a.bytes[0] = (uint8_t)status, a.bytes[1] = (uint8_t)(d1 & 127), a.bytes[2] = (uint8_t)(d2 & 127);
+    if (m->fn)
+        m->fn(m->ctx, &a);
+}
+
+/* ================================================================ the popups === */
+static void pop(rfm_move_t *m, int kind, int a, int b)
+{
+    rfm_move_fw_state_t *f = F(m);
+    f->pop = (uint8_t)kind, f->pop_a = (int16_t)a, f->pop_b = (int16_t)b, f->pop_ms = rfmv_now_ms(m);
+}
+static void pop_msg(rfm_move_t *m, int kind, int a, int b, const char *t)
+{
+    pop(m, kind, a, b);
+    snprintf(m->fw.pop_text, sizeof m->fw.pop_text, "%s", t ? t : "");
+}
+static int pop_up(const rfm_move_t *m, int kind)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    return f->pop && (kind < 0 || f->pop == kind) && rfmv_now_ms(m) - f->pop_ms < RFM_MOVE_POPUP_MS;
+}
+static void pop_clear(rfm_move_t *m) { m->fw.pop = FP_NONE; }
+
+/* ================================================================ the host's calls === */
+void rfmv_fw_init(rfm_move_t *m)
+{
+    rfm_move_fw_state_t *f = F(m);
+    int s;
+    memset(f, 0, sizeof *f);
+    f->voices = 1;
+    f->sel = -1, f->cap_step = -1, f->browse = -1, f->busy_fw = -1, f->busy_slot = -1;
+    for (s = 0; s < RFM_MOVE_FW_SLOTS; s++)
+        f->slot_fw[s] = -1, f->level[s] = 100, f->st_cur[s] = -1;
+    f->track = 3;
+}
+void rfmv_fxset_default(rfm_move_fxset_t *x)
+{
+    int k;
+    memset(x, 0, sizeof *x);
+    for (k = 0; k < 3; k++) {
+        x->mfx[k].mod = x->afx[k].mod = -1;
+        x->mfx[k].filt = 0xFFFF, x->ffilt[k] = 0xFFFF, x->pan[k] = 64;
+    }
+}
+
+void rfm_move_fw_list(rfm_move_t *m, rfm_move_fw_t *entries, int n)
+{
+    rfm_move_fw_state_t *f = F(m);
+    f->list = entries, f->n = entries && n > 0 ? n : 0;
+    f->host = 1;
+    resolve(m);
+    f->sel = -1, f->jog = 0;
+    if (f->busy_kind && (f->busy_fw = (int16_t)find_id(m, f->busy_id)) < 0)
+        f->busy_kind = BUSY_NONE;                       /* (a load or download under way: kept by its id) */
+}
+void rfm_move_fw_installed(rfm_move_t *m, int index, const char *version)
+{
+    if (index >= 0 && index < m->fw.n)
+        m->fw.list[index].installed = version;
+}
+void rfm_move_fw_slots(rfm_move_t *m, const char *const ids[RFM_MOVE_FW_SLOTS])
+{
+    rfm_move_fw_state_t *f = F(m);
+    int s, any = 0;
+    for (s = 0; s < RFM_MOVE_FW_SLOTS; s++) {
+        char id[RFM_MOVE_FW_ID_MAX];
+        snprintf(id, sizeof id, "%s", ids && ids[s] && strlen(ids[s]) < RFM_MOVE_FW_ID_MAX ? ids[s] : "");
+        if (strcmp(id, f->slot_id[s])) {
+            strcpy(f->slot_id[s], id), any = 1;
+            f->st_used[s] = 0, f->st_cur[s] = -1;       /* (another firmware: the host tells its states) */
+        }
+        f->slot_fw[s] = (int16_t)find_id(m, id);
+    }
+    if (f->busy_kind == BUSY_LOAD && f->busy_slot >= 0 && f->slot_fw[f->busy_slot] == f->busy_fw && f->busy_fw >= 0) {
+        pop(m, FP_LOADED, f->busy_fw, f->busy_slot);    /* (the load done) */
+        f->busy_kind = BUSY_NONE, f->busy_fw = -1;
+    }
+    if (any)
+        lib_changed(m);
+}
+void rfm_move_fw_progress(rfm_move_t *m, const char *id, int pct)
+{
+    rfm_move_fw_state_t *f = F(m);
+    const int fw = f->busy_fw;
+    if (!f->busy_kind || fw < 0 || !id || strcmp(id, f->busy_id))
+        return;
+    if (pct < 0) {                                      /* failed, or the host is too busy */
+        pop_msg(m, FP_MSG, fw, pct, pct == RFM_MOVE_FW_BUSY ? "Too busy"
+                                      : f->busy_kind == BUSY_LOAD ? "load failed" : "download failed");
+        f->busy_kind = BUSY_NONE, f->busy_fw = -1;
+        return;
+    }
+    f->busy_pct = (int8_t)clampi(pct, 0, 100);
+    if (pct < 100)
+        return;
+    if (f->busy_kind == BUSY_LOAD) {
+        const int s = f->busy_slot;
+        if (s >= 0 && strlen(id) < RFM_MOVE_FW_ID_MAX && strcmp(f->slot_id[s], id)) {
+            strcpy(f->slot_id[s], id), f->slot_fw[s] = (int16_t)fw;
+            f->st_used[s] = 0, f->st_cur[s] = -1;
+            lib_changed(m);
+        }
+        pop(m, FP_LOADED, fw, s);
+    } else
+        pop(m, FP_LOADED, fw, f->busy_kind == BUSY_UPDATE ? 10 : 11);
+    f->busy_kind = BUSY_NONE, f->busy_fw = -1;
+}
+void rfm_move_fw_voices(rfm_move_t *m, int n) { m->fw.voices = (uint8_t)clampi(n, 1, RFM_MOVE_FW_SLOTS); }
+int rfm_move_fw_active(const rfm_move_t *m) { return m->fw.active; }
+int rfm_move_fw_level(const rfm_move_t *m, int slot) { return slot >= 0 && slot < 3 ? m->fw.level[slot] : 0; }
+int rfm_move_fw_sounding(const rfm_move_t *m)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    int bitsv = 0, n = 0, s;
+    if (f->slot_id[f->active][0])
+        bitsv |= 1 << f->active, n++;
+    for (s = 0; s < RFM_MOVE_FW_SLOTS; s++)
+        if (s != f->active && f->slot_id[s][0] && n < f->voices)
+            bitsv |= 1 << s, n++;
+    return bitsv;
+}
+void rfm_move_fw_states(rfm_move_t *m, int slot, uint32_t used)
+{
+    if (slot >= 0 && slot < RFM_MOVE_FW_SLOTS)
+        m->fw.st_used[slot] = used;
+}
+void rfm_move_fx_modules(rfm_move_t *m, int kind, const rfm_move_fx_module_t *list, int n)
+{
+    int s;
+    if (kind != RFM_MOVE_FX_MIDI && kind != RFM_MOVE_FX_AUDIO)
+        return;
+    m->fw.mods[kind] = list, m->fw.nmods[kind] = list && n > 0 ? n : 0;
+    for (s = 0; s < RFM_MOVE_FX_SLOTS; s++)
+        rfmv_fx_resolve(m, fxslot(m, kind, s), kind);
+    if (m->seq.projects && m->fw.fx && !m->fw.nmods[kind] && m->s.fx_page == (kind ? PG_AUDIO : PG_MIDI))
+        m->s.fx_page = PG_ROUTE;                        /* (that page has gone) */
+}
+void rfmv_fx_resolve(rfm_move_t *m, rfm_move_fxslot_t *x, int kind)
+{
+    int i;
+    x->mod = -1;
+    for (i = 0; x->name[0] && i < m->fw.nmods[kind]; i++)
+        if (m->fw.mods[kind][i].name && !strcmp(m->fw.mods[kind][i].name, x->name)) {
+            x->mod = (int16_t)i;
+            break;
+        }
+}
+void rfm_move_fx_refused(rfm_move_t *m, int kind, int slot)
+{
+    rfm_move_fxslot_t *x;
+    if ((kind != RFM_MOVE_FX_MIDI && kind != RFM_MOVE_FX_AUDIO) || slot < 0 || slot >= RFM_MOVE_FX_SLOTS)
+        return;
+    x = fxslot(m, kind, slot);
+    memset(x->name, 0, sizeof x->name), x->mod = -1;
+    memset(x->val, 0, sizeof x->val);
+    rfmv_seq_dirty(m);
+    pop_msg(m, FP_RLOADED, kind, slot, "Too busy");
+}
+void rfm_move_fx_sync(rfm_move_t *m)
+{
+    int kind, s, k;
+    for (kind = 0; kind < 2; kind++)
+        for (s = 0; s < RFM_MOVE_FX_SLOTS; s++) {
+            const rfm_move_fxslot_t *x = fxslot(m, kind, s);
+            act_fx_load(m, kind, s);
+            for (k = 0; k < nparams(module(m, kind, x->mod)); k++)
+                act_fx_param(m, kind, s, k);
+        }
+    for (s = 0; s < RFM_MOVE_FW_SLOTS; s++)
+        act_mix(m, s);
+    act_route(m);
+}
+/* a project was loaded or cleared: its modules found in the host's lists, and the host told (the browser on) */
+void rfmv_fx_loaded(rfm_move_t *m)
+{
+    int s;
+    for (s = 0; s < RFM_MOVE_FX_SLOTS; s++)
+        rfmv_fx_resolve(m, &m->seq.fx.mfx[s], RFM_MOVE_FX_MIDI), rfmv_fx_resolve(m, &m->seq.fx.afx[s], RFM_MOVE_FX_AUDIO);
+    if (m->fw.host)
+        rfm_move_fx_sync(m);
+}
+
+/* ================================================================ the library blob === */
+/*  0 "RMVL"  4 version (1)  5 the active slot 0..2  6 the three levels 0..127  9 records u16  11 favourites u16
+ * 13..15 zero  16 the three slots' ids (32 bytes each, NUL padded; "" empty)  112 the nine user tags' names (16 bytes
+ * each, NUL padded; "" not made)  256 records x { id (32, NUL padded), colour 0..16, tagged u16, set u16 } (bit s - 1:
+ * step s, 3..16 only)  then the favourites in order: u16 record indexes (each once)  FNV-1a (32 bit) of all before */
+#define LIB_HDR 256
+#define LIB_REC (RFM_MOVE_FW_ID_MAX + 5)
+static uint32_t fnv(const uint8_t *p, uint32_t n)
+{
+    uint32_t h = 2166136261u, i;
+    for (i = 0; i < n; i++)
+        h = (h ^ p[i]) * 16777619u;
+    return h;
+}
+static void w16(uint8_t *p, unsigned v) { p[0] = (uint8_t)(v & 0xFF), p[1] = (uint8_t)(v >> 8 & 0xFF); }
+static unsigned r16(const uint8_t *p) { return (unsigned)p[0] | (unsigned)p[1] << 8; }
+static int str_ok(const uint8_t *p, int cap, int empty_ok)   /* NUL-terminated printable ASCII, padded with NULs */
+{
+    int i, end = -1;
+    for (i = 0; i < cap; i++) {
+        if (end < 0 && !p[i])
+            end = i;
+        else if (end < 0 && (p[i] < 32 || p[i] > 126))
+            return 0;
+        else if (end >= 0 && p[i])
+            return 0;
+    }
+    return end > 0 || (end == 0 && empty_ok);
+}
+
+uint32_t rfm_move_fw_library_save(rfm_move_t *m, uint8_t *out, uint32_t cap)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    int16_t map[RFM_MOVE_FW_LIB_MAX];
+    uint8_t *p;
+    int r, k, nr = 0;
+    uint32_t need;
+    for (r = 0; r < f->nrec; r++)
+        map[r] = (int16_t)(rec_used(m, r) ? nr++ : -1);
+    need = LIB_HDR + (uint32_t)nr * LIB_REC + (uint32_t)f->nfav * 2u + 4u;
+    if (!out || cap < need)
+        return 0;
+    memset(out, 0, LIB_HDR);
+    memcpy(out, "RMVL", 4);
+    out[4] = RFM_MOVE_FW_LIB_VERSION, out[5] = f->active;
+    out[6] = f->level[0], out[7] = f->level[1], out[8] = f->level[2];
+    w16(out + 9, (unsigned)nr), w16(out + 11, f->nfav);
+    for (k = 0; k < RFM_MOVE_FW_SLOTS; k++)
+        memcpy(out + 16 + k * RFM_MOVE_FW_ID_MAX, f->slot_id[k], strlen(f->slot_id[k]));
+    for (k = 0; k < RFM_MOVE_FW_TAGS; k++)
+        memcpy(out + 112 + k * RFM_MOVE_FW_TAG_NAME, f->tag[k], strlen(f->tag[k]));
+    p = out + LIB_HDR;
+    for (r = 0; r < f->nrec; r++) {
+        if (map[r] < 0)
+            continue;
+        memset(p, 0, LIB_REC);
+        memcpy(p, f->rec[r].id, strlen(f->rec[r].id));
+        p[RFM_MOVE_FW_ID_MAX] = f->rec[r].color;
+        w16(p + RFM_MOVE_FW_ID_MAX + 1, f->rec[r].tag_on), w16(p + RFM_MOVE_FW_ID_MAX + 3, f->rec[r].tag_set);
+        p += LIB_REC;
+    }
+    for (k = 0; k < f->nfav; k++, p += 2)
+        w16(p, (unsigned)map[f->fav[k]]);
+    {
+        const uint32_t h = fnv(out, (uint32_t)(p - out));
+        w16(p, h & 0xFFFF), w16(p + 2, h >> 16);
+    }
+    return (uint32_t)(p - out) + 4;
+}
+
+int rfm_move_fw_library(rfm_move_t *m, const uint8_t *b, uint32_t n)
+{
+    rfm_move_fw_state_t *f = F(m);
+    unsigned nr, nf, k, j;
+    const uint8_t *p;
+    f->nrec = f->nfav = 0;
+    memset(f->tag, 0, sizeof f->tag);
+    f->lib_dirty = 0;
+    if (!b || !n)
+        return 0;
+    if (n < LIB_HDR + 4 || memcmp(b, "RMVL", 4) || b[4] != RFM_MOVE_FW_LIB_VERSION || b[5] > 2 || b[6] > 127 ||
+        b[7] > 127 || b[8] > 127 || b[13] || b[14] || b[15])
+        return -1;
+    nr = r16(b + 9), nf = r16(b + 11);
+    if (nr > RFM_MOVE_FW_LIB_MAX || nf > nr || n != LIB_HDR + nr * LIB_REC + nf * 2 + 4 ||
+        (r16(b + n - 4) | (uint32_t)r16(b + n - 2) << 16) != fnv(b, n - 4))
+        return -1;
+    for (k = 0; k < RFM_MOVE_FW_SLOTS; k++)
+        if (!str_ok(b + 16 + k * RFM_MOVE_FW_ID_MAX, RFM_MOVE_FW_ID_MAX, 1))
+            return -1;
+    for (k = 0; k < RFM_MOVE_FW_TAGS; k++)
+        if (!str_ok(b + 112 + k * RFM_MOVE_FW_TAG_NAME, RFM_MOVE_FW_TAG_NAME, 1))
+            return -1;
+    for (k = 0, p = b + LIB_HDR; k < nr; k++, p += LIB_REC) {
+        if (!str_ok(p, RFM_MOVE_FW_ID_MAX, 0) || p[RFM_MOVE_FW_ID_MAX] > RFM_MOVE_PROJ_COLORS ||
+            (r16(p + RFM_MOVE_FW_ID_MAX + 1) & 3) || (r16(p + RFM_MOVE_FW_ID_MAX + 3) & 3) ||
+            (r16(p + RFM_MOVE_FW_ID_MAX + 1) & ~r16(p + RFM_MOVE_FW_ID_MAX + 3)))
+            return -1;
+        for (j = 0; j < k; j++)                         /* (an id once) */
+            if (!memcmp(p, b + LIB_HDR + j * LIB_REC, RFM_MOVE_FW_ID_MAX))
+                return -1;
+    }
+    for (k = 0; k < nf; k++) {
+        const unsigned v = r16(p + k * 2);
+        if (v >= nr)
+            return -1;
+        for (j = 0; j < k; j++)
+            if (r16(p + j * 2) == v)
+                return -1;
+    }
+    /* all checked: take it */
+    f->active = b[5], f->level[0] = b[6], f->level[1] = b[7], f->level[2] = b[8];
+    for (k = 0; k < RFM_MOVE_FW_SLOTS; k++)
+        memcpy(f->slot_id[k], b + 16 + k * RFM_MOVE_FW_ID_MAX, RFM_MOVE_FW_ID_MAX);
+    for (k = 0; k < RFM_MOVE_FW_TAGS; k++)
+        memcpy(f->tag[k], b + 112 + k * RFM_MOVE_FW_TAG_NAME, RFM_MOVE_FW_TAG_NAME);
+    for (k = 0, p = b + LIB_HDR; k < nr; k++, p += LIB_REC) {
+        rfm_move_lib_rec_t *c = &f->rec[k];
+        memcpy(c->id, p, RFM_MOVE_FW_ID_MAX);
+        c->color = p[RFM_MOVE_FW_ID_MAX];
+        c->tag_on = (uint16_t)r16(p + RFM_MOVE_FW_ID_MAX + 1), c->tag_set = (uint16_t)r16(p + RFM_MOVE_FW_ID_MAX + 3);
+    }
+    f->nrec = (uint16_t)nr;
+    for (k = 0; k < nf; k++)
+        f->fav[k] = (uint16_t)r16(p + k * 2);
+    f->nfav = (uint16_t)nf;
+    resolve(m);
+    return 0;
+}
+
+void rfm_move_fw_flush(rfm_move_t *m)
+{
+    rfm_move_fw_state_t *f = F(m);
+    rfm_move_act_t a;
+    uint32_t n;
+    if (!f->lib_dirty)
+        return;
+    f->lib_dirty = 0;
+    n = rfm_move_fw_library_save(m, f->blob, sizeof f->blob);
+    if (!n)
+        return;
+    memset(&a, 0, sizeof a);
+    a.kind = RFM_MOVE_ACT_FW_LIBRARY, a.data = f->blob, a.len = n;
+    send(m, &a);
+}
+void rfmv_fw_poll(rfm_move_t *m)
+{
+    if (m->fw.lib_dirty && rfmv_now_ms(m) - m->fw.lib_ms >= RFM_MOVE_FW_LIB_SAVE_MS)
+        rfm_move_fw_flush(m);
+}
+
+/* ================================================================ FX setup in the project blob (version 5) === */
+/* 3 MIDI FX x { module name (24, NUL padded; "" empty), 8 values, filter u16 }, 3 audio FX x { name, 8 values },
+ * 3 firmware filters u16, 3 pans, 3 x 3 sends */
+void rfmv_fxset_write(const rfm_move_fxset_t *x, uint8_t *p)
+{
+    int k;
+    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS + 2) {
+        memset(p, 0, RFM_MOVE_FX_NAME);
+        memcpy(p, x->mfx[k].name, strlen(x->mfx[k].name));
+        memcpy(p + RFM_MOVE_FX_NAME, x->mfx[k].val, RFM_MOVE_FX_PARAMS);
+        w16(p + RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS, x->mfx[k].filt);
+    }
+    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS) {
+        memset(p, 0, RFM_MOVE_FX_NAME);
+        memcpy(p, x->afx[k].name, strlen(x->afx[k].name));
+        memcpy(p + RFM_MOVE_FX_NAME, x->afx[k].val, RFM_MOVE_FX_PARAMS);
+    }
+    for (k = 0; k < 3; k++, p += 2)
+        w16(p, x->ffilt[k]);
+    for (k = 0; k < 3; k++)
+        *p++ = x->pan[k];
+    for (k = 0; k < 9; k++)
+        *p++ = x->send[k / 3][k % 3];
+}
+int rfmv_fxset_check(const uint8_t *p)
+{
+    int k, i;
+    for (k = 0; k < 6; k++) {
+        const int sz = RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS + (k < 3 ? 2 : 0);
+        if (!str_ok(p, RFM_MOVE_FX_NAME, 1))
+            return -1;
+        for (i = 0; i < RFM_MOVE_FX_PARAMS; i++)
+            if (p[RFM_MOVE_FX_NAME + i] > 127)
+                return -1;
+        if (k < 3) {                                    /* (a MIDI FX filter: one track, or all) */
+            const unsigned f = r16(p + RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS);
+            if (f != 0xFFFF && (!f || (f & (f - 1))))
+                return -1;
+        }
+        p += sz;
+    }
+    p += 6;
+    for (k = 0; k < 12; k++)
+        if (p[k] > 127)
+            return -1;
+    return 0;
+}
+void rfmv_fxset_read(rfm_move_fxset_t *x, const uint8_t *p)
+{
+    int k;
+    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS + 2) {
+        memcpy(x->mfx[k].name, p, RFM_MOVE_FX_NAME), x->mfx[k].name[RFM_MOVE_FX_NAME - 1] = 0;
+        memcpy(x->mfx[k].val, p + RFM_MOVE_FX_NAME, RFM_MOVE_FX_PARAMS);
+        x->mfx[k].filt = (uint16_t)r16(p + RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS), x->mfx[k].mod = -1;
+    }
+    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS) {
+        memcpy(x->afx[k].name, p, RFM_MOVE_FX_NAME), x->afx[k].name[RFM_MOVE_FX_NAME - 1] = 0;
+        memcpy(x->afx[k].val, p + RFM_MOVE_FX_NAME, RFM_MOVE_FX_PARAMS);
+        x->afx[k].filt = 0, x->afx[k].mod = -1;
+    }
+    for (k = 0; k < 3; k++, p += 2)
+        x->ffilt[k] = (uint16_t)r16(p);
+    for (k = 0; k < 3; k++)
+        x->pan[k] = *p++;
+    for (k = 0; k < 9; k++)
+        x->send[k / 3][k % 3] = *p++;
+}
+
+/* ================================================================ the view's controls === */
+static int slot_loaded(const rfm_move_t *m, int s) { return s >= 0 && s < 3 && m->fw.slot_id[s][0]; }
+static void slot_name(const rfm_move_t *m, int s, char *o, int cap)
+{
+    if (m->fw.slot_fw[s] >= 0)
+        asc(ename(m, m->fw.slot_fw[s]), o, cap);
+    else
+        asc(m->fw.slot_id[s], o, cap);
+}
+static int desc_rows(const rfm_move_t *m, int fw, char out[][LW], int skip, int cap)
+{
+    const rfm_move_fw_t *e = ent(m, fw);
+    const char *t = e && e->desc ? e->desc : "";
+    char d[2048];
+    int n = 0;
+    for (; *t && n < (int)sizeof d - 1; t++)            /* (printable ASCII; a line break is a space) */
+        if (*t == '\n')
+            d[n++] = ' ';
+        else if ((unsigned char)*t >= 32 && (unsigned char)*t < 127)
+            d[n++] = *t;
+    d[n] = 0;
+    if (!n)
+        snprintf(d, sizeof d, "No description in the catalog.");
+    return wrap(d, 20, out, skip, cap);
+}
+static int max_jog(const rfm_move_t *m, int fw)
+{
+    const int n = desc_rows(m, fw, NULL, 0, 0);
+    return 1 + (n > INFO_ROWS ? n - INFO_ROWS : 0);
+}
+static int fx_page_ok(const rfm_move_t *m, int p)
+{
+    return p == PG_ROUTE || p == PG_MIX || (p == PG_MIDI && m->fw.nmods[RFM_MOVE_FX_MIDI]) ||
+           (p == PG_AUDIO && m->fw.nmods[RFM_MOVE_FX_AUDIO]);
+}
+static int fx_page(const rfm_move_t *m) { return fx_page_ok(m, m->s.fx_page) ? m->s.fx_page : PG_ROUTE; }
+
+void rfmv_fw_enter(rfm_move_t *m)
+{
+    rfm_move_fw_state_t *f = F(m);
+    f->track = (uint8_t)(f->host ? (m->s.fw_track == 3 ? 3 : f->active) : 3);
+    f->catalog = 0, f->sel = -1, f->jog = 0, f->capture = 0, f->cap_step = -1, f->states = 0, f->smods = 0;
+    f->fx = 0, f->browse = -1;
+    pop_clear(m);
+    if (f->track < 3 && m->pop == POP_MODE)
+        m->pop = POP_NONE;                              /* (a firmware track: its own screen at once) */
+}
+static void leave(rfm_move_t *m)
+{
+    rfm_move_fw_state_t *f = F(m);
+    f->fx = 0, f->states = 0, f->capture = 0, f->smods = 0, f->browse = -1;
+    pop_clear(m);
+    rfm_move_fw_flush(m);
+    rfmv_proj_back(m);
+}
+static void show_track(rfm_move_t *m, int t)
+{
+    rfm_move_fw_state_t *f = F(m);
+    f->track = (uint8_t)t;
+    if (t < 3 && t != f->active) {                      /* (the firmware the controls play now) */
+        f->active = (uint8_t)t;
+        act_fw(m, RFM_MOVE_ACT_FW_ACTIVE, t, f->slot_fw[t], 0);
+        lib_changed(m);
+    }
+    if (m->s.fw_track != t) {
+        m->s.fw_track = (uint8_t)t;
+        rfmv_changed(m);
+    }
+    f->sel = -1, f->jog = 0, f->capture = 0, f->cap_step = -1, f->catalog = 0, f->states = 0, f->smods = 0;
+    pop(m, FP_TRACK, t, 0);
+}
+static void set_level(rfm_move_t *m, int t, int d)
+{
+    rfm_move_fw_state_t *f = F(m);
+    const int v = clampi(f->level[t] + d, 0, 127);
+    pop(m, FP_LEVEL, t, 0);
+    if (v == f->level[t])
+        return;
+    f->level[t] = (uint8_t)v;
+    act_fw(m, RFM_MOVE_ACT_FW_LEVEL, t, f->slot_fw[t], v);
+    lib_changed(m);
+}
+/* the volume knob with Track 1..3 held (the browser on, any mode): that slot's level. 1 taken */
+int rfmv_fw_volume(rfm_move_t *m, int d)
+{
+    int t;
+    if (!m->fw.host)
+        return 0;
+    for (t = 0; t < 3; t++)
+        if (rfmv_track_held(m, t) && slot_loaded(m, t)) {
+            set_level(m, t, d);
+            return 1;
+        }
+    return 0;
+}
+static void after_filter(rfm_move_t *m)
+{
+    rfm_move_fw_state_t *f = F(m);
+    f->bank[bank_key(m)] = 0;
+    if (f->sel >= 0 && !in_list(m, f->sel))
+        f->sel = -1;
+    f->jog = 0;
+    rfmv_changed(m);                                    /* (the filter is a setting) */
+    pop(m, FP_FILTER, 0, 0);
+}
+static void tag_toggle(rfm_move_t *m, int fw, int s)
+{
+    rfm_move_fw_state_t *f = F(m);
+    const int cur = has_tag(m, fw, s), r = rec_make(m, fw);
+    if (r < 0) {
+        pop_msg(m, FP_MSG, fw, 0, "Library full");
+        return;
+    }
+    if (s >= 8 && !f->tag[s - 8][0])                    /* (a free step: a new tag, named in the web manager) */
+        snprintf(f->tag[s - 8], sizeof f->tag[s - 8], "Tag %d", s - 7);
+    f->rec[r].tag_set |= (uint16_t)(1u << (s - 1));
+    if (cur)
+        f->rec[r].tag_on &= (uint16_t)~(1u << (s - 1));
+    else
+        f->rec[r].tag_on |= (uint16_t)(1u << (s - 1));
+    f->cap_step = (int8_t)s, f->cap_ms = rfmv_now_ms(m);
+    lib_changed(m);
+}
+static void fav_toggle(rfm_move_t *m, int fw)
+{
+    rfm_move_fw_state_t *f = F(m);
+    const int r = rec_make(m, fw), k = fav_pos(m, r);
+    if (r < 0) {
+        pop_msg(m, FP_MSG, fw, 0, "Library full");
+        return;
+    }
+    if (k >= 0) {
+        memmove(&f->fav[k], &f->fav[k + 1], (size_t)(f->nfav - k - 1) * sizeof f->fav[0]);
+        f->nfav--;
+    } else
+        f->fav[f->nfav++] = (uint16_t)r;
+    pop(m, FP_FAV, fw, k < 0);
+    lib_changed(m);
+}
+static void state_act(rfm_move_t *m, int kind, int k)
+{
+    rfm_move_act_t a;
+    const int t = m->fw.track;
+    memset(&a, 0, sizeof a);
+    a.kind = (uint8_t)kind, a.slot = (uint8_t)t, a.index = (uint8_t)k;
+    a.data = (const uint8_t *)m->fw.slot_id[t], a.len = (uint32_t)strlen(m->fw.slot_id[t]);
+    send(m, &a);
+}
+static void state_pad(rfm_move_t *m, int k)
+{
+    rfm_move_fw_state_t *f = F(m);
+    const int t = f->track, used = f->st_used[t] >> k & 1;
+    if (f->smods & 2) {                                 /* Delete + a state: gone */
+        if (!used)
+            return;
+        state_act(m, RFM_MOVE_ACT_STATE_DELETE, k);
+        f->st_used[t] &= ~(1u << k);
+        if (f->st_cur[t] == k)
+            f->st_cur[t] = -1;
+        pop(m, FP_STATE, k, 2);
+    } else if ((f->smods & 1) || !used) {               /* Copy + a slot, or an empty one: saved there */
+        state_act(m, RFM_MOVE_ACT_STATE_SAVE, k);
+        f->st_used[t] |= 1u << k, f->st_cur[t] = (int8_t)k;
+        pop(m, FP_STATE, k, 0);
+    } else {
+        state_act(m, RFM_MOVE_ACT_STATE_LOAD, k);
+        f->st_cur[t] = (int8_t)k;
+        pop(m, FP_STATE, k, 1);
+    }
+}
+static void fw_back(rfm_move_t *m)
+{
+    rfm_move_fw_state_t *f = F(m);
+    pop_clear(m);
+    if (f->capture)
+        f->capture = 0, f->cap_step = -1;
+    else if (f->states)
+        f->states = 0, f->smods = 0;
+    else if (f->jog > 0)
+        f->jog = 0;
+    else if (f->sel >= 0)
+        f->sel = -1;
+    else if (f->catalog)
+        f->catalog = 0;
+    else
+        leave(m);
+}
+static void open_fx(rfm_move_t *m)
+{
+    rfm_move_fw_state_t *f = F(m);
+    f->fx = 1, f->browse = -1, f->capture = 0, f->states = 0, f->smods = 0;
+    pop(m, FP_RPAGE, fx_page(m), 0);
+}
+static void fw_jog_press(rfm_move_t *m)
+{
+    rfm_move_fw_state_t *f = F(m);
+    const int fw = f->sel;
+    if (fw < 0 || f->busy_kind || f->states)
+        return;
+    pop_clear(m);
+    if (f->catalog) {
+        const int st = status(m, fw);
+        if (st == ST_OK)
+            return;
+        f->busy_kind = (int8_t)(st == ST_NEW ? BUSY_DOWNLOAD : BUSY_UPDATE), f->busy_fw = (int16_t)fw;
+        f->busy_slot = -1, f->busy_pct = 0;
+        snprintf(f->busy_id, sizeof f->busy_id, "%s", ent(m, fw)->id ? ent(m, fw)->id : "");
+        act_fw(m, RFM_MOVE_ACT_FW_DOWNLOAD, 0, fw, fw);
+        return;
+    }
+    f->busy_kind = BUSY_LOAD, f->busy_fw = (int16_t)fw, f->busy_slot = (int8_t)f->track, f->busy_pct = 0;
+    snprintf(f->busy_id, sizeof f->busy_id, "%s", ent(m, fw)->id ? ent(m, fw)->id : "");
+    act_fw(m, RFM_MOVE_ACT_FW_LOAD, f->track, fw, fw);
+}
+
+static void fw_input(rfm_move_t *m, const mr_event_t *ev)
+{
+    rfm_move_fw_state_t *f = F(m);
+    const int fw = f->sel, t = f->track;
+    switch (ev->type) {
+    case MR_EV_PAD: {
+        const int p = ev->index, cell = (3 - p / 8) * 8 + p % 8;
+        int ids[32];
+        if (p < 0 || p >= RFM_MOVE_NPADS)
+            return;
+        if (!ev->value) {
+            m->pad_down[p] = 0;
+            return;
+        }
+        if (m->pad_down[p])
+            return;
+        m->pad_down[p] = 1;
+        if (f->states) {
+            state_pad(m, cell);
+            return;
+        }
+        bank_ids(m, ids);
+        if (ids[cell] >= 0)
+            f->sel = (int16_t)ids[cell], f->jog = 0, pop_clear(m);
+        return;
+    }
+    case MR_EV_STEP: {
+        const int s = ev->index + 1;
+        if (!ev->value || f->states)
+            return;
+        if (f->capture && fw >= 0) {
+            if (s >= CAT0)
+                tag_toggle(m, fw, s);
+        } else if (s <= 2) {
+            if (f->catalog)
+                m->s.fw_cat_scope ^= (uint8_t)s;
+            else
+                m->s.fw_scope = (uint8_t)(s - 1);
+            after_filter(m);
+        } else if (tag_defined(m, s)) {
+            m->s.fw_filter ^= (uint16_t)(1u << (s - 1));
+            after_filter(m);
+        }
+        return;
+    }
+    case MR_EV_BUTTON: {
+        const int cc = ev->index, down = ev->value != 0;
+        if (cc == MR_CC_CAPTURE) {
+            if (down && fw >= 0 && !f->catalog && !f->states)
+                f->capture = 1, f->cap_step = -1;
+            else if (!down)
+                f->capture = 0, f->cap_step = -1;
+            return;
+        }
+        if (cc == MR_CC_COPY || cc == MR_CC_DELETE) {
+            const int b = cc == MR_CC_COPY ? 1 : 2;
+            if (f->states) {
+                f->smods = (uint8_t)(down ? f->smods | b : f->smods & ~b);
+                return;
+            }
+            if (down && cc == MR_CC_DELETE && !f->catalog && slot_loaded(m, t)) {   /* unloaded at once */
+                char nm[24];
+                slot_name(m, t, nm, sizeof nm);
+                act_fw(m, RFM_MOVE_ACT_FW_UNLOAD, t, f->slot_fw[t], 0);
+                f->slot_id[t][0] = 0, f->slot_fw[t] = -1, f->st_used[t] = 0, f->st_cur[t] = -1;
+                if (f->busy_kind == BUSY_LOAD && f->busy_slot == t)
+                    f->busy_kind = BUSY_NONE, f->busy_fw = -1;
+                lib_changed(m);
+                pop_msg(m, FP_UNLOAD, -1, t, nm);
+            }
+            return;
+        }
+        if (!down)
+            return;
+        switch (cc) {
+        case MR_CC_MENU:
+            if (f->host)
+                open_fx(m);
+            else
+                leave(m);
+            return;
+        case MR_CC_BACK: fw_back(m); return;
+        case MR_CC_SAMPLE:
+            if (fw >= 0 && !f->catalog && !f->states)
+                fav_toggle(m, fw);
+            return;
+        case MR_CC_MUTE:
+            if (f->states)
+                return;
+            f->catalog = (uint8_t)!f->catalog, f->sel = -1, f->jog = 0, f->capture = 0;
+            if (f->catalog)
+                pop(m, FP_CATALOG, 0, 0);
+            else
+                pop_clear(m);
+            return;
+        case MR_CC_LOOP:                                /* the firmware's states (a firmware on this track) */
+            if (f->states)
+                f->states = 0, f->smods = 0;
+            else if (slot_loaded(m, t) && !f->catalog)
+                f->states = 1, f->smods = 0, f->capture = 0;
+            pop_clear(m);
+            return;
+        case MR_CC_LEFT:
+        case MR_CC_RIGHT: {
+            const int nb = nbanks(m), b = cur_bank(m) + (cc == MR_CC_LEFT ? -1 : 1);
+            if (f->states || b < 0 || b >= nb)
+                return;
+            f->bank[bank_key(m)] = (uint8_t)b, f->sel = -1, f->jog = 0;
+            pop(m, FP_BANK, 0, 0);
+            return;
+        }
+        default: return;
+        }
+    }
+    case MR_EV_KNOB:
+        if (ev->index == 0 && fw >= 0 && !f->catalog && !f->states && ev->value) {   /* knob 1: the pad's colour */
+            const int a0 = f->list_acc, d0 = ev->value;
+            int a = (a0 > 0 && d0 < 0) || (a0 < 0 && d0 > 0) ? 0 : a0, d, r;
+            a += d0;
+            d = a / RFM_MOVE_LIST_TICKS;
+            f->list_acc = (int8_t)(a - d * RFM_MOVE_LIST_TICKS);
+            f->jog = 0;
+            pop(m, FP_COLOR, fw, 0);
+            if (!d)
+                return;
+            if ((r = rec_make(m, fw)) < 0) {
+                pop_msg(m, FP_MSG, fw, 0, "Library full");
+                return;
+            }
+            f->rec[r].color = (uint8_t)(((color(m, fw) + d) % 16 + 16) % 16 + 1);
+            lib_changed(m);
+        }
+        return;
+    case MR_EV_TOUCH:
+        if (!ev->value && ev->index == 0)
+            f->list_acc = 0;
+        return;
+    case MR_EV_JOG:
+        if (fw >= 0 && ev->value && !f->states) {
+            pop_clear(m);
+            f->jog = (uint8_t)clampi(f->jog + ev->value, 0, max_jog(m, fw));
+        }
+        return;
+    case MR_EV_JOG_CLICK:
+        if (ev->value)
+            fw_jog_press(m);
+        return;
+    default: return;
+    }
+}
+
+/* ---- FX setup */
+static void fx_load(rfm_move_t *m, int kind, int slot, int mod)
+{
+    rfm_move_fxslot_t *x = fxslot(m, kind, slot);
+    const rfm_move_fx_module_t *md = module(m, kind, mod);
+    int k;
+    memset(x->name, 0, sizeof x->name), memset(x->val, 0, sizeof x->val);
+    x->mod = -1;
+    if (md && md->name) {
+        snprintf(x->name, sizeof x->name, "%s", md->name);
+        x->mod = (int16_t)mod;
+        for (k = 0; k < nparams(md); k++)
+            x->val[k] = md->params[k].nwords > 0 ? (uint8_t)clampi(md->params[k].def, 0, md->params[k].nwords - 1)
+                                                 : (uint8_t)clampi(md->params[k].def, 0, 127);
+    }
+    act_fx_load(m, kind, slot);
+    rfmv_seq_dirty(m);
+}
+static void fx_input(rfm_move_t *m, const mr_event_t *ev)
+{
+    rfm_move_fw_state_t *f = F(m);
+    const int pg = fx_page(m), i = f->fx_focus, kind = pg == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO;
+    rfm_move_fxset_t *x = &m->seq.fx;
+    switch (ev->type) {
+    case MR_EV_PAD: {
+        const int p = ev->index, cell = (3 - p / 8) * 8 + p % 8;
+        if (p < 0 || p >= RFM_MOVE_NPADS)
+            return;
+        if (!ev->value) {
+            m->pad_down[p] = 0;
+            return;
+        }
+        m->pad_down[p] = 1;
+        if (cell < 3)
+            f->fx_focus = (uint8_t)cell, f->browse = -1, pop_clear(m);
+        return;
+    }
+    case MR_EV_STEP: {
+        const int s = ev->index + 1;
+        const uint16_t b = (uint16_t)(1u << (s - 1));
+        if (!ev->value)
+            return;
+        if (pg == PG_MIDI) {                            /* one track, or (the same step again) all */
+            x->mfx[i].filt = x->mfx[i].filt == b ? 0xFFFF : b;
+            pop(m, FP_RFILTER, s, 1);
+        } else if (pg == PG_ROUTE) {
+            x->ffilt[i] ^= b;
+            pop(m, FP_RFILTER, s, (x->ffilt[i] & b) != 0);
+        } else
+            return;
+        act_route(m);
+        rfmv_seq_dirty(m);
+        return;
+    }
+    case MR_EV_BUTTON: {
+        const int cc = ev->index;
+        if (!ev->value)
+            return;
+        if (cc == MR_CC_MENU || (cc == MR_CC_BACK && f->browse < 0))
+            f->fx = 0, f->browse = -1, pop_clear(m);
+        else if (cc == MR_CC_BACK)
+            f->browse = -1;
+        else if (cc == MR_CC_DELETE && (pg == PG_MIDI || pg == PG_AUDIO)) {
+            fx_load(m, kind, i, -1);
+            f->browse = -1;
+            pop(m, FP_RLOADED, kind, i);
+        }
+        return;
+    }
+    case MR_EV_JOG:
+        if ((pg == PG_MIDI || pg == PG_AUDIO) && ev->value) {
+            if (f->browse < 0)
+                f->browse = (int8_t)(fxslot(m, kind, i)->mod + 1);
+            f->browse = (int8_t)clampi(f->browse + ev->value, 0, f->nmods[kind]);
+            pop_clear(m);
+        }
+        return;
+    case MR_EV_JOG_CLICK:
+        if (!ev->value || (pg != PG_MIDI && pg != PG_AUDIO))
+            return;
+        if (f->browse >= 0) {
+            fx_load(m, kind, i, f->browse - 1);
+            f->browse = -1;
+            pop(m, FP_RLOADED, kind, i);
+        } else
+            f->browse = (int8_t)(fxslot(m, kind, i)->mod + 1);
+        return;
+    case MR_EV_KNOB: {
+        const int k = ev->index, d = ev->value;
+        if (k < 0 || k >= RFM_MOVE_NKNOBS || !d)
+            return;
+        if (pg == PG_MIX) {
+            if (k == 0)
+                set_level(m, i, d);
+            else if (k <= 4) {
+                uint8_t *v = k == 1 ? &x->pan[i] : &x->send[i][k - 2];
+                const int nv = clampi(*v + d, 0, 127);
+                if (nv != *v) {
+                    *v = (uint8_t)nv;
+                    act_mix(m, i);
+                    rfmv_seq_dirty(m);
+                }
+            } else
+                return;
+            pop(m, FP_PARAM, k, 0);
+            return;
+        }
+        if (pg == PG_MIDI || pg == PG_AUDIO) {
+            rfm_move_fxslot_t *sl = fxslot(m, kind, i);
+            const rfm_move_fx_module_t *md = module(m, kind, sl->mod);
+            int nv;
+            if (!md || k >= nparams(md))
+                return;
+            if (md->params[k].nwords > 0) {             /* a list: a word every few ticks, round */
+                const int nw = md->params[k].nwords, a0 = f->knob_acc[k];
+                int a = (a0 > 0 && d < 0) || (a0 < 0 && d > 0) ? 0 : a0, n;
+                a += d;
+                n = a / RFM_MOVE_LIST_TICKS;
+                f->knob_acc[k] = (int8_t)(a - n * RFM_MOVE_LIST_TICKS);
+                nv = ((sl->val[k] + n) % nw + nw) % nw;
+            } else
+                nv = clampi(sl->val[k] + d, 0, 127);
+            pop(m, FP_PARAM, k, 0);
+            if (nv != sl->val[k]) {
+                sl->val[k] = (uint8_t)nv;
+                act_fx_param(m, kind, i, k);
+                rfmv_seq_dirty(m);
+            }
+        }
+        return;
+    }
+    case MR_EV_TOUCH:
+        if (!ev->value && ev->index < RFM_MOVE_NKNOBS)
+            f->knob_acc[ev->index] = 0;
+        return;
+    default: return;
+    }
+}
+
+/* the projects view's input: the Track buttons, then FX setup, a firmware track, or Track 4 (project.c's) */
+void rfmv_view_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
+{
+    rfm_move_fw_state_t *f = F(m);
+    if (ev->type == MR_EV_BUTTON && ev->index >= MR_CC_TRACK4 && ev->index <= MR_CC_TRACK1) {
+        const int t = MR_CC_TRACK1 - ev->index;
+        if (!ev->value) {
+            m->track_held = (uint8_t)(m->track_held & ~(1u << t));
+            return;
+        }
+        m->track_held = (uint8_t)(m->track_held | 1u << t);
+        if (f->fx) {                                    /* FX setup: the pages */
+            if (fx_page_ok(m, t)) {
+                if (m->s.fx_page != t)
+                    m->s.fx_page = (uint8_t)t, rfmv_changed(m);
+                f->browse = -1;
+                pop(m, FP_RPAGE, t, 0);
+            }
+            return;
+        }
+        show_track(m, t);
+        return;
+    }
+    if (ev->type == MR_EV_KNOB && ev->index == 8) {    /* volume: a held Track's level, else MASTER */
+        int t;
+        for (t = 0; t < 3; t++)
+            if (rfmv_track_held(m, t)) {
+                if (slot_loaded(m, t))
+                    set_level(m, t, ev->value);
+                return;
+            }
+        if (f->fx || f->track < 3)
+            rfmv_master_turn(m, ev->value);
+        return;
+    }
+    if (f->fx) {
+        fx_input(m, ev);
+        return;
+    }
+    if (f->track < 3) {
+        fw_input(m, ev);
+        return;
+    }
+    if (f->host && ev->type == MR_EV_BUTTON && ev->index == MR_CC_MENU && ev->value) {
+        open_fx(m);
+        return;
+    }
+    if (ev->type == MR_EV_BUTTON && ev->index == MR_CC_BACK && ev->value)
+        rfm_move_fw_flush(m);
+    rfmv_proj_input(m, ev, now);
+}
+
+/* ================================================================ LEDs === */
+/* the mockup's lights: a colour at an opacity (0..1 as /256), breathing (0.55..1 over 1.6 s), blinking (0.5 s) */
+static int breathe(const rfm_move_t *m)
+{
+    const int ph = (int)(rfmv_now_ms(m) % 1600u), tri = ph < 800 ? ph : 1600 - ph;   /* 0..800 */
+    return 141 + 115 * tri / 800;
+}
+static int blink(const rfm_move_t *m) { return rfmv_now_ms(m) % 500u < 250u ? 256 : 38; }
+static rgb_t lit(rgb_t c, int a256) { return rfmv_sc(c, a256); }
+static uint8_t wl(int a256) { return (uint8_t)clampi(a256 * 127 / 256, 0, 127); }
+static int pad_of(int cell) { return (3 - cell / 8) * 8 + cell % 8; }
+#define A(x) ((int)((x) * 256 + 0.5))
+
+static void track_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    const int snd = rfm_move_fw_sounding(m), slow = rfmv_now_ms(m) % 1000u < 500u;
+    int t;
+    for (t = 0; t < 4; t++) {
+        const int on = f->track == t;
+        rgb_t v;
+        if (f->fx)
+            v = fx_page_ok(m, t) ? lit(FXCOL[t], on || fx_page(m) == t ? 256 : A(0.3)) : OFF;
+        else if (t == 3)
+            v = lit(TRACK4, on ? 256 : A(0.3));
+        else if (slot_loaded(m, t)) {
+            v = lit(PAL[color(m, f->slot_fw[t])], on ? 256 : A(0.35));
+            if (!(snd >> t & 1) && !slow)               /* (loaded past the host's voices: silent, blinking slowly) */
+                v = lit(v, 40);
+        } else
+            v = lit(WHITE, on ? A(0.6) : A(0.1));
+        c[L_TRACK0 + t] = v;
+    }
+}
+
+static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    const rfm_move_fxset_t *x = &m->seq.fx;
+    const int pg = fx_page(m), kind = pg == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO;
+    const rfm_move_fx_module_t *md = pg == PG_MIDI || pg == PG_AUDIO ? module(m, kind, fxslot((rfm_move_t *)m, kind, f->fx_focus)->mod) : NULL;
+    const uint16_t filt = pg == PG_MIDI ? x->mfx[f->fx_focus].filt : pg == PG_ROUTE ? x->ffilt[f->fx_focus] : 0;
+    const int np = pg == PG_MIX ? 5 : nparams(md);
+    int i;
+    for (i = 0; i < 3; i++) {
+        int empty;
+        rgb_t col;
+        const int foc = f->fx_focus == i;
+        if (pg == PG_ROUTE || pg == PG_MIX)
+            empty = !slot_loaded(m, i), col = empty ? WHITE : PAL[color(m, f->slot_fw[i])];
+        else
+            empty = fxslot((rfm_move_t *)m, kind, i)->mod < 0, col = empty ? WHITE : FXCOL[pg];
+        c[L_PAD0 + pad_of(i)] = lit(col, foc ? 256 : empty ? A(0.12) : A(0.42));
+    }
+    for (i = 0; i < 16; i++)
+        c[L_STEP0 + i] = pg == PG_MIDI || pg == PG_ROUTE ? lit(WHITE, filt >> i & 1 ? 256 : A(0.15)) : OFF;
+    for (i = 0; i < RFM_MOVE_NKNOBS; i++)
+        c[L_RING0 + i] = i < np ? FXCOL[pg] : OFF;
+    w[W_MENU] = 127, w[W_BACK] = wl(A(0.35));
+    w[W_DELETE] = md ? wl(A(0.3)) : 0;
+}
+
+/* the projects view's LEDs (any track, FX setup) */
+void rfmv_fw_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    const int t = f->track, fw = f->sel;
+    int i, ids[32];
+    if (!f->fx && t == 3) {                             /* Track 4: the projects, as before */
+        rfmv_proj_leds(m, c, w);
+        track_leds(m, c);
+        return;
+    }
+    memset(c, 0, sizeof(rgb_t) * L_WHITE0);
+    memset(w, 0, 13);
+    track_leds(m, c);
+    if (f->fx) {
+        fx_leds(m, c, w);
+        return;
+    }
+    if (f->states) {                                    /* the firmware's states, as Move's Set Overview */
+        const rgb_t col = PAL[color(m, f->slot_fw[t])];
+        for (i = 0; i < RFM_MOVE_FW_STATES; i++)
+            c[L_PAD0 + pad_of(i)] = f->st_cur[t] == i ? col : f->st_used[t] >> i & 1 ? lit(col, A(0.42)) : OFF;
+        w[W_LOOP] = 127, w[W_BACK] = wl(A(0.35));
+        w[W_COPY] = f->smods & 1 ? 127 : wl(A(0.3)), w[W_DELETE] = f->smods & 2 ? 127 : wl(A(0.3));
+        return;
+    }
+    bank_ids(m, ids);
+    for (i = 0; i < 32; i++) {
+        const int id = ids[i], sel = id >= 0 && id == fw;
+        rgb_t v = OFF;
+        if (id < 0)
+            continue;
+        if (f->catalog) {
+            const int st = status(m, id);
+            v = lit(st == ST_NEW ? WHITE : PAL[color(m, id)], sel ? 256 : st == ST_NEW ? A(0.22) : A(0.42));
+            if (st == ST_UPDATE)
+                v = lit(v, breathe(m));
+        } else {
+            v = lit(PAL[color(m, id)], sel ? 256 : A(0.42));
+            if (track_of(m, id) == t)
+                v = lit(v, breathe(m));
+        }
+        if (f->busy_kind && f->busy_fw == id)
+            v = lit(v, blink(m));
+        c[L_PAD0 + pad_of(i)] = v;
+    }
+    for (i = 1; i <= 16; i++) {
+        rgb_t v = OFF;
+        if (f->capture && fw >= 0) {
+            if (i >= CAT0)
+                v = has_tag(m, fw, i) ? (i < CAT0 + 5 ? PAL[CATCOL[i - CAT0]] : WHITE)
+                                      : lit(WHITE, tag_defined(m, i) ? A(0.15) : A(0.05));
+        } else if (i <= 2) {
+            if (f->catalog)
+                v = lit(i == 1 ? AMBER : WHITE, m->s.fw_cat_scope & i ? 256 : A(0.2));
+            else
+                v = lit(i == 1 ? FAVCOL : WHITE, m->s.fw_scope == i - 1 ? 256 : A(0.2));
+        } else if (tag_defined(m, i))
+            v = lit(i < CAT0 + 5 ? PAL[CATCOL[i - CAT0]] : WHITE, m->s.fw_filter >> (i - 1) & 1 ? 256 : A(0.18));
+        c[L_STEP0 + i - 1] = v;
+    }
+    c[L_SAMPLE] = fw >= 0 && !f->catalog ? lit(FAVCOL, is_fav(m, fw) ? 256 : A(0.2)) : OFF;
+    w[W_CAPTURE] = fw >= 0 && !f->catalog ? (f->capture ? 127 : wl(A(0.2))) : 0;
+    w[W_MUTE] = f->catalog ? 127 : wl(A(0.2));
+    w[W_DELETE] = !f->catalog && slot_loaded(m, t) ? wl(A(0.3)) : 0;
+    w[W_LOOP] = !f->catalog && slot_loaded(m, t) ? wl(A(0.2)) : 0;
+    w[W_SHIFT] = wl(A(0.2)), w[W_BACK] = wl(A(0.35)), w[W_MENU] = wl(A(0.2));
+    {
+        const int nb = nbanks(m), b = cur_bank(m);
+        w[W_LEFT] = nb > 1 && b > 0 ? wl(A(0.6)) : 0;
+        w[W_RIGHT] = nb > 1 && b < nb - 1 ? wl(A(0.6)) : 0;
+    }
+    if (fw >= 0 && !f->catalog)
+        c[L_RING0] = PAL[color(m, fw)];                 /* knob 1: the colour */
+}
+
+/* ================================================================ the screens (the mockup's render()) === */
+static int rnd(double x) { return (int)(x + 0.5); }     /* (Math.round, x >= 0) */
+static void header(B *g, const char *l, const char *r)
+{
+    char t[40];
+    snprintf(t, sizeof t, "%s", l);
+    cut(t, r && r[0] ? 20 - (int)strlen(r) : 21);
+    fill(g, 0, 0, W, 9, 1);
+    text(g, 1, 1, t, 1, 0);
+    if (r && r[0])
+        text(g, W - 1 - tw(r, 1), 1, r, 1, 0);
+}
+static void name_cut(const rfm_move_t *m, int fw, int n, char *o, int cap)
+{
+    asc(ename(m, fw), o, cap);
+    cut(o, n);
+}
+static void plural(char *o, int cap, int n, const char *w) { snprintf(o, (size_t)cap, "%d %s%s", n, w, n == 1 ? "" : "s"); }
+static void ver_cut(const char *v, int n, char *o, int cap)
+{
+    asc(v ? v : "", o, cap);
+    cut(o, n);
+}
+static void thumb(B *g, const rfm_move_t *m, int fw, int x0)
+{
+    const rfm_move_fw_t *e = ent(m, fw);
+    char a[64], ini[3];
+    int i, n = 0;
+    if (e && e->thumb) {
+        bits(g, e->thumb, 64, x0, 0);
+        return;
+    }
+    rect(g, x0 + 2, 2, 60, 60);
+    asc(ename(m, fw), a, sizeof a);
+    for (i = 0; a[i] && n < 2; i++)
+        if ((a[i] >= 'A' && a[i] <= 'Z') || (a[i] >= 'a' && a[i] <= 'z') || (a[i] >= '0' && a[i] <= '9'))
+            ini[n++] = (char)(a[i] >= 'a' && a[i] <= 'z' ? a[i] - 32 : a[i]);
+    ini[n] = 0;
+    ctext_in(g, 18, ini, 3, x0, 64);
+    ctext_in(g, 48, "no image", 1, x0, 64);
+}
+static void scope_title(const rfm_move_t *m, char *o, int cap)
+{
+    snprintf(o, (size_t)cap, "%s", m->fw.catalog ? "Catalog" : m->s.fw_scope == 0 ? "Favorites" : "All");
+}
+
+/* the name view, the colour popup, the description (a firmware selected) */
+static void selected(B *g, const rfm_move_t *m, int fw)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    const rfm_move_fw_t *e = ent(m, fw);
+    char nm[64], l[5][LW], v[16], t[32];
+    int nl, sc, i;
+    if (f->jog == 0 || pop_up(m, FP_COLOR)) {
+        thumb(g, m, fw, 64);
+        if (pop_up(m, FP_COLOR)) {
+            const int c = color(m, fw);
+            const int s2 = strlen(PALNAME[c]) <= 5;
+            ctext_in(g, 4, "Colour", 1, 0, 64);
+            text(g, ifloor_div(64 - tw(PALNAME[c], s2 ? 2 : 1), 2), s2 ? 22 : 24, PALNAME[c], s2 ? 2 : 1, 1);
+            snprintf(t, sizeof t, "%d/16", c + 1);
+            ctext_in(g, 48, t, 1, 0, 64);
+            return;
+        }
+        asc(ename(m, fw), nm, sizeof nm);
+        {                                               /* 2x in rows of 5 when it fits in 3, else 1x in rows of 10 */
+            int longw = 0, run = 0;
+            const char *p;
+            for (p = nm;; p++) {
+                if (*p == ' ' || !*p) {
+                    longw |= run > 5, run = 0;
+                    if (!*p)
+                        break;
+                } else
+                    run++;
+            }
+            nl = wrap(nm, 5, l, 0, 5);
+            if (nl <= 3 && !longw)
+                sc = 2;
+            else
+                sc = 1, nl = wrap(nm, 10, l, 0, 5);
+        }
+        if (f->catalog) {
+            const int st = status(m, fw);
+            for (i = 0; i < nl && i < (sc == 2 ? 2 : 4); i++)
+                text(g, 0, 1 + i * (sc == 2 ? 17 : 9), l[i], sc, 1);
+            ver_cut(e ? e->version : "", 9, v, sizeof v);
+            if (st == ST_UPDATE) {
+                char fr[40];
+                snprintf(fr, sizeof fr, "from %s", e->installed);
+                asc(fr, t, sizeof t), cut(t, 10);
+                text(g, 0, 41, t, 1, 1), icon(g, 0, 52, UP, 5), text(g, 8, 51, v, 1, 1);
+            } else if (st == ST_NEW)
+                text(g, 0, 41, "not here", 1, 1), icon(g, 0, 52, DOWN, 5), text(g, 8, 51, v, 1, 1);
+            else {
+                snprintf(t, sizeof t, "v%s", v);
+                text(g, 0, 41, "installed", 1, 1), text(g, 0, 51, t, 1, 1);
+            }
+            return;
+        }
+        for (i = 0; i < nl && i < (sc == 2 ? 3 : 4); i++)
+            text(g, 0, 1 + i * (sc == 2 ? 17 : 9), l[i], sc, 1);
+        icon(g, 0, 51, is_fav(m, fw) ? HEART : HEARTO, 5);
+        if ((i = track_of(m, fw)) >= 0) {
+            snprintf(t, sizeof t, "T%d", i + 1);
+            text(g, 9, 50, t, 1, 1);
+        }
+        icon(g, 57, 57, CHEV, 3);
+        return;
+    }
+    {                                                   /* the description: a row a detent */
+        char rows[INFO_ROWS][LW];
+        const int top = f->jog - 1, n = desc_rows(m, fw, rows, top, INFO_ROWS);
+        name_cut(m, fw, 12, nm, sizeof nm);
+        fill(g, 0, 0, W, 9, 1);
+        text(g, 1, 1, nm, 1, 0);
+        ver_cut(e ? e->version : "", 9, v, sizeof v);
+        snprintf(t, sizeof t, "v%s", v);
+        text(g, W - 1 - tw(t, 1), 1, t, 1, 0);
+        for (i = 0; i < INFO_ROWS && top + i < n; i++)
+            text(g, 0, 13 + i * 10, rows[i], 1, 1);
+        if (n > INFO_ROWS) {
+            const int h = rnd(52.0 * INFO_ROWS / n) > 6 ? rnd(52.0 * INFO_ROWS / n) : 6;
+            fill(g, 126, 12 + rnd((double)(52 - h) * top / (n - INFO_ROWS)), 2, h, 1);
+        }
+    }
+}
+
+static void tagging(B *g, const rfm_move_t *m, int fw)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    char nm[32], t[24];
+    int s;
+    fill(g, 0, 0, W, 9, 1);
+    text(g, 1, 1, "Tags", 1, 0);
+    name_cut(m, fw, 14, nm, sizeof nm);
+    text(g, W - 1 - tw(nm, 1), 1, nm, 1, 0);
+    if (f->cap_step >= CAT0 && rfmv_now_ms(m) - f->cap_ms < CAP_MS) {
+        tag_name(m, f->cap_step, t, sizeof t);
+        cut(t, 10);
+        ctext(g, 16, t, 2);
+        ctext(g, 36, has_tag(m, fw, f->cap_step) ? "tagged" : "untagged", 1);
+    } else {
+        char all[256], rows[3][LW];
+        int n = 0, k;
+        all[0] = 0;
+        for (s = CAT0; s <= 16; s++)
+            if (has_tag(m, fw, s)) {
+                tag_name(m, s, t, sizeof t);
+                n += snprintf(all + n, sizeof all - (size_t)n, "%s%s", n ? ", " : "", t);
+                if (n >= (int)sizeof all)
+                    n = (int)sizeof all - 1;
+            }
+        k = wrap(n ? all : "no tags", 21, rows, 0, 3);
+        for (s = 0; s < k && s < 3; s++)
+            text(g, 0, 14 + s * 9, rows[s], 1, 1);
+    }
+    for (s = CAT0; s <= 16; s++) {
+        const int x = (s - 1) * 8;
+        if (has_tag(m, fw, s))
+            fill(g, x + 1, 50, 6, 10, 1);
+        else if (tag_defined(m, s))
+            rect(g, x + 1, 50, 6, 10);
+        else
+            px(g, x + 3, 55, 1);
+        if (f->cap_step == s && rfmv_now_ms(m) - f->cap_ms < CAP_MS)
+            hline(g, x + 1, 62, 6, 0);
+    }
+    hline(g, 16, 47, 40, 1);
+}
+
+static void rest(B *g, const rfm_move_t *m)             /* the bank: 8 x 4 cells of 16 x 16, two letters each */
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    int ids[32], i;
+    if (!bank_ids(m, ids)) {
+        if (!f->catalog && m->s.fw_scope == 0 && !m->s.fw_filter)
+            ctext(g, 12, f->n ? "None yet" : "Empty", 2), ctext(g, 38, f->n ? "Sampling adds one" : "no firmwares listed", 1);
+        else
+            ctext(g, 12, "Nothing", 2), ctext(g, 38, "matches the filter", 1);
+        return;
+    }
+    for (i = 0; i < 32; i++) {
+        const int x = (i % 8) * 16, y = (i / 8) * 16, id = ids[i];
+        char ab[3];
+        if (id < 0) {
+            fill(g, x + 7, y + 7, 2, 2, 1);
+            continue;
+        }
+        abbr(ename(m, id), ab);
+        if (!f->catalog && track_of(m, id) == f->track) {
+            fill(g, x, y, 16, 16, 1);
+            text(g, x + 3, y + 5, ab, 1, 0);
+        } else
+            text(g, x + 3, y + 5, ab, 1, 1);
+        if (f->catalog) {
+            const int st = status(m, id);
+            if (st == ST_UPDATE)
+                icon(g, x + 11, y, UPMARK, 2);
+            else if (st == ST_NEW)
+                hline(g, x + 3, y + 13, 11, 1);
+        } else {
+            const int t = track_of(m, id);
+            if (t >= 0 && t != f->track)
+                drect(g, x, y, 16, 16);
+        }
+    }
+}
+
+static void states_grid(B *g, const rfm_move_t *m)      /* Move's Set Overview: the 32 state slots */
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    const int t = f->track;
+    int i;
+    for (i = 0; i < RFM_MOVE_FW_STATES; i++) {
+        const int x = (i % 8) * 16 + 1, y = (i / 8) * 16 + 1, cur = f->st_cur[t] == i;
+        char n[4];
+        if (!cur && !(f->st_used[t] >> i & 1)) {
+            fill(g, x + 6, y + 6, 2, 2, 1);
+            continue;
+        }
+        snprintf(n, sizeof n, "%d", i + 1);
+        if (cur)
+            fill(g, x, y, 14, 14, 1);
+        else
+            rect(g, x, y, 14, 14);
+        text(g, x + ifloor_div(14 - tw(n, 1), 2), y + 4, n, 1, !cur);
+    }
+}
+
+/* ---- FX setup (the mockup's renderRouting) */
+static void range_text(uint16_t set, char *o, int cap)
+{
+    int s, n = 0, a = -1;
+    o[0] = 0;
+    if (!set) {
+        snprintf(o, (size_t)cap, "none");
+        return;
+    }
+    if (set == 0xFFFF) {
+        snprintf(o, (size_t)cap, "all");
+        return;
+    }
+    for (s = 1; s <= 17; s++) {
+        const int on = s <= 16 && (set >> (s - 1) & 1);
+        if (on && a < 0)
+            a = s;
+        else if (!on && a >= 0) {
+            n += snprintf(o + n, (size_t)(cap - n), a == s - 1 ? "%s%d" : "%s%d-%d", n ? "," : "", a, s - 1);
+            if (n >= cap)
+                n = cap - 1;
+            a = -1;
+        }
+    }
+}
+static const char *slot_mod_name(const rfm_move_t *m, int kind, int i)
+{
+    const rfm_move_fxslot_t *x = kind == RFM_MOVE_FX_MIDI ? &m->seq.fx.mfx[i] : &m->seq.fx.afx[i];
+    return x->mod >= 0 ? x->name : NULL;
+}
+static void focus_name(const rfm_move_t *m, char *o, int cap)
+{
+    const int pg = fx_page(m), i = m->fw.fx_focus;
+    char nm[32];
+    if (pg == PG_ROUTE || pg == PG_MIX) {
+        if (slot_loaded(m, i))
+            slot_name(m, i, nm, sizeof nm);
+        else
+            snprintf(nm, sizeof nm, "empty");
+        snprintf(o, (size_t)cap, "FW%d %s", i + 1, nm);
+    } else {
+        const char *n = slot_mod_name(m, pg == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO, i);
+        asc(n ? n : "empty", nm, sizeof nm);
+        snprintf(o, (size_t)cap, "%s %d %s", pg == PG_MIDI ? "MIDI FX" : "Audio FX", i + 1, nm);
+    }
+}
+static void pan_text(int v, char *o, int cap)
+{
+    if (v == 64)
+        snprintf(o, (size_t)cap, "C");
+    else
+        snprintf(o, (size_t)cap, "%c%d", v < 64 ? 'L' : 'R', v < 64 ? 64 - v : v - 64);
+}
+static void fx_screen(B *g, const rfm_move_t *m)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    const rfm_move_fxset_t *x = &m->seq.fx;
+    const int pg = fx_page(m), i = f->fx_focus, kind = pg == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO;
+    const int slotpg = pg == PG_MIDI || pg == PG_AUDIO;
+    char fn[48], t[48], v[32];
+    int r, c;
+    if (pop_up(m, FP_RPAGE)) {
+        snprintf(t, sizeof t, "Track %d", pg + 1);
+        ctext(g, 12, FXPAGE[pg], 2), ctext(g, 38, t, 1);
+        return;
+    }
+    if (slotpg && f->browse >= 0) {                     /* the module list, Move's list style */
+        const int cb = f->browse, n = f->nmods[kind] + 1;
+        char it[3][32];
+        for (r = -1; r <= 1; r++) {
+            const int k = cb + r;
+            it[r + 1][0] = 0;
+            if (k == 0)
+                snprintf(it[r + 1], sizeof it[r + 1], "(empty)");
+            else if (k > 0 && k < n)
+                asc(f->mods[kind][k - 1].name, it[r + 1], sizeof it[r + 1]);
+        }
+        snprintf(t, sizeof t, "%s %d", kind ? "Audio FX" : "MIDI FX", i + 1);
+        header(g, t, NULL);
+        if (cb > 0)
+            text(g, 12, 15, it[0], 1, 1);
+        text(g, 0, 29, ">", 1, 1);
+        cut(it[1], 9);
+        text(g, 12, 26, it[1], 2, 1);
+        if (cb + 1 < n)
+            text(g, 12, 48, it[2], 1, 1);
+        return;
+    }
+    focus_name(m, fn, sizeof fn);
+    if (pop_up(m, FP_PARAM)) {
+        const int k = f->pop_a;
+        int hint = 0;
+        if (pg == PG_MIX) {
+            if (k == 0)
+                snprintf(t, sizeof t, "Level"), snprintf(v, sizeof v, "%d", f->level[i]);
+            else if (k == 1)
+                snprintf(t, sizeof t, "Pan"), pan_text(x->pan[i], v, sizeof v);
+            else {
+                const char *an = slot_mod_name(m, RFM_MOVE_FX_AUDIO, k - 2);
+                char a2[32];
+                if (an)
+                    asc(an, a2, sizeof a2);
+                else
+                    snprintf(a2, sizeof a2, "FX %d", k - 1);
+                snprintf(t, sizeof t, "Send to %s", a2), snprintf(v, sizeof v, "%d", x->send[i][k - 2]);
+            }
+        } else {
+            const rfm_move_fxslot_t *sl = kind == RFM_MOVE_FX_MIDI ? &x->mfx[i] : &x->afx[i];
+            const rfm_move_fx_module_t *md = module(m, kind, sl->mod);
+            const rfm_move_fx_param_t *pa;
+            if (!md || k >= nparams(md))
+                return;
+            pa = &md->params[k];
+            asc(pa->name, t, sizeof t);
+            if (pa->nwords > 0 && pa->words && sl->val[k] < pa->nwords)
+                asc(pa->words[sl->val[k]], v, sizeof v);
+            else
+                snprintf(v, sizeof v, "%d", sl->val[k]);
+            hint = pa->dry_wet && kind == RFM_MOVE_FX_AUDIO;
+        }
+        header(g, fn, NULL);
+        {
+            const int s3 = strlen(v) <= 7;
+            ctext(g, s3 ? 17 : 20, v, s3 ? 3 : 2);
+        }
+        ctext(g, hint ? 47 : 49, t, 1);
+        if (hint)
+            ctext(g, 56, "100 % wet for a send", 1);
+        return;
+    }
+    if (pop_up(m, FP_RFILTER) && (pg == PG_MIDI || pg == PG_ROUTE)) {
+        const uint16_t filt = pg == PG_MIDI ? x->mfx[i].filt : x->ffilt[i];
+        range_text(filt, t, sizeof t);
+        header(g, fn, NULL);
+        ctext(g, 14, pg == PG_MIDI ? "acts on tracks" : "hears tracks", 1);
+        {
+            const int sh = strlen(t) <= 10;
+            cut(t, 21);
+            ctext(g, sh ? 26 : 29, t, sh ? 2 : 1);
+        }
+        if (pg != PG_MIDI) {
+            snprintf(t, sizeof t, "track %d%s", f->pop_a, f->pop_b ? " in" : " out");
+            ctext(g, 50, t, 1);
+        } else
+            ctext(g, 50, filt == 0xFFFF ? "same step again: one" : "same step again: all", 1);
+        return;
+    }
+    if (pop_up(m, FP_RLOADED) && slotpg) {
+        const char *n = slot_mod_name(m, kind, i);
+        snprintf(t, sizeof t, "%s %d", kind ? "Audio FX" : "MIDI FX", i + 1);
+        header(g, t, NULL);
+        if (f->pop_text[0])
+            snprintf(v, sizeof v, "%s", f->pop_text);
+        else
+            asc(n ? n : "empty", v, sizeof v);
+        ctext(g, 22, v, 2);
+        return;
+    }
+    if (pg == PG_MIX) {                                 /* the mixer: three strips */
+        snprintf(t, sizeof t, "%s", fn);
+        cut(t, 14);
+        header(g, "Mixer", t);
+        for (r = 0; r < 3; r++) {
+            const int x0 = r * 43, h = rnd(40.0 * f->level[r] / 127);
+            char ab[3], nm[12];
+            if (slot_loaded(m, r)) {
+                char sn[32];
+                slot_name(m, r, sn, sizeof sn);
+                abbr(sn, ab);
+                snprintf(nm, sizeof nm, "%s %d", ab, r + 1);
+            } else
+                snprintf(nm, sizeof nm, "- %d", r + 1);
+            if (i == r)
+                fill(g, x0, 11, 41, 9, 1), text(g, x0 + 2, 12, nm, 1, 0);
+            else
+                text(g, x0 + 2, 12, nm, 1, 1);
+            rect(g, x0 + 2, 22, 7, 42);
+            fill(g, x0 + 3, 63 - h, 5, h, 1);
+            for (c = 0; c < 3; c++) {
+                const int y = 24 + c * 13;
+                char d[2] = { (char)('1' + c), 0 };
+                text(g, x0 + 12, y, d, 1, 1);
+                rect(g, x0 + 19, y, 21, 7);
+                fill(g, x0 + 20, y + 1, rnd(19.0 * x->send[r][c] / 127), 5, 1);
+            }
+        }
+        return;
+    }
+    {                                                   /* the chain: MIDI FX, the firmwares, the audio FX */
+        static const int X[3] = { 2, 46, 90 }, Y[3] = { 12, 29, 46 };
+        const int BW = 34, BH = 15;
+        const uint16_t filt = pg == PG_MIDI ? x->mfx[i].filt : x->ffilt[i];
+        range_text(filt, t, sizeof t);
+        cut(t, 8);
+        header(g, fn, pg == PG_AUDIO ? "" : t);
+        for (c = 0; c < 3; c++)
+            for (r = 0; r < 3; r++) {
+                char lab[32];
+                int empty, foc, tx;
+                if (c == 1) {
+                    empty = !slot_loaded(m, r);
+                    if (empty)
+                        snprintf(lab, sizeof lab, "-");
+                    else
+                        slot_name(m, r, lab, sizeof lab);
+                } else {
+                    const char *n = slot_mod_name(m, c == 0 ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO, r);
+                    empty = !n;
+                    asc(n ? n : "-", lab, sizeof lab);
+                }
+                cut(lab, 5);
+                foc = (c == 0 ? pg == PG_MIDI : c == 1 ? pg == PG_ROUTE : pg == PG_AUDIO) && i == r;
+                tx = X[c] + ifloor_div(BW - tw(lab, 1), 2);
+                if (foc)
+                    fill(g, X[c], Y[r], BW, BH, 1), text(g, tx, Y[r] + 4, lab, 1, 0);
+                else if (empty)
+                    drect(g, X[c], Y[r], BW, BH), text(g, tx, Y[r] + 4, lab, 1, 1);
+                else
+                    rect(g, X[c], Y[r], BW, BH), text(g, tx, Y[r] + 4, lab, 1, 1);
+            }
+        fill(g, 19, 27, 1, 2, 1), fill(g, 19, 44, 1, 2, 1);
+        hline(g, 36, 53, 6, 0), fill(g, 41, 19, 1, 35, 1);
+        hline(g, 41, 19, 5, 0), hline(g, 41, 36, 5, 0), hline(g, 41, 53, 5, 0);
+        for (r = 0; r < 3; r++) {
+            int any = 0;
+            if (!slot_loaded(m, r))
+                continue;
+            for (c = 0; c < 3; c++)
+                if (x->send[r][c] > 0)
+                    any = 1, line(g, 80, Y[r] + 7, 89, Y[c] + 7);
+            if (!any)
+                hline(g, 80, Y[r] + 7, 4, 1);
+        }
+    }
+}
+
+/* the level popup (Track held + volume), the view's own popups that cover any track */
+static int cover_popup(B *g, const rfm_move_t *m)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    char t[48], nm[32];
+    int k;
+    if (pop_up(m, FP_LEVEL)) {
+        const int tr = f->pop_a;
+        snprintf(t, sizeof t, "Track %d level", tr + 1);
+        ctext(g, 2, t, 1);
+        snprintf(t, sizeof t, "%d", f->level[tr]);
+        ctext(g, 16, t, 3);
+        if (slot_loaded(m, tr))
+            slot_name(m, tr, nm, sizeof nm), cut(nm, 21);
+        else
+            snprintf(nm, sizeof nm, "empty");
+        ctext(g, 42, nm, 1);
+        for (k = 0; k < 3; k++) {
+            const int w = rnd(40.0 * f->level[k] / 127);
+            if (k == tr)
+                fill(g, k * 43, 59, w, 5, 1);
+            else
+                fill(g, k * 43, 62, w, 2, 1);
+        }
+        return 1;
+    }
+    if (!m->seq.projects || f->fx)
+        return 0;
+    if (pop_up(m, FP_TRACK)) {
+        const int tr = f->pop_a;
+        snprintf(t, sizeof t, "Track %d", tr + 1);
+        ctext(g, 8, t, 2);
+        if (tr == 3)
+            ctext(g, 36, "Projects", 1);
+        else if (slot_loaded(m, tr)) {
+            slot_name(m, tr, nm, sizeof nm), cut(nm, 21);
+            ctext(g, 36, nm, 1);
+            ctext(g, 48, rfm_move_fw_sounding(m) >> tr & 1 ? "playing" : "silent", 1);
+        } else
+            ctext(g, 36, "empty", 1);
+        return 1;
+    }
+    if (pop_up(m, FP_CATALOG)) {
+        int u = 0, n = 0, i;
+        for (i = 0; i < f->n; i++)
+            u += status(m, i) == ST_UPDATE, n += status(m, i) == ST_NEW;
+        ctext(g, 12, "Catalog", 2);
+        plural(nm, sizeof nm, u, "update");
+        snprintf(t, sizeof t, "%s, %d new", nm, n);
+        ctext(g, 38, t, 1);
+        return 1;
+    }
+    if (pop_up(m, FP_UNLOAD)) {
+        snprintf(nm, sizeof nm, "%s", f->pop_text);
+        cut(nm, 10);
+        ctext(g, 12, nm, 2);
+        snprintf(t, sizeof t, "unloaded from Track %d", f->pop_b + 1);
+        ctext(g, 38, t, 1);
+        return 1;
+    }
+    return 0;
+}
+
+static void fw_screen(B *g, const rfm_move_t *m)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    const int fw = f->sel;
+    char t[64], nm[32];
+    if (f->busy_kind) {                                 /* loading, downloading: a bar */
+        const char *verb = f->busy_kind == BUSY_LOAD ? "Loading..." : f->busy_kind == BUSY_UPDATE ? "Updating..." : "Downloading";
+        if (f->busy_kind == BUSY_DOWNLOAD)
+            ctext(g, 4, verb, 1), name_cut(m, f->busy_fw, 10, nm, sizeof nm), ctext(g, 18, nm, 2);
+        else
+            ctext(g, 8, verb, 2), name_cut(m, f->busy_fw, 21, nm, sizeof nm), ctext(g, 32, nm, 1);
+        rect(g, 13, 50, 102, 6);
+        fill(g, 14, 51, f->busy_pct, 4, 1);
+        return;
+    }
+    if (pop_up(m, FP_LOADED)) {
+        const rfm_move_fw_t *e = ent(m, f->pop_a);
+        name_cut(m, f->pop_a, 10, nm, sizeof nm);
+        ctext(g, 10, nm, 2);
+        if (f->pop_b == 10) {
+            char v[16];
+            ver_cut(e ? e->version : "", 10, v, sizeof v);
+            snprintf(t, sizeof t, "updated to %s", v);
+        } else if (f->pop_b == 11)
+            snprintf(t, sizeof t, "on the Move");
+        else
+            snprintf(t, sizeof t, "loaded on Track %d", f->pop_b + 1);
+        ctext(g, 36, t, 1);
+        return;
+    }
+    if (pop_up(m, FP_MSG)) {
+        if (f->pop_a >= 0) {
+            name_cut(m, f->pop_a, 10, nm, sizeof nm);
+            ctext(g, 12, nm, 2);
+            ctext(g, 38, f->pop_text, 1);
+        } else
+            ctext(g, 22, f->pop_text, 2);
+        return;
+    }
+    if (pop_up(m, FP_STATE)) {
+        static const char *const WH[3] = { "saved", "loaded", "deleted" };
+        snprintf(t, sizeof t, "State %d", f->pop_a + 1);
+        ctext(g, 10, t, 2);
+        ctext(g, 36, WH[f->pop_b % 3], 1);
+        return;
+    }
+    if (f->states) {
+        states_grid(g, m);
+        return;
+    }
+    if (pop_up(m, FP_FILTER)) {
+        char parts[200];
+        int n = 0, s;
+        scope_title(m, t, sizeof t);
+        ctext(g, 4, t, 1);
+        parts[0] = 0;
+        if (f->catalog && (m->s.fw_cat_scope & 2))
+            n += snprintf(parts + n, sizeof parts - (size_t)n, "%sNew", n ? " + " : "");
+        if (f->catalog && (m->s.fw_cat_scope & 1))
+            n += snprintf(parts + n, sizeof parts - (size_t)n, "%sUpdates", n ? " + " : "");
+        for (s = CAT0; s <= 16; s++)
+            if (m->s.fw_filter >> (s - 1) & 1) {
+                tag_name(m, s, nm, sizeof nm);
+                n += snprintf(parts + n, sizeof parts - (size_t)n, "%s%s", n ? " + " : "", nm);
+                if (n >= (int)sizeof parts)
+                    n = (int)sizeof parts - 1;
+            }
+        if (!n)
+            snprintf(parts, sizeof parts, "%s", f->catalog ? "Everything" : "Any category");
+        {
+            const int s2 = strlen(parts) <= 10;
+            cut(parts, 21);
+            ctext(g, s2 ? 19 : 22, parts, s2 ? 2 : 1);
+        }
+        n = list_len(m);
+        plural(t, sizeof t, n, "firmware");
+        ctext(g, 44, t, 1);
+        strip(g, nbanks_n(n), 0);
+        return;
+    }
+    if (pop_up(m, FP_BANK)) {
+        int ids[32], k = bank_ids(m, ids);
+        char a[16], b[16];
+        scope_title(m, t, sizeof t);
+        ctext(g, 4, t, 1);
+        snprintf(t, sizeof t, "Bank %d", cur_bank(m) + 1);
+        ctext(g, 19, t, 2);
+        if (k) {
+            name_cut(m, ids[0], 9, a, sizeof a), name_cut(m, ids[k - 1], 9, b, sizeof b);
+            snprintf(t, sizeof t, "%s - %s", a, b);
+            ctext(g, 43, t, 1);
+        }
+        strip(g, nbanks(m), cur_bank(m));
+        return;
+    }
+    if (pop_up(m, FP_FAV)) {
+        name_cut(m, f->pop_a, 10, nm, sizeof nm);
+        ctext(g, 12, nm, 2);
+        ctext(g, 38, f->pop_b ? "added to Favorites" : "removed from Favorites", 1);
+        return;
+    }
+    if (f->capture && fw >= 0) {
+        tagging(g, m, fw);
+        return;
+    }
+    if (fw < 0) {
+        rest(g, m);
+        return;
+    }
+    selected(g, m, fw);
+}
+
+/* the projects view's screen and the level popup: 1 drawn (else Track 4's grid as before) */
+int rfmv_fw_screen(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    if (!m->seq.projects && !pop_up(m, FP_LEVEL))
+        return 0;
+    mr_gfx_clear(cv, 0);
+    if (cover_popup(cv, m))
+        return 1;
+    if (f->fx) {
+        fx_screen(cv, m);
+        return 1;
+    }
+    if (f->track == 3)
+        return 0;
+    fw_screen(cv, m);
+    return 1;
+}
+/* the projects view's popups and loads change with the clock */
+int rfmv_fw_timed(const rfm_move_t *m)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    return pop_up(m, -1) || (m->seq.projects && (f->busy_kind || (f->capture && f->cap_step >= 0)));
+}
+
+/* (for the tests) */
+int rfmv_fw_bank(const rfm_move_t *m, int ids[32]) { return bank_ids(m, ids); }
+int rfmv_fw_list_len(const rfm_move_t *m) { return list_len(m); }
+int rfmv_fw_rec(const rfm_move_t *m, int fw) { return rec_of(m, fw); }

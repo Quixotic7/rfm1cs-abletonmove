@@ -9,7 +9,7 @@
 #   moveremote_gfx   Move Remote's 1-bit graphics and font (third_party/moveremote, vendored)
 #   moveremote       Move Remote's POSIX socket client (hosts that talk TCP themselves need not link it)
 cmake_minimum_required(VERSION 3.16)
-project(rfm1cs_abletonmove VERSION 0.3.1 LANGUAGES C)
+project(rfm1cs_abletonmove VERSION 0.4.0 LANGUAGES C)
 
 set(RFM1CS_TOP OFF)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -46,7 +46,7 @@ set_target_properties(moveremote_gfx moveremote PROPERTIES C_STANDARD 99 C_STAND
 
 # ---- the core
 add_library(rfm1cs_move STATIC
-    src/move.c src/screen.c src/v2.c src/seq.c src/seq_ui.c src/project.c)
+    src/move.c src/screen.c src/v2.c src/seq.c src/seq_ui.c src/project.c src/fw.c)
 target_include_directories(rfm1cs_move PUBLIC ${RFM1CS_DIR}/include ${MR_DIR}/include)
 target_link_libraries(rfm1cs_move PUBLIC moveremote_gfx)
 target_compile_options(rfm1cs_move PRIVATE -Wall -Wextra -Wshadow -Wstrict-prototypes)
@@ -106,6 +106,14 @@ if(RFM1CS_TESTS)
     target_compile_options(test_move_seq PRIVATE -Wall -Wextra)
     add_test(NAME move_seq COMMAND test_move_seq)
     set_tests_properties(move_seq PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    # 0.4.0: the firmware browser, the library, FX setup, states, the MIDI track tag, the old formats; the mockup's
+    # screens pixel for pixel (move_fwb_ref.h from move_v2_ref.mjs)
+    add_executable(test_move_fw tests/test_move_fw.c)
+    target_include_directories(test_move_fw PRIVATE src tests)
+    target_link_libraries(test_move_fw PRIVATE rfm1cs_move moveremote)
+    target_compile_options(test_move_fw PRIVATE -Wall -Wextra)
+    add_test(NAME move_fw COMMAND test_move_fw)
+    set_tests_properties(move_fw PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
     # end to end against Move Remote's simulator (tests/move_e2e.sh; skipped, code 77, without the simulator)
     add_executable(move_e2e tests/move_e2e.c)
     target_link_libraries(move_e2e PRIVATE rfm1cs_move moveremote)

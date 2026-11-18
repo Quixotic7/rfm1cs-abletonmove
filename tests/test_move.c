@@ -1032,11 +1032,11 @@ static void test_midi_round(void)
     /* the settings keep the screen; a version 1 image (77 bytes) still loads */
     rfm_move_save(&m.s, img);
     CHECK(rfm_move_load(&st, img, sizeof img) == 0 && st.midi_view == RFM_MOVE_MV_NOTES);
-    img[3] = 2, img[4] = (uint8_t)(RFM_MOVE_SETTINGS_BYTES - 2);   /* (version 2: no velocity setting) */
-    CHECK(rfm_move_load(&st, img, RFM_MOVE_SETTINGS_BYTES - 2) == 0 && st.midi_view == RFM_MOVE_MV_NOTES &&
+    img[3] = 2, img[4] = (uint8_t)(RFM_MOVE_SETTINGS_BYTES_V3 - 2);   /* (version 2: no velocity setting) */
+    CHECK(rfm_move_load(&st, img, RFM_MOVE_SETTINGS_BYTES_V3 - 2) == 0 && st.midi_view == RFM_MOVE_MV_NOTES &&
           st.vel_mode == RFM_MOVE_VEL_DYNAMIC && st.vel_level == 127);
-    img[3] = 1, img[4] = (uint8_t)(RFM_MOVE_SETTINGS_BYTES - 3);
-    CHECK(rfm_move_load(&st, img, RFM_MOVE_SETTINGS_BYTES - 3) == 0 && st.midi_view == RFM_MOVE_MV_PADS &&
+    img[3] = 1, img[4] = (uint8_t)(RFM_MOVE_SETTINGS_BYTES_V3 - 3);
+    CHECK(rfm_move_load(&st, img, RFM_MOVE_SETTINGS_BYTES_V3 - 3) == 0 && st.midi_view == RFM_MOVE_MV_PADS &&
           st.mode == RFM_MOVE_MODE_MIDI);
     track(&m, 1, 1), track(&m, 1, 0);                   /* (round: PADS again) */
     CHECK(m.s.midi_view == RFM_MOVE_MV_PADS && m.pop_i == 10);

@@ -26,9 +26,9 @@ extern "C" {
 
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
-#define RFM1CS_VERSION_MINOR 3
+#define RFM1CS_VERSION_MINOR 4
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.3.1"
+#define RFM1CS_VERSION "0.4.0"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -94,6 +94,28 @@ enum {
                                                          * blob's byte 18 (and its check) */
     RFM_MOVE_ACT_CLICK = 11,                            /* the metronome (frame-stamped): value 1 a bar's first beat,
                                                          * 0 another beat; the host plays a click */
+    /* (0.4.0) the firmware slots, the library, FX setup and the firmwares' states (README.md, "Firmwares"; the host
+     * guide's v0.4.0 section). FW_*: slot 0..2 in both index and slot; a firmware's id in data (NUL-terminated, len
+     * without the NUL) and its index in rfm_move_fw_list's array in value */
+    RFM_MOVE_ACT_FW_LOAD = 17,                          /* slot, id: load that firmware into the slot (answer with
+                                                         * rfm_move_fw_slots, and rfm_move_fw_progress meanwhile) */
+    RFM_MOVE_ACT_FW_UNLOAD = 18,                        /* slot: empty it (the core shows it empty at once) */
+    RFM_MOVE_ACT_FW_ACTIVE = 19,                        /* slot: the firmware the Move's controls play now */
+    RFM_MOVE_ACT_FW_DOWNLOAD = 20,                      /* id: download it, or update it to the catalog's version */
+    RFM_MOVE_ACT_FW_LIBRARY = 21,                       /* data/len: the library blob changed; store it */
+    RFM_MOVE_ACT_FW_LEVEL = 22,                         /* slot, value 0..127: that slot's level in the mix */
+    RFM_MOVE_ACT_FX_LOAD = 23,                          /* fx kind, slot, value: the module's index in the kind's
+                                                         * list (-1: empty the slot); data its name (NULL: empty) */
+    RFM_MOVE_ACT_FX_PARAM = 24,                         /* fx kind, slot, param (its index), value 0..127 or a word's
+                                                         * index */
+    RFM_MOVE_ACT_MIX = 25,                              /* slot (firmware 0..2), mix[] = level, pan (64 centre), the
+                                                         * sends to audio FX 1..3 */
+    RFM_MOVE_ACT_ROUTE = 26,                            /* filt[0..2]: each firmware's track filter, filt[3..5]: each
+                                                         * MIDI FX slot's (bit t: sequencer track t + 1) */
+    RFM_MOVE_ACT_STATE_SAVE = 27,                       /* slot (firmware 0..2), index state slot 0..31, data the
+                                                         * firmware's id: store its state there */
+    RFM_MOVE_ACT_STATE_LOAD = 28,                       /* .. load that state into the firmware */
+    RFM_MOVE_ACT_STATE_DELETE = 29,                     /* .. forget it */
 };
 typedef struct {
     uint8_t kind;                                       /* RFM_MOVE_ACT_* */
@@ -105,6 +127,15 @@ typedef struct {
     uint32_t frame;
     const uint8_t *data;                                /* PROJECT_SAVE: the blob, valid during the callback only */
     uint32_t len;
+    /* (0.4.0, new fields at the end) */
+    uint8_t track;                                      /* MIDI: the sequencer track 1..16 that sent it; 0 anything
+                                                         * else (the pads played live, Control mode's knobs) */
+    uint8_t slot;                                       /* FW_*, MIX, STATE_*: the firmware slot 0..2; FX_*: the FX
+                                                         * slot 0..2 */
+    uint8_t fx;                                         /* FX_*: RFM_MOVE_FX_MIDI or RFM_MOVE_FX_AUDIO */
+    uint8_t param;                                      /* FX_PARAM: the parameter's index */
+    uint8_t mix[5];                                     /* MIX: level, pan, send 1, send 2, send 3 (0..127) */
+    uint16_t filt[6];                                   /* ROUTE: firmware 1..3, MIDI FX 1..3 track filters */
 } rfm_move_act_t;
 typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
@@ -122,6 +153,12 @@ typedef struct {
     uint8_t drum[RFM_MOVE_NPADS];                       /* the drum layout's notes, by pad (0 = bottom-left) */
     uint8_t midi_view;                                  /* MIDI mode's screen: RFM_MOVE_MV_* */
     uint8_t vel_mode, vel_level;                        /* the pads' velocity: RFM_MOVE_VEL_*; FIXED's level 1..127 */
+    /* (version 4) the projects view as it was left (the firmware browser) */
+    uint8_t fw_track;                                   /* the track shown, 0..3 (3: Sequencer Projects) */
+    uint8_t fw_scope;                                   /* step 1 Favorites (0) or step 2 All (1) */
+    uint16_t fw_filter;                                 /* the category / tag filter: bit s - 1 for step s (3..16) */
+    uint8_t fw_cat_scope;                               /* the catalog's toggles: bit 0 Updates, bit 1 New */
+    uint8_t fx_page;                                    /* FX setup's page 0..3 */
 } rfm_move_settings_t;
 enum { RFM_MOVE_VEL_DYNAMIC, RFM_MOVE_VEL_FIXED, RFM_MOVE_VEL_SOFT, RFM_MOVE_VEL_HARD, RFM_MOVE_VEL_LINEAR, RFM_MOVE_VEL_N };
 /* (the jog's order: Dynamic, Fixed, Soft, Linear, Hard; LINEAR came last, so older settings keep their values) */
@@ -129,9 +166,10 @@ const char *rfm_move_vel_name(int v);                   /* "DYNAMIC", "FIXED", "
 int rfm_move_vel(const rfm_move_settings_t *s, int v);  /* a pad's velocity 1..127 through the setting */
 #define RFM_MOVE_LIST_TICKS 5                           /* a list-type menu knob (scale, root, layout ..): ticks an item */
 #define RFM_MOVE_KNOB_TICKS 2                           /* the Move's knob ticks an FM-1 encoder detent (the jog: 1) */
-#define RFM_MOVE_SETTINGS_VERSION 3                     /* (versions 1 and 2, 77 and 78 bytes, load too: no MIDI
-                                                         * screen, no velocity setting) */
-#define RFM_MOVE_SETTINGS_BYTES (6 + 7 + RFM_MOVE_NBANKS * RFM_MOVE_NKNOBS + RFM_MOVE_NPADS + 3)
+#define RFM_MOVE_SETTINGS_VERSION 4                     /* (versions 1, 2 and 3, 77, 78 and 80 bytes, load too: no
+                                                         * MIDI screen, no velocity setting, no projects view state) */
+#define RFM_MOVE_SETTINGS_BYTES_V3 (6 + 7 + RFM_MOVE_NBANKS * RFM_MOVE_NKNOBS + RFM_MOVE_NPADS + 3)
+#define RFM_MOVE_SETTINGS_BYTES (RFM_MOVE_SETTINGS_BYTES_V3 + 6)
 enum { RFM_MOVE_MV_PADS, RFM_MOVE_MV_NOTES, RFM_MOVE_MV_N };   /* MIDI mode's screens (a tap on Track 2 turns them) */
 void rfm_move_settings_default(rfm_move_settings_t *s);
 /* "RMV" version8 len16, then the fields; returns RFM_MOVE_SETTINGS_BYTES */
@@ -150,6 +188,137 @@ typedef struct {
  * knob rings 1..8), 13 white CC LEDs (Shift, Menu, Back, Capture, Down, Up, Undo, Loop, Copy, Left, Right, Mute,
  * Delete) */
 #define RFM_MOVE_NLEDS 92                               /* (the last 16: the white icon LEDs under the steps, CC 16..31) */
+
+/* ---- (0.4.0) the firmware browser: the projects view's Tracks 1..3 are three firmware slots (README.md,
+ * "Firmwares"; the host guide's v0.4.0 section has the whole contract)
+ *
+ * The catalog is the host's array (rfm_move_fw_list): the core keeps the pointer, reads it only on the thread that
+ * calls the core, inside its calls, and never allocates. The array, and every string and thumbnail its entries point
+ * to, stay valid and unchanged until the next rfm_move_fw_list call (a new list: a new array, then the call; never an
+ * edit of the live one). The one exception is the core's own: rfm_move_fw_installed writes entries[i].installed.
+ * Entries come in the order the pads show them (A-Z by name, as the catalog lists them). */
+#define RFM_MOVE_FW_SLOTS 3
+#define RFM_MOVE_FW_ID_MAX 32                           /* an id's bytes with its NUL (longer ids are refused) */
+#define RFM_MOVE_FW_THUMB 64                            /* a thumbnail: 64 x 64, 1 bit, rows top first, MSB left */
+#define RFM_MOVE_FW_THUMB_BYTES (RFM_MOVE_FW_THUMB * RFM_MOVE_FW_THUMB / 8)
+#define RFM_MOVE_FW_TAGS 9                              /* the user tags on steps 8..16 */
+#define RFM_MOVE_FW_TAG_NAME 16                         /* a tag's name with its NUL */
+#define RFM_MOVE_FW_LIB_MAX 256                         /* firmwares the library keeps something for (a favourite, a
+                                                         * colour, a tag) */
+#define RFM_MOVE_FW_LIB_SAVE_MS 1000                    /* FW_LIBRARY: this long after the last change */
+enum { RFM_MOVE_CAT_SYNTH = 1, RFM_MOVE_CAT_GROOVEBOX = 2, RFM_MOVE_CAT_CHORDS = 4, RFM_MOVE_CAT_DRUMS = 8,
+       RFM_MOVE_CAT_OTHER = 16 };                       /* steps 3..7, the catalog's five categories in its order */
+enum { RFM_MOVE_FW_FAILED = -1, RFM_MOVE_FW_BUSY = -2 };   /* rfm_move_fw_progress: it failed / the host is too busy */
+typedef struct {
+    const char *id;                                     /* the catalog's id (ASCII, < RFM_MOVE_FW_ID_MAX bytes) */
+    const char *name;                                   /* the name shown (ASCII; other bytes are skipped) */
+    const char *version;                                /* the catalog's version */
+    const char *installed;                              /* the version on the Move; NULL or "": not on the Move */
+    const char *desc;                                   /* the description (ASCII), NULL: none */
+    const uint8_t *thumb;                               /* RFM_MOVE_FW_THUMB_BYTES, NULL: none (initials stand in) */
+    uint8_t cats;                                       /* RFM_MOVE_CAT_* bits */
+    uint8_t cat;                                        /* its main category, 0..4 (Synth .. Other; its default pad
+                                                         * colour), 255 none */
+} rfm_move_fw_t;
+
+/* ---- (0.4.0) FX setup (Session in the projects view): 3 MIDI FX slots in series, each firmware's track filter, 3
+ * audio FX slots on send / return busses, and the mix; saved with the project (version 5) */
+enum { RFM_MOVE_FX_MIDI = 0, RFM_MOVE_FX_AUDIO = 1 };
+#define RFM_MOVE_FX_SLOTS 3
+#define RFM_MOVE_FX_PARAMS 8                            /* knobs 1..8: a module's first 8 parameters */
+#define RFM_MOVE_FX_NAME 24                             /* a module's name with its NUL, as the project keeps it */
+typedef struct {
+    const char *name;                                   /* "Rate" */
+    int nwords;                                         /* 0: a value 0..127; else a list of words (the value: an index) */
+    const char *const *words;
+    uint8_t def;                                        /* the value a newly loaded module has (as the host loads it) */
+    uint8_t dry_wet;                                    /* 1: a dry / wet mix; the popup says it must be 100 % wet */
+} rfm_move_fx_param_t;
+typedef struct {
+    const char *name;                                   /* the module's name (unique in its kind) */
+    int nparams;                                        /* chain_params order; the first RFM_MOVE_FX_PARAMS are used */
+    const rfm_move_fx_param_t *params;
+} rfm_move_fx_module_t;
+typedef struct {
+    char name[RFM_MOVE_FX_NAME];                        /* (saved) the module, "" empty */
+    int16_t mod;                                        /* .. its index in the host's list now, -1 none */
+    uint8_t val[RFM_MOVE_FX_PARAMS];                    /* (saved) */
+    uint16_t filt;                                      /* (saved; MIDI FX) bit t: track t + 1 (one track, or all) */
+} rfm_move_fxslot_t;
+typedef struct {                                        /* (saved with the project, version 5) */
+    rfm_move_fxslot_t mfx[RFM_MOVE_FX_SLOTS], afx[RFM_MOVE_FX_SLOTS];
+    uint16_t ffilt[RFM_MOVE_FW_SLOTS];                  /* each firmware's track filter (all 16 at first) */
+    uint8_t pan[RFM_MOVE_FW_SLOTS];                     /* 0..127, 64 centre */
+    uint8_t send[RFM_MOVE_FW_SLOTS][RFM_MOVE_FX_SLOTS];  /* firmware -> audio FX bus, 0..127 */
+} rfm_move_fxset_t;
+#define RFM_MOVE_FXSET_BYTES (RFM_MOVE_FX_SLOTS * (RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS + 2) + \
+                              RFM_MOVE_FX_SLOTS * (RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS) + \
+                              RFM_MOVE_FW_SLOTS * (2 + 1 + RFM_MOVE_FX_SLOTS))
+
+typedef struct {                                        /* a firmware the library knows */
+    char id[RFM_MOVE_FW_ID_MAX];
+    uint8_t color;                                      /* 1..16 (RFM_MOVE_PROJ_COLORS), 0 its category's */
+    uint16_t tag_on, tag_set;                           /* bit s - 1 for step s: tagged; set by the user (else: the
+                                                         * catalog's category for steps 3..7, untagged for 8..16) */
+    int16_t fw;                                         /* its index in the host's list, -1 not there */
+} rfm_move_lib_rec_t;
+/* the library blob (FW_LIBRARY, rfm_move_fw_library; the host guide documents it) */
+#define RFM_MOVE_FW_LIB_VERSION 1
+#define RFM_MOVE_FW_LIB_BYTES (16 + RFM_MOVE_FW_SLOTS * RFM_MOVE_FW_ID_MAX + RFM_MOVE_FW_TAGS * RFM_MOVE_FW_TAG_NAME + \
+                               RFM_MOVE_FW_LIB_MAX * (RFM_MOVE_FW_ID_MAX + 5 + 2) + 4)
+#define RFM_MOVE_FW_STATES 32                           /* a firmware's state slots (the pads in States) */
+
+typedef struct {
+    /* the host's */
+    rfm_move_fw_t *list;                                /* (the host's array: see above) */
+    int n;
+    uint8_t host;                                       /* rfm_move_fw_list was called: the browser is on */
+    uint8_t voices;                                     /* firmwares the host can sound at once, 1..3 */
+    const rfm_move_fx_module_t *mods[2];                /* the host's modules, by kind (the same contract) */
+    int nmods[2];
+    char slot_id[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX];   /* what each slot holds ("" empty) */
+    int16_t slot_fw[RFM_MOVE_FW_SLOTS];                 /* .. its index in the list, -1 none or not listed */
+    uint8_t level[RFM_MOVE_FW_SLOTS];                   /* (library) each slot's level, 0..127 */
+    uint8_t active;                                     /* (library) the slot the controls play */
+    uint32_t st_used[RFM_MOVE_FW_SLOTS];                /* each slot's firmware's stored states (bits) */
+    int8_t st_cur[RFM_MOVE_FW_SLOTS];                   /* .. the one loaded or saved last, -1 */
+    /* the library */
+    rfm_move_lib_rec_t rec[RFM_MOVE_FW_LIB_MAX];
+    uint16_t nrec;
+    uint16_t fav[RFM_MOVE_FW_LIB_MAX];                  /* the favourites, in order: record indexes */
+    uint16_t nfav;
+    char tag[RFM_MOVE_FW_TAGS][RFM_MOVE_FW_TAG_NAME];   /* the user tags' names ("" not made yet) */
+    uint8_t lib_dirty;
+    uint32_t lib_ms;
+    uint8_t blob[RFM_MOVE_FW_LIB_BYTES];
+    /* the view (a firmware track) */
+    uint8_t track;                                      /* the projects view's track shown, 0..3 (3: the projects) */
+    uint8_t catalog;                                    /* Mute: the catalog */
+    uint8_t bank[3];                                    /* the bank shown: Favorites, All, the catalog */
+    int16_t sel;                                        /* the firmware selected (its list index), -1 none */
+    uint8_t jog;                                        /* 0 the name, 1.. the description's rows */
+    uint8_t capture;                                    /* Capture held (tagging) */
+    int8_t cap_step;                                    /* .. the step just pressed, -1 */
+    uint32_t cap_ms;
+    uint8_t states;                                     /* Loop: the firmware's states on the pads */
+    uint8_t smods;                                      /* .. Copy (1), Delete (2) held */
+    int8_t busy_kind;                                   /* a load (1), download (2), update (3) under way, 0 none */
+    int16_t busy_fw;                                    /* .. its list index */
+    int8_t busy_slot;                                   /* .. a load's slot */
+    int8_t busy_pct;                                    /* .. 0..100 */
+    char busy_id[RFM_MOVE_FW_ID_MAX];                   /* .. its id (a new list keeps it) */
+    uint8_t pop;                                        /* the view's popup (fw.c FP_*), 0 none */
+    int16_t pop_a, pop_b;
+    uint32_t pop_ms;
+    char pop_text[24];                                  /* .. a message's words */
+    uint32_t vol_held;                                  /* the volume knob turned with a Track held (its level) */
+    int8_t list_acc;                                    /* knob 1 (colour): the ticks short of a step */
+    /* FX setup */
+    uint8_t fx;                                         /* open */
+    uint8_t fx_focus;                                   /* the slot (pad 1..3) on the page */
+    int8_t browse;                                      /* the module list: -1 closed, 0 "(empty)", n the n-th module */
+    int8_t knob_acc[RFM_MOVE_NKNOBS];                   /* list parameters: the ticks short of a word */
+} rfm_move_fw_state_t;
 
 /* ---- the sequencer (Track 4; README.md, "Sequencer") */
 #define RFM_MOVE_SEQ_TRACKS 16                          /* track n plays MIDI channel n by default */
@@ -220,7 +389,7 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 4                      /* (versions 1, 2 and 3 load too) */
+#define RFM_MOVE_PROJECT_VERSION 5                      /* (versions 1..4 load too; 5 adds FX setup) */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -230,7 +399,8 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_PROJECT_EXT_V2 (RFM_MOVE_SEQ_CLIPS + RFM_MOVE_SEQ_CLIPS / 8 + \
                                  RFM_MOVE_SEQ_TRACKS * (2 + RFM_MOVE_ARP_BYTES_V2 + 1 + RFM_MOVE_NBANKS * RFM_MOVE_NKNOBS))
 #define RFM_MOVE_PROJECT_EXT_V3 (RFM_MOVE_PROJECT_EXT_V2 + RFM_MOVE_SEQ_TRACKS * (RFM_MOVE_ARP_BYTES - RFM_MOVE_ARP_BYTES_V2 + 4))
-#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V3 + RFM_MOVE_SEQ_TRACKS * 8)   /* + the trig defaults (version 4) */
+#define RFM_MOVE_PROJECT_EXT_V4 (RFM_MOVE_PROJECT_EXT_V3 + RFM_MOVE_SEQ_TRACKS * 8)   /* + the trig defaults (version 4) */
+#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V4 + RFM_MOVE_FXSET_BYTES)   /* + FX setup (version 5) */
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 7 + RFM_MOVE_SEQ_LOCKS * 4)
 enum { RFM_MOVE_CLOCK_AUTO = 0, RFM_MOVE_CLOCK_INTERNAL = 1, RFM_MOVE_CLOCK_EXTERNAL = 2 };
@@ -417,6 +587,7 @@ typedef struct {
     uint8_t msg;                                        /* a short message on the screen (SEQ_MSG_*) */
     uint32_t msg_ms, ui_ms;
     rfm_move_proj_info_t info[RFM_MOVE_PROJECTS];       /* what the project grid draws of each slot */
+    rfm_move_fxset_t fx;                                /* (saved, version 5) FX setup: the routing, the modules, the mix */
 } rfm_move_seq_t;
 
 /* ---- the state */
@@ -467,6 +638,8 @@ typedef struct {
     uint8_t thumb[64][64];                              /* the last FM-1 screen, 1 bit a pixel (thresholded) */
     /* the sequencer (about 150 KB: keep rfm_move_t static or on the heap, not on a small stack) */
     rfm_move_seq_t seq;
+    /* (0.4.0) the firmware browser, the library, FX setup */
+    rfm_move_fw_state_t fw;
 } rfm_move_t;
 
 /* settings NULL: the defaults. fn gets every action (it may be NULL). */
@@ -540,6 +713,43 @@ void rfm_move_project_dir(rfm_move_t *m, uint32_t used);   /* bit n: slot n hold
 int rfm_move_project_info(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n);
 void rfm_move_project_flush(rfm_move_t *m);            /* the autosave now, if the project changed */
 int rfm_move_project_slot(const rfm_move_t *m);        /* the current slot */
+
+/* ---- (0.4.0) the firmware browser, the library, FX setup, states (the host guide's v0.4.0 section) */
+/* the catalog: the host's array (the contract above). n 0 or entries NULL: none (the browser is on, empty). The
+ * first call turns the browser on: Shift + step 1 then opens on the firmware track played, and Session there is FX
+ * setup; a host that never calls it keeps the projects view as it was (Track 4) */
+void rfm_move_fw_list(rfm_move_t *m, rfm_move_fw_t *entries, int n);
+/* entry index's installed version changed (a download or update done, a firmware removed: NULL). The string stays
+ * valid until the next rfm_move_fw_list (the core stores the pointer in entries[index].installed) */
+void rfm_move_fw_installed(rfm_move_t *m, int index, const char *version);
+/* what the three slots hold now (ids; NULL or "" empty), after FW_LOAD / FW_UNLOAD or at start */
+void rfm_move_fw_slots(rfm_move_t *m, const char *const ids[RFM_MOVE_FW_SLOTS]);
+/* a load's or download's progress for that firmware: 0..100 (100 done), RFM_MOVE_FW_FAILED, RFM_MOVE_FW_BUSY ("Too
+ * busy": the host refused it) */
+void rfm_move_fw_progress(rfm_move_t *m, const char *id, int pct);
+/* the stored library blob at start (NULL / 0: an empty library). 0 ok; -1 not a library blob (the library is left
+ * empty). Its slot ids and levels are the ones the host restores (then rfm_move_fw_slots) */
+int rfm_move_fw_library(rfm_move_t *m, const uint8_t *blob, uint32_t n);
+/* the library as a blob now (FW_LIBRARY's bytes): its length, 0 cap too small */
+uint32_t rfm_move_fw_library_save(rfm_move_t *m, uint8_t *out, uint32_t cap);
+/* the library's FW_LIBRARY now, if it changed (the session's flush calls it) */
+void rfm_move_fw_flush(rfm_move_t *m);
+/* how many firmwares the host sounds at once, 1..3 (default 1). The active slot always sounds; the others sound in
+ * slot order while voices are left (rfm_move_fw_sounding); a loaded slot that does not, blinks its Track LED */
+void rfm_move_fw_voices(rfm_move_t *m, int n);
+int rfm_move_fw_sounding(const rfm_move_t *m);          /* bit s: slot s sounds */
+int rfm_move_fw_active(const rfm_move_t *m);            /* the slot the controls play, 0..2 */
+int rfm_move_fw_level(const rfm_move_t *m, int slot);   /* 0..127 */
+/* the firmware on that slot has these states stored (bit k: state slot k), at start and after a firmware change */
+void rfm_move_fw_states(rfm_move_t *m, int slot, uint32_t used);
+/* the host's FX modules of a kind (RFM_MOVE_FX_*), the same contract as the catalog's array; n 0: none (a host with
+ * no modules: FX setup has no MIDI FX / Audio FX page). Slots keep their module by name */
+void rfm_move_fx_modules(rfm_move_t *m, int kind, const rfm_move_fx_module_t *list, int n);
+/* the host refused a module (too busy): the slot is emptied, "Too busy" shown */
+void rfm_move_fx_refused(rfm_move_t *m, int kind, int slot);
+/* the whole FX setup as actions now (FX_LOAD and FX_PARAM for every slot, MIX for every firmware, ROUTE): after the
+ * modules are given at start. A project load does it too (when the browser is on) */
+void rfm_move_fx_sync(rfm_move_t *m);
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */

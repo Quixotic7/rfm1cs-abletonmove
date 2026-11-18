@@ -39,10 +39,27 @@
 //   core.fileUnpack(bytes, self) -> { kind, entries: [{ slot, saved, bytes }] } or { error: "Not a Move project file: .." }
 //   core.setStoreHost({ read(slot) -> STORE_PENDING | 0, write(slot, bytes) -> 0, remove(slot) -> 0 }); core.storeInit(used)
 //   core.storeAction(now, action) (a project action: kinds projectSave .. projectColor); core.storeAnswer(now, slot, bytes | null)
+// (0.4.0) the firmware browser, the library, FX setup (move.h; the host guide's v0.4.0 section):
+//   core.fwList([{ id, name, version, installed, desc, thumb (Uint8Array(512) | null), cats, cat }]) -> actions
+//   core.fwInstalled(i, version | null); core.fwSlots([id | null, x3]) -> actions; core.fwProgress(id, pct) -> actions
+//   core.fwLibrary(bytes | null) -> 0 / -1; core.fwLibrarySave() -> bytes; core.fwFlush() -> actions
+//   core.fwVoices(n); core.fwSounding() -> bits; core.fwActive(); core.fwLevel(slot); core.fwStates(slot, usedBits)
+//   core.fxModules(kind, [{ name, params: [{ name, words?: [..], def, dryWet }] }]); core.fxRefused(kind, slot) -> actions
+//   core.fxSync() -> actions
+//   actions: { kind: "fwLoad", slot, fw } { kind: "fwUnload", slot } { kind: "fwActive", slot } { kind: "fwDownload", fw }
+//   { kind: "fwLibrary", bytes } { kind: "fwLevel", slot, level } { kind: "fxLoad", fx, slot, module } (-1 empty)
+//   { kind: "fxParam", fx, slot, param, value } { kind: "mix", slot, level, pan, sends: [3] }
+//   { kind: "route", fw: [3 filters], midiFx: [3 filters] } (bit t: track t + 1) { kind: "stateSave" / "stateLoad" /
+//   "stateDelete", slot, state }; fw is the index in fwList's array; "midi" has `track` (1..16 the sequencer's, 0 live)
 export const ACT = { KEY: 1, PRESS: 2, BTN: 3, TURN: 4, MASTER: 5, MIDI: 6, SETTINGS: 7, PROJECT_SAVE: 8, PROJECT_LOAD: 9, PROJECT_DELETE: 10,
-  CLICK: 11, AUDIO_REC: 12, PROJECT_CUT: 13, PROJECT_COPY: 14, PROJECT_PASTE: 15, PROJECT_COLOR: 16 };
+  CLICK: 11, AUDIO_REC: 12, PROJECT_CUT: 13, PROJECT_COPY: 14, PROJECT_PASTE: 15, PROJECT_COLOR: 16,
+  FW_LOAD: 17, FW_UNLOAD: 18, FW_ACTIVE: 19, FW_DOWNLOAD: 20, FW_LIBRARY: 21, FW_LEVEL: 22, FX_LOAD: 23, FX_PARAM: 24,
+  MIX: 25, ROUTE: 26, STATE_SAVE: 27, STATE_LOAD: 28, STATE_DELETE: 29 };
+export const FX = { MIDI: 0, AUDIO: 1 };
+export const CAT = { SYNTH: 1, GROOVEBOX: 2, CHORDS: 4, DRUMS: 8, OTHER: 16 };
+export const FW_FAILED = -1, FW_BUSY = -2;
 export const CLOCK = { AUTO: 0, INT: 1, EXT: 2 };
-export const PROJECTS = 32, PROJECT_MAX = 39200;   // (RFM_MOVE_PROJECT_MAX, version 3 blobs; mw_project_max())
+export const PROJECTS = 32, PROJECT_MAX = 39416;   // (RFM_MOVE_PROJECT_MAX, version 5 blobs; mw_project_max())
 export const FILE_ONE = 1, FILE_SET = 2, FILE_MAX = 8 + PROJECTS * (10 + PROJECT_MAX);   // (store.h RFM1CS_FILE_*)
 export const TONES = ["off", "busy", "on", "bad"];   // (RFM1CS_TONE_*)
 export const MODE = { FM1: 0, MIDI: 1, CONTROL: 2, SEQ: 3 };
@@ -55,8 +72,8 @@ export const STORE_PENDING = -2;
 const EV_NAMES = { 1: "send", 2: "open", 3: "close", 4: "action", 5: "released", 6: "lost", 7: "bye", 8: "status", 100: "loaded" };
 const STORE_KINDS = { projectSave: ACT.PROJECT_SAVE, projectLoad: ACT.PROJECT_LOAD, projectDelete: ACT.PROJECT_DELETE,
   projectCut: ACT.PROJECT_CUT, projectCopy: ACT.PROJECT_COPY, projectPaste: ACT.PROJECT_PASTE, projectColor: ACT.PROJECT_COLOR };
-export const SCREEN_BYTES = 1024, SETTINGS_BYTES = 80, NLEDS = 92, POPUP_MS = 1000;   // (RFM_MOVE_POPUP_MS: a popup stays this long)
-const ACT_BYTES = 10, LED_BYTES = 6;
+export const SCREEN_BYTES = 1024, SETTINGS_BYTES = 86, NLEDS = 92, POPUP_MS = 1000;   // (RFM_MOVE_POPUP_MS: a popup stays this long)
+const ACT_BYTES = 10, ACT_EXT = 21, LED_BYTES = 6;
 // pressure 0..127 as key_lean 0..100 (move.h rfm_move_lean)
 export const lean = (p) => Math.floor((Math.max(0, Math.min(127, p | 0)) * 100 + 63) / 127);
 
@@ -110,7 +127,7 @@ export class MoveCore {
     else if (kind === ACT.BTN) a = { kind: "btn", m: index, down };
     else if (kind === ACT.TURN) a = { kind: "turn", enc: index, steps: value };
     else if (kind === ACT.MASTER) a = { kind: "master", value };
-    else if (kind === ACT.MIDI) a = { kind: "midi", bytes: b.slice(o + 7, o + 7 + Math.min(3, b[o + 6])) };
+    else if (kind === ACT.MIDI) a = { kind: "midi", bytes: b.slice(o + 7, o + 7 + Math.min(3, b[o + 6])), track: b[M._mw_act_ext(this.w) + i * ACT_EXT] };
     else if (kind === ACT.SETTINGS) a = { kind: "settings" };
     else if (kind === ACT.PROJECT_SAVE) {
       const p = M._mw_blob(this.w, value), nb = M._mw_blob_len(this.w, value);
@@ -123,6 +140,22 @@ export class MoveCore {
     else if (kind === ACT.PROJECT_COPY) a = { kind: "projectCopy", slot: index };
     else if (kind === ACT.PROJECT_PASTE) a = { kind: "projectPaste", slot: index };
     else if (kind === ACT.PROJECT_COLOR) a = { kind: "projectColor", slot: index, color: value };
+    else if (kind >= ACT.FW_LOAD && kind <= ACT.STATE_DELETE) {                     // (0.4.0) the browser, FX setup
+      const x = M._mw_act_ext(this.w) + i * ACT_EXT, slot = b[x + 1], fx = b[x + 2], f16 = (k) => b[x + 9 + k * 2] | (b[x + 10 + k * 2] << 8);
+      if (kind === ACT.FW_LOAD) a = { kind: "fwLoad", slot, fw: value };
+      else if (kind === ACT.FW_UNLOAD) a = { kind: "fwUnload", slot };
+      else if (kind === ACT.FW_ACTIVE) a = { kind: "fwActive", slot };
+      else if (kind === ACT.FW_DOWNLOAD) a = { kind: "fwDownload", fw: value };
+      else if (kind === ACT.FW_LIBRARY) {
+        const p = M._mw_blob(this.w, value), nb = M._mw_blob_len(this.w, value);
+        if (p && nb) a = { kind: "fwLibrary", bytes: M.HEAPU8.slice(p, p + nb) };
+      } else if (kind === ACT.FW_LEVEL) a = { kind: "fwLevel", slot, level: value };
+      else if (kind === ACT.FX_LOAD) a = { kind: "fxLoad", fx, slot, module: value };
+      else if (kind === ACT.FX_PARAM) a = { kind: "fxParam", fx, slot, param: b[x + 3], value };
+      else if (kind === ACT.MIX) a = { kind: "mix", slot, level: b[x + 4], pan: b[x + 5], sends: [b[x + 6], b[x + 7], b[x + 8]] };
+      else if (kind === ACT.ROUTE) a = { kind: "route", fw: [f16(0), f16(1), f16(2)], midiFx: [f16(3), f16(4), f16(5)] };
+      else a = { kind: ["stateSave", "stateLoad", "stateDelete"][kind - ACT.STATE_SAVE], slot, state: index };
+    }
     if (a) a.frame = (b[fr + 4 * i] | (b[fr + 4 * i + 1] << 8) | (b[fr + 4 * i + 2] << 16) | (b[fr + 4 * i + 3] << 24)) >>> 0;
     return a;
   }
@@ -367,6 +400,52 @@ export class MoveCore {
       (p, n) => this._evs(this.M._mw_store_request(this.w, now >>> 0, kind, a.slot | 0, a.color | 0, p, n)));
   }
   storeAnswer(now, slot, bytes) { return this._withBytes(bytes, (p, n) => this._evs(this.M._mw_store_answer(this.w, now >>> 0, slot | 0, p, n))); }
+  // ---- (0.4.0) the firmware browser, the library, FX setup
+  _cstr(v) {
+    if (v === undefined || v === null) return 0;
+    const M = this.M, t = String(v), n = M.lengthBytesUTF8(t) + 1, p = M._malloc(n);
+    M.stringToUTF8(t, p, n);
+    return p;
+  }
+  _withStrs(list, fn) { const ps = list.map((v) => this._cstr(v)); try { return fn(...ps); } finally { for (const p of ps) if (p) this.M._free(p); } }
+  fwList(entries) {
+    const M = this.M, list = entries || [];
+    if (M._mw_fw_begin(this.w, list.length) < 0) throw new Error("rfm_move: out of memory");
+    list.forEach((e, i) => {
+      const t = e.thumb && e.thumb.length >= 512 ? M._malloc(512) : 0;
+      if (t) M.HEAPU8.set(e.thumb.subarray ? e.thumb.subarray(0, 512) : e.thumb.slice(0, 512), t);
+      try { this._withStrs([e.id, e.name, e.version, e.installed || null, e.desc || null], (a, b, c, d, f) => M._mw_fw_entry(i, a, b, c, d, f, t, e.cats | 0, e.cat === undefined ? 255 : e.cat | 0)); }
+      finally { if (t) M._free(t); }
+    });
+    return this._acts(M._mw_fw_commit(this.w));
+  }
+  fwInstalled(i, version) { this._withStrs([version || null], (v) => this.M._mw_fw_installed(this.w, i | 0, v)); }
+  fwSlots(ids) { const s = ids || []; return this._acts(this._withStrs([s[0] || null, s[1] || null, s[2] || null], (a, b, c) => this.M._mw_fw_slots(this.w, a, b, c))); }
+  fwProgress(id, pct) { return this._acts(this._withStrs([id], (p) => this.M._mw_fw_progress(this.w, p, pct | 0))); }
+  fwLibrary(bytes) { return this._withBytes(bytes, (p, n) => this.M._mw_fw_library(this.w, p, n)); }
+  fwLibrarySave() { const n = this.M._mw_fw_library_save(this.w), p = this.M._mw_blob(this.w, 0); return n ? this.M.HEAPU8.slice(p, p + n) : null; }
+  fwFlush() { return this._acts(this.M._mw_fw_flush(this.w)); }
+  fwVoices(n) { this.M._mw_fw_voices(this.w, n | 0); }
+  fwSounding() { return this.M._mw_fw_sounding(this.w); }
+  fwActive() { return this.M._mw_fw_active(this.w); }
+  fwLevel(slot) { return this.M._mw_fw_level(this.w, slot | 0); }
+  fwStates(slot, used) { this.M._mw_fw_states(this.w, slot | 0, used >>> 0); }
+  fxModules(kind, mods) {
+    const M = this.M, list = mods || [];
+    if (M._mw_fx_begin(kind | 0, list.length) < 0) throw new Error("rfm_move: out of memory");
+    list.forEach((md, i) => {
+      const ps = md.params || [];
+      this._withStrs([md.name], (n) => M._mw_fx_module(kind | 0, i, n, ps.length));
+      ps.forEach((pa, k) => {
+        const words = pa.words || [];
+        this._withStrs([pa.name], (n) => M._mw_fx_param(kind | 0, i, k, n, words.length, pa.def | 0, pa.dryWet ? 1 : 0));
+        words.forEach((w, j) => this._withStrs([w], (p) => M._mw_fx_word(kind | 0, i, k, j, p)));
+      });
+    });
+    M._mw_fx_commit(this.w, kind | 0);
+  }
+  fxRefused(kind, slot) { return this._acts(this.M._mw_fx_refused(this.w, kind | 0, slot | 0)); }
+  fxSync() { return this._acts(this.M._mw_fx_sync(this.w)); }
   // the library's version ("0.1.0": RFM1CS_VERSION)
   version() { const M = this.M, p = M._mw_version(); let e = p; while (M.HEAPU8[e]) e++; return String.fromCharCode(...M.HEAPU8.subarray(p, e)); }
   free() { const M = this.M; if (this.w) M._mw_free(this.w); if (this.w && M.rfmHosts) delete M.rfmHosts[this.w]; for (const k of ["px", "lv", "km", "st", "st2"]) if (this[k]) { M._free(this[k]); this[k] = 0; } this.w = 0; }

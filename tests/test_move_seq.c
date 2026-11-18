@@ -1125,7 +1125,7 @@ static void test_blob(void)
     /* invalid blobs: nothing changes */
     CHECK(rfm_move_project_load(m2, 5, a, (uint32_t)n - 1) < 0 && same_project(&m->seq, &m2->seq) &&
           rfm_move_project_slot(m2) == 4);
-    memcpy(b, a, (size_t)n), b[4] = 5;
+    memcpy(b, a, (size_t)n), b[4] = RFM_MOVE_PROJECT_VERSION + 1;
     CHECK(rfm_move_project_check(b, (uint32_t)n) == -2);
     memcpy(b, a, (size_t)n), b[100] ^= 1;
     CHECK(rfm_move_project_check(b, (uint32_t)n) == -5);
@@ -1852,7 +1852,7 @@ static void test_trig(void)
         rfm_move_init(&M2, NULL, on_act, NULL);
         CHECK(rfm_move_project_load(&M2, 1, blob, (uint32_t)nb) == 0 && M2.seq.tr[0].tdef[1] == 2 && M2.seq.tr[0].tdef[2] == 75);
         {                                               /* a version 3 blob (no defaults) still loads: the plain ones */
-            const int n3 = nb - RFM_MOVE_SEQ_TRACKS * 8;
+            const int n3 = nb - RFM_MOVE_SEQ_TRACKS * 8 - RFM_MOVE_FXSET_BYTES;   /* (0.4.0: and no FX setup) */
             uint32_t h = 2166136261u;
             int k;
             blob[4] = 3;
@@ -2186,7 +2186,7 @@ static void test_blob_v2(void)
     m->seq.tr[3].rate = 7, m->seq.tr[3].groove = 33, m->seq.tr[3].arp.pat = RFM_MOVE_AP_CONDIV, m->seq.tr[3].arp.odist = -7;
     m->seq.rec_mode = RFM_MOVE_RM_STEP, m->seq.rec_style = RFM_MOVE_RS_REPLACE;
     n = rfm_move_project_save(m, a, sizeof a);
-    CHECK(n == RFM_MOVE_PROJECT_FIXED + 7 + 2 * 4 && a[4] == 4);
+    CHECK(n == RFM_MOVE_PROJECT_FIXED + 7 + 2 * 4 && a[4] == RFM_MOVE_PROJECT_VERSION);
     rfm_move_init(m2, NULL, on_act, NULL);
     CHECK(rfm_move_project_load(m2, 1, a, (uint32_t)n) == 0);
     CHECK(m2->seq.lstart[0] == 16 && m2->seq.len[0] == 32 && rfmv_seq_clip_has(m2, SEQ_CLIP(2, 3)));

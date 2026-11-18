@@ -540,6 +540,7 @@ void rfmv_seq_project_clear(rfm_move_t *m)
     q->un = q->utop = 0, q->broken = 0;
     q->clip_kind = 0, q->cut = 0;
     q->page = 0, q->scene_off = 0, q->track_page = 0, q->bank = 0;
+    rfmv_fxset_default(&q->fx);                         /* (FX setup: the project's) */
     q->dirty = 0;
 }
 
@@ -567,7 +568,7 @@ void rfmv_seq_init(rfm_move_t *m)
 static void snd_off(rfm_move_t *m, int i)
 {
     rfm_move_seq_t *q = &m->seq;
-    rfmv_emit_midi(m, 0x80 | q->snd[i].ch, q->snd[i].note, 0);
+    rfmv_emit_midi_t(m, q->snd[i].track + 1, 0x80 | q->snd[i].ch, q->snd[i].note, 0);
     q->snd[i] = q->snd[--q->nsnd];
 }
 void rfmv_seq_release(rfm_move_t *m, int track)
@@ -596,7 +597,7 @@ static void note_on(rfm_move_t *m, int track, int note, int vel, int len)
                 old = i;
         snd_off(m, old);
     }
-    rfmv_emit_midi(m, 0x90 | ch, note, vel);
+    rfmv_emit_midi_t(m, track + 1, 0x90 | ch, note, vel);
     q->snd[q->nsnd].ch = (uint8_t)ch, q->snd[q->nsnd].note = (uint8_t)note, q->snd[q->nsnd].track = (uint8_t)track;
     q->snd[q->nsnd].off = q->tl + (len < 1 ? 1 : len);
     q->nsnd++;
@@ -897,7 +898,7 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
         if (t->sub == 0) {
             hi = rfmv_seq_lock_range(m, clip, ps, &lo);
             for (i = lo; i < hi && q->locks[i].cc < 128; i++)
-                rfmv_emit_midi(m, 0xB0 | t->ch, q->locks[i].cc, q->locks[i].val);
+                rfmv_emit_midi_t(m, tr + 1, 0xB0 | t->ch, q->locks[i].cc, q->locks[i].val);
         }
     }
     if (t->next >= 0 && t->nfire && t->sub >= t->tps / 2) {   /* the next step's early notes */
@@ -1532,6 +1533,7 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
         q->following = 0;                               /* the external clock is gone: ours again */
     rfmv_seq_ui_poll(m);
     rfmv_proj_poll(m);
+    rfmv_fw_poll(m);                                    /* (0.4.0: the library's FW_LIBRARY, debounced) */
 }
 
 /* ================================================================ recording, capture, tap === */

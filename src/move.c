@@ -188,6 +188,8 @@ uint32_t rfm_move_save(const rfm_move_settings_t *s, uint8_t *o)
     memcpy(p, s->cc, sizeof s->cc), p += sizeof s->cc;
     memcpy(p, s->drum, sizeof s->drum), p += sizeof s->drum;
     *p++ = s->midi_view, *p++ = s->vel_mode, *p++ = s->vel_level;
+    *p++ = s->fw_track, *p++ = s->fw_scope, *p++ = (uint8_t)(s->fw_filter & 0xFF), *p++ = (uint8_t)(s->fw_filter >> 8);
+    *p++ = s->fw_cat_scope, *p++ = s->fx_page;          /* (version 4) */
     return (uint32_t)(p - o);
 }
 
@@ -199,8 +201,9 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
     rfm_move_settings_default(s);
     if (!b || n < 6 || b[0] != 'R' || b[1] != 'M' || b[2] != 'V' ||
         !((b[3] == RFM_MOVE_SETTINGS_VERSION && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES && n >= RFM_MOVE_SETTINGS_BYTES) ||
-          (b[3] == 2 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES - 2 && n >= RFM_MOVE_SETTINGS_BYTES - 2) ||
-          (b[3] == 1 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES - 3 && n >= RFM_MOVE_SETTINGS_BYTES - 3)))
+          (b[3] == 3 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V3 && n >= RFM_MOVE_SETTINGS_BYTES_V3) ||
+          (b[3] == 2 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V3 - 2 && n >= RFM_MOVE_SETTINGS_BYTES_V3 - 2) ||
+          (b[3] == 1 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V3 - 3 && n >= RFM_MOVE_SETTINGS_BYTES_V3 - 3)))
         return -1;
     d = *s;
     p = b + 6;
@@ -225,6 +228,14 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
     if (b[3] >= 3) {
         s->vel_mode = p[1] < RFM_MOVE_VEL_N ? p[1] : d.vel_mode;
         s->vel_level = p[2] >= 1 && p[2] <= 127 ? p[2] : d.vel_level;
+    }
+    if (b[3] >= 4) {                                    /* (the projects view as it was left) */
+        const unsigned f = (unsigned)p[5] | (unsigned)p[6] << 8;
+        s->fw_track = p[3] < 4 ? p[3] : d.fw_track;
+        s->fw_scope = p[4] < 2 ? p[4] : d.fw_scope;
+        s->fw_filter = (uint16_t)(f & 0xFFFC);          /* (steps 3..16) */
+        s->fw_cat_scope = (uint8_t)(p[7] & 3);
+        s->fx_page = p[8] < 4 ? p[8] : d.fx_page;
     }
     return 0;
 }
@@ -395,6 +406,7 @@ void rfm_move_init(rfm_move_t *m, const rfm_move_settings_t *settings, rfm_move_
     m->edit_pad = -1;
     m->touched = -1;
     rfm_move_set_keymap(m, NULL);
+    rfmv_fw_init(m);
     rfmv_seq_init(m);
     if (m->s.mode == RFM_MOVE_MODE_SEQ)
         rfmv_seq_enter(m);
@@ -698,13 +710,12 @@ static void on_knob(rfm_move_t *m, int k, int d, uint32_t now)
     }
     if (k == 8 && m->s.mode == RFM_MOVE_MODE_SEQ && rfmv_seq_volume(m, d))
         return;                                         /* (Sequencer mode, a step held: its velocity) */
+    if (k == 8 && rfmv_fw_volume(m, d)) {              /* (0.4.0, the browser on) Track 1..3 held: that slot's level */
+        rfmv_menu(m, MENU_SHIFT, 0);                    /* (the Track button was used: its release is no tap) */
+        return;
+    }
     if (k == 8) {                                       /* volume: MASTER */
-        const int v = clampi(m->master + d * RFM_MOVE_MASTER_STEP, 0, 1023);
-        rfmv_pop(m, POP_MASTER, 8);
-        if (v != m->master) {
-            m->master = (uint16_t)v;
-            emit(m, RFM_MOVE_ACT_MASTER, 0, 0, 0, v);
-        }
+        rfmv_master_turn(m, d);
         return;
     }
     if (k < 0 || k >= RFM_MOVE_NKNOBS)
@@ -754,6 +765,16 @@ static void on_knob(rfm_move_t *m, int k, int d, uint32_t now)
             emit(m, RFM_MOVE_ACT_TURN, KNOB_ENC[k], 0, 0, t);
         rfmv_pop(m, POP_ENC, k);
         m->pop_val = (int16_t)clampi(acc + t, -9999, 9999);
+    }
+}
+
+void rfmv_master_turn(rfm_move_t *m, int d)
+{
+    const int v = clampi(m->master + d * RFM_MOVE_MASTER_STEP, 0, 1023);
+    rfmv_pop(m, POP_MASTER, 8);
+    if (v != m->master) {
+        m->master = (uint16_t)v;
+        emit(m, RFM_MOVE_ACT_MASTER, 0, 0, 0, v);
     }
 }
 
@@ -848,8 +869,9 @@ static void on_touch(rfm_move_t *m, int k, int on)
 
 void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
 {
-    if (m->seq.projects) {                              /* projects mode: a mode of its own (select a project) */
-        rfmv_proj_input(m, ev, now_ms);
+    if (m->seq.projects) {                              /* the projects view: a mode of its own (Tracks 1..3 the
+                                                         * firmware slots, Track 4 the projects, Session FX setup) */
+        rfmv_view_input(m, ev, now_ms);
         return;
     }
     switch (ev->type) {
@@ -912,8 +934,9 @@ static const rgb_t MENU_KNOB = { 255, 72, 0 };         /* a menu's knobs (the ow
 /* a held Track's (its menu or layer shown) or an open menu's knobs: a bit each; -1 none (the knobs as they are) */
 int rfmv_menu_knobs(const rfm_move_t *m)
 {
-    if (m->seq.projects)
-        return 0x01;                                    /* (knob 1: the colour) */
+    if (m->seq.projects)                                /* (Track 4: knob 1 the colour; the firmware tracks and FX
+                                                         * setup light their own) */
+        return m->fw.fx || m->fw.track < 3 ? -1 : 0x01;
     if (rfmv_hold_shown(m, 1))
         return 0x03;                                    /* (Track 2: root, scale) */
     if (rfmv_hold_shown(m, 2) || rfmv_hold_shown(m, 3))
@@ -1054,8 +1077,9 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
             v = clampi(alpha(level_of(m, b)) * 127 / 256, 6, 127);
         wv[i] = (uint8_t)v;
     }
-    if (m->seq.projects)                                /* projects mode: its own LEDs (the projects; the rest off) */
-        rfmv_proj_leds(m, c, wv);
+    if (m->seq.projects)                                /* the projects view: its own LEDs (the firmwares or the
+                                                         * projects; the rest off) */
+        rfmv_fw_leds(m, c, wv);
     else if (m->s.mode == RFM_MOVE_MODE_SEQ && !t2)    /* Sequencer mode takes over all but the Track LEDs */
         rfmv_seq_leds(m, c, wv);
     {
