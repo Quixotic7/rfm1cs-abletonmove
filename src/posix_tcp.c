@@ -6,8 +6,62 @@
 #if defined(__APPLE__)
 #define _DARWIN_C_SOURCE 1
 #endif
+#endif
 #include "rfm1cs/posix_tcp.h"
 
+#include <string.h>
+
+static int port_of(const char *p, int *port)
+{
+    long v = 0;
+    if (!*p)
+        return -1;
+    for (; *p; p++) {
+        if (*p < '0' || *p > '9')
+            return -1;
+        v = v * 10 + (*p - '0');
+        if (v > 65535)
+            return -1;
+    }
+    if (v < 1)
+        return -1;
+    *port = (int)v;
+    return 0;
+}
+
+int rfm1cs_tcp_parse(const char *addr, int def_port, char *host, int cap, int *port)
+{
+    const char *a = addr && *addr ? addr : "move.local", *h = a, *colon = strchr(a, ':');
+    size_t n;
+    int pt = def_port > 0 && def_port <= 65535 ? def_port : RFM1CS_TCP_PORT;
+    if (a[0] == '[') {                                  /* [v6] or [v6]:port */
+        const char *end = strchr(a, ']');
+        if (!end || end == a + 1)
+            return -1;
+        h = a + 1, n = (size_t)(end - h);
+        if (end[1] == ':') {
+            if (port_of(end + 2, &pt) != 0)
+                return -1;
+        } else if (end[1]) {
+            return -1;
+        }
+    } else if (colon && !strchr(colon + 1, ':')) {      /* host:port */
+        n = (size_t)(colon - a);
+        if (!n || port_of(colon + 1, &pt) != 0)
+            return -1;
+    } else {                                            /* a name, an IPv4 address, or a bare IPv6 one */
+        n = strlen(a);
+    }
+    if (!host || cap < 1 || n + 1 > (size_t)cap)
+        return -1;
+    memcpy(host, h, n);
+    host[n] = 0;
+    if (port)
+        *port = pt;
+    return 0;
+}
+
+#if !defined(_WIN32)
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -27,13 +81,17 @@
 int rfm1cs_tcp_connect(const char *host, int port)
 {
     struct addrinfo hints, *res = NULL, *ai;
-    char ps[8];
-    int fd = -1;
+    char ps[8], name[256];
+    int fd = -1, pt = 0;
+    if (rfm1cs_tcp_parse(host, port, name, (int)sizeof name, &pt) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    snprintf(ps, sizeof ps, "%d", port > 0 ? port : 7720);
-    if (getaddrinfo(host && *host ? host : "move.local", ps, &hints, &res) != 0 || !res)
+    snprintf(ps, sizeof ps, "%d", pt);
+    if (getaddrinfo(name, ps, &hints, &res) != 0 || !res)
         return -1;
     for (ai = res; ai; ai = ai->ai_next) {
         int one = 1;

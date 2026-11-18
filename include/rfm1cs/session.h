@@ -5,13 +5,16 @@
  * (Move Remote's docs/PROTOCOL.md: u16 len | u8 type | payload) and drives the core (rfm_move_t, which it owns).
  *
  *   rfm1cs_session_t s;  rfm1cs_session_init(&s, settings, n, "My host", on_event, ctx);
- *   rfm1cs_session_start(&s, now)          -> RFM1CS_EV_OPEN: open the transport (TCP to <move>:7720, a WebSocket..)
- *   transport open:   rfm1cs_session_opened(&s, now)          (the session says HELLO)
- *   bytes received:   rfm1cs_session_rx(&s, now, bytes, n)    (any chunking)
- *   transport gone:   rfm1cs_session_closed(&s, now, final)
+ *   rfm1cs_session_start(&s, now)          -> RFM1CS_EV_OPEN: open the transport (TCP to <move>:7720, a WebSocket..);
+ *                                             ev.attempt names this try: the transport's calls below carry it
+ *   transport open:   rfm1cs_session_opened(&s, now, attempt)          (the session says HELLO)
+ *   bytes received:   rfm1cs_session_rx(&s, now, attempt, bytes, n)    (any chunking)
+ *   transport gone:   rfm1cs_session_closed(&s, now, attempt, final)   (an older try's: ignored)
  *   every few ms:     rfm1cs_session_tick(&s, now)            (or at rfm1cs_session_next_ms(&s, now))
- *   the FM-1's state: rfm1cs_session_panel(&s, levels44, play_green), _frame(&s, now, rgb565), the core's own
- *                     rfm_move_set_master / _set_label / _set_keymap (then _redraw / _flush_leds)
+ *   the FM-1's state: rfm1cs_session_panel(&s, levels44, play_green), _frame(&s, now, rgb565) (at most every
+ *                     RFM1CS_SCREEN_MS), the core's own rfm_move_set_master / _set_label / _set_keymap (then
+ *                     _redraw / _flush_leds)
+ *   what to show:     rfm1cs_status_text(status, words, out, cap) (and _why_text, _lost_text, _bye_text)
  *   the audio clock:  rfm1cs_session_advance(&s, now, frames, rate) per render chunk; the firmware's MIDI out:
  *                     rfm1cs_session_midi_in(&s, now, msg, n)
  *   projects:         answer RFM_MOVE_ACT_PROJECT_* actions yourself, or hand them to store.h
@@ -19,7 +22,8 @@
  *
  * Everything comes out through the one callback, in order, synchronously, inside the call that caused it:
  *   RFM1CS_EV_SEND      data/len: one whole message to write to the transport
- *   RFM1CS_EV_OPEN      open the transport now (a first try or a retry); RFM1CS_EV_CLOSE: close it
+ *   RFM1CS_EV_OPEN      open the transport now (a first try or a retry), attempt: its id (a new one each time);
+ *                       RFM1CS_EV_CLOSE: close it
  *   RFM1CS_EV_ACTION    act: the core's action (rfm_move_act_t), passed through; for RFM_MOVE_ACT_SETTINGS data/len
  *                       is the settings image to keep (rfm_move_save); bpm10 is the tempo when it happened (CLICK,
  *                       AUDIO_REC: the take's bars are act->index, its frame act->frame)
@@ -28,8 +32,10 @@
  *   RFM1CS_EV_BYE       reason (MR_BYE_*), was_live: the Move ended the link (not SHUTDOWN, a LOST); state OFF
  *   RFM1CS_EV_STATUS    changed (RFM1CS_CH_* bits): read rfm1cs_session_status()
  *
- * Threading: none assumed. Every call must come from one thread at a time (a host with a network thread queues the
- * bytes for the thread that owns the session, which is usually the engine's: the core's sequencer runs there).
+ * Threading: none assumed. Every call must come from one thread at a time: a host either queues the bytes for the
+ * thread that owns the session (usually the engine's: the core's sequencer runs there), or calls the session from
+ * several threads under one mutex; then the actions (KEY, PRESS, MIDI ..) come out on whichever thread made the call
+ * (the network thread, for _rx), and the host queues them to its engine (README.md, "Threads").
  * The callback may call rfm1cs_session_stop() (e.g. on LOST); it must not call the other session functions, nor the
  * core's, while an RFM1CS_EV_ACTION from inside the core is being delivered. Data pointers are valid during the
  * callback only. Times are milliseconds on any monotonic clock (uint32_t, wrapping is fine). */
@@ -92,6 +98,7 @@ typedef struct {
     int was_live;                 /* LOST, BYE: it was connected */
     uint32_t changed;             /* STATUS: RFM1CS_CH_* */
     int bpm10;                    /* ACTION: the sequencer's tempo then */
+    uint32_t attempt;             /* OPEN: this try's id, for _opened / _rx / _closed */
 } rfm1cs_event_t;
 typedef void (*rfm1cs_event_fn)(void *ctx, const rfm1cs_event_t *ev);
 
@@ -114,6 +121,10 @@ typedef struct {
     int playing, following, bpm10;
     /* counters (since init) */
     uint32_t connects, inputs, led_writes, led_msgs, screens, pings, pongs, sent, midi, rx_bytes;
+    /* how the link last went (for rfm1cs_status_text; cleared by start(), and by a stop() that ends a link) */
+    int lost_why;                 /* the last RFM1CS_EV_LOST's reason (RFM1CS_WHY_*), 0 none */
+    int bye;                      /* the Move's BYE reason (MR_BYE_*) that ended it, 0 none */
+    int gone_live;                /* that LOST / BYE came while connected */
 } rfm1cs_status_t;
 
 typedef struct rfm1cs_session {
@@ -133,6 +144,9 @@ typedef struct rfm1cs_session {
     uint32_t rx_len;              /* the deframer: a partial message */
     uint8_t rx[RFM1CS_RX_MAX];    /* (HELLO 46, STATUS 32, INPUT n x 8: longer ones, AUDIO, are skipped) */
     uint32_t rx_skip;             /* bytes of a skipped message still to come */
+    uint32_t attempt;             /* the current try's id (EV_OPEN's) */
+    uint32_t thumb_at, thumb_hash;   /* _frame: when the thumbnail was last taken, and from what */
+    int thumb_ok;
 } rfm1cs_session_t;
 
 /* the core made with these settings (an rfm_move_save image; NULL / not one: the defaults); host_name goes in the
@@ -151,17 +165,22 @@ void rfm1cs_session_stop(rfm1cs_session_t *s);   /* not wanted: the project flus
 void rfm1cs_session_wait(rfm1cs_session_t *s, uint32_t now, uint32_t ms, int patient);
 /* tries that fail before the first connection, then FAILED (-1, the default: never give up; the web uses 2) */
 void rfm1cs_session_give_up(rfm1cs_session_t *s, int tries);
-void rfm1cs_session_opened(rfm1cs_session_t *s, uint32_t now);
-void rfm1cs_session_rx(rfm1cs_session_t *s, uint32_t now, const uint8_t *bytes, uint32_t n);
+/* the transport's calls, with the attempt id its RFM1CS_EV_OPEN gave: one from an older try (a socket closed late, a
+ * stale read) is ignored */
+void rfm1cs_session_opened(rfm1cs_session_t *s, uint32_t now, uint32_t attempt);
+void rfm1cs_session_rx(rfm1cs_session_t *s, uint32_t now, uint32_t attempt, const uint8_t *bytes, uint32_t n);
 /* the transport closed or never opened; final: it cannot be opened again (no retry: FAILED) */
-void rfm1cs_session_closed(rfm1cs_session_t *s, uint32_t now, int final);
+void rfm1cs_session_closed(rfm1cs_session_t *s, uint32_t now, uint32_t attempt, int final);
+static inline uint32_t rfm1cs_session_attempt(const rfm1cs_session_t *s) { return s->attempt; }   /* the current try */
 void rfm1cs_session_tick(rfm1cs_session_t *s, uint32_t now);
 /* ms until the next thing tick() must do (0: now), or -1: nothing pending */
 int32_t rfm1cs_session_next_ms(const rfm1cs_session_t *s, uint32_t now);
 
 /* ---- the FM-1's side */
 void rfm1cs_session_panel(rfm1cs_session_t *s, const uint8_t levels[RFM_MOVE_NLEVELS], uint8_t play_green);
-/* a new FM-1 screen (240 x 240 RGB565, host order): its thumbnail taken now, the Move's screen redrawn when due */
+/* a new FM-1 screen (240 x 240 RGB565, host order): its thumbnail taken, the Move's screen redrawn when due. Call it
+ * at most every RFM1CS_SCREEN_MS: a call sooner than that with the same picture only asks for the redraw (the
+ * thumbnail is taken again when RFM1CS_SCREEN_MS have passed or the pixels changed) */
 void rfm1cs_session_frame(rfm1cs_session_t *s, uint32_t now, const uint16_t *rgb565);
 void rfm1cs_session_redraw(rfm1cs_session_t *s, uint32_t now);   /* after a label, the battery, a Sample level.. */
 void rfm1cs_session_flush_leds(rfm1cs_session_t *s);              /* after a keymap change: the changed LEDs out */
@@ -186,6 +205,33 @@ int rfm1cs_session_projects_init(rfm1cs_session_t *s, uint32_t now, uint32_t dir
 int rfm1cs_session_project_answer(rfm1cs_session_t *s, uint32_t now, int slot, const uint8_t *blob, uint32_t n);
 void rfm1cs_session_flush(rfm1cs_session_t *s);       /* the autosave now, if the project changed (pagehide, quit) */
 void rfm1cs_session_release(rfm1cs_session_t *s);     /* let go of everything held now (RFM1CS_EV_RELEASED) */
+
+/* ---- what a host shows: the web player's words, for every host (C strings, always 0-terminated, cut to cap - 1;
+ * each returns the length written) */
+typedef struct {
+    const char *host;             /* the Move's address as shown ("move.local"); NULL / "": "the Move" */
+    const char *closed;           /* RFM1CS_WHY_CLOSED's words, from the transport; NULL / "": "the link closed" */
+    const char *link;             /* the transport's name in the connected line ("WebSocket"); NULL: "" */
+    const char *self;             /* the host as a noun: "page" (NULL / "") or "app" */
+} rfm1cs_words_t;
+enum { RFM1CS_TONE_OFF = 0, RFM1CS_TONE_BUSY = 1, RFM1CS_TONE_ON = 2, RFM1CS_TONE_BAD = 3 };
+/* the status line for the session as it stands (state, and how the link last went): its tone (RFM1CS_TONE_*)
+ *   OFF         "Not connected." / the BYE's words (rfm1cs_bye_text)
+ *   CONNECTING  "Connecting to move.local..." / waiting: "No answer from move.local yet."
+ *   CONNECTED   "Move connected over USB (WebSocket): FM-1 mode. Track 1..4 pick the mode."
+ *   RETRYING    "The Move went quiet: trying again in 2 s..."
+ *   FAILED      "No answer from move.local. Is Move Remote running on the Move, and is move.local its address? Over
+ *               USB-C it is 172.16.254.1." / a protocol mismatch: "The Move speaks Move Remote protocol 2; this page
+ *               speaks 1. Update one of them." */
+int rfm1cs_status_text(const rfm1cs_status_t *st, const rfm1cs_words_t *w, char *out, uint32_t cap);
+/* why the link went (RFM1CS_WHY_*), lower case: "the Move went quiet", "no answer from move.local" .. */
+uint32_t rfm1cs_why_text(int why, const rfm1cs_words_t *w, char *out, uint32_t cap);
+/* the LOST toast: "Move: link lost (the Move went quiet)." (name: the Move's when was_live, else "The Move") */
+uint32_t rfm1cs_lost_text(int why, int was_live, const rfm1cs_status_t *st, const rfm1cs_words_t *w, char *out,
+                          uint32_t cap);
+/* the BYE's words (MR_BYE_*): "Move left Move Remote (its exit gesture)." ..; *tone (NULL: none) OFF, or BAD for
+ * MR_BYE_PROTOCOL */
+uint32_t rfm1cs_bye_text(int reason, int was_live, const rfm1cs_status_t *st, char *out, uint32_t cap, int *tone);
 
 /* ---- the protocol's messages (exposed for tests and hosts that frame by hand) */
 uint32_t rfm1cs_frame(uint8_t *out, int type, const uint8_t *payload, uint32_t n);   /* 3 + n bytes */

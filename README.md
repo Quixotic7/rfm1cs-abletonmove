@@ -31,6 +31,8 @@ log. This code lived in RemoteFM1 (`host/src/move/`) until 0.1.0; its history ca
 | `tests/move_e2e.c`, `move_e2e.sh` | ctest `move_e2e`: against Move Remote's simulator |
 | `tests/test_session.c` | ctest `session`: the session and the store against a fake Move |
 | `tests/session_e2e.c` | ctest `session_e2e`: the session over posix_tcp against the simulator |
+| `tests/test_tcp.c` | ctest `tcp`: `host:port` parsing, a loopback connect (IPv4, IPv6) |
+| `tests/rmvp/` | project files the web player, the iOS app and the Android app wrote (the `session` test reads them) |
 | `tests/web_smoke.mjs` | the wasm build in Node (CI) |
 
 ## Building
@@ -59,6 +61,31 @@ calls `_tick` (or at `_next_ms`), gives the FM-1's LEDs / screen (`_panel`, `_fr
 (`_advance` per render chunk, the firmware's MIDI out through `_midi_in`), and answers the project actions (itself,
 or with `store.h`). One callback, no threads, no allocation; the web player runs it in WebAssembly (`web/move_web.c`
 `mw_sess_*`, `web/move-core.js` `sess*`), native hosts as C.
+
+Since 0.3.0:
+
+- **Attempts.** Each `EV_OPEN` carries `attempt`, a new id per try; `_opened`, `_rx` and `_closed` take it, and a call
+  with an older try's id is ignored, so a socket that closes late cannot end the next try.
+- **The screen.** Call `_frame` at most every 33 ms (`RFM1CS_SCREEN_MS`). Called sooner with the same pixels it only
+  asks for the redraw; the thumbnail is taken again when 33 ms have passed or the pixels changed.
+- **Words.** `rfm1cs_status_text` (and `_why_text`, `_lost_text`, `_bye_text`) give the web player's status line and
+  toasts for any host (`rfm1cs_words_t`: the address shown, the transport's own words for a close, its name, "page" or
+  "app"), with a tone (off / busy / on / bad).
+- **The project file.** `store.h`'s `rfm1cs_file_pack` / `_unpack` / `_check` / `_error_text`: the `.rfmmove` /
+  `.rfmmoveset` container ("RMVP") the web player, iOS and Android each wrote themselves, now once.
+- **Addresses.** `rfm1cs_tcp_connect` takes `host:port`, `[v6]:port` or a bare IPv6 address (`rfm1cs_tcp_parse`;
+  default port 7720).
+
+### Threads
+
+The session is not thread-safe and assumes no thread: every call from one thread at a time. Two ways work. Queue the
+transport's bytes to the thread that owns the session (the web player: one thread). Or call the session from the
+network thread and the engine's thread under one mutex (iOS, Android): then `_rx` runs on the network thread and the
+actions it causes (KEY, PRESS, BTN, TURN, MIDI, PROJECT_* ..) come out there, inside the callback, so the host copies
+each into a queue the engine drains, and never calls into the engine from the callback. A thread that must not block
+(an audio or engine thread) takes the mutex with `try_lock` and skips the turn when it is busy (the next tick catches
+up: `_advance` takes the frames since its last call). When the engine's thread stops (no firmware running), the
+network thread drives the session alone under the same mutex: `_tick` at `_next_ms`, `_rx`, `_closed`.
 
 ## The modes (Track 1..4)
 

@@ -3,6 +3,40 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.3.0 (2026-11-18)
+
+What the iOS and Android ports asked for. Behaviour is unchanged otherwise.
+
+**API changes (a host must update its calls):**
+
+- `rfm1cs_session_opened(s, now, attempt)`, `rfm1cs_session_rx(s, now, attempt, bytes, n)`,
+  `rfm1cs_session_closed(s, now, attempt, final)`: the attempt id `RFM1CS_EV_OPEN` now carries (`ev.attempt`, a new
+  one each try, never 0; `rfm1cs_session_attempt()` reads the current one). A call with an older try's id is ignored:
+  a socket that closes late can no longer end the next try. wasm: `mw_sess_opened/_rx/_closed` take it after `now`;
+  `move-core.js`: `{ type: "open", attempt }`, `sessOpened(now, attempt)`, `sessRx(now, attempt, bytes)`,
+  `sessClosed(now, attempt, final)`.
+- `rfm1cs_status_t` and `rfm1cs_session_t` have new fields at their ends (`lost_why`, `bye`, `gone_live`; `attempt`,
+  the thumbnail's pacing): rebuild, do not mix objects from 0.2.0.
+- `move-core.js` `PROJECT_MAX` is 39200, `RFM_MOVE_PROJECT_MAX` as the C has it (it said 39072, a stale copy: blobs
+  of 39073..39200 bytes were refused by `projectCheck` and by the web's and Android's file readers).
+
+**New:**
+
+- `store.h`: the project file every host wrote itself (`.rfmmove` / `.rfmmoveset`, "RMVP"):
+  `rfm1cs_file_pack`, `rfm1cs_file_unpack` (every blob checked), `rfm1cs_file_check`, `rfm1cs_file_size`,
+  `rfm1cs_file_error_text` (the web player's words; "this page" or "this app"), `RFM1CS_FILE_MAX`. The web's, the
+  iOS app's and the Android app's own writers made byte-identical files; `tests/rmvp/` keeps one pair from each, and
+  the `session` test reads and repacks them. wasm `mw_file_*`; `move-core.js` `filePack()`, `fileUnpack()`.
+- `session.h`: the words to show, from the web player: `rfm1cs_status_text()` (the status line and its tone, from
+  the state and how the link last went), `rfm1cs_why_text()`, `rfm1cs_lost_text()`, `rfm1cs_bye_text()`,
+  `rfm1cs_words_t`. wasm `mw_sess_text`; `move-core.js` `sessText()`, `whyText()`, `lostText()`, `byeText()`.
+- `posix_tcp.h`: `rfm1cs_tcp_connect()` takes `host:port`, `[v6]:port`, `[v6]` or a bare IPv6 address
+  (`rfm1cs_tcp_parse()`; the address's own port, else the argument, else 7720). New ctest `tcp`.
+- `rfm1cs_session_frame()`: called again within 33 ms with the same pixels, the thumbnail is not rebuilt (an FNV-1a
+  of the pixels decides); call it at most every 33 ms.
+- README.md, "Threads": a session shared by a network thread and an engine thread under one mutex (actions come out
+  on the network thread: queue them), and a network thread driving it alone while the engine is stopped.
+
 ## 0.2.0 (2026-11-18)
 
 The link written once, for every host.

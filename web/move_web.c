@@ -8,8 +8,11 @@
  *   each action's frame (uint32, mw_act_frames(): the offset in mw_seq_advance's frames; 0 for every other call). A
  *   PROJECT_SAVE action's blob is copied out: value = its index for mw_blob() / mw_blob_len();
  *   the session's events (mw_sess_* calls), at mw_evs(): 4 int32 each: type (RFM1CS_EV_*, or MW_EV_LOADED), a, b, c:
- *   ACTION a = the action's index; SEND a = the offset in mw_tx(), b = the length; LOST a = the reason, b = was it
- *   live; BYE a = the reason, b = was it live; STATUS a = the changed bits; MW_EV_LOADED a = the slot, b = 0 loaded / -1 refused.
+ *   ACTION a = the action's index; SEND a = the offset in mw_tx(), b = the length; OPEN a = the attempt; LOST a = the
+ *   reason, b = was it live; BYE a = the reason, b = was it live; STATUS a = the changed bits; MW_EV_LOADED a = the
+ *   slot, b = 0 loaded / -1 refused.
+ * The words a host shows (mw_sess_text) and the project file (mw_file_*: store.h's container) need no instance's
+ * session state beyond the status.
  * The store's slot I/O goes to JS synchronously (Module.rfmHosts[instance].read / write / remove; a read answers
  * later through mw_store_answer); its LOAD answer goes straight to the session. Nothing here keeps a pointer into JS
  * memory; no filesystem, no sockets (mr_decode comes from mr_client.c, whose socket code the linker leaves out). */
@@ -46,6 +49,8 @@ typedef struct {
     uint8_t screen[MR_SCREEN_BYTES];
     uint8_t settings[RFM_MOVE_SETTINGS_BYTES];
     int32_t status[40];
+    char text[512];
+    int text_tone;
 } mw_t;
 
 static void add_ev(mw_t *w, int type, int a, int b, int c)
@@ -95,6 +100,7 @@ static void on_event(void *ctx, const rfm1cs_event_t *ev)
         add_ev(w, ev->type, (int)w->ntx, (int)ev->len, 0);
         w->ntx += ev->len;
         return;
+    case RFM1CS_EV_OPEN: add_ev(w, ev->type, (int)ev->attempt, 0, 0); return;
     case RFM1CS_EV_LOST: add_ev(w, ev->type, ev->reason, ev->was_live, 0); return;
     case RFM1CS_EV_BYE: add_ev(w, ev->type, ev->reason, ev->was_live, 0); return;
     case RFM1CS_EV_STATUS: add_ev(w, ev->type, (int)ev->changed, 0, 0); return;
@@ -306,9 +312,16 @@ EMSCRIPTEN_KEEPALIVE int mw_sess_start(mw_t *w, uint32_t now) { return SESS(rfm1
 EMSCRIPTEN_KEEPALIVE int mw_sess_stop(mw_t *w, uint32_t now) { return SESS(rfm1cs_session_stop(&w->s)); }
 EMSCRIPTEN_KEEPALIVE void mw_sess_wait(mw_t *w, uint32_t now, uint32_t ms, int patient) { rfm1cs_session_wait(&w->s, now, ms, patient); }
 EMSCRIPTEN_KEEPALIVE void mw_sess_give_up(mw_t *w, int tries) { rfm1cs_session_give_up(&w->s, tries); }
-EMSCRIPTEN_KEEPALIVE int mw_sess_opened(mw_t *w, uint32_t now) { return SESS(rfm1cs_session_opened(&w->s, now)); }
-EMSCRIPTEN_KEEPALIVE int mw_sess_rx(mw_t *w, uint32_t now, const uint8_t *b, uint32_t n) { return SESS(rfm1cs_session_rx(&w->s, now, b, n)); }
-EMSCRIPTEN_KEEPALIVE int mw_sess_closed(mw_t *w, uint32_t now, int final) { return SESS(rfm1cs_session_closed(&w->s, now, final)); }
+EMSCRIPTEN_KEEPALIVE int mw_sess_opened(mw_t *w, uint32_t now, uint32_t attempt) { return SESS(rfm1cs_session_opened(&w->s, now, attempt)); }
+EMSCRIPTEN_KEEPALIVE int mw_sess_rx(mw_t *w, uint32_t now, uint32_t attempt, const uint8_t *b, uint32_t n)
+{
+    return SESS(rfm1cs_session_rx(&w->s, now, attempt, b, n));
+}
+EMSCRIPTEN_KEEPALIVE int mw_sess_closed(mw_t *w, uint32_t now, uint32_t attempt, int final)
+{
+    return SESS(rfm1cs_session_closed(&w->s, now, attempt, final));
+}
+EMSCRIPTEN_KEEPALIVE uint32_t mw_sess_attempt(const mw_t *w) { return rfm1cs_session_attempt(&w->s); }
 EMSCRIPTEN_KEEPALIVE int mw_sess_tick(mw_t *w, uint32_t now) { return SESS(rfm1cs_session_tick(&w->s, now)); }
 EMSCRIPTEN_KEEPALIVE int mw_sess_next_ms(const mw_t *w, uint32_t now) { return rfm1cs_session_next_ms(&w->s, now); }
 EMSCRIPTEN_KEEPALIVE int mw_sess_panel(mw_t *w, uint32_t now, const uint8_t *levels44, int play_green)
@@ -333,7 +346,7 @@ EMSCRIPTEN_KEEPALIVE int mw_sess_project_answer(mw_t *w, uint32_t now, int slot,
 }
 /* the status: state, ever_live, waiting, retries, retry_ms, via, proto, caps, battery, power, jacks, led_pending, mode,
  * project, playing, following, bpm10, connects, inputs, led_writes, led_msgs, screens, pings, pongs, sent, midi,
- * live, tx_over */
+ * live, tx_over, lost_why, bye, gone_live, attempt */
 EMSCRIPTEN_KEEPALIVE const int32_t *mw_sess_status(mw_t *w)
 {
     const rfm1cs_status_t *st = &w->s.st;
@@ -344,8 +357,69 @@ EMSCRIPTEN_KEEPALIVE const int32_t *mw_sess_status(mw_t *w)
     o[16] = st->bpm10, o[17] = (int32_t)st->connects, o[18] = (int32_t)st->inputs, o[19] = (int32_t)st->led_writes;
     o[20] = (int32_t)st->led_msgs, o[21] = (int32_t)st->screens, o[22] = (int32_t)st->pings, o[23] = (int32_t)st->pongs;
     o[24] = (int32_t)st->sent, o[25] = (int32_t)st->midi, o[26] = w->s.live, o[27] = (int32_t)w->tx_over;
+    o[28] = st->lost_why, o[29] = st->bye, o[30] = st->gone_live, o[31] = (int32_t)w->s.attempt;
     return o;
 }
+
+/* the words to show (session.h): what 0 the status line, 1 why (a), 2 the LOST toast (a why, b was live), 3 the BYE's
+ * words (a reason, b was live); the text at the result, its tone at mw_text_tone() (0 off, 1 busy, 2 on, 3 bad) */
+EMSCRIPTEN_KEEPALIVE const char *mw_sess_text(mw_t *w, int what, int a, int b, const char *host, const char *closed,
+                                              const char *link, const char *self)
+{
+    const rfm1cs_words_t words = { host, closed, link, self };
+    w->text_tone = 0;
+    switch (what) {
+    case 0: w->text_tone = rfm1cs_status_text(&w->s.st, &words, w->text, sizeof w->text); break;
+    case 1: rfm1cs_why_text(a, &words, w->text, sizeof w->text); break;
+    case 2: rfm1cs_lost_text(a, b, &w->s.st, &words, w->text, sizeof w->text); break;
+    case 3: rfm1cs_bye_text(a, b, &w->s.st, w->text, sizeof w->text, &w->text_tone); break;
+    default: w->text[0] = 0; break;
+    }
+    return w->text;
+}
+EMSCRIPTEN_KEEPALIVE int mw_text_tone(const mw_t *w) { return w->text_tone; }
+
+/* ---- the project file (store.h): one at a time (the results stay until the next call) */
+static struct {
+    int32_t res[1 + RFM1CS_SLOTS * 4];                  /* kind, then slot, saved, offset, len per entry */
+    rfm1cs_file_error_t err;
+    char text[200];
+} g_file;
+/* a file read and checked: the count of entries (mw_file_res()), or < 0 (mw_file_error()) */
+EMSCRIPTEN_KEEPALIVE int mw_file_unpack(const uint8_t *b, uint32_t n)
+{
+    rfm1cs_file_entry_t e[RFM1CS_SLOTS];
+    int kind = 0, i;
+    const int r = rfm1cs_file_unpack(b, n, &kind, e, &g_file.err);
+    g_file.res[0] = kind;
+    for (i = 0; i < r; i++) {
+        int32_t *o = g_file.res + 1 + i * 4;
+        o[0] = e[i].slot, o[1] = (int32_t)e[i].saved, o[2] = (int32_t)(e[i].bytes - b), o[3] = (int32_t)e[i].len;
+    }
+    return r;
+}
+EMSCRIPTEN_KEEPALIVE const int32_t *mw_file_res(void) { return g_file.res; }
+EMSCRIPTEN_KEEPALIVE const char *mw_file_error(const char *self)
+{
+    rfm1cs_file_error_text(&g_file.err, self, g_file.text, sizeof g_file.text);
+    return g_file.text;
+}
+/* n entries (meta: slot, saved, len each; their blobs one after another) into out: its length, 0 too small */
+EMSCRIPTEN_KEEPALIVE uint32_t mw_file_pack(const int32_t *meta, const uint8_t *blobs, int n, int kind, uint8_t *out, uint32_t cap)
+{
+    rfm1cs_file_entry_t e[RFM1CS_SLOTS * 2];
+    uint32_t off = 0;
+    int i;
+    if (n < 0 || n > RFM1CS_SLOTS * 2)
+        return 0;
+    for (i = 0; i < n; i++) {
+        e[i].slot = meta[i * 3], e[i].saved = (uint32_t)meta[i * 3 + 1], e[i].len = (uint32_t)meta[i * 3 + 2];
+        e[i].bytes = blobs + off;
+        off += e[i].len;
+    }
+    return rfm1cs_file_pack(e, n, kind, out, cap);
+}
+EMSCRIPTEN_KEEPALIVE uint32_t mw_file_max(void) { return RFM1CS_FILE_MAX; }
 EMSCRIPTEN_KEEPALIVE const char *mw_sess_name(const mw_t *w) { return w->s.st.name; }
 /* the last screen sent (1024 bytes), or 0 */
 EMSCRIPTEN_KEEPALIVE const uint8_t *mw_sess_shown(const mw_t *w) { return w->s.shown_ok ? w->s.shown : NULL; }

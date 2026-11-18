@@ -28,6 +28,7 @@ static int g_fail, g_checks;
 
 static rfm1cs_session_t S;
 static int g_fd = -1, g_port, g_opens, g_lost;
+static uint32_t g_att;                                /* the try the socket belongs to */
 static rfm_move_act_t g_acts[512];
 static int g_nact;
 
@@ -41,7 +42,13 @@ static void on_event(void *ctx, const rfm1cs_event_t *ev)
 {
     (void)ctx;
     switch (ev->type) {
-    case RFM1CS_EV_OPEN: g_opens++; g_fd = rfm1cs_tcp_connect("127.0.0.1", g_port); break;
+    case RFM1CS_EV_OPEN: {
+        char addr[32];
+        snprintf(addr, sizeof addr, "127.0.0.1:%d", g_port);   /* (host:port, as a user types it) */
+        g_opens++, g_att = ev->attempt;
+        g_fd = rfm1cs_tcp_connect(addr, 0);
+        break;
+    }
     case RFM1CS_EV_CLOSE: rfm1cs_tcp_close(g_fd); g_fd = -1; break;
     case RFM1CS_EV_SEND:
         if (g_fd >= 0)
@@ -64,15 +71,15 @@ static void run(int ms_max, int want_acts)
         if (g_fd >= 0 && S.st.state == RFM1CS_CONNECTING && !S.opened) {
             const int r = rfm1cs_tcp_wait(g_fd, 5);
             if (r > 0)
-                rfm1cs_session_opened(&S, ms());
+                rfm1cs_session_opened(&S, ms(), g_att);
             else if (r < 0)
-                rfm1cs_session_closed(&S, ms(), 0);
+                rfm1cs_session_closed(&S, ms(), g_att, 0);
         } else if (g_fd >= 0) {
             const int n = rfm1cs_tcp_read(g_fd, buf, sizeof buf, 5);
             if (n > 0)
-                rfm1cs_session_rx(&S, ms(), buf, (uint32_t)n);
+                rfm1cs_session_rx(&S, ms(), g_att, buf, (uint32_t)n);
             else if (n < 0)
-                rfm1cs_session_closed(&S, ms(), 0);
+                rfm1cs_session_closed(&S, ms(), g_att, 0);
         } else {
             usleep(5000);
         }
@@ -187,7 +194,7 @@ int main(int argc, char **argv)
     /* the socket cut under it: lost, let go, back in about a second */
     rfm1cs_tcp_close(g_fd);
     g_fd = -1;
-    rfm1cs_session_closed(&S, ms(), 0);
+    rfm1cs_session_closed(&S, ms(), g_att, 0);
     CHECK(g_lost == 1 && S.st.state == RFM1CS_RETRYING && S.st.retry_ms == 1000, "cut: lost, retrying in 1 s");
     for (tries = 0; tries < 400 && S.st.state != RFM1CS_CONNECTED; tries++)
         run(10, -1);

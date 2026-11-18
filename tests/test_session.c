@@ -27,6 +27,8 @@ static uint32_t g_changed;
 static uint8_t g_saved[RFM_MOVE_PROJECT_MAX];
 static uint32_t g_saved_len, g_settings_len;
 static int g_stop_on_lost;
+static uint32_t g_att;                                /* the last RFM1CS_EV_OPEN's attempt */
+static char g_conn_text[256];                         /* the status line when CONNECTED came */
 
 static void on_event(void *ctx, const rfm1cs_event_t *ev)
 {
@@ -40,7 +42,7 @@ static void on_event(void *ctx, const rfm1cs_event_t *ev)
             g_nout++;
         }
         break;
-    case RFM1CS_EV_OPEN: g_opens++; break;
+    case RFM1CS_EV_OPEN: g_opens++, g_att = ev->attempt; break;
     case RFM1CS_EV_CLOSE: g_closes++; break;
     case RFM1CS_EV_RELEASED: g_released++; break;
     case RFM1CS_EV_LOST:
@@ -49,7 +51,11 @@ static void on_event(void *ctx, const rfm1cs_event_t *ev)
             rfm1cs_session_stop(s);
         break;
     case RFM1CS_EV_BYE: g_bye = ev->reason; break;
-    case RFM1CS_EV_STATUS: g_status++, g_changed |= ev->changed; break;
+    case RFM1CS_EV_STATUS:
+        g_status++, g_changed |= ev->changed;
+        if ((ev->changed & RFM1CS_CH_STATE) && s->st.state == RFM1CS_CONNECTED)   /* (what a host shows then) */
+            rfm1cs_status_text(&s->st, NULL, g_conn_text, sizeof g_conn_text);
+        break;
     case RFM1CS_EV_ACTION:
         if (g_nacts < 1024)
             g_acts[g_nacts++] = *ev->act;
@@ -98,7 +104,7 @@ static void feed(rfm1cs_session_t *s, uint32_t now, int type, const uint8_t *p, 
     static uint8_t m[3 + RFM1CS_RX_MAX + 200];
     uint32_t i, len = rfm1cs_frame(m, type, p, n);
     for (i = 0; i < len; i++)
-        rfm1cs_session_rx(s, now, m + i, 1);
+        rfm1cs_session_rx(s, now, g_att, m + i, 1);
 }
 static void hello(rfm1cs_session_t *s, uint32_t now, int proto, int via, const char *name, int magic_ok)
 {
@@ -135,7 +141,7 @@ static void bye(rfm1cs_session_t *s, uint32_t now, int reason)
 static void connect(rfm1cs_session_t *s, uint32_t now)
 {
     rfm1cs_session_start(s, now);
-    rfm1cs_session_opened(s, now);
+    rfm1cs_session_opened(s, now, g_att);
     hello(s, now, MR_PROTO, MR_VIA_USB, "Move", 1);
 }
 
@@ -218,7 +224,7 @@ static void test_handshake(void)
     CHECK(s->st.state == RFM1CS_OFF && rfm1cs_session_next_ms(s, t) == -1);
     rfm1cs_session_start(s, t);
     CHECKF(g_opens == 1 && s->st.state == RFM1CS_CONNECTING && g_nout == 0, "start: OPEN, nothing sent yet");
-    rfm1cs_session_opened(s, t);
+    rfm1cs_session_opened(s, t, g_att);
     m = last(MR_H_HELLO);
     CHECKF(m && m->len == 34 && m->p[0] == MR_PROTO && !strcmp((const char *)m->p + 2, "rfm1cs test"), "opened: HELLO");
     CHECK(rfm1cs_session_next_ms(s, t) == (int32_t)RFM1CS_HELLO_MS);
@@ -267,14 +273,14 @@ static void test_handshake(void)
             now += s->st.retry_ms;
             rfm1cs_session_tick(s, now);
             ok &= g_opens == 1 && s->st.state == RFM1CS_CONNECTING;
-            rfm1cs_session_closed(s, now, 0);           /* (refused) */
+            rfm1cs_session_closed(s, now, g_att, 0);           /* (refused) */
             ok &= s->st.state == RFM1CS_RETRYING && s->st.retry_ms == want[i] && g_lost_why == RFM1CS_WHY_CLOSED;
         }
         CHECKF(ok, "retries after 1, 2, 4, 4 s");
         /* an opened transport with no HELLO: lost after RFM1CS_HELLO_MS */
         now += s->st.retry_ms;
         rfm1cs_session_tick(s, now);
-        rfm1cs_session_opened(s, now);
+        rfm1cs_session_opened(s, now, g_att);
         rfm1cs_session_tick(s, now + RFM1CS_HELLO_MS - 1);
         CHECK(s->st.state == RFM1CS_CONNECTING);
         rfm1cs_session_tick(s, now + RFM1CS_HELLO_MS);
@@ -282,7 +288,7 @@ static void test_handshake(void)
         /* and back: a new connection paints every LED again */
         now += RFM1CS_HELLO_MS + s->st.retry_ms;
         rfm1cs_session_tick(s, now);
-        rfm1cs_session_opened(s, now);
+        rfm1cs_session_opened(s, now, g_att);
         clear();
         hello(s, now, MR_PROTO, MR_VIA_WIFI, "Move 2", 1);
         CHECKF(s->st.state == RFM1CS_CONNECTED && s->st.retries == 0 && led_writes() == RFM_MOVE_NLEDS &&
@@ -303,7 +309,7 @@ static void test_give_up_bye_garbled(void)
     rfm1cs_session_give_up(s, 2);
     rfm1cs_session_start(s, t);
     for (i = 0; i < 3; i++) {
-        rfm1cs_session_closed(s, t, 0);
+        rfm1cs_session_closed(s, t, g_att, 0);
         if (s->st.state == RFM1CS_RETRYING)
             t += s->st.retry_ms, rfm1cs_session_tick(s, t);
     }
@@ -312,17 +318,17 @@ static void test_give_up_bye_garbled(void)
     /* give_up 0: the first failure */
     rfm1cs_session_give_up(s, 0);
     rfm1cs_session_start(s, t);
-    rfm1cs_session_closed(s, t, 0);
+    rfm1cs_session_closed(s, t, g_att, 0);
     CHECK(s->st.state == RFM1CS_FAILED);
     /* a final close: no retry */
     rfm1cs_session_give_up(s, -1);
     rfm1cs_session_start(s, t);
-    rfm1cs_session_closed(s, t, 1);
+    rfm1cs_session_closed(s, t, g_att, 1);
     CHECK(s->st.state == RFM1CS_FAILED);
     /* the host stops it on LOST: OFF, nothing scheduled */
     rfm1cs_session_start(s, t);
     g_stop_on_lost = 1;
-    rfm1cs_session_closed(s, t, 0);
+    rfm1cs_session_closed(s, t, g_att, 0);
     g_stop_on_lost = 0;
     CHECK(s->st.state == RFM1CS_OFF && rfm1cs_session_next_ms(s, t) == -1);
 
@@ -333,7 +339,7 @@ static void test_give_up_bye_garbled(void)
     rfm1cs_session_tick(s, t + 9000);
     CHECKF(s->st.state == RFM1CS_CONNECTING && s->st.waiting && (g_changed & RFM1CS_CH_WAITING) && !g_lost,
            "patient: waiting, not lost");
-    rfm1cs_session_opened(s, t + 20000);
+    rfm1cs_session_opened(s, t + 20000, g_att);
     CHECK(!s->st.waiting && rfm1cs_session_next_ms(s, t + 20000) == (int32_t)RFM1CS_HELLO_MS);
     rfm1cs_session_tick(s, t + 20000 + RFM1CS_HELLO_MS);
     CHECK(g_lost && g_lost_why == RFM1CS_WHY_NO_ANSWER);
@@ -359,17 +365,17 @@ static void test_give_up_bye_garbled(void)
     clear();
     {
         const uint8_t z[3] = { 0, 0, 0 };
-        rfm1cs_session_rx(s, t, z, 3);
+        rfm1cs_session_rx(s, t, g_att, z, 3);
     }
     CHECK(g_lost && g_lost_why == RFM1CS_WHY_GARBLED);
     rfm1cs_session_stop(s);
     rfm1cs_session_start(s, t);
-    rfm1cs_session_opened(s, t);
+    rfm1cs_session_opened(s, t, g_att);
     hello(s, t, MR_PROTO, 0, "x", 0);
     CHECK(g_lost_why == RFM1CS_WHY_NOT_MOVE && s->st.state == RFM1CS_RETRYING);
     rfm1cs_session_stop(s);
     rfm1cs_session_start(s, t);
-    rfm1cs_session_opened(s, t);
+    rfm1cs_session_opened(s, t, g_att);
     hello(s, t, 2, 0, "Future", 1);
     CHECKF(g_lost_why == RFM1CS_WHY_PROTO && s->st.state == RFM1CS_FAILED && s->st.proto == 2, "protocol 2: FAILED");
     /* a message too long to keep is skipped, the stream goes on */
@@ -437,7 +443,7 @@ static void test_leds_screen_input(void)
     clear();
     input(s, t + 300, 0x90, MR_NOTE_PAD0 + 18, 90);
     k = g_nacts;
-    rfm1cs_session_closed(s, t + 310, 0);
+    rfm1cs_session_closed(s, t + 310, g_att, 0);
     CHECKF(g_nacts > k && g_acts[k].kind == RFM_MOVE_ACT_KEY && !g_acts[k].down && g_released == 1,
            "the link lost with a pad held: its key let go, RELEASED");
     /* settings: Track 2 (MIDI mode) asks for them to be kept, with the image */
@@ -561,11 +567,292 @@ static void test_sequencer_projects(void)
     CHECK(!s->st.playing);
 }
 
+/* ---- 0.3.0: the attempt id, the frame's pacing, the words, the project file */
+static void test_attempt(void)
+{
+    rfm1cs_session_t *s = &S;
+    uint32_t t = 100, a1, a2;
+    rfm1cs_session_init(s, NULL, 0, "x", on_event, s);
+    clear();
+    rfm1cs_session_start(s, t);
+    a1 = g_att;
+    CHECKF(g_opens == 1 && a1 != 0 && a1 == rfm1cs_session_attempt(s), "OPEN carries the attempt (%u)", a1);
+    rfm1cs_session_closed(s, t, a1, 0);
+    CHECK(s->st.state == RFM1CS_RETRYING);
+    t += s->st.retry_ms;
+    rfm1cs_session_tick(s, t);
+    a2 = g_att;
+    CHECKF(g_opens == 2 && a2 != a1 && s->st.state == RFM1CS_CONNECTING, "the retry: a new attempt (%u, was %u)", a2, a1);
+    /* the old socket's close arrives late: ignored, the new try goes on */
+    clear();
+    rfm1cs_session_closed(s, t + 5, a1, 0);
+    CHECKF(s->st.state == RFM1CS_CONNECTING && !g_lost && !g_closes, "a stale close (attempt %u): ignored", a1);
+    rfm1cs_session_closed(s, t + 5, a1, 1);
+    CHECK(s->st.state == RFM1CS_CONNECTING && !g_lost);
+    rfm1cs_session_opened(s, t + 6, a1);
+    CHECKF(g_nout == 0, "a stale open: no HELLO");
+    rfm1cs_session_opened(s, t + 7, a2);
+    CHECKF(count(MR_H_HELLO) == 1, "the current one: HELLO");
+    {
+        const int was = s->st.state;
+        g_att = a1;                                     /* (a stale read: the Move's HELLO from the old socket) */
+        hello(s, t + 8, MR_PROTO, MR_VIA_USB, "Old", 1);
+        CHECKF(s->st.state == was && s->st.rx_bytes == 0, "stale bytes: ignored");
+        g_att = a2;
+        hello(s, t + 8, MR_PROTO, MR_VIA_USB, "Move", 1);
+        CHECK(s->st.state == RFM1CS_CONNECTED && !strcmp(s->st.name, "Move"));
+    }
+    /* and when live: a stale close cannot end it */
+    rfm1cs_session_closed(s, t + 9, a1, 0);
+    CHECK(s->st.state == RFM1CS_CONNECTED);
+    rfm1cs_session_closed(s, t + 9, a2, 0);
+    CHECK(s->st.state == RFM1CS_RETRYING && g_lost_why == RFM1CS_WHY_CLOSED);
+    /* a fresh start: a new id too */
+    rfm1cs_session_start(s, t + 10);
+    CHECK(g_att != a2 && g_att == rfm1cs_session_attempt(s));
+    rfm1cs_session_stop(s);
+}
+
+static void test_frame_pacing(void)
+{
+    rfm1cs_session_t *s = &S;
+    static uint16_t a[240 * 240], b[240 * 240];
+    uint32_t t = 5000;
+    int i;
+    for (i = 0; i < 240 * 240; i++)
+        a[i] = 0, b[i] = (i % 240) < 120 ? 0xFFFF : 0;
+    rfm1cs_session_init(s, NULL, 0, "x", on_event, s);
+    connect(s, t);
+    rfm1cs_session_frame(s, t, a);
+    CHECK(s->thumb_ok && s->thumb_at == t && s->core.thumb[10][10] == 0);
+    rfm1cs_session_frame(s, t + 5, a);
+    CHECKF(s->thumb_at == t, "the same picture 5 ms later: the thumbnail not taken again");
+    rfm1cs_session_frame(s, t + 10, b);
+    CHECKF(s->thumb_at == t + 10 && s->core.thumb[10][10] == 1 && s->core.thumb[10][60] == 0,
+           "a new picture 10 ms later: taken at once");
+    memcpy(a, b, sizeof a);                             /* (the host's one buffer, its pixels changed in place) */
+    a[240 * 120 + 200] = 0xFFFF;
+    rfm1cs_session_frame(s, t + 12, a);
+    CHECKF(s->thumb_at == t + 12, "the same buffer, changed: taken");
+    rfm1cs_session_frame(s, t + 40, a);
+    CHECK(s->thumb_at == t + 12);
+    rfm1cs_session_frame(s, t + 45, a);
+    CHECKF(s->thumb_at == t + 45, "33 ms on: taken again");
+    clear();
+    rfm1cs_session_frame(s, t + 46, NULL);              /* (NULL: only the redraw) */
+    CHECK(s->thumb_at == t + 45);
+    rfm1cs_session_stop(s);
+}
+
+static void text(int (*fn)(const rfm1cs_status_t *, const rfm1cs_words_t *, char *, uint32_t),
+                 const rfm1cs_status_t *st, const rfm1cs_words_t *w, int tone, const char *want)
+{
+    char out[256];
+    const int got = fn(st, w, out, sizeof out);
+    CHECKF(got == tone && !strcmp(out, want), "\"%s\" (tone %d), want \"%s\" (%d)", out, got, want, tone);
+}
+static void test_words(void)
+{
+    rfm1cs_session_t *s = &S;
+    rfm1cs_words_t w = { "move.local", NULL, "WebSocket", NULL };
+    char out[256];
+    uint32_t t = 100;
+    int tone = -1;
+    rfm1cs_session_init(s, NULL, 0, "x", on_event, s);
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_OFF, "Not connected.");
+    rfm1cs_session_start(s, t);
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_BUSY, "Connecting to move.local...");
+    rfm1cs_session_wait(s, t, 100, 1);
+    rfm1cs_session_tick(s, t + 100);
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_BUSY, "No answer from move.local yet.");
+    rfm1cs_session_opened(s, t + 100, g_att);
+    hello(s, t + 100, MR_PROTO, MR_VIA_USB, "Move", 1);
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_ON,
+         "Move connected over USB (WebSocket): FM-1 mode. Track 1..4 pick the mode.");
+    rfm1cs_session_tick(s, t + 4000);                   /* (silent) */
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_BUSY, "The Move went quiet: trying again in 1 s...");
+    CHECK(rfm1cs_lost_text(g_lost_why, g_lost_live, &s->st, &w, out, sizeof out) > 0 &&
+          !strcmp(out, "Move: link lost (the Move went quiet)."));
+    w.closed = "connection refused";
+    rfm1cs_session_tick(s, t + 5000);
+    rfm1cs_session_closed(s, t + 5000, g_att, 0);
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_BUSY, "Connection refused: trying again in 2 s...");
+    rfm1cs_lost_text(g_lost_why, g_lost_live, &s->st, &w, out, sizeof out);
+    CHECKF(!strcmp(out, "The Move: link lost (connection refused)."), "%s", out);
+    rfm1cs_session_tick(s, t + 7000);
+    rfm1cs_session_closed(s, t + 7000, g_att, 1);       /* (final) */
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_BAD,
+         "Connection refused. Is Move Remote running on the Move, and is move.local its address? Over USB-C it is "
+         "172.16.254.1.");
+    w.closed = NULL;
+    rfm1cs_session_stop(s);
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_OFF, "Not connected.");
+    /* the mode changed while away: the CONNECTED event's status has it already */
+    rfm_move_set_mode(&s->core, RFM_MOVE_MODE_MIDI);
+    rfm1cs_session_start(s, t);
+    rfm1cs_session_opened(s, t, g_att);
+    w.link = NULL;
+    hello(s, t, MR_PROTO, MR_VIA_WIFI, "Mine", 1);
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_ON, "Mine connected over Wi-Fi (): MIDI mode. Track 1..4 pick the mode.");
+    CHECKF(!strcmp(g_conn_text, "Mine connected over Wi-Fi (): MIDI mode. Track 1..4 pick the mode."), "%s", g_conn_text);
+    w.link = "WebSocket";
+    rfm1cs_session_stop(s);
+    rfm_move_set_mode(&s->core, RFM_MOVE_MODE_FM1);
+    /* the protocol mismatch, for an app */
+    w.self = "app";
+    rfm1cs_session_start(s, t);
+    rfm1cs_session_opened(s, t, g_att);
+    hello(s, t, 2, 0, "Future", 1);
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_BAD,
+         "The Move speaks Move Remote protocol 2; this app speaks 1. Update one of them.");
+    w.self = NULL;
+    /* BYE: the words stay through the host's own stop() */
+    connect(s, t);
+    bye(s, t, MR_BYE_EXIT);
+    rfm1cs_session_stop(s);
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_OFF, "Move left Move Remote (its exit gesture).");
+    connect(s, t);
+    bye(s, t, MR_BYE_PROTOCOL);
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_BAD, "Move closed the link: a protocol error.");
+    rfm1cs_bye_text(MR_BYE_REPLACED, 0, &s->st, out, sizeof out, &tone);
+    CHECK(!strcmp(out, "Another host took The Move over.") && tone == RFM1CS_TONE_OFF);
+    rfm1cs_bye_text(MR_BYE_QUIT, 1, &s->st, out, sizeof out, NULL);
+    CHECK(!strcmp(out, "Move closed the link."));
+    /* every reason's words */
+    {
+        static const char *const want[] = { "the link closed", "the link closed", "no answer from move.local",
+                                             "the Move went quiet", "a message the page doesn't understand",
+                                             "not a Move Remote answer", "the Move is powering off", "the link closed" };
+        int why, ok = 1;
+        for (why = 0; why <= RFM1CS_WHY_PROTO; why++) {
+            rfm1cs_why_text(why, &w, out, sizeof out);
+            ok &= !strcmp(out, want[why]);
+        }
+        CHECK(ok);
+        rfm1cs_why_text(RFM1CS_WHY_NO_ANSWER, NULL, out, sizeof out);
+        CHECK(!strcmp(out, "no answer from the Move"));
+        CHECK(rfm1cs_why_text(RFM1CS_WHY_NO_ANSWER, &w, out, 8) == 7 && !strcmp(out, "no answ"));
+    }
+}
+
+/* the files the web player, the iOS app and the Android app wrote (tests/rmvp: the same two blobs, a .rfmmove of slot
+ * 4 saved 2026-11-17 10:00:00 UTC and a .rfmmoveset of slots 1 and 6, 10:00:00 and 2026-11-18 08:30:15; each made
+ * by that host's own packFile / MoveProjectFile.pack / MoveProjects.packFile at RemoteFM1 1b8a351, RemoteFM1IOS
+ * 3150dbb, RemoteFM1Android a0d0fe6) */
+#ifndef RFM1CS_TEST_DATA
+#define RFM1CS_TEST_DATA "tests/rmvp"
+#endif
+static uint32_t slurp(const char *name, uint8_t *b, uint32_t cap)
+{
+    char path[512];
+    FILE *f;
+    size_t n;
+    snprintf(path, sizeof path, "%s/%s", RFM1CS_TEST_DATA, name);
+    f = fopen(path, "rb");
+    if (!f)
+        return 0;
+    n = fread(b, 1, cap, f);
+    fclose(f);
+    return (uint32_t)n;
+}
+static void bad_file(const uint8_t *b, uint32_t n, const char *want)
+{
+    rfm1cs_file_error_t err;
+    char out[200];
+    const int r = rfm1cs_file_unpack(b, n, NULL, NULL, &err);
+    rfm1cs_file_error_text(&err, NULL, out, sizeof out);
+    CHECKF(r < 0 && r == -err.code && rfm1cs_file_check(b, n, NULL) == r && !strcmp(out, want), "\"%s\", want \"%s\"",
+           out, want);
+}
+static void test_file(void)
+{
+    static uint8_t f[RFM1CS_FILE_MAX + 16], g[RFM1CS_FILE_MAX + 16], ba[RFM_MOVE_PROJECT_MAX], bb[RFM_MOVE_PROJECT_MAX];
+    static const char *const hosts[] = { "web", "ios", "android" };
+    rfm1cs_file_entry_t e[RFM1CS_SLOTS];
+    rfm1cs_file_error_t err;
+    const uint32_t na = slurp("blob_a.bin", ba, sizeof ba), nb = slurp("blob_b.bin", bb, sizeof bb);
+    uint32_t n, m;
+    int h, kind = 0, r;
+    char name[64], out[200];
+    CHECKF(na > 0 && na == nb && rfm_move_project_check(ba, na) == 0 && rfm_move_project_check(bb, nb) == 0,
+           "the fixtures' blobs (%u, %u: run from the build directory, or set RFM1CS_TEST_DATA)", na, nb);
+    for (h = 0; h < 3; h++) {
+        snprintf(name, sizeof name, "%s.rfmmove", hosts[h]);
+        n = slurp(name, f, sizeof f);
+        r = rfm1cs_file_unpack(f, n, &kind, e, &err);
+        CHECKF(r == 1 && kind == RFM1CS_FILE_ONE && e[0].slot == 3 && e[0].saved == 1794909600u && e[0].len == na &&
+                   !memcmp(e[0].bytes, ba, na),
+               "%s: one project, slot 4, 2026-11-17 10:00 (%d, %s)", name, r, (rfm1cs_file_error_text(&err, 0, out, sizeof out), out));
+        m = rfm1cs_file_pack(e, r, 0, g, sizeof g);
+        CHECKF(m == n && !memcmp(f, g, n) && rfm1cs_file_size(e, r) == n, "%s: packed again, the same bytes", name);
+        snprintf(name, sizeof name, "%s.rfmmoveset", hosts[h]);
+        n = slurp(name, f, sizeof f);
+        r = rfm1cs_file_unpack(f, n, &kind, e, &err);
+        CHECKF(r == 2 && kind == RFM1CS_FILE_SET && e[0].slot == 0 && e[1].slot == 5 && e[0].saved == 1794909600u &&
+                   e[1].saved == 1794990615u && !memcmp(e[0].bytes, ba, na) && !memcmp(e[1].bytes, bb, nb) &&
+                   e[1].bytes[RFM1CS_COLOR_BYTE] == 7,
+               "%s: a set, slots 1 and 6 (%d)", name, r);
+        m = rfm1cs_file_pack(e, r, RFM1CS_FILE_SET, g, sizeof g);
+        CHECKF(m == n && !memcmp(f, g, n) && rfm1cs_file_check(g, m, NULL) == 0, "%s: packed again, the same bytes", name);
+    }
+    /* pack: too small, the kind by the count */
+    {
+        rfm1cs_file_entry_t one = { 3, 1794909600u, ba, na };
+        CHECK(rfm1cs_file_pack(&one, 1, 0, g, na + 17) == 0 && rfm1cs_file_pack(&one, 1, 0, g, na + 18) == na + 18 &&
+              g[5] == RFM1CS_FILE_ONE);
+        CHECK(rfm1cs_file_pack(&one, 1, 0, NULL, 0) == 0 && rfm1cs_file_pack(NULL, -1, 0, g, sizeof g) == 0);
+    }
+    /* refused, in the web player's words (its unpackFile's messages for the same files) */
+    n = slurp("web.rfmmove", f, sizeof f);
+#define MUT(stmt, want) do { memcpy(g, f, n); stmt; bad_file(g, n, want); } while (0)
+    bad_file(f, n - 1, "Not a Move project file: project 1 is cut off.");
+    memcpy(g, f, n), g[n] = 0;
+    bad_file(g, n + 1, "Not a Move project file: 1 bytes after the last project.");
+    MUT(g[0] = 0x58, "Not a Move project file: it does not start with RMVP.");
+    memset(g, 0, RFM1CS_FILE_MAX + 1);                 /* (RFM_MOVE_PROJECT_MAX 39200: the web had 39072 written down) */
+    CHECK(RFM1CS_FILE_MAX == 8 + 32 * (10 + 39200));
+    bad_file(g, RFM1CS_FILE_MAX + 1, "Not a Move project file: it is 1254729 bytes, more than a full set (1254728).");
+    MUT(g[40] ^= 0x55, "Not a Move project file: project 1 (slot 4) is damaged.");
+    bad_file(f, 8, "Not a Move project file: project 1 is cut off.");
+    bad_file(f, 0, "Not a Move project file: it does not start with RMVP.");
+    bad_file(NULL, 0, "Not a Move project file: nothing to read.");
+    MUT(g[4] = 2, "Not a Move project file: version 2; this page reads version 1.");
+    MUT(g[5] = 9, "Not a Move project file: kind 9.");
+    MUT(g[6] = 0, "Not a Move project file: 0 projects.");
+    MUT(g[6] = 2, "Not a Move project file: 2 projects.");
+    MUT(g[8] = 40, "Not a Move project file: slot 41 out of range.");
+    MUT((g[14] = g[15] = g[16] = g[17] = 0), "Not a Move project file: project 1 is 0 bytes.");
+    MUT((g[14] = g[15] = 0xFF), "Not a Move project file: project 1 is 65535 bytes.");
+    bad_file(f, 12, "Not a Move project file: project 1 is cut off.");
+#undef MUT
+    {
+        rfm1cs_file_entry_t two[2] = { { 2, 0, ba, na }, { 2, 0, ba, na } };
+        m = rfm1cs_file_pack(two, 2, RFM1CS_FILE_SET, g, sizeof g);
+        bad_file(g, m, "Not a Move project file: slot 3 twice.");
+        rfm1cs_file_unpack(g, m, NULL, NULL, &err);
+        err.code = RFM1CS_FILE_E_VERSION, err.value = 3;
+        rfm1cs_file_error_text(&err, "app", out, sizeof out);
+        CHECK(!strcmp(out, "Not a Move project file: version 3; this app reads version 1."));
+    }
+    /* every truncation refused cleanly */
+    {
+        uint32_t i, crashed = 0;
+        n = slurp("web.rfmmoveset", f, sizeof f);
+        for (i = 0; i < n; i++)
+            crashed += rfm1cs_file_check(f, i, NULL) == 0;
+        CHECKF(crashed == 0 && rfm1cs_file_check(f, n, NULL) == 0, "every truncation of a set refused (%u)", n);
+    }
+}
+
 int main(void)
 {
     test_handshake();
     test_give_up_bye_garbled();
     test_leds_screen_input();
     test_sequencer_projects();
+    test_attempt();
+    test_frame_pacing();
+    test_words();
+    test_file();
     return check_done("session");
 }

@@ -22,21 +22,29 @@
 //   core.projectInfo(slot, bytes): a stored project's content for the screen's project grid (0 ok)
 // The session (include/rfm1cs/session.h: the link to the Move, transport-free) and the store (store.h): every sess* /
 // store* call returns { evs, res }, evs in order:
-//   { type: "send", bytes }  { type: "open" }  { type: "close" }  { type: "action", act }  { type: "released" }
+//   { type: "send", bytes }  { type: "open", attempt }  { type: "close" }  { type: "action", act }  { type: "released" }
 //   { type: "lost", why (WHY.*), wasLive }  { type: "bye", reason (BYE_*), wasLive }  { type: "status", changed (CH.*) }
 //   { type: "loaded", slot, ok }   (the store's LOAD answer went to the session; ok false: not a valid project)
-//   core.sessStart(now) / sessStop(now) / sessOpened(now) / sessRx(now, bytes) / sessClosed(now, final) / sessTick(now)
+//   core.sessStart(now) / sessStop(now) / sessTick(now); the transport's, with the attempt its "open" gave (an older
+//   one's are ignored): sessOpened(now, attempt) / sessRx(now, attempt, bytes) / sessClosed(now, attempt, final)
 //   core.sessWait(now, ms, patient); core.sessGiveUp(tries); core.sessNextMs(now) -> ms | -1
 //   core.sessPanel(now, levels, green) / sessFrame(now, rgb565 | null) / sessRedraw(now) / sessFlushLeds(now)
 //   core.sessPumped(now) / sessUpdate(now) / sessFlush(now) / sessRelease(now)
 //   core.sessProjectsInit(now, bits, slot, bytes | null) / sessProjectAnswer(now, slot, bytes | null): res 0 / -1
 //   core.sessStatus() -> { state, everLive, waiting, retries, retryMs, via, proto, caps, battery, ... }; sessName(), sessShown()
+//   the words to show (session.h; words { host, closed, link, self }): core.sessText(words) -> { tone, text } (tone
+//   "off" / "busy" / "on" / "bad"); core.whyText(why, words); core.lostText(why, wasLive, words);
+//   core.byeText(reason, wasLive) -> { tone, text }
+//   the project file (store.h): core.filePack([{ slot, saved (Unix s), bytes }], kind) -> Uint8Array;
+//   core.fileUnpack(bytes, self) -> { kind, entries: [{ slot, saved, bytes }] } or { error: "Not a Move project file: .." }
 //   core.setStoreHost({ read(slot) -> STORE_PENDING | 0, write(slot, bytes) -> 0, remove(slot) -> 0 }); core.storeInit(used)
 //   core.storeAction(now, action) (a project action: kinds projectSave .. projectColor); core.storeAnswer(now, slot, bytes | null)
 export const ACT = { KEY: 1, PRESS: 2, BTN: 3, TURN: 4, MASTER: 5, MIDI: 6, SETTINGS: 7, PROJECT_SAVE: 8, PROJECT_LOAD: 9, PROJECT_DELETE: 10,
   CLICK: 11, AUDIO_REC: 12, PROJECT_CUT: 13, PROJECT_COPY: 14, PROJECT_PASTE: 15, PROJECT_COLOR: 16 };
 export const CLOCK = { AUTO: 0, INT: 1, EXT: 2 };
-export const PROJECTS = 32, PROJECT_MAX = 39072;   // (RFM_MOVE_PROJECT_MAX, version 3 blobs)
+export const PROJECTS = 32, PROJECT_MAX = 39200;   // (RFM_MOVE_PROJECT_MAX, version 3 blobs; mw_project_max())
+export const FILE_ONE = 1, FILE_SET = 2, FILE_MAX = 8 + PROJECTS * (10 + PROJECT_MAX);   // (store.h RFM1CS_FILE_*)
+export const TONES = ["off", "busy", "on", "bad"];   // (RFM1CS_TONE_*)
 export const MODE = { FM1: 0, MIDI: 1, CONTROL: 2, SEQ: 3 };
 export const MODE_NAMES = ["FM-1", "MIDI", "Control", "Sequencer"];
 // the session (session.h)
@@ -125,6 +133,7 @@ export class MoveCore {
       const t = M.HEAP32[base + i * 4], a = M.HEAP32[base + i * 4 + 1], b = M.HEAP32[base + i * 4 + 2], type = EV_NAMES[t];
       if (type === "send") evs.push({ type, bytes: M.HEAPU8.slice(tx + a, tx + a + b) });
       else if (type === "action") { const act = this._act(a); if (act) evs.push({ type, act }); }
+      else if (type === "open") evs.push({ type, attempt: a >>> 0 });
       else if (type === "lost") evs.push({ type, why: a, wasLive: !!b });
       else if (type === "bye") evs.push({ type, reason: a, wasLive: !!b });
       else if (type === "status") evs.push({ type, changed: a });
@@ -250,9 +259,10 @@ export class MoveCore {
     const M = this.M, s = String(name || "").slice(0, 31), n = M.lengthBytesUTF8(s) + 1, p = M._malloc(n);
     M.stringToUTF8(s, p, n); M._mw_sess_host_name(this.w, p); M._free(p);
   }
-  sessOpened(now) { return this._evs(this.M._mw_sess_opened(this.w, now >>> 0)); }
-  sessRx(now, bytes) { return this._withBytes(bytes, (p, n) => this._evs(this.M._mw_sess_rx(this.w, now >>> 0, p, n))); }
-  sessClosed(now, final) { return this._evs(this.M._mw_sess_closed(this.w, now >>> 0, final ? 1 : 0)); }
+  sessOpened(now, attempt) { return this._evs(this.M._mw_sess_opened(this.w, now >>> 0, attempt >>> 0)); }
+  sessRx(now, attempt, bytes) { return this._withBytes(bytes, (p, n) => this._evs(this.M._mw_sess_rx(this.w, now >>> 0, attempt >>> 0, p, n))); }
+  sessClosed(now, attempt, final) { return this._evs(this.M._mw_sess_closed(this.w, now >>> 0, attempt >>> 0, final ? 1 : 0)); }
+  sessAttempt() { return this.M._mw_sess_attempt(this.w) >>> 0; }
   sessTick(now) { return this._evs(this.M._mw_sess_tick(this.w, now >>> 0)); }
   sessNextMs(now) { return this.M._mw_sess_next_ms(this.w, now >>> 0); }
   sessPanel(now, levels, playGreen = 0) {
@@ -280,11 +290,66 @@ export class MoveCore {
     return this._withBytes(bytes, (p, n) => this._withRes((r) => this.M._mw_sess_project_answer(this.w, now >>> 0, slot | 0, p, n, r)));
   }
   sessStatus() {
-    const s = new Int32Array(this.M.HEAPU8.buffer, this.M._mw_sess_status(this.w), 28);
+    const s = new Int32Array(this.M.HEAPU8.buffer, this.M._mw_sess_status(this.w), 32);
     return { state: s[0], everLive: !!s[1], waiting: !!s[2], retries: s[3], retryMs: s[4], via: s[5], proto: s[6], caps: s[7],
       battery: s[8], power: s[9], jacks: s[10], ledPending: s[11], mode: s[12], project: s[13], playing: !!s[14],
       following: !!s[15], bpm10: s[16], connects: s[17], inputs: s[18], ledWrites: s[19], ledMsgs: s[20], screens: s[21],
-      pings: s[22], pongs: s[23], sent: s[24], midi: s[25], live: !!s[26], txOver: s[27] };
+      pings: s[22], pongs: s[23], sent: s[24], midi: s[25], live: !!s[26], txOver: s[27], lostWhy: s[28], bye: s[29],
+      goneLive: !!s[30], attempt: s[31] >>> 0 };
+  }
+  // ---- the words to show (session.h): words { host, closed, link, self } (each optional)
+  _str(p) { const M = this.M; let e = p; while (M.HEAPU8[e]) e++; return new TextDecoder().decode(M.HEAPU8.slice(p, e)); }
+  _text(what, a, b, words = {}) {
+    const M = this.M, ptrs = [words.host, words.closed, words.link, words.self].map((v) => {
+      if (v === undefined || v === null) return 0;
+      const s = String(v), n = M.lengthBytesUTF8(s) + 1, p = M._malloc(n);
+      M.stringToUTF8(s, p, n);
+      return p;
+    });
+    try {
+      const text = this._str(M._mw_sess_text(this.w, what, a | 0, b | 0, ...ptrs));
+      return { tone: TONES[M._mw_text_tone(this.w)] || "off", text };
+    } finally { for (const p of ptrs) if (p) M._free(p); }
+  }
+  sessText(words) { return this._text(0, 0, 0, words); }                   // the status line now
+  whyText(why, words) { return this._text(1, why, 0, words).text; }        // "the Move went quiet" ..
+  lostText(why, wasLive, words) { return this._text(2, why, wasLive ? 1 : 0, words).text; }   // the LOST toast
+  byeText(reason, wasLive) { return this._text(3, reason, wasLive ? 1 : 0); }                 // { tone, text }
+  // ---- the project file (store.h): [{ slot, saved (Unix seconds), bytes }] -> its bytes
+  filePack(entries, kind = 0) {
+    const M = this.M, n = entries.length, total = entries.reduce((a, e) => a + e.bytes.length, 0);
+    const size = 8 + entries.reduce((a, e) => a + 10 + e.bytes.length, 0);
+    const meta = M._malloc(Math.max(4, n * 12)), blobs = M._malloc(Math.max(1, total)), out = M._malloc(size);
+    try {
+      let o = 0;
+      entries.forEach((e, i) => {
+        M.HEAP32[(meta >> 2) + i * 3] = e.slot | 0; M.HEAP32[(meta >> 2) + i * 3 + 1] = e.saved >>> 0; M.HEAP32[(meta >> 2) + i * 3 + 2] = e.bytes.length;
+        M.HEAPU8.set(e.bytes, blobs + o); o += e.bytes.length;
+      });
+      const len = M._mw_file_pack(meta, blobs, n, kind | 0, out, size);
+      if (len !== size) throw new Error("rfm_move: the project file could not be packed");
+      return M.HEAPU8.slice(out, out + len);
+    } finally { M._free(meta); M._free(blobs); M._free(out); }
+  }
+  // a file's bytes -> { kind, entries: [{ slot, saved (Unix seconds, 0 unknown), bytes }] } (every blob checked), or
+  // { error } in the web player's words (self: "page" by default, or "app")
+  fileUnpack(bytes, self) {
+    const M = this.M, n = bytes ? bytes.length : 0, p = bytes ? M._malloc(Math.max(1, n)) : 0;   // (empty: not "nothing")
+    try {
+      if (n) M.HEAPU8.set(bytes, p);
+      const r = M._mw_file_unpack(p, n);
+      if (r < 0) {
+        const s = String(self || "page"), k = M.lengthBytesUTF8(s) + 1, sp = M._malloc(k);
+        M.stringToUTF8(s, sp, k);
+        try { return { error: this._str(M._mw_file_error(sp)) }; } finally { M._free(sp); }
+      }
+      const res = M._mw_file_res() >> 2, entries = [];
+      for (let i = 0; i < r; i++) {
+        const o = res + 1 + i * 4, off = M.HEAP32[o + 2], len = M.HEAP32[o + 3];
+        entries.push({ slot: M.HEAP32[o], saved: M.HEAP32[o + 1] >>> 0, bytes: M.HEAPU8.slice(p + off, p + off + len) });
+      }
+      return { kind: M.HEAP32[res], entries };
+    } finally { if (p) M._free(p); }
   }
   sessName() { const M = this.M, p = M._mw_sess_name(this.w); let e = p; while (M.HEAPU8[e]) e++; return new TextDecoder().decode(M.HEAPU8.slice(p, e)); }
   sessShown() { const p = this.M._mw_sess_shown(this.w); return p ? this.M.HEAPU8.slice(p, p + SCREEN_BYTES) : null; }

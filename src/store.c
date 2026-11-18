@@ -4,6 +4,7 @@
  * a3946f6): a cut's read then its delete; a paste after the reads asked before it; a colour read, changed, written. */
 #include "rfm1cs/store.h"
 
+#include <stdio.h>
 #include <string.h>
 
 void rfm1cs_project_set_color(uint8_t *b, uint32_t len, int color)
@@ -187,4 +188,132 @@ int rfm1cs_store_scan(rfm1cs_store_t *st, int open_slot, uint32_t *used_out)
         open_len = r > 0 ? r : 0;
     }
     return open_len;
+}
+
+/* ---- the project file (store.h): the web player's packFile / unpackFile (RemoteFM1 js/move-projects.js) */
+static const uint8_t file_magic[4] = { 0x52, 0x4D, 0x56, 0x50 };   /* "RMVP" */
+static void wr32le(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v, p[1] = (uint8_t)(v >> 8), p[2] = (uint8_t)(v >> 16), p[3] = (uint8_t)(v >> 24); }
+static uint32_t rd32le(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
+
+uint32_t rfm1cs_file_size(const rfm1cs_file_entry_t *e, int n)
+{
+    uint32_t len = RFM1CS_FILE_HEAD;
+    int i;
+    for (i = 0; i < n; i++)
+        len += RFM1CS_FILE_ENTRY + e[i].len;
+    return len;
+}
+
+uint32_t rfm1cs_file_pack(const rfm1cs_file_entry_t *e, int n, int kind, uint8_t *out, uint32_t cap)
+{
+    uint32_t len, o = RFM1CS_FILE_HEAD;
+    int i;
+    if (n < 0 || n > 65535 || (n && !e))
+        return 0;
+    len = rfm1cs_file_size(e, n);
+    if (!out || len > cap)
+        return 0;
+    memcpy(out, file_magic, 4);
+    out[4] = RFM1CS_FILE_VERSION;
+    out[5] = (uint8_t)(kind ? kind : n == 1 ? RFM1CS_FILE_ONE : RFM1CS_FILE_SET);
+    out[6] = (uint8_t)n, out[7] = (uint8_t)(n >> 8);
+    for (i = 0; i < n; i++) {
+        out[o] = (uint8_t)e[i].slot, out[o + 1] = 0;
+        wr32le(out + o + 2, e[i].saved);
+        wr32le(out + o + 6, e[i].len);
+        if (e[i].len)
+            memcpy(out + o + RFM1CS_FILE_ENTRY, e[i].bytes, e[i].len);
+        o += RFM1CS_FILE_ENTRY + e[i].len;
+    }
+    return len;
+}
+
+static int file_bad(rfm1cs_file_error_t *err, int code, int index, int slot, uint32_t value)
+{
+    if (err)
+        err->code = code, err->index = index, err->slot = slot, err->value = value;
+    return -code;
+}
+
+int rfm1cs_file_unpack(const uint8_t *b, uint32_t n, int *kind_out, rfm1cs_file_entry_t e[RFM1CS_SLOTS],
+                       rfm1cs_file_error_t *err)
+{
+    uint32_t o = RFM1CS_FILE_HEAD, seen = 0;
+    int kind, count, i;
+    if (err)
+        memset(err, 0, sizeof *err);
+    if (!b)
+        return file_bad(err, RFM1CS_FILE_E_EMPTY, 0, 0, 0);
+    if (n > RFM1CS_FILE_MAX)
+        return file_bad(err, RFM1CS_FILE_E_SIZE, 0, 0, n);
+    if (n < RFM1CS_FILE_HEAD || memcmp(b, file_magic, 4) != 0)
+        return file_bad(err, RFM1CS_FILE_E_MAGIC, 0, 0, 0);
+    if (b[4] != RFM1CS_FILE_VERSION)
+        return file_bad(err, RFM1CS_FILE_E_VERSION, 0, 0, b[4]);
+    kind = b[5], count = b[6] | b[7] << 8;
+    if (kind != RFM1CS_FILE_ONE && kind != RFM1CS_FILE_SET)
+        return file_bad(err, RFM1CS_FILE_E_KIND, 0, 0, (uint32_t)kind);
+    if (count < 1 || count > RFM1CS_SLOTS || (kind == RFM1CS_FILE_ONE && count != 1))
+        return file_bad(err, RFM1CS_FILE_E_COUNT, 0, 0, (uint32_t)count);
+    for (i = 0; i < count; i++) {
+        int slot;
+        uint32_t t, len;
+        if (o + RFM1CS_FILE_ENTRY > n)
+            return file_bad(err, RFM1CS_FILE_E_CUT, i, 0, 0);
+        slot = b[o], t = rd32le(b + o + 2), len = rd32le(b + o + 6);
+        if (slot >= RFM1CS_SLOTS)
+            return file_bad(err, RFM1CS_FILE_E_SLOT, i, slot, 0);
+        if (seen >> slot & 1)
+            return file_bad(err, RFM1CS_FILE_E_TWICE, i, slot, 0);
+        if (len < 1 || len > RFM_MOVE_PROJECT_MAX)
+            return file_bad(err, RFM1CS_FILE_E_LEN, i, slot, len);
+        if (len > n - o - RFM1CS_FILE_ENTRY)
+            return file_bad(err, RFM1CS_FILE_E_CUT, i, slot, 0);
+        if (rfm_move_project_check(b + o + RFM1CS_FILE_ENTRY, len) != 0)
+            return file_bad(err, RFM1CS_FILE_E_DAMAGED, i, slot, 0);
+        seen |= 1u << slot;
+        if (e)
+            e[i].slot = slot, e[i].saved = t, e[i].bytes = b + o + RFM1CS_FILE_ENTRY, e[i].len = len;
+        o += RFM1CS_FILE_ENTRY + len;
+    }
+    if (o != n)
+        return file_bad(err, RFM1CS_FILE_E_TRAILING, count, 0, n - o);
+    if (kind_out)
+        *kind_out = kind;
+    return count;
+}
+
+int rfm1cs_file_check(const uint8_t *b, uint32_t n, rfm1cs_file_error_t *err)
+{
+    const int r = rfm1cs_file_unpack(b, n, NULL, NULL, err);
+    return r < 0 ? r : 0;
+}
+
+uint32_t rfm1cs_file_error_text(const rfm1cs_file_error_t *err, const char *self, char *out, uint32_t cap)
+{
+    char why[96];
+    int k;
+    const int code = err ? err->code : RFM1CS_FILE_E_EMPTY, i = err ? err->index + 1 : 0, slot = err ? err->slot + 1 : 0;
+    const unsigned long v = err ? (unsigned long)err->value : 0;
+    if (!out || !cap)
+        return 0;
+    switch (code) {
+    case RFM1CS_FILE_OK: snprintf(why, sizeof why, "%s", ""); break;
+    case RFM1CS_FILE_E_SIZE: snprintf(why, sizeof why, "it is %lu bytes, more than a full set (%lu)", v, (unsigned long)RFM1CS_FILE_MAX); break;
+    case RFM1CS_FILE_E_MAGIC: snprintf(why, sizeof why, "it does not start with RMVP"); break;
+    case RFM1CS_FILE_E_VERSION:
+        snprintf(why, sizeof why, "version %lu; this %s reads version %d", v, self && *self ? self : "page", RFM1CS_FILE_VERSION);
+        break;
+    case RFM1CS_FILE_E_KIND: snprintf(why, sizeof why, "kind %lu", v); break;
+    case RFM1CS_FILE_E_COUNT: snprintf(why, sizeof why, "%lu projects", v); break;
+    case RFM1CS_FILE_E_CUT: snprintf(why, sizeof why, "project %d is cut off", i); break;
+    case RFM1CS_FILE_E_SLOT: snprintf(why, sizeof why, "slot %d out of range", slot); break;
+    case RFM1CS_FILE_E_TWICE: snprintf(why, sizeof why, "slot %d twice", slot); break;
+    case RFM1CS_FILE_E_LEN: snprintf(why, sizeof why, "project %d is %lu bytes", i, v); break;
+    case RFM1CS_FILE_E_DAMAGED: snprintf(why, sizeof why, "project %d (slot %d) is damaged", i, slot); break;
+    case RFM1CS_FILE_E_TRAILING: snprintf(why, sizeof why, "%lu bytes after the last project", v); break;
+    default: snprintf(why, sizeof why, "nothing to read"); break;
+    }
+    k = code == RFM1CS_FILE_OK ? snprintf(out, cap, "%s", "") : snprintf(out, cap, "Not a Move project file: %s.", why);
+    return k < 0 ? 0 : (uint32_t)k < cap ? (uint32_t)k : cap - 1;
 }

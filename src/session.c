@@ -6,6 +6,7 @@
  * 1, 2, 4, 4 .. s; the project flushed and everything let go when the link goes. */
 #include "rfm1cs/session.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "moveremote/proto.h"
@@ -102,8 +103,8 @@ static void on_core_act(void *ctx, const rfm_move_act_t *a)
     emit(s, &ev);
 }
 
-/* the core's state into the status; a STATUS event for what changed (the web player's afterSeq) */
-static void after(rfm1cs_session_t *s)
+/* the core's state into the status: what changed (RFM1CS_CH_*) */
+static uint32_t refresh(rfm1cs_session_t *s)
 {
     rfm1cs_status_t *st = &s->st;
     uint32_t ch = 0;
@@ -118,8 +119,10 @@ static void after(rfm1cs_session_t *s)
         st->following = following, st->bpm10 = bpm10, ch |= RFM1CS_CH_CLOCK;
     if (mode != st->mode)
         st->mode = mode, ch |= RFM1CS_CH_MODE;
-    status_changed(s, ch);
+    return ch;
 }
+/* ... and a STATUS event for it (the web player's afterSeq) */
+static void after(rfm1cs_session_t *s) { status_changed(s, refresh(s)); }
 
 void rfm1cs_session_init(rfm1cs_session_t *s, const uint8_t *settings, uint32_t n, const char *host_name,
                          rfm1cs_event_fn fn, void *ctx)
@@ -213,10 +216,24 @@ void rfm1cs_session_panel(rfm1cs_session_t *s, const uint8_t levels[RFM_MOVE_NLE
     rfm_move_panel(&s->core, levels, play_green);
     rfm1cs_session_flush_leds(s);
 }
+/* (FNV-1a over the pixels two at a time: far cheaper than the thumbnail) */
+static uint32_t px_hash(const uint16_t *px)
+{
+    uint32_t h = 2166136261u;
+    int i;
+    for (i = 0; i < 240 * 240; i += 2)
+        h = (h ^ ((uint32_t)px[i] | (uint32_t)px[i + 1] << 16)) * 16777619u;
+    return h;
+}
 void rfm1cs_session_frame(rfm1cs_session_t *s, uint32_t now, const uint16_t *rgb565)
 {
-    if (rgb565)
-        rfm_move_thumb(&s->core, rgb565);
+    if (rgb565) {                                       /* (the thumbnail again only when it can differ, or 33 ms on) */
+        const uint32_t h = px_hash(rgb565);
+        if (!s->thumb_ok || h != s->thumb_hash || (int32_t)(now - s->thumb_at) >= (int32_t)RFM1CS_SCREEN_MS) {
+            rfm_move_thumb(&s->core, rgb565);
+            s->thumb_ok = 1, s->thumb_hash = h, s->thumb_at = now;
+        }
+    }
     screen_soon(s, now);
 }
 
@@ -246,6 +263,9 @@ static void teardown(rfm1cs_session_t *s)
 
 static void begin_try(rfm1cs_session_t *s, uint32_t now)
 {
+    rfm1cs_event_t ev;
+    if (!++s->attempt)                                  /* (a new id each try; never 0) */
+        s->attempt = 1;
     s->opened = 0;
     s->patient = 0;
     s->st.waiting = 0;
@@ -253,8 +273,12 @@ static void begin_try(rfm1cs_session_t *s, uint32_t now)
     s->hello_at = now + RFM1CS_HELLO_MS;
     s->hello_due = 1;
     set_state(s, RFM1CS_CONNECTING, 0);
-    if (s->want && s->st.state == RFM1CS_CONNECTING)
-        emit_simple(s, RFM1CS_EV_OPEN);
+    if (s->want && s->st.state == RFM1CS_CONNECTING) {
+        memset(&ev, 0, sizeof ev);
+        ev.type = RFM1CS_EV_OPEN;
+        ev.attempt = s->attempt;
+        emit(s, &ev);
+    }
 }
 
 void rfm1cs_session_start(rfm1cs_session_t *s, uint32_t now)
@@ -262,6 +286,7 @@ void rfm1cs_session_start(rfm1cs_session_t *s, uint32_t now)
     if (s->want || s->live || s->opened || s->hello_due || s->retry_due)
         teardown(s);
     s->want = 1;
+    s->st.lost_why = s->st.bye = s->st.gone_live = 0;
     s->st.ever_live = 0;
     s->st.retries = 0;
     s->st.retry_ms = 0;
@@ -270,6 +295,8 @@ void rfm1cs_session_start(rfm1cs_session_t *s, uint32_t now)
 
 void rfm1cs_session_stop(rfm1cs_session_t *s)
 {
+    if (s->st.state != RFM1CS_OFF)                      /* (a stop after a BYE keeps its words) */
+        s->st.lost_why = s->st.bye = s->st.gone_live = 0;
     s->want = 0;
     teardown(s);                                        /* (flushed and let go even when idle, as the web player) */
     s->retry_due = 0;
@@ -294,6 +321,7 @@ static void lost(rfm1cs_session_t *s, uint32_t now, int why, int final)
     const int was = s->live;
     uint32_t ms;
     teardown(s);
+    s->st.lost_why = why, s->st.gone_live = was;
     memset(&ev, 0, sizeof ev);
     ev.type = RFM1CS_EV_LOST;
     ev.reason = why;
@@ -314,11 +342,11 @@ static void lost(rfm1cs_session_t *s, uint32_t now, int why, int final)
     set_state(s, RFM1CS_RETRYING, RFM1CS_CH_STATE);
 }
 
-void rfm1cs_session_opened(rfm1cs_session_t *s, uint32_t now)
+void rfm1cs_session_opened(rfm1cs_session_t *s, uint32_t now, uint32_t attempt)
 {
     uint8_t *p = s->tx + 3;
     size_t k;
-    if (!s->want || s->live || s->st.state != RFM1CS_CONNECTING)
+    if (attempt != s->attempt || !s->want || s->live || s->st.state != RFM1CS_CONNECTING)
         return;
     s->opened = 1;
     if (s->st.waiting) {                                /* (it waited: the HELLO's whole wait from now) */
@@ -335,9 +363,9 @@ void rfm1cs_session_opened(rfm1cs_session_t *s, uint32_t now)
     send_tx(s, MR_H_HELLO, 34);
 }
 
-void rfm1cs_session_closed(rfm1cs_session_t *s, uint32_t now, int final)
+void rfm1cs_session_closed(rfm1cs_session_t *s, uint32_t now, uint32_t attempt, int final)
 {
-    if (!s->want || (s->st.state != RFM1CS_CONNECTING && s->st.state != RFM1CS_CONNECTED))
+    if (attempt != s->attempt || !s->want || (s->st.state != RFM1CS_CONNECTING && s->st.state != RFM1CS_CONNECTED))
         return;
     lost(s, now, RFM1CS_WHY_CLOSED, final);
 }
@@ -374,8 +402,11 @@ static void on_hello(rfm1cs_session_t *s, uint32_t now, const uint8_t *p, uint32
     screen_soon(s, now);
     s->next_ping = now + RFM1CS_PING_MS;
     s->timed_screen = 0;
-    set_state(s, RFM1CS_CONNECTED, RFM1CS_CH_HELLO);
-    after(s);
+    {                                                   /* (the status fresh for the CONNECTED event; its bits after) */
+        const uint32_t ch = refresh(s);
+        set_state(s, RFM1CS_CONNECTED, RFM1CS_CH_HELLO);
+        status_changed(s, ch);
+    }
 }
 
 static void on_bye(rfm1cs_session_t *s, uint32_t now, int reason)
@@ -388,6 +419,7 @@ static void on_bye(rfm1cs_session_t *s, uint32_t now, int reason)
     }
     s->want = 0;
     teardown(s);
+    s->st.bye = reason ? reason : -1, s->st.gone_live = was;
     memset(&ev, 0, sizeof ev);
     ev.type = RFM1CS_EV_BYE;
     ev.reason = reason;
@@ -437,10 +469,10 @@ static void message(rfm1cs_session_t *s, uint32_t now, int type, const uint8_t *
     }
 }
 
-void rfm1cs_session_rx(rfm1cs_session_t *s, uint32_t now, const uint8_t *b, uint32_t n)
+void rfm1cs_session_rx(rfm1cs_session_t *s, uint32_t now, uint32_t attempt, const uint8_t *b, uint32_t n)
 {
     uint32_t i = 0;
-    if (!s->want || (s->st.state != RFM1CS_CONNECTING && s->st.state != RFM1CS_CONNECTED))
+    if (attempt != s->attempt || !s->want || (s->st.state != RFM1CS_CONNECTING && s->st.state != RFM1CS_CONNECTED))
         return;
     s->last_rx = now;
     s->st.rx_bytes += n;
@@ -591,4 +623,115 @@ int rfm1cs_session_project_answer(rfm1cs_session_t *s, uint32_t now, int slot, c
     rfm1cs_session_flush_leds(s);
     screen_soon(s, now);
     return r;
+}
+
+/* ---- what a host shows (session.h): the web player's words (RemoteFM1 js/move-link.js, 1b8a351) */
+static const char *const mode_names[] = { "FM-1", "MIDI", "Control", "Sequencer" };
+static const char *const via_names[] = { "Wi-Fi", "USB", "this computer" };
+
+static uint32_t put(char *out, uint32_t cap, int k)
+{
+    if (!out || !cap)
+        return 0;
+    if (k < 0) {
+        out[0] = 0;
+        return 0;
+    }
+    return (uint32_t)k < cap ? (uint32_t)k : cap - 1;
+}
+static const char *or_(const char *a, const char *b) { return a && *a ? a : b; }
+static const char *move_name(const rfm1cs_status_t *st, int was_live, const char *none)
+{
+    return was_live && st && st->name[0] ? st->name : none;
+}
+
+uint32_t rfm1cs_why_text(int why, const rfm1cs_words_t *w, char *out, uint32_t cap)
+{
+    const char *host = or_(w ? w->host : NULL, "the Move");
+    if (!out || !cap)
+        return 0;
+    switch (why) {
+    case RFM1CS_WHY_CLOSED: return put(out, cap, snprintf(out, cap, "%s", or_(w ? w->closed : NULL, "the link closed")));
+    case RFM1CS_WHY_NO_ANSWER: return put(out, cap, snprintf(out, cap, "no answer from %s", host));
+    case RFM1CS_WHY_SILENT: return put(out, cap, snprintf(out, cap, "the Move went quiet"));
+    case RFM1CS_WHY_GARBLED:
+        return put(out, cap, snprintf(out, cap, "a message the %s doesn't understand", or_(w ? w->self : NULL, "page")));
+    case RFM1CS_WHY_NOT_MOVE: return put(out, cap, snprintf(out, cap, "not a Move Remote answer"));
+    case RFM1CS_WHY_SHUTDOWN: return put(out, cap, snprintf(out, cap, "the Move is powering off"));
+    default: return put(out, cap, snprintf(out, cap, "the link closed"));
+    }
+}
+
+uint32_t rfm1cs_lost_text(int why, int was_live, const rfm1cs_status_t *st, const rfm1cs_words_t *w, char *out,
+                          uint32_t cap)
+{
+    char t[160];
+    rfm1cs_why_text(why, w, t, sizeof t);
+    if (!out || !cap)
+        return 0;
+    return put(out, cap, snprintf(out, cap, "%s: link lost (%s).", move_name(st, was_live, "The Move"), t));
+}
+
+uint32_t rfm1cs_bye_text(int reason, int was_live, const rfm1cs_status_t *st, char *out, uint32_t cap, int *tone)
+{
+    const char *name = move_name(st, was_live, "The Move");
+    if (tone)
+        *tone = reason == MR_BYE_PROTOCOL ? RFM1CS_TONE_BAD : RFM1CS_TONE_OFF;
+    if (!out || !cap)
+        return 0;
+    switch (reason) {
+    case MR_BYE_EXIT: return put(out, cap, snprintf(out, cap, "%s left Move Remote (its exit gesture).", name));
+    case MR_BYE_REPLACED: return put(out, cap, snprintf(out, cap, "Another host took %s over.", name));
+    case MR_BYE_PROTOCOL: return put(out, cap, snprintf(out, cap, "%s closed the link: a protocol error.", name));
+    default: return put(out, cap, snprintf(out, cap, "%s closed the link.", name));
+    }
+}
+
+int rfm1cs_status_text(const rfm1cs_status_t *st, const rfm1cs_words_t *w, char *out, uint32_t cap)
+{
+    const char *host = or_(w ? w->host : NULL, "the Move");
+    char why[160];
+    int tone = RFM1CS_TONE_OFF;
+    if (!out || !cap)
+        return RFM1CS_TONE_OFF;
+    rfm1cs_why_text(st->lost_why, w, why, sizeof why);
+    if (why[0] >= 'a' && why[0] <= 'z')                 /* (the web player's cap()) */
+        why[0] = (char)(why[0] - 'a' + 'A');
+    switch (st->state) {
+    case RFM1CS_CONNECTING:
+        if (st->waiting)
+            snprintf(out, cap, "No answer from %s yet.", host);
+        else
+            snprintf(out, cap, "Connecting to %s...", host);
+        return RFM1CS_TONE_BUSY;
+    case RFM1CS_CONNECTED: {
+        const char *link = w && w->link ? w->link : "";
+        const int mode = st->mode >= 0 && st->mode < 4 ? st->mode : 0;
+        if (st->via >= 0 && st->via < 3)
+            snprintf(out, cap, "%s connected over %s (%s): %s mode. Track 1..4 pick the mode.", or_(st->name, "Move"),
+                     via_names[st->via], link, mode_names[mode]);
+        else
+            snprintf(out, cap, "%s connected (%s): %s mode. Track 1..4 pick the mode.", or_(st->name, "Move"), link,
+                     mode_names[mode]);
+        return RFM1CS_TONE_ON;
+    }
+    case RFM1CS_RETRYING:
+        snprintf(out, cap, "%s: trying again in %u s...", why, (unsigned)((st->retry_ms + 500) / 1000));
+        return RFM1CS_TONE_BUSY;
+    case RFM1CS_FAILED:
+        if (st->lost_why == RFM1CS_WHY_PROTO)
+            snprintf(out, cap, "The Move speaks Move Remote protocol %d; this %s speaks %d. Update one of them.", st->proto,
+                     or_(w ? w->self : NULL, "page"), MR_PROTO);
+        else
+            snprintf(out, cap, "%s. Is Move Remote running on the Move, and is %s its address? Over USB-C it is %s.", why,
+                     host, MR_USB_ADDR);
+        return RFM1CS_TONE_BAD;
+    default:
+        if (st->bye) {
+            rfm1cs_bye_text(st->bye, st->gone_live, st, out, cap, &tone);
+            return tone;
+        }
+        snprintf(out, cap, "Not connected.");
+        return RFM1CS_TONE_OFF;
+    }
 }
