@@ -3,6 +3,11 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.3.1 (2026-11-18)
+
+- `rfm1cs_why_text(RFM1CS_WHY_PROTO)` reads "the Move speaks another Move Remote protocol" (it fell through to "the
+  link closed"). Found by the Android port.
+
 ## 0.3.0 (2026-11-18)
 
 What the iOS and Android ports asked for. Behaviour is unchanged otherwise.

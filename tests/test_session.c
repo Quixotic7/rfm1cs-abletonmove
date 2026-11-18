@@ -722,7 +722,8 @@ static void test_words(void)
     {
         static const char *const want[] = { "the link closed", "the link closed", "no answer from move.local",
                                              "the Move went quiet", "a message the page doesn't understand",
-                                             "not a Move Remote answer", "the Move is powering off", "the link closed" };
+                                             "not a Move Remote answer", "the Move is powering off",
+                                             "the Move speaks another Move Remote protocol" };
         int why, ok = 1;
         for (why = 0; why <= RFM1CS_WHY_PROTO; why++) {
             rfm1cs_why_text(why, &w, out, sizeof out);
@@ -736,7 +737,7 @@ static void test_words(void)
 }
 
 /* the files the web player, the iOS app and the Android app wrote (tests/rmvp: the same two blobs, a .rfmmove of slot
- * 4 saved 2026-11-17 10:00:00 UTC and a .rfmmoveset of slots 1 and 6, 10:00:00 and 2026-11-18 08:30:15; each made
+ * index 3 (the 4th) saved 2026-11-17 10:00:00 UTC and a .rfmmoveset of slots 1 and 6, 10:00:00 and 2026-11-18 08:30:15; each made
  * by that host's own packFile / MoveProjectFile.pack / MoveProjects.packFile at RemoteFM1 1b8a351, RemoteFM1IOS
  * 3150dbb, RemoteFM1Android a0d0fe6) */
 #ifndef RFM1CS_TEST_DATA

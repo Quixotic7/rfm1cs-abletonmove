@@ -28,7 +28,7 @@ extern "C" {
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 3
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.3.0"
+#define RFM1CS_VERSION "0.3.1"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14

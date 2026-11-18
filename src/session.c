@@ -658,6 +658,7 @@ uint32_t rfm1cs_why_text(int why, const rfm1cs_words_t *w, char *out, uint32_t c
         return put(out, cap, snprintf(out, cap, "a message the %s doesn't understand", or_(w ? w->self : NULL, "page")));
     case RFM1CS_WHY_NOT_MOVE: return put(out, cap, snprintf(out, cap, "not a Move Remote answer"));
     case RFM1CS_WHY_SHUTDOWN: return put(out, cap, snprintf(out, cap, "the Move is powering off"));
+    case RFM1CS_WHY_PROTO: return put(out, cap, snprintf(out, cap, "the Move speaks another Move Remote protocol"));
     default: return put(out, cap, snprintf(out, cap, "the link closed"));
     }
 }
