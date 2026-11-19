@@ -3,6 +3,28 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.4.5 (2026-11-18)
+
+The Back flip is named, and FX setup stays where the user left it (the owner's). No API or action changes;
+`rfm_move_settings_t` has a new last field `fw_fx` (rebuild everything). The settings image keeps its size and
+version: `fw_fx` rides in bit 7 of the FX page byte (an older build reading it falls back to FX page 1).
+
+- **A popup on the Back flip**, the Track mode popup's kind and second: going out it names the mode returned to
+  (FM-1, MIDI, Control, Seq, with the mode strip); going in "Firmwares", "Projects" (Track 4) or "FX & Mix", full
+  screen. The first press, turn or step in the view drops it.
+- **FX setup is no layer Back closes.** In the projects view Menu (Session) alone toggles between the firmware /
+  project pages and FX setup; a click of Back in FX setup flips straight out to the mode. Back still closes FX
+  setup's module list first, and the other layers (Capture, States, the description, the selection, the catalog) as
+  in 0.4.3.
+- **FX setup is remembered across the flip**, on its page: left showing FX setup (by any way out), the view opens on
+  it again (Back, Shift + step 1, Track 1 held + step 1 alike); left on a firmware or project page, it opens there as
+  before. Saved in the settings (`fw_fx`), so it survives a restart.
+
+**Tests:** `move_fw` `test_flip_fx` (447 checks in all): the popups both ways (FM-1, MIDI, Firmwares, Projects,
+FX & Mix) and the first press dropping it, Back out of FX setup, Back in to FX setup on the Mix page, the settings
+round trip, Menu still toggling, a module list closed first, Track 1 held + step 1 opening FX setup; `test_back` and
+`test_fx` updated. Renders: `fw_flip_out_mode.pbm`, `fw_flip_in_firmwares.pbm`, `fw_flip_in_fx.pbm`.
+
 ## 0.4.4 (2026-11-18)
 
 The FM-1 mode button layout the owner chose: Back flips (as in 0.4.3), Up is SEQ, Down cycles the firmwares. No API,

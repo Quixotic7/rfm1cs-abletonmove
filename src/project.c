@@ -495,6 +495,12 @@ static void proj_leave(rfm_move_t *m)
     rfm_move_seq_t *q = &m->seq;
     int i;
     q->projects = 0, q->mods = q->mods_used = 0, q->proj_held = -1;
+    if (m->s.fw_fx != (m->fw.fx != 0)) {                /* (0.4.5) FX setup showing as the view is left: it opens
+                                                         * there next time */
+        m->s.fw_fx = m->fw.fx != 0;
+        rfmv_changed(m);
+    }
+    m->fw.fx = 0;
     for (i = 0; i < RFM_MOVE_NPADS; i++)
         m->pad_down[i] = 0, m->pad[i].kind = 0;
     for (i = 0; i < 128; i++)

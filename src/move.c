@@ -190,7 +190,8 @@ uint32_t rfm_move_save(const rfm_move_settings_t *s, uint8_t *o)
     memcpy(p, s->drum, sizeof s->drum), p += sizeof s->drum;
     *p++ = s->midi_view, *p++ = s->vel_mode, *p++ = s->vel_level;
     *p++ = s->fw_track, *p++ = s->fw_scope, *p++ = (uint8_t)(s->fw_filter & 0xFF), *p++ = (uint8_t)(s->fw_filter >> 8);
-    *p++ = s->fw_cat_scope, *p++ = s->fx_page;          /* (version 4) */
+    *p++ = s->fw_cat_scope, *p++ = (uint8_t)(s->fx_page | (s->fw_fx ? 0x80 : 0));   /* (version 4; 0.4.5: FX setup's
+                                                         * memory in bit 7) */
     return (uint32_t)(p - o);
 }
 
@@ -240,7 +241,8 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
         s->fw_cat_scope = (uint8_t)(p[7] & 3);
         if (s->fw_cat_scope == 3)
             s->fw_cat_scope = 1;                        /* (0.4.2: one scope; both were: Update ready) */
-        s->fx_page = p[8] < 4 ? p[8] : d.fx_page;
+        s->fx_page = (p[8] & 0x7F) < 4 ? p[8] & 0x7F : d.fx_page;
+        s->fw_fx = p[8] >> 7;
     }
     return 0;
 }
@@ -892,14 +894,19 @@ static void back_click(rfm_move_t *m, uint32_t now)
         e.value = 0;
         if (m->seq.projects)
             rfmv_view_input(m, &e, now);
+        if (!m->seq.projects)                           /* (0.4.5) flipped out: the mode named, as a Track tap does */
+            rfmv_pop(m, POP_MODE, m->s.mode);
         return;
     }
     if (m->mmenu)
         m->mmenu = 0;
     else if (rfmv_seq_layer_open(m))
         rfmv_seq_button(m, MR_CC_BACK, 1, now);
-    else
+    else {                                              /* flipped in: the view named (FX & Mix, Firmwares, Projects) */
         rfmv_proj_enter(m);
+        if (m->seq.projects)
+            rfmv_pop(m, POP_MODE, m->fw.fx ? 22 : m->fw.track < 3 ? 21 : 20);
+    }
 }
 static int back_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)   /* 1: taken */
 {
@@ -936,6 +943,8 @@ void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
 {
     if (back_input(m, ev, now_ms))
         return;
+    if (m->seq.projects && m->pop == POP_MODE && ev->value && ev->type != MR_EV_TOUCH && ev->type != MR_EV_PAD_PRESSURE)
+        m->pop = POP_NONE;                              /* (0.4.5: the flip's name goes with the first press there) */
     if (m->seq.projects) {                              /* the projects view: a mode of its own (Tracks 1..3 the
                                                          * firmware slots, Track 4 the projects, Session FX setup) */
         rfmv_view_input(m, ev, now_ms);

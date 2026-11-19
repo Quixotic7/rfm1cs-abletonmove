@@ -758,7 +758,11 @@ static void test_fx(void)
     CHECK(m->s.fx_page == 3);
     press(m, MR_CC_MENU);
     CHECK(!m->fw.fx && m->seq.projects);
-    press(m, MR_CC_MENU), press(m, MR_CC_BACK);
+    press(m, MR_CC_MENU), press(m, MR_CC_BACK);       /* (0.4.5: Back leaves the view, FX setup remembered) */
+    CHECK(!m->fw.fx && !m->seq.projects && m->s.fw_fx);
+    press(m, MR_CC_BACK);
+    CHECK(m->fw.fx && m->seq.projects && m->s.fx_page == 3);
+    press(m, MR_CC_MENU);
     CHECK(!m->fw.fx && m->seq.projects);
     /* the whole setup at once (at start) */
     clear();
@@ -1303,10 +1307,10 @@ static void test_back(void)
     CHECK(m->seq.projects && m->fw.sel < 0);
     press(m, MR_CC_MENU);
     CHECK(m->fw.fx);
-    press(m, MR_CC_BACK);
-    CHECK(m->seq.projects && !m->fw.fx);
-    press(m, MR_CC_BACK);
-    CHECK(!m->seq.projects);
+    press(m, MR_CC_BACK);                               /* (0.4.5: FX setup is no layer: out at once) */
+    CHECK(!m->seq.projects && !m->fw.fx && m->s.fw_fx);
+    press(m, MR_CC_BACK), press(m, MR_CC_MENU), press(m, MR_CC_BACK);   /* (in on FX setup, Menu off it, out) */
+    CHECK(!m->seq.projects && !m->s.fw_fx);
     /* a long hold, alone: nothing; a Track held meanwhile: no click */
     button(m, MR_CC_BACK, 1), now_ms += RFM_MOVE_TAP_MS + 50, button(m, MR_CC_BACK, 0);
     CHECK(!m->seq.projects);
@@ -1358,9 +1362,9 @@ static void test_back(void)
     press(m, MR_CC_BACK);
     CHECK(m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ);
     press(m, MR_CC_BACK);
-    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ);
-    screen(m);
-    CHECK(!memcmp(scr, base, sizeof base));             /* (the view left: the sequencer's screen at once) */
+    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ && m->pop == POP_MODE && m->pop_i == RFM_MOVE_MODE_SEQ);
+    rest_pop(m), screen(m);                             /* (0.4.5: the mode named first, then the sequencer's screen) */
+    CHECK(!memcmp(scr, base, sizeof base));
     /* Shift + step 1 still opens the view */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 0), button(m, MR_CC_SHIFT, 0);
     CHECK(m->seq.projects);
@@ -1417,6 +1421,66 @@ static void test_down(void)
     CHECK(count(RFM_MOVE_ACT_BTN) == 2 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0);
 }
 
+/* (0.4.5) the Back flip names where it goes (as a Track tap does); FX setup is no layer Back closes, and is
+ * remembered across the flip (and in the settings) */
+static void test_flip_fx(void)
+{
+    rfm_move_t *m = &M;
+    static uint8_t blob[RFM_MOVE_SETTINGS_BYTES];
+    rfm_move_settings_t s2;
+    const int mode0 = (fixture(m), m->s.mode);
+    CHECK(m->seq.projects && !m->fw.fx && m->fw.track == 0);
+    press(m, MR_CC_BACK);                               /* out: the mode named */
+    CHECK(!m->seq.projects && m->pop == POP_MODE && m->pop_i == mode0 && rfmv_pop_up(m, POP_MODE));
+    screen(m), write_pbm("flip_out_mode");
+    CHECK(lit_in(0, 0, 128, 64) > 0);
+    rest_pop(m);
+    CHECK(!rfmv_pop_up(m, POP_MODE));
+    press(m, MR_CC_BACK);                               /* in: Firmwares */
+    CHECK(m->seq.projects && m->pop == POP_MODE && m->pop_i == 21 && rfmv_pop_up(m, POP_MODE));
+    screen(m), write_pbm("flip_in_firmwares");
+    CHECK(lit_in(30, 20, 98, 40) > 0 && lit_in(0, 50, 128, 64) == 0);   /* (the name alone, full screen) */
+    jog(m, 1);                                          /* (a press or turn there: the name goes) */
+    CHECK(m->pop != POP_MODE);
+    jog(m, -1), rest_pop(m);
+    tap_track(m, 3), press(m, MR_CC_BACK), press(m, MR_CC_BACK);   /* Track 4's page: Projects */
+    CHECK(m->seq.projects && m->fw.track == 3 && m->pop == POP_MODE && m->pop_i == 20);
+    /* FX setup (Menu), on the Mix page: Back flips out at once; Back in: FX setup again, on its page, named */
+    press(m, MR_CC_MENU), tap_track(m, 3);
+    CHECK(m->fw.fx && m->s.fx_page == 3);
+    rest_pop(m);
+    press(m, MR_CC_BACK);
+    CHECK(!m->seq.projects && !m->fw.fx && m->s.fw_fx && m->pop == POP_MODE && m->pop_i == mode0);
+    rest_pop(m);
+    press(m, MR_CC_BACK);
+    CHECK(m->seq.projects && m->fw.fx && m->s.fx_page == 3 && m->pop == POP_MODE && m->pop_i == 22);
+    screen(m), write_pbm("flip_in_fx");
+    /* .. kept in the settings image */
+    CHECK(rfm_move_save(&m->s, blob) == RFM_MOVE_SETTINGS_BYTES && rfm_move_load(&s2, blob, sizeof blob) == 0 &&
+          s2.fw_fx == 1 && s2.fx_page == 3);
+    /* Menu still toggles; a module list closes first */
+    press(m, MR_CC_MENU);
+    CHECK(m->seq.projects && !m->fw.fx);
+    press(m, MR_CC_MENU), tap_track(m, 0);
+    CHECK(m->fw.fx && m->s.fx_page == 0);
+    tap_pad(m, pad_of(2)), jog(m, 2);
+    CHECK(m->fw.browse == 2);
+    press(m, MR_CC_BACK);
+    CHECK(m->seq.projects && m->fw.fx && m->fw.browse < 0);
+    press(m, MR_CC_BACK);
+    CHECK(!m->seq.projects && m->s.fw_fx);
+    /* Track 1 held + step 1 opens the view as it was left too (FX setup) */
+    projects(m);                                        /* (Track 1 held + step 1) */
+    CHECK(m->seq.projects && m->fw.fx);
+    press(m, MR_CC_MENU), press(m, MR_CC_BACK);         /* (left on the firmwares: forgotten) */
+    CHECK(!m->seq.projects && !m->s.fw_fx);
+    /* MIDI mode: out names MIDI */
+    rfm_move_set_mode(m, RFM_MOVE_MODE_MIDI);
+    press(m, MR_CC_BACK), rest_pop(m), press(m, MR_CC_BACK);
+    CHECK(!m->seq.projects && m->pop == POP_MODE && m->pop_i == RFM_MOVE_MODE_MIDI);
+    rfm_move_set_mode(m, RFM_MOVE_MODE_FM1);
+}
+
 int main(void)
 {
     test_nolist();
@@ -1431,6 +1495,7 @@ int main(void)
     test_download_load();
     test_back();
     test_down();
+    test_flip_fx();
     test_states();
     test_midi_track();
     test_old_formats();

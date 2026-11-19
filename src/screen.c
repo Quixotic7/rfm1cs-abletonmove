@@ -557,6 +557,9 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             if (m->pop_i == 20) {                       /* projects mode entered: Move's set icon over the name */
                 v2_ic(cv, V2I_PROJ, 58, 4, 1);
                 v2_TC(cv, 64, 26, "Projects", 2, 1);
+            } else if (m->pop_i == 21 || m->pop_i == 22) {   /* (0.4.5) Back into the view: Firmwares or FX & Mix */
+                v2_ic(cv, V2I_PROJ, 58, 4, 1);
+                v2_TC(cv, 64, 26, m->pop_i == 21 ? "Firmwares" : "FX & Mix", 2, 1);
             } else if (m->pop_i < 4)
                 v2_modeName(cv, MODES[m->pop_i], 4, m->pop_i);
             else
@@ -847,6 +850,12 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
     int t, x, y;
     if (rgb565)
         thumb_from(m, rgb565);
+    if (m->seq.projects && m->pop == POP_MODE && m->pop_i >= 21 && rfmv_pop_up(m, POP_MODE)) {
+        mr_gfx_clear(&cv, 0);                           /* (0.4.5) Back into the view: its name, a second */
+        popups(m, &cv);
+        mr_gfx_pack(&cv, out);
+        return;
+    }
     if (rfmv_fw_screen(m, &cv)) {                       /* (0.4.0) the projects view's firmware tracks, FX setup,
                                                          * its popups; a slot's level */
         mr_gfx_pack(&cv, out);

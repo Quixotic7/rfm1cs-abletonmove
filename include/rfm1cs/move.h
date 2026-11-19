@@ -28,7 +28,7 @@ extern "C" {
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 4
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.4.4"
+#define RFM1CS_VERSION "0.4.5"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -161,6 +161,8 @@ typedef struct {
     uint8_t fw_cat_scope;                               /* the catalog's scope: 0 everything, 1 Update ready, 2 Not
                                                          * installed (0.4.2: one at a time; 3 loads as 1) */
     uint8_t fx_page;                                    /* FX setup's page 0..3 */
+    uint8_t fw_fx;                                      /* (0.4.5) FX setup was showing when the view was left: the
+                                                         * view opens on it again (saved as fx_page's bit 7) */
 } rfm_move_settings_t;
 enum { RFM_MOVE_VEL_DYNAMIC, RFM_MOVE_VEL_FIXED, RFM_MOVE_VEL_SOFT, RFM_MOVE_VEL_HARD, RFM_MOVE_VEL_LINEAR, RFM_MOVE_VEL_N };
 /* (the jog's order: Dynamic, Fixed, Soft, Linear, Hard; LINEAR came last, so older settings keep their values) */

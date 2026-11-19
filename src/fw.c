@@ -992,7 +992,7 @@ void rfmv_fw_enter(rfm_move_t *m)
     rfm_move_fw_state_t *f = F(m);
     f->track = (uint8_t)(f->host ? (m->s.fw_track == 3 ? 3 : f->active) : 3);
     f->catalog = 0, f->sel = -1, f->jog = 0, f->capture = 0, f->cap_step = -1, f->states = 0, f->smods = 0;
-    f->fx = 0, f->browse = -1;
+    f->fx = f->host && m->s.fw_fx, f->browse = -1;     /* (0.4.5: FX setup again if it was left showing) */
     f->all_auto = !f->nfav;                             /* (no favourites: All) */
     f->hold_step = 0;
     pop_clear(m);
@@ -1002,7 +1002,7 @@ void rfmv_fw_enter(rfm_move_t *m)
 static void leave(rfm_move_t *m)
 {
     rfm_move_fw_state_t *f = F(m);
-    f->fx = 0, f->states = 0, f->capture = 0, f->smods = 0, f->browse = -1;
+    f->states = 0, f->capture = 0, f->smods = 0, f->browse = -1;   /* (fx: proj_leave remembers it, then clears) */
     pop_clear(m);
     rfm_move_fw_flush(m);
     rfmv_proj_back(m);
@@ -1392,8 +1392,10 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
         const int cc = ev->index;
         if (!ev->value)
             return;
-        if (cc == MR_CC_MENU || (cc == MR_CC_BACK && f->browse < 0))
+        if (cc == MR_CC_MENU)                           /* (0.4.5: Menu alone toggles FX setup) */
             f->fx = 0, f->browse = -1, pop_clear(m);
+        else if (cc == MR_CC_BACK && f->browse < 0)     /* (0.4.5) Back: out of the view, FX setup remembered */
+            leave(m);
         else if (cc == MR_CC_BACK)
             f->browse = -1;
         else if (cc == MR_CC_DELETE && (pg == PG_MIDI || pg == PG_AUDIO)) {
