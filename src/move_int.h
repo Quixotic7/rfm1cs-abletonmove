@@ -212,8 +212,8 @@ void rfmv_fw_poll(rfm_move_t *m);                      /* the library's debounce
 void rfmv_emit_midi_t(rfm_move_t *m, int track, int status, int d1, int d2);   /* MIDI tagged with its track 1..16 */
 void rfmv_fxset_default(rfm_move_fxset_t *x);
 void rfmv_fxset_write(const rfm_move_fxset_t *x, uint8_t *p);   /* RFM_MOVE_FXSET_BYTES */
-int rfmv_fxset_check(const uint8_t *p);                /* 0 ok */
-void rfmv_fxset_read(rfm_move_fxset_t *x, const uint8_t *p);
+int rfmv_fxset_check(const uint8_t *p, int nv);        /* 0 ok; nv: values a slot (8 version 5, 128 version 6) */
+void rfmv_fxset_read(rfm_move_fxset_t *x, const uint8_t *p, int nv);
 void rfmv_fx_resolve(rfm_move_t *m, rfm_move_fxslot_t *x, int kind);
 void rfmv_fx_loaded(rfm_move_t *m);                    /* a project loaded: modules found, the host told */
 int rfmv_fw_bank(const rfm_move_t *m, int ids[32]);   /* (tests) the bank shown, its size */

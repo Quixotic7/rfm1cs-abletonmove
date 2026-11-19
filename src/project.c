@@ -18,7 +18,8 @@
  *      16 x { the pads' layout 0..3, 4 banks x 8 knobs' CC numbers 0..127 }
  *      (version 3) 16 x { own, root, scale, solo }  (version 4) 16 x the TRIG defaults { micro + 12, ratchet,
  *      chance, condition, function, leap + 15, jump, length index }
- *      (version 5) FX setup (fw.c): 3 MIDI FX x { module name 24 (NUL padded, "" empty), 8 values 0..127, track
+ *      (version 5) FX setup (fw.c): 3 MIDI FX x { module name 24 (NUL padded, "" empty), 8 values 0..127 (version 6:
+ *      128 by parameter index, 0..127 or 255 unset), track
  *      filter u16 (one bit, or 0xFFFF all) }, 3 audio FX x { name 24, 8 values }, 3 firmware track filters u16,
  *      3 pans, 3 x 3 sends (firmware by audio FX), 0..127
  *      FNV-1a (32 bit) of everything before it */
@@ -129,7 +130,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
     ver = b[4];
     if (ver < 1 || ver > RFM_MOVE_PROJECT_VERSION)
         return -2;
-    ext = ver >= 5 ? RFM_MOVE_PROJECT_EXT : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
+    ext = ver >= 6 ? RFM_MOVE_PROJECT_EXT : ver == 5 ? RFM_MOVE_PROJECT_EXT_V5 : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
           ver == 2 ? RFM_MOVE_PROJECT_EXT_V2 : 0;
     ab = ver >= 3 ? RFM_MOVE_ARP_BYTES : RFM_MOVE_ARP_BYTES_V2;   /* (an arp's bytes) */
     fixed = RFM_MOVE_PROJECT_FIXED - RFM_MOVE_PROJECT_EXT + ext;
@@ -216,7 +217,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
                     d[4] >= RFM_MOVE_FN_N || d[5] > 30 || d[7] >= RFM_MOVE_TRIG_NLENS)
                     return -9;
             }
-        if (ver >= 5 && rfmv_fxset_check(x + RFM_MOVE_PROJECT_EXT_V4) != 0)
+        if (ver >= 5 && rfmv_fxset_check(x + RFM_MOVE_PROJECT_EXT_V4, ver >= 6 ? RFM_MOVE_FX_PARAMS : RFM_MOVE_FX_PARAMS_V5) != 0)
             return -9;                                  /* (FX setup) */
         for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++) {      /* (each track's layout and CC numbers) */
             const uint8_t *l = x + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_SEQ_CLIPS / 8 + RFM_MOVE_SEQ_TRACKS * (2 + ab) +
@@ -283,7 +284,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
             for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++)
                 memcpy(q->tr[i].tdef, x + RFM_MOVE_PROJECT_EXT_V3 + i * 8, 8);
         if (ver >= 5)
-            rfmv_fxset_read(&q->fx, x + RFM_MOVE_PROJECT_EXT_V4);
+            rfmv_fxset_read(&q->fx, x + RFM_MOVE_PROJECT_EXT_V4, ver >= 6 ? RFM_MOVE_FX_PARAMS : RFM_MOVE_FX_PARAMS_V5);
     } else {                                            /* version 1: loops from step 1, clips with notes, 1/16 */
         memset(q->lstart, 0, sizeof q->lstart);
         memset(q->made, 0, sizeof q->made);

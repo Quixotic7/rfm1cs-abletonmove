@@ -3,6 +3,37 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.0 (2026-11-18)
+
+Schwung modules' own parameter pages on the Move (the owner's): each `ui_hierarchy` level's knobs as pages of 8, Left
+/ Right through them, every parameter reachable (was the first 8). The host plans the pages; see README "FX parameter
+pages (0.5.0)". **Rebuild everything**: `rfm_move_fx_module_t`, `rfm_move_fx_param_t`, `rfm_move_fxslot_t`,
+`rfm_move_fw_state_t` changed; projects are version 6.
+
+- **API**: `rfm_move_fx_module_t.npages` / `.pages` (`rfm_move_fx_page_t`: a name, 8 knobs' parameter indexes, -1 a
+  gap; at most 16); `rfm_move_fx_param_t.short_name`, `.lo`, `.hi`, `.decimals`, `.unit` (how a value reads). New
+  fields are last, zero = as before: a 0.4 host compiles unchanged (positional initializers warn under
+  `-Wmissing-field-initializers`) and gets pages of 8 in order.
+- `RFM_MOVE_FX_PARAMS` is 128 (was 8). `FX_PARAM`'s `param`, `rfm_move_fx_set_param`'s `index` and the slot's
+  `val[]` are by parameter index, 0..127; `rfm_move_fx_sync` sends all of them. New `RFM_MOVE_FX_KNOBS` (8),
+  `RFM_MOVE_FX_PAGES` (16), `RFM_MOVE_FX_UNSET` (255), `RFM_MOVE_FX_PARAMS_V5` (8).
+- **The Move**: in FX setup's MIDI FX / Audio FX page, Right opens the focused module's page (page name and n/m, 2 x 4
+  cells of label and value, gaps as dashes, a page strip); Right / Left page, Left on page 1 or Back returns to the
+  chain. The knobs follow the slot's page (on the chain too); gaps do nothing; a touch shows the popup (0.4.5). The
+  rings light the page's knobs; Left / Right light when they can move. A newly loaded module starts on page 1.
+- **Projects version 6**: 128 values a slot (`RFM_MOVE_FXSET_BYTES` +720; `RFM_MOVE_PROJECT_MAX` 40136,
+  `RFM1CS_FILE_MAX` 1284680; `move-core.js` `PROJECT_MAX` too). Version 5 loads: 8 values as parameters 0..7, the
+  rest unset (255) until the module is known, then its defaults. A version 6 value over 127 other than 255 is refused.
+- Not in 0.5.0: Schwung's preset browsers (`list_param` / `items_param`), `menu` lists, `visible_if`, the
+  `ui_chain.js` UIs, and the web player's own module glue (`move_web.c` still gives flat lists: pages of 8).
+
+**Tests:** `move_fw` `test_fx_pages` (498 checks in all): a 16-parameter module planned as 4 pages (root with a gap
+and an overflow page, Advanced, Deep), Right / Left / Back, the gap, the knobs by page, the touch popup, the LEDs,
+`rfm_move_fx_set_param` at 14 (and 16 refused), the no-plan pages of 8, `fx_sync`, a version 6 save and load of all 16,
+a hand-made version 5 project (with the modules given before and after), a bad version 6 value. Renders:
+`fw_fx_pages_root.pbm`, `fw_fx_pages_deep.pbm`, `fw_fx_pages_touch.pbm`, `fw_fx_pages_words.pbm`. `move_seq` and
+`session` size checks follow the new maximum. 33 of 34 mockup screens unchanged.
+
 ## 0.4.5 (2026-11-18)
 
 The Back flip is named, and FX setup stays where the user left it (the owner's). No API or action changes;

@@ -59,7 +59,7 @@ export const FX = { MIDI: 0, AUDIO: 1 };
 export const CAT = { SYNTH: 1, GROOVEBOX: 2, CHORDS: 4, DRUMS: 8, OTHER: 16 };
 export const FW_FAILED = -1, FW_BUSY = -2;
 export const CLOCK = { AUTO: 0, INT: 1, EXT: 2 };
-export const PROJECTS = 32, PROJECT_MAX = 39416;   // (RFM_MOVE_PROJECT_MAX, version 5 blobs; mw_project_max())
+export const PROJECTS = 32, PROJECT_MAX = 40136;   // (RFM_MOVE_PROJECT_MAX, version 6 blobs; mw_project_max())
 export const FILE_ONE = 1, FILE_SET = 2, FILE_MAX = 8 + PROJECTS * (10 + PROJECT_MAX);   // (store.h RFM1CS_FILE_*)
 export const TONES = ["off", "busy", "on", "bad"];   // (RFM1CS_TONE_*)
 export const MODE = { FM1: 0, MIDI: 1, CONTROL: 2, SEQ: 3 };

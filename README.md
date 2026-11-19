@@ -459,7 +459,7 @@ an empty slot faint white, a slot past the host's voices blinking slowly; in FX 
 | Mute | the catalog: step 1 Update ready (on the Move, a newer version) / step 2 Not installed, one at a time (the lit one again: everything), 3..16 the same one category or tag; an update breathes with an up arrow, a firmware not on the Move faint white, dashed under; a jog press downloads or updates (`FW_DOWNLOAD`), and (0.4.2) loads one on the Move and current into this track (`FW_LOAD`). A download or update done while that firmware is still selected: the popup offers "Jog: load on Track n" |
 | Loop | the firmware's states (Move's Set Overview): a stored state loads, an empty pad saves there, Copy + pad saves over, Delete + pad deletes (`STATE_*`); Loop or Back leaves |
 | Track 1..3 held + volume | that slot's level (`FW_LEVEL`; in any mode with the browser on); the volume alone stays MASTER |
-| Session | FX setup: Track 1 MIDI FX, 2 Routing, 3 Audio FX, 4 Mixer; pads 1..3 the page's slots; steps a MIDI FX slot's track (one, or all: the same step again) or a firmware's 16-track filter; the jog the module list and load; knobs the module's parameters (Mixer: 1 level, 2 pan, 3..5 sends): (0.4.5) a touch shows the parameter's popup for as long as the knob is touched, a turn updates it, the release drops it at once (a knob with no parameter there: nothing); Delete empties an FX slot; Session toggles FX setup, Back (0.4.5) leaves the view. A host with no modules has no MIDI FX / Audio FX page |
+| Session | FX setup: Track 1 MIDI FX, 2 Routing, 3 Audio FX, 4 Mixer; pads 1..3 the page's slots; steps a MIDI FX slot's track (one, or all: the same step again) or a firmware's 16-track filter; the jog the module list and load; knobs the module's parameters, a page of 8 at a time (0.5.0: Right / Left, see [FX parameter pages](#fx-parameter-pages-050); Mixer: 1 level, 2 pan, 3..5 sends): (0.4.5) a touch shows the parameter's popup for as long as the knob is touched, a turn updates it, the release drops it at once (a knob with no parameter there: nothing); Delete empties an FX slot; Session toggles FX setup, Back (0.4.5) leaves the view. A host with no modules has no MIDI FX / Audio FX page |
 | Back | one level out (Capture, States, the description, the selection, the catalog), then out of the view, back to the mode (0.4.3: a click, as everywhere) |
 
 Decisions where the spec left a gap:
@@ -468,7 +468,7 @@ Decisions where the spec left a gap:
   Move's Set Overview (32 pads, top-left = 1, Copy / Delete + pad as there). The host names the stored ones with
   `rfm_move_fw_states`.
 - The three levels are the library's (with the slots), not the project's; pan, sends, filters and modules are the
-  project's (version 5). `MIX` carries the level too; a level change alone is `FW_LEVEL`.
+  project's (version 5; version 6 keeps 128 values a module). `MIX` carries the level too; a level change alone is `FW_LEVEL`.
 - A MIDI FX slot's filter is one track or all; a firmware's filter any set. Live pads are not tagged (`track` 0) and go
   straight to the shown firmware; the sequencer's MIDI has `track` 1..16.
 - The sounding rule for `voices`: the active slot always, then the others in slot order while voices are left.
@@ -479,6 +479,44 @@ Decisions where the spec left a gap:
 - (0.4.1) Edits made outside the Move (a web page) go in through `rfm_move_fw_set_active`, `_fw_set_level`,
   `rfm_move_mix_set`, `_route_set`, `rfm_move_fx_set_module`, `_fx_set_param`, `_fx_set_page`: the Move's own edit
   (its action, the project's or the library's save), never a write to `rfm_move_t`'s fields.
+
+## FX parameter pages (0.5.0)
+
+A module's own parameter pages, as Schwung's `ui_hierarchy` lays them out: each level's 8 knobs a page, its overflow
+pages after it, its sub-levels' pages after those. The **host plans** the pages (it reads `module.json`); the core
+draws them and maps the knobs. Schwung's preset browsers (`list_param` / `items_param`), `menu` lists, `visible_if`
+and the custom JavaScript UIs (`ui_chain.js`) are not part of 0.5.0.
+
+On the Move, in FX setup's MIDI FX or Audio FX page with a module in the focused slot:
+
+| Control | Does |
+|---|---|
+| Right (from the chain) | the slot's parameter page: the page name (or the module's) and `n/m` on top, 8 cells in 2 rows of 4 (the knob's short label, its value; a gap: a dash), the pages as a strip at the bottom |
+| Right / Left on a page | the next / previous page; Left on the first page: the chain again. Lit when there is somewhere to go |
+| Back on a page | the chain again (the pages are a layer); Back on the chain leaves the view, as in 0.4.5 |
+| knobs 1..8 | that page's parameters (on the chain too: the slot's page as it was left); a gap: nothing |
+| a knob touched | its parameter's popup (long name, value) while touched (0.4.5) |
+| a pad (the focused slot), Track 1..4, the jog's module list | as before; a module loaded starts on its first page |
+
+Each slot remembers its page. The Mixer and Routing pages are unchanged.
+
+**API** (`include/rfm1cs/move.h`; every new field at the end of its struct, zero = the 0.4 behaviour):
+
+- `rfm_move_fx_module_t` gains `npages`, `pages`: the host's plan, `rfm_move_fx_page_t { name; knob[8] }`, knob n a
+  parameter index or -1 (a gap). At most `RFM_MOVE_FX_PAGES` (16) pages. `npages` 0: the core makes pages of 8 in the
+  params' order (a flat module with more than 8 parameters gets pages too).
+- `rfm_move_fx_param_t` gains `short_name` (a page cell's label, 5 characters shown; NULL: `name`), and `lo`, `hi`,
+  `decimals`, `unit`: with `lo != hi` a value 0..127 reads as `lo + (hi - lo) * v / 127` with that many decimals and
+  the unit ("38%", "2.4s"); otherwise 0..127, or the word for a list.
+- `RFM_MOVE_FX_PARAMS` is 128 (was 8): the parameters a module keeps, `nparams` past it ignored. Values stay 0..127 (a
+  list: the word's index) by **parameter index**; `FX_PARAM`'s `param` and `rfm_move_fx_set_param`'s `index` are
+  that index, 0..127, on any page. `rfm_move_fx_sync` sends every kept parameter. The host converts to the
+  module's float / int / enum.
+- `RFM_MOVE_FX_KNOBS` 8 (a page's knobs); `RFM_MOVE_FX_UNSET` 255: a value an older project did not keep, which
+  becomes the parameter's default once the module is known (the modules given, or a load with them given).
+- Projects are **version 6**: FX setup keeps 128 values a slot (the block is `RFM_MOVE_FXSET_BYTES`, 720 bytes more;
+  `RFM_MOVE_PROJECT_MAX` 40136, `RFM1CS_FILE_MAX` 1284680). Version 5 projects load: their 8 values are parameters
+  0..7, the rest the defaults.
 
 ## Decisions where the design left a gap
 

@@ -26,9 +26,9 @@ extern "C" {
 
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
-#define RFM1CS_VERSION_MINOR 4
+#define RFM1CS_VERSION_MINOR 5
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.4.5"
+#define RFM1CS_VERSION "0.5.0"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -231,24 +231,43 @@ enum { RFM_MOVE_FX_MIDI = 0, RFM_MOVE_FX_AUDIO = 1 };
 enum { RFM_MOVE_FX_PAGE_MIDI = 0, RFM_MOVE_FX_PAGE_ROUTE = 1, RFM_MOVE_FX_PAGE_AUDIO = 2, RFM_MOVE_FX_PAGE_MIX = 3 };   /* (0.4.1)
                                                          * settings.fx_page: Track 1..4 in FX setup */
 #define RFM_MOVE_FX_SLOTS 3
-#define RFM_MOVE_FX_PARAMS 8                            /* knobs 1..8: a module's first 8 parameters */
+#define RFM_MOVE_FX_PARAMS 128                          /* (0.5.0; was 8) a module's parameters the core keeps: the
+                                                         * first 128 of its list (FX_PARAM's param 0..127) */
+#define RFM_MOVE_FX_PARAMS_V5 8                         /* (version 5 projects kept 8 values a slot) */
+#define RFM_MOVE_FX_KNOBS 8                             /* (0.5.0) a parameter page's knobs */
+#define RFM_MOVE_FX_PAGES 16                            /* (0.5.0) a module's parameter pages, at most */
+#define RFM_MOVE_FX_UNSET 255                           /* (0.5.0) a slot value not saved (an older project): the
+                                                         * parameter's default once the module is known */
 #define RFM_MOVE_FX_NAME 24                             /* a module's name with its NUL, as the project keeps it */
 typedef struct {
-    const char *name;                                   /* "Rate" */
+    const char *name;                                   /* "Rate": the popup's long name */
     int nwords;                                         /* 0: a value 0..127; else a list of words (the value: an index) */
     const char *const *words;
     uint8_t def;                                        /* the value a newly loaded module has (as the host loads it) */
     uint8_t dry_wet;                                    /* 1: a dry / wet mix; the popup says it must be 100 % wet */
+    /* (0.5.0; zero = as before) how the value reads: on a page and in the popup */
+    const char *short_name;                             /* a page cell's label (5 characters show), NULL: name */
+    float lo, hi;                                       /* lo != hi: 0..127 shows as lo..hi (linear), with */
+    uint8_t decimals;                                   /* .. this many decimals, and */
+    const char *unit;                                   /* .. this unit after it ("%", "ms", "Hz"; NULL none) */
 } rfm_move_fx_param_t;
+typedef struct {                                        /* (0.5.0) a parameter page: a ui_hierarchy level's 8 knobs */
+    const char *name;                                   /* the level's name ("Advanced", "Advanced 2"); NULL none */
+    int16_t knob[RFM_MOVE_FX_KNOBS];                    /* knob n: a parameter index, -1 a gap */
+} rfm_move_fx_page_t;
 typedef struct {
     const char *name;                                   /* the module's name (unique in its kind) */
-    int nparams;                                        /* chain_params order; the first RFM_MOVE_FX_PARAMS are used */
+    int nparams;                                        /* chain_params order; the first RFM_MOVE_FX_PARAMS are kept */
     const rfm_move_fx_param_t *params;
+    /* (0.5.0; zero = as before) the host's page plan (README "FX parameter pages"); npages 0: the core makes pages
+     * of 8 in the params' order. At most RFM_MOVE_FX_PAGES are used */
+    int npages;
+    const rfm_move_fx_page_t *pages;
 } rfm_move_fx_module_t;
 typedef struct {
     char name[RFM_MOVE_FX_NAME];                        /* (saved) the module, "" empty */
     int16_t mod;                                        /* .. its index in the host's list now, -1 none */
-    uint8_t val[RFM_MOVE_FX_PARAMS];                    /* (saved) */
+    uint8_t val[RFM_MOVE_FX_PARAMS];                    /* (saved) by parameter index; RFM_MOVE_FX_UNSET unset */
     uint16_t filt;                                      /* (saved; MIDI FX) bit t: track t + 1 (one track, or all) */
 } rfm_move_fxslot_t;
 typedef struct {                                        /* (saved with the project, version 5) */
@@ -257,9 +276,11 @@ typedef struct {                                        /* (saved with the proje
     uint8_t pan[RFM_MOVE_FW_SLOTS];                     /* 0..127, 64 centre */
     uint8_t send[RFM_MOVE_FW_SLOTS][RFM_MOVE_FX_SLOTS];  /* firmware -> audio FX bus, 0..127 */
 } rfm_move_fxset_t;
-#define RFM_MOVE_FXSET_BYTES (RFM_MOVE_FX_SLOTS * (RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS + 2) + \
-                              RFM_MOVE_FX_SLOTS * (RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS) + \
-                              RFM_MOVE_FW_SLOTS * (2 + 1 + RFM_MOVE_FX_SLOTS))
+#define RFM_MOVE_FXSET_BYTES_N(nv) (RFM_MOVE_FX_SLOTS * (RFM_MOVE_FX_NAME + (nv) + 2) + \
+                                    RFM_MOVE_FX_SLOTS * (RFM_MOVE_FX_NAME + (nv)) + \
+                                    RFM_MOVE_FW_SLOTS * (2 + 1 + RFM_MOVE_FX_SLOTS))
+#define RFM_MOVE_FXSET_BYTES RFM_MOVE_FXSET_BYTES_N(RFM_MOVE_FX_PARAMS)       /* (version 6) */
+#define RFM_MOVE_FXSET_BYTES_V5 RFM_MOVE_FXSET_BYTES_N(RFM_MOVE_FX_PARAMS_V5)  /* (version 5) */
 
 typedef struct {                                        /* a firmware the library knows */
     char id[RFM_MOVE_FW_ID_MAX];
@@ -330,6 +351,9 @@ typedef struct {
     uint8_t hold_step;                                  /* a filter step down (1..16; 0 none): a tap toggles it on
                                                          * release, a hold (RFM_MOVE_TAP_MS) only shows it */
     uint32_t hold_ms;
+    /* (0.5.0) FX parameter pages */
+    uint8_t fx_pages;                                   /* the focused module's page shown (Right), not the chain */
+    uint8_t fx_pg[2][RFM_MOVE_FX_SLOTS];                /* each slot's page (its knobs' page) */
 } rfm_move_fw_state_t;
 
 /* ---- the sequencer (Track 4; README.md, "Sequencer") */
@@ -401,7 +425,8 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 5                      /* (versions 1..4 load too; 5 adds FX setup) */
+#define RFM_MOVE_PROJECT_VERSION 6                      /* (versions 1..5 load too; 5 adds FX setup, 6 its 128
+                                                         * values a slot) */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -412,7 +437,8 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
                                  RFM_MOVE_SEQ_TRACKS * (2 + RFM_MOVE_ARP_BYTES_V2 + 1 + RFM_MOVE_NBANKS * RFM_MOVE_NKNOBS))
 #define RFM_MOVE_PROJECT_EXT_V3 (RFM_MOVE_PROJECT_EXT_V2 + RFM_MOVE_SEQ_TRACKS * (RFM_MOVE_ARP_BYTES - RFM_MOVE_ARP_BYTES_V2 + 4))
 #define RFM_MOVE_PROJECT_EXT_V4 (RFM_MOVE_PROJECT_EXT_V3 + RFM_MOVE_SEQ_TRACKS * 8)   /* + the trig defaults (version 4) */
-#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V4 + RFM_MOVE_FXSET_BYTES)   /* + FX setup (version 5) */
+#define RFM_MOVE_PROJECT_EXT_V5 (RFM_MOVE_PROJECT_EXT_V4 + RFM_MOVE_FXSET_BYTES_V5)   /* + FX setup (version 5) */
+#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V4 + RFM_MOVE_FXSET_BYTES)   /* .. 128 values a slot (version 6) */
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 7 + RFM_MOVE_SEQ_LOCKS * 4)
 enum { RFM_MOVE_CLOCK_AUTO = 0, RFM_MOVE_CLOCK_INTERNAL = 1, RFM_MOVE_CLOCK_EXTERNAL = 2 };
@@ -794,7 +820,7 @@ int rfm_move_route_set(rfm_move_t *m, const int fw_filt[RFM_MOVE_FW_SLOTS], cons
  * (each param's def, clamped to its words or 0..127), even when it is the module already there, as the jog's press
  * loads it. FX_LOAD (no FX_PARAM for the defaults: the host's module starts at them), the project */
 int rfm_move_fx_set_module(rfm_move_t *m, int kind, int slot, int module_index);
-/* a loaded module's parameter (index < its nparams and RFM_MOVE_FX_PARAMS): a word's index (clamped to its words) or
+/* a loaded module's parameter (index < its nparams and RFM_MOVE_FX_PARAMS, any page): a word's index (clamped to its words) or
  * 0..127 (clamped). FX_PARAM, the project. -1: no module there, or no such parameter */
 int rfm_move_fx_set_param(rfm_move_t *m, int kind, int slot, int index, int value);
 /* FX setup's page (RFM_MOVE_FX_PAGE_*; settings.fx_page), as Track 1..4 pressed in FX setup: SETTINGS. -1: a page

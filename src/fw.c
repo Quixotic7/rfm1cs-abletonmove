@@ -521,6 +521,40 @@ static const rfm_move_fx_module_t *module(const rfm_move_t *m, int kind, int mod
     return mod >= 0 && mod < m->fw.nmods[kind] ? &m->fw.mods[kind][mod] : NULL;
 }
 static int nparams(const rfm_move_fx_module_t *md) { return !md ? 0 : md->nparams < RFM_MOVE_FX_PARAMS ? md->nparams : RFM_MOVE_FX_PARAMS; }
+/* (0.5.0) a module's parameter pages: the host's plan, or pages of 8 in the params' order */
+static int host_pages(const rfm_move_fx_module_t *md) { return md && md->npages > 0 && md->pages; }
+static int npages(const rfm_move_fx_module_t *md)
+{
+    const int np = nparams(md), n = host_pages(md) ? md->npages : (np + RFM_MOVE_FX_KNOBS - 1) / RFM_MOVE_FX_KNOBS;
+    return !np ? 0 : n < RFM_MOVE_FX_PAGES ? n : RFM_MOVE_FX_PAGES;
+}
+static int page_param(const rfm_move_fx_module_t *md, int pg, int k)   /* knob k's parameter on page pg, -1 a gap */
+{
+    int p;
+    if (pg < 0 || pg >= npages(md) || k < 0 || k >= RFM_MOVE_FX_KNOBS)
+        return -1;
+    p = host_pages(md) ? md->pages[pg].knob[k] : pg * RFM_MOVE_FX_KNOBS + k;
+    return p >= 0 && p < nparams(md) ? p : -1;
+}
+static uint8_t param_def(const rfm_move_fx_param_t *pa)
+{
+    return pa->nwords > 0 ? (uint8_t)clampi(pa->def, 0, pa->nwords - 1) : (uint8_t)clampi(pa->def, 0, 127);
+}
+/* a value as it reads: a word, lo..hi with its decimals and unit, or 0..127 */
+static void param_text(const rfm_move_fx_param_t *pa, int v, char *o, int cap)
+{
+    if (v > 127)
+        snprintf(o, (size_t)cap, "-");
+    else if (pa->nwords > 0 && pa->words && v < pa->nwords)
+        asc(pa->words[v], o, cap);
+    else if (pa->nwords <= 0 && pa->lo != pa->hi) {
+        const double x = pa->lo + (pa->hi - pa->lo) * v / 127.0;
+        char u[12];
+        asc(pa->unit ? pa->unit : "", u, sizeof u);
+        snprintf(o, (size_t)cap, "%.*f%s", pa->decimals < 4 ? pa->decimals : 4, x, u);
+    } else
+        snprintf(o, (size_t)cap, "%d", v);
+}
 static void act_fx_load(rfm_move_t *m, int kind, int slot)
 {
     const rfm_move_fxslot_t *x = fxslot(m, kind, slot);
@@ -697,6 +731,12 @@ void rfmv_fx_resolve(rfm_move_t *m, rfm_move_fxslot_t *x, int kind)
             x->mod = (int16_t)i;
             break;
         }
+    if (x->mod >= 0) {                                  /* (0.5.0) values an older project did not keep: defaults */
+        const rfm_move_fx_module_t *md = &m->fw.mods[kind][x->mod];
+        for (i = 0; i < nparams(md); i++)
+            if (x->val[i] > 127)
+                x->val[i] = param_def(&md->params[i]);
+    }
 }
 void rfm_move_fx_refused(rfm_move_t *m, int kind, int slot)
 {
@@ -884,22 +924,24 @@ void rfmv_fw_poll(rfm_move_t *m)
         rfm_move_fw_flush(m);
 }
 
-/* ================================================================ FX setup in the project blob (version 5) === */
-/* 3 MIDI FX x { module name (24, NUL padded; "" empty), 8 values, filter u16 }, 3 audio FX x { name, 8 values },
- * 3 firmware filters u16, 3 pans, 3 x 3 sends */
+/* ================================================================ FX setup in the project blob (version 5, 6) === */
+/* 3 MIDI FX x { module name (24, NUL padded; "" empty), nv values, filter u16 }, 3 audio FX x { name, nv values },
+ * 3 firmware filters u16, 3 pans, 3 x 3 sends. nv: 8 (version 5), RFM_MOVE_FX_PARAMS (version 6: by parameter
+ * index; 0..127, or RFM_MOVE_FX_UNSET) */
 void rfmv_fxset_write(const rfm_move_fxset_t *x, uint8_t *p)
 {
+    const int nv = RFM_MOVE_FX_PARAMS;
     int k;
-    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS + 2) {
+    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + nv + 2) {
         memset(p, 0, RFM_MOVE_FX_NAME);
         memcpy(p, x->mfx[k].name, strlen(x->mfx[k].name));
-        memcpy(p + RFM_MOVE_FX_NAME, x->mfx[k].val, RFM_MOVE_FX_PARAMS);
-        w16(p + RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS, x->mfx[k].filt);
+        memcpy(p + RFM_MOVE_FX_NAME, x->mfx[k].val, (size_t)nv);
+        w16(p + RFM_MOVE_FX_NAME + nv, x->mfx[k].filt);
     }
-    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS) {
+    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + nv) {
         memset(p, 0, RFM_MOVE_FX_NAME);
         memcpy(p, x->afx[k].name, strlen(x->afx[k].name));
-        memcpy(p + RFM_MOVE_FX_NAME, x->afx[k].val, RFM_MOVE_FX_PARAMS);
+        memcpy(p + RFM_MOVE_FX_NAME, x->afx[k].val, (size_t)nv);
     }
     for (k = 0; k < 3; k++, p += 2)
         w16(p, x->ffilt[k]);
@@ -908,18 +950,18 @@ void rfmv_fxset_write(const rfm_move_fxset_t *x, uint8_t *p)
     for (k = 0; k < 9; k++)
         *p++ = x->send[k / 3][k % 3];
 }
-int rfmv_fxset_check(const uint8_t *p)
+int rfmv_fxset_check(const uint8_t *p, int nv)
 {
     int k, i;
     for (k = 0; k < 6; k++) {
-        const int sz = RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS + (k < 3 ? 2 : 0);
+        const int sz = RFM_MOVE_FX_NAME + nv + (k < 3 ? 2 : 0);
         if (!str_ok(p, RFM_MOVE_FX_NAME, 1))
             return -1;
-        for (i = 0; i < RFM_MOVE_FX_PARAMS; i++)
-            if (p[RFM_MOVE_FX_NAME + i] > 127)
+        for (i = 0; i < nv; i++)
+            if (p[RFM_MOVE_FX_NAME + i] > 127 && (nv == RFM_MOVE_FX_PARAMS_V5 || p[RFM_MOVE_FX_NAME + i] != RFM_MOVE_FX_UNSET))
                 return -1;
         if (k < 3) {                                    /* (a MIDI FX filter: one track, or all) */
-            const unsigned f = r16(p + RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS);
+            const unsigned f = r16(p + RFM_MOVE_FX_NAME + nv);
             if (f != 0xFFFF && (!f || (f & (f - 1))))
                 return -1;
         }
@@ -931,17 +973,19 @@ int rfmv_fxset_check(const uint8_t *p)
             return -1;
     return 0;
 }
-void rfmv_fxset_read(rfm_move_fxset_t *x, const uint8_t *p)
+void rfmv_fxset_read(rfm_move_fxset_t *x, const uint8_t *p, int nv)
 {
     int k;
-    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS + 2) {
+    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + nv + 2) {
         memcpy(x->mfx[k].name, p, RFM_MOVE_FX_NAME), x->mfx[k].name[RFM_MOVE_FX_NAME - 1] = 0;
-        memcpy(x->mfx[k].val, p + RFM_MOVE_FX_NAME, RFM_MOVE_FX_PARAMS);
-        x->mfx[k].filt = (uint16_t)r16(p + RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS), x->mfx[k].mod = -1;
+        memset(x->mfx[k].val, RFM_MOVE_FX_UNSET, sizeof x->mfx[k].val);   /* (version 5: past the 8, unset) */
+        memcpy(x->mfx[k].val, p + RFM_MOVE_FX_NAME, (size_t)nv);
+        x->mfx[k].filt = (uint16_t)r16(p + RFM_MOVE_FX_NAME + nv), x->mfx[k].mod = -1;
     }
-    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS) {
+    for (k = 0; k < 3; k++, p += RFM_MOVE_FX_NAME + nv) {
         memcpy(x->afx[k].name, p, RFM_MOVE_FX_NAME), x->afx[k].name[RFM_MOVE_FX_NAME - 1] = 0;
-        memcpy(x->afx[k].val, p + RFM_MOVE_FX_NAME, RFM_MOVE_FX_PARAMS);
+        memset(x->afx[k].val, RFM_MOVE_FX_UNSET, sizeof x->afx[k].val);
+        memcpy(x->afx[k].val, p + RFM_MOVE_FX_NAME, (size_t)nv);
         x->afx[k].filt = 0, x->afx[k].mod = -1;
     }
     for (k = 0; k < 3; k++, p += 2)
@@ -1147,7 +1191,7 @@ static void fw_back(rfm_move_t *m)
 static void open_fx(rfm_move_t *m)
 {
     rfm_move_fw_state_t *f = F(m);
-    f->fx = 1, f->browse = -1, f->capture = 0, f->states = 0, f->smods = 0;
+    f->fx = 1, f->browse = -1, f->capture = 0, f->states = 0, f->smods = 0, f->fx_pages = 0;
     pop(m, FP_RPAGE, fx_page(m), 0);
 }
 static void fw_jog_press(rfm_move_t *m)
@@ -1348,11 +1392,32 @@ static void fx_load(rfm_move_t *m, int kind, int slot, int mod)
         snprintf(x->name, sizeof x->name, "%s", md->name);
         x->mod = (int16_t)mod;
         for (k = 0; k < nparams(md); k++)
-            x->val[k] = md->params[k].nwords > 0 ? (uint8_t)clampi(md->params[k].def, 0, md->params[k].nwords - 1)
-                                                 : (uint8_t)clampi(md->params[k].def, 0, 127);
+            x->val[k] = param_def(&md->params[k]);
     }
+    m->fw.fx_pg[kind][slot] = 0;                        /* (0.5.0: its first page) */
     act_fx_load(m, kind, slot);
     rfmv_seq_dirty(m);
+}
+/* (0.5.0) a slot's module, its page now (clamped to its pages), knob k's parameter there (-1 a gap or none) */
+static const rfm_move_fx_module_t *slot_module(const rfm_move_t *m, int kind, int slot)
+{
+    const rfm_move_fxslot_t *sl = kind == RFM_MOVE_FX_MIDI ? &m->seq.fx.mfx[slot] : &m->seq.fx.afx[slot];
+    return module(m, kind, sl->mod);
+}
+static int slot_page(const rfm_move_t *m, int kind, int slot)
+{
+    const int n = npages(slot_module(m, kind, slot));
+    return n ? clampi(m->fw.fx_pg[kind][slot], 0, n - 1) : 0;
+}
+static int knob_param(const rfm_move_t *m, int kind, int slot, int k)
+{
+    return page_param(slot_module(m, kind, slot), slot_page(m, kind, slot), k);
+}
+/* (0.5.0) the focused module's pages on screen (Right from the chain; the module list over them) */
+static int pages_shown(const rfm_move_t *m)
+{
+    const int pg = fx_page(m), kind = pg == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO;
+    return m->fw.fx_pages && (pg == PG_MIDI || pg == PG_AUDIO) && npages(slot_module(m, kind, m->fw.fx_focus)) > 0;
 }
 /* (0.4.5) a knob with a parameter on this FX page (the Mixer's Level, Pan, sends; a selected module's parameters) */
 static int fx_knob_param(const rfm_move_t *m, int k)
@@ -1362,11 +1427,8 @@ static int fx_knob_param(const rfm_move_t *m, int k)
         return 0;
     if (pg == PG_MIX)
         return k <= 4;
-    if (pg == PG_MIDI || pg == PG_AUDIO) {
-        const rfm_move_fxslot_t *sl = kind == RFM_MOVE_FX_MIDI ? &m->seq.fx.mfx[m->fw.fx_focus] : &m->seq.fx.afx[m->fw.fx_focus];
-        const rfm_move_fx_module_t *md = module(m, kind, sl->mod);
-        return md && k < nparams(md);
-    }
+    if (pg == PG_MIDI || pg == PG_AUDIO)
+        return knob_param(m, kind, m->fw.fx_focus, k) >= 0;
     return 0;
 }
 /* .. the knob still touched (its popup up by a touch) */
@@ -1413,8 +1475,27 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
             return;
         if (cc == MR_CC_MENU)                           /* (0.4.5: Menu alone toggles FX setup) */
             f->fx = 0, f->browse = -1, pop_clear(m);
+        else if (cc == MR_CC_BACK && f->browse < 0 && pages_shown(m))
+            f->fx_pages = 0, pop_clear(m);              /* (0.5.0: the pages are a layer: the chain again) */
         else if (cc == MR_CC_BACK && f->browse < 0)     /* (0.4.5) Back: out of the view, FX setup remembered */
             leave(m);
+        else if ((cc == MR_CC_LEFT || cc == MR_CC_RIGHT) && f->browse < 0 && (pg == PG_MIDI || pg == PG_AUDIO)) {
+            const int n = npages(slot_module(m, kind, i)), cur = slot_page(m, kind, i);   /* (0.5.0) the pages */
+            if (!n)
+                return;
+            if (cc == MR_CC_RIGHT && !pages_shown(m))
+                f->fx_pages = 1;                        /* (from the chain: the slot's page) */
+            else if (cc == MR_CC_RIGHT && cur < n - 1)
+                f->fx_pg[kind][i] = (uint8_t)(cur + 1);
+            else if (cc == MR_CC_LEFT && pages_shown(m) && cur > 0)
+                f->fx_pg[kind][i] = (uint8_t)(cur - 1);
+            else if (cc == MR_CC_LEFT && pages_shown(m))
+                f->fx_pages = 0;                        /* (page 1, Left: the chain) */
+            else
+                return;
+            pop_clear(m);
+            memset(f->knob_acc, 0, sizeof f->knob_acc);
+        }
         else if (cc == MR_CC_BACK)
             f->browse = -1;
         else if (cc == MR_CC_DELETE && (pg == PG_MIDI || pg == PG_AUDIO)) {
@@ -1465,22 +1546,23 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
         if (pg == PG_MIDI || pg == PG_AUDIO) {
             rfm_move_fxslot_t *sl = fxslot(m, kind, i);
             const rfm_move_fx_module_t *md = module(m, kind, sl->mod);
+            const int p = knob_param(m, kind, i, k);    /* (0.5.0: the page's parameter) */
             int nv;
-            if (!md || k >= nparams(md))
+            if (!md || p < 0)
                 return;
-            if (md->params[k].nwords > 0) {             /* a list: a word every few ticks, round */
-                const int nw = md->params[k].nwords, a0 = f->knob_acc[k];
+            if (md->params[p].nwords > 0) {             /* a list: a word every few ticks, round */
+                const int nw = md->params[p].nwords, a0 = f->knob_acc[k];
                 int a = (a0 > 0 && d < 0) || (a0 < 0 && d > 0) ? 0 : a0, n;
                 a += d;
                 n = a / RFM_MOVE_LIST_TICKS;
                 f->knob_acc[k] = (int8_t)(a - n * RFM_MOVE_LIST_TICKS);
-                nv = ((sl->val[k] + n) % nw + nw) % nw;
+                nv = ((sl->val[p] + n) % nw + nw) % nw;
             } else
-                nv = clampi(sl->val[k] + d, 0, 127);
-            pop(m, FP_PARAM, k, tch);
-            if (nv != sl->val[k]) {
-                sl->val[k] = (uint8_t)nv;
-                act_fx_param(m, kind, i, k);
+                nv = clampi(sl->val[p] + d, 0, 127);
+            pop(m, FP_PARAM, k, tch);                   /* (the popup: by knob, its page's parameter) */
+            if (nv != sl->val[p]) {
+                sl->val[p] = (uint8_t)nv;
+                act_fx_param(m, kind, i, p);
                 rfmv_seq_dirty(m);
             }
         }
@@ -1726,7 +1808,6 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
     const int pg = fx_page(m), kind = pg == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO;
     const rfm_move_fx_module_t *md = pg == PG_MIDI || pg == PG_AUDIO ? module(m, kind, fxslot((rfm_move_t *)m, kind, f->fx_focus)->mod) : NULL;
     const uint16_t filt = pg == PG_MIDI ? x->mfx[f->fx_focus].filt : pg == PG_ROUTE ? x->ffilt[f->fx_focus] : 0;
-    const int np = pg == PG_MIX ? 5 : nparams(md);
     int i;
     for (i = 0; i < 3; i++) {
         int empty;
@@ -1740,10 +1821,15 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
     }
     for (i = 0; i < 16; i++)
         c[L_STEP0 + i] = pg == PG_MIDI || pg == PG_ROUTE ? lit(WHITE, filt >> i & 1 ? 256 : A(0.15)) : OFF;
-    for (i = 0; i < RFM_MOVE_NKNOBS; i++)
-        c[L_RING0 + i] = i < np ? FXCOL[pg] : OFF;
+    for (i = 0; i < RFM_MOVE_NKNOBS; i++)               /* (0.5.0: the page's knobs with a parameter) */
+        c[L_RING0 + i] = (pg == PG_MIX ? i < 5 : md && knob_param(m, kind, f->fx_focus, i) >= 0) ? FXCOL[pg] : OFF;
     w[W_MENU] = 127, w[W_BACK] = wl(A(0.35));
     w[W_DELETE] = md ? wl(A(0.3)) : 0;
+    if (md && f->browse < 0) {                          /* (0.5.0) Left / Right: the pages (Right from the chain) */
+        const int n = npages(md), cur = slot_page(m, kind, f->fx_focus), on = pages_shown(m);
+        w[W_LEFT] = on ? wl(A(0.6)) : 0;
+        w[W_RIGHT] = n && (!on || cur < n - 1) ? wl(A(0.6)) : 0;
+    }
 }
 
 /* the projects view's LEDs (any track, FX setup) */
@@ -2163,15 +2249,13 @@ static void fx_screen(B *g, const rfm_move_t *m)
         } else {
             const rfm_move_fxslot_t *sl = kind == RFM_MOVE_FX_MIDI ? &x->mfx[i] : &x->afx[i];
             const rfm_move_fx_module_t *md = module(m, kind, sl->mod);
+            const int p = knob_param(m, kind, i, k);    /* (0.5.0: knob k's parameter on the slot's page) */
             const rfm_move_fx_param_t *pa;
-            if (!md || k >= nparams(md))
+            if (!md || p < 0)
                 return;
-            pa = &md->params[k];
-            asc(pa->name, t, sizeof t);
-            if (pa->nwords > 0 && pa->words && sl->val[k] < pa->nwords)
-                asc(pa->words[sl->val[k]], v, sizeof v);
-            else
-                snprintf(v, sizeof v, "%d", sl->val[k]);
+            pa = &md->params[p];
+            asc(pa->name ? pa->name : "", t, sizeof t);
+            param_text(pa, sl->val[p], v, sizeof v);
             hint = pa->dry_wet && kind == RFM_MOVE_FX_AUDIO;
         }
         header(g, fn, NULL);
@@ -2210,6 +2294,35 @@ static void fx_screen(B *g, const rfm_move_t *m)
         else
             asc(n ? n : "empty", v, sizeof v);
         ctext(g, 22, v, 2);
+        return;
+    }
+    if (pages_shown(m)) {                               /* (0.5.0) the module's parameter page: 2 rows of 4 knobs */
+        const rfm_move_fxslot_t *sl = kind == RFM_MOVE_FX_MIDI ? &x->mfx[i] : &x->afx[i];
+        const rfm_move_fx_module_t *md = module(m, kind, sl->mod);
+        const int np = npages(md), cur = slot_page(m, kind, i);
+        char nm[32];                                    /* (the header: the page's name, or the module's; n/m) */
+        if (host_pages(md) && md->pages[cur].name && md->pages[cur].name[0])
+            asc(md->pages[cur].name, nm, sizeof nm);
+        else
+            asc(sl->name, nm, sizeof nm);
+        snprintf(t, sizeof t, "%d/%d", cur + 1, np);
+        header(g, nm, t);
+        for (c = 0; c < RFM_MOVE_FX_KNOBS; c++) {
+            const int p = page_param(md, cur, c), x0 = (c % 4) * 32, y0 = 12 + (c / 4) * 24;
+            char lab[16];
+            if (p < 0) {                                /* a gap: a dash */
+                hline(g, x0 + 12, y0 + 9, 7, 0);
+                continue;
+            }
+            asc(md->params[p].short_name ? md->params[p].short_name : md->params[p].name ? md->params[p].name : "",
+                lab, sizeof lab);
+            cut(lab, 5);
+            text(g, x0 + ifloor_div(32 - tw(lab, 1), 2), y0, lab, 1, 1);
+            param_text(&md->params[p], sl->val[p], v, sizeof v);
+            cut(v, 5);
+            text(g, x0 + ifloor_div(32 - tw(v, 1), 2), y0 + 10, v, 1, 1);
+        }
+        strip(g, np, cur);                              /* (the pages, the current one thick) */
         return;
     }
     if (pg == PG_MIX) {                                 /* the mixer: three strips */

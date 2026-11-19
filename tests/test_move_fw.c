@@ -106,6 +106,9 @@ static const char *const W_RATE[] = { "1/8", "1/16", "1/32" }, *const W_MODE[] =
 static const char *const W_OCT[] = { "1", "2", "3", "4" }, *const W_SHAPE[] = { "Major", "Minor", "Sus4", "7th", "9th" };
 static const char *const W_INV[] = { "0", "1", "2" }, *const W_CURVE[] = { "Soft", "Linear", "Hard" };
 static const char *const W_TIME[] = { "1/8", "1/8.", "1/4" };
+/* (0.4.x hosts' positional initializers: the 0.5.0 fields left out, zero = as before) */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 static const rfm_move_fx_param_t P_ARP[] = { { "Rate", 3, W_RATE, 0, 0 }, { "Mode", 4, W_MODE, 0, 0 }, { "Octaves", 4, W_OCT, 0, 0 }, { "Gate", 0, NULL, 64, 0 } };
 static const rfm_move_fx_param_t P_CHORD[] = { { "Shape", 5, W_SHAPE, 0, 0 }, { "Invert", 3, W_INV, 0, 0 }, { "Spread", 0, NULL, 64, 0 } };
 static const rfm_move_fx_param_t P_VEL[] = { { "Amount", 0, NULL, 64, 0 }, { "Curve", 3, W_CURVE, 0, 0 } };
@@ -120,6 +123,7 @@ static const rfm_move_fx_param_t P_BIT[] = { { "Bits", 0, NULL, 64, 0 }, { "Rate
 static const rfm_move_fx_param_t P_FIL[] = { { "Cutoff", 0, NULL, 64, 0 }, { "Reso", 0, NULL, 64, 0 } };
 static const rfm_move_fx_module_t AFX[] = { { "Freeverb", 3, P_REV }, { "Delay", 3, P_DLY }, { "Chorus", 3, P_CHO },
                                             { "Bitcrush", 2, P_BIT }, { "Filter", 2, P_FIL } };
+#pragma GCC diagnostic pop
 
 /* ---- a library blob, written by hand from the documented format (host guide, v0.4.0) */
 typedef struct { const char *id; int color; uint16_t on, set; } recdef_t;
@@ -719,7 +723,7 @@ static void test_fx(void)
     {
         static uint8_t blob[RFM_MOVE_PROJECT_MAX];
         const int n = rfm_move_project_save(m, blob, sizeof blob);
-        CHECK(n == RFM_MOVE_PROJECT_FIXED && blob[4] == 5);
+        CHECK(n == RFM_MOVE_PROJECT_FIXED && blob[4] == 6);
         rfm_move_init(&M2, NULL, on_act, NULL);
         rfm_move_fw_list(&M2, E, NFW);
         rfm_move_fx_modules(&M2, RFM_MOVE_FX_AUDIO, AFX, 5);   /* (no MIDI FX modules: kept by name) */
@@ -845,7 +849,7 @@ static void test_old_formats(void)
     rfmv_seq_note_put(m, 0, 3, 64, 90, 24, 0);
     m->seq.fx.send[0][1] = 33;
     n = rfm_move_project_save(m, blob, sizeof blob);
-    CHECK(blob[4] == RFM_MOVE_PROJECT_VERSION && RFM_MOVE_PROJECT_VERSION == 5);
+    CHECK(blob[4] == RFM_MOVE_PROJECT_VERSION && RFM_MOVE_PROJECT_VERSION == 6);
     n4 = n - RFM_MOVE_FXSET_BYTES;                      /* a version 4 blob: no FX setup */
     blob[4] = 4;
     for (h = 2166136261u, k = 0; k < n4 - 4; k++)
@@ -857,8 +861,10 @@ static void test_old_formats(void)
     CHECK(rfm_move_project_load(&M2, 0, blob, (uint32_t)n4) == 0 && rfmv_seq_find(&M2, 0, 3, 64) >= 0);
     CHECK(M2.seq.fx.send[0][1] == 0 && M2.seq.fx.ffilt[0] == 0xFFFF && M2.seq.fx.mfx[0].filt == 0xFFFF && M2.seq.fx.pan[2] == 64);
     CHECK(rfm_move_project_check(blob, (uint32_t)n4 + 1) < 0);
-    /* a version 5 blob cut to version 4's length is refused */
+    /* a version 5 (or 6) blob cut to version 4's length is refused */
     blob[4] = 5;
+    CHECK(rfm_move_project_check(blob, (uint32_t)n4) < 0);
+    blob[4] = 6;
     CHECK(rfm_move_project_check(blob, (uint32_t)n4) < 0);
 }
 
@@ -1528,6 +1534,157 @@ static void test_fx_touch(void)
     press(m, MR_CC_MENU);
 }
 
+/* (0.5.0) a module's own parameter pages (a host's ui_hierarchy plan): CloudSeed, 16 parameters; root has 11 (knob 3
+ * a gap; its 3rd parameter after the last knob, page 2), a link to Advanced (3), Advanced's to Deep (2) */
+static const char *const W_LPHP[] = { "LP", "HP" };
+#define CP(n, sn) { n, 0, NULL, 64, 0, sn, 0, 0, 0, NULL }
+static const rfm_move_fx_param_t P_CS[16] = {
+    { "Mix", 0, NULL, 38, 1, "Mix", 0, 100, 0, "%" }, { "Mode", 2, W_LPHP, 0, 0, "Mode", 0, 0, 0, NULL },
+    CP("Width", "Width"), CP("Size", "Size"), { "Decay", 0, NULL, 20, 0, "Decay", 0.1f, 10, 1, "s" },
+    CP("Pre-delay", "Pre"), CP("Low cut", "LoCut"), CP("High cut", "HiCut"), CP("Tap count", "Taps"),
+    CP("Tap length", "TapLn"), CP("Tap decay", "TapDc"), CP("Seed", "Seed"), CP("Diffusion", "Diff"),
+    CP("Mod rate", "ModR"), CP("Deep one", "Deep1"), { "Deep two", 0, NULL, 77, 0, "Deep2", 0, 0, 0, NULL } };
+static const rfm_move_fx_page_t PG_CS[4] = {
+    { "CloudSeed", { 0, 1, -1, 3, 4, 5, 6, 7 } }, { "CloudSeed 2", { 8, 9, 10, 2, -1, -1, -1, -1 } },
+    { "Advanced", { 11, 12, 13, -1, -1, -1, -1, -1 } }, { "Deep", { 14, 15, -1, -1, -1, -1, -1, -1 } } };
+static rfm_move_fx_module_t AFX6[6];
+static rfm_move_fx_param_t P_BIG[10];
+static rfm_move_fx_module_t MFX6[6];
+static void fx6(rfm_move_t *m)
+{
+    int k;
+    memcpy(AFX6, AFX, sizeof AFX), memcpy(MFX6, MFX, sizeof MFX);
+    AFX6[5].name = "CloudSeed", AFX6[5].nparams = 16, AFX6[5].params = P_CS, AFX6[5].npages = 4, AFX6[5].pages = PG_CS;
+    for (k = 0; k < 10; k++)                            /* (no plan: pages of 8 in order) */
+        memset(&P_BIG[k], 0, sizeof P_BIG[k]), P_BIG[k].name = "Big", P_BIG[k].def = (uint8_t)(10 + k);
+    MFX6[5].name = "Big", MFX6[5].nparams = 10, MFX6[5].params = P_BIG;
+    rfm_move_fx_modules(m, RFM_MOVE_FX_AUDIO, AFX6, 6);
+    rfm_move_fx_modules(m, RFM_MOVE_FX_MIDI, MFX6, 6);
+}
+static void test_fx_pages(void)
+{
+    rfm_move_t *m = &M;
+    static uint8_t blob[RFM_MOVE_PROJECT_MAX], b5[RFM_MOVE_PROJECT_MAX];
+    const rfm_move_fxslot_t *sl = &m->seq.fx.afx[0];
+    const act_t *a;
+    uint8_t rgb[3];
+    int n, n5, k, body;
+    uint32_t h;
+    fixture(m), fx6(m);
+    press(m, MR_CC_MENU), tap_track(m, 2), tap_pad(m, pad_of(0));
+    CHECK(m->fw.fx && m->s.fx_page == RFM_MOVE_FX_PAGE_AUDIO && m->fw.fx_focus == 0);
+    CHECK(rfm_move_fx_set_module(m, RFM_MOVE_FX_AUDIO, 0, 5) >= 0 && sl->mod == 5 && sl->val[0] == 38 && sl->val[15] == 77);
+    rest_pop(m);
+    /* the chain first; Right: page 1 (CloudSeed); knob 3 a gap */
+    CHECK(!m->fw.fx_pages && led_of(m, 1, MR_CC_RIGHT, rgb) && rgb[0] > 0);
+    press(m, MR_CC_RIGHT);
+    CHECK(m->fw.fx_pages && m->fw.fx_pg[1][0] == 0);
+    screen(m), write_pbm("fx_pages_root");
+    CHECK(lit_in(0, 10, 128, 60) > 0);
+    clear();
+    knob(m, 2, 3), touch(m, 2, 1);
+    CHECK(count(RFM_MOVE_ACT_FX_PARAM) == 0 && !rfmv_fw_timed(m));
+    touch(m, 2, 0);
+    knob(m, 3, 2);                                      /* knob 4: Size (param 3) */
+    CHECK((a = last(RFM_MOVE_ACT_FX_PARAM)) && a->a.param == 3 && a->a.value == 66 && sl->val[3] == 66);
+    rest_pop(m);
+    /* Right: page 2 (Width came after the last knob: knob 4) */
+    press(m, MR_CC_RIGHT);
+    CHECK(m->fw.fx_pg[1][0] == 1);
+    knob(m, 3, -4);
+    CHECK((a = last(RFM_MOVE_ACT_FX_PARAM)) && a->a.param == 2 && sl->val[2] == 60);
+    rest_pop(m);
+    /* Right: Advanced, Deep; Right at the last page: nothing; its LED out */
+    press(m, MR_CC_RIGHT);
+    knob(m, 0, 5);
+    CHECK((a = last(RFM_MOVE_ACT_FX_PARAM)) && a->a.param == 11 && sl->val[11] == 69);
+    press(m, MR_CC_RIGHT), press(m, MR_CC_RIGHT);
+    CHECK(m->fw.fx_pg[1][0] == 3 && led_of(m, 1, MR_CC_RIGHT, rgb) && rgb[0] == 0);
+    CHECK(led_of(m, 1, MR_CC_LEFT, rgb) && rgb[0] > 0);
+    rest_pop(m);
+    /* a touch: the popup while touched (Deep two), gone on release */
+    touch(m, 1, 1);
+    adv_ms(m, 3 * RFM_MOVE_POPUP_MS);
+    CHECK(m->fw.pop == FP_PARAM && m->fw.pop_a == 1 && rfmv_fw_timed(m));
+    screen(m), write_pbm("fx_pages_touch");
+    touch(m, 1, 0);
+    CHECK(!rfmv_fw_timed(m));
+    screen(m), write_pbm("fx_pages_deep");
+    /* the host's edit by index, past 8 */
+    clear();
+    CHECK(rfm_move_fx_set_param(m, RFM_MOVE_FX_AUDIO, 0, 14, 99) == 1 && sl->val[14] == 99 &&
+          (a = last(RFM_MOVE_ACT_FX_PARAM)) && a->a.param == 14 && a->a.value == 99);
+    CHECK(rfm_move_fx_set_param(m, RFM_MOVE_FX_AUDIO, 0, 16, 1) == -1);
+    /* Left back to page 1, then the chain; Back closes the pages first */
+    press(m, MR_CC_LEFT), press(m, MR_CC_LEFT), press(m, MR_CC_LEFT);
+    CHECK(m->fw.fx_pages && m->fw.fx_pg[1][0] == 0);
+    knob(m, 1, RFM_MOVE_LIST_TICKS);                    /* (Mode: a word) */
+    CHECK(sl->val[1] == 1);
+    knob(m, 0, 127);                                    /* (Mix: 100 %) */
+    screen(m), write_pbm("fx_pages_words");
+    rest_pop(m);
+    press(m, MR_CC_LEFT);
+    CHECK(!m->fw.fx_pages && m->seq.projects && m->fw.fx);
+    press(m, MR_CC_RIGHT), press(m, MR_CC_BACK);
+    CHECK(!m->fw.fx_pages && m->seq.projects && m->fw.fx);
+    /* no plan: pages of 8 (Big, 10 parameters: page 2 knobs 1, 2) */
+    tap_track(m, 0), tap_pad(m, pad_of(2));
+    CHECK(rfm_move_fx_set_module(m, RFM_MOVE_FX_MIDI, 2, 5) >= 0 && m->seq.fx.mfx[2].val[9] == 19);
+    press(m, MR_CC_RIGHT), press(m, MR_CC_RIGHT);
+    clear();
+    knob(m, 1, 1), knob(m, 2, 1);
+    CHECK((a = last(RFM_MOVE_ACT_FX_PARAM)) && a->a.param == 9 && count(RFM_MOVE_ACT_FX_PARAM) == 1);
+    /* the whole setup: every parameter */
+    clear();
+    rfm_move_fx_sync(m);
+    CHECK(count(RFM_MOVE_ACT_FX_PARAM) == 4 + 3 + 10 + 16 + 3);   /* (Arp, Chord, Big; CloudSeed, Delay) */
+    /* saved and loaded: all 16 values */
+    n = rfm_move_project_save(m, blob, sizeof blob);
+    CHECK(n > 0 && blob[4] == 6);
+    rfm_move_init(&M2, NULL, on_act, NULL), fx6(&M2);
+    CHECK(rfm_move_project_load(&M2, 0, blob, (uint32_t)n) == 0 && M2.seq.fx.afx[0].mod == 5);
+    CHECK(!memcmp(M2.seq.fx.afx[0].val, sl->val, 16) && M2.seq.fx.afx[0].val[14] == 99);
+    CHECK(M2.seq.fx.mfx[2].val[9] == 20);               /* (page 2's knob 2 turned +1) */
+    /* a version 5 project (8 values a slot): those 8, the rest the defaults */
+    body = n - 4 - RFM_MOVE_FXSET_BYTES;
+    memcpy(b5, blob, (size_t)body);
+    {
+        const uint8_t *p = blob + body;
+        uint8_t *o = b5 + body;
+        for (k = 0; k < 6; k++) {
+            const int x = k < 3 ? 2 : 0;
+            memcpy(o, p, RFM_MOVE_FX_NAME + 8);
+            memcpy(o + RFM_MOVE_FX_NAME + 8, p + RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS, (size_t)x);
+            o += RFM_MOVE_FX_NAME + 8 + x, p += RFM_MOVE_FX_NAME + RFM_MOVE_FX_PARAMS + x;
+        }
+        memcpy(o, p, 18), o += 18;
+        n5 = (int)(o - b5) + 4;
+    }
+    CHECK(n5 == n - (RFM_MOVE_FXSET_BYTES - RFM_MOVE_FXSET_BYTES_V5));
+    b5[4] = 5;
+    for (h = 2166136261u, k = 0; k < n5 - 4; k++)
+        h = (h ^ b5[k]) * 16777619u;
+    for (k = 0; k < 4; k++)
+        b5[n5 - 4 + k] = (uint8_t)(h >> (8 * k));
+    rfm_move_init(&M2, NULL, on_act, NULL), fx6(&M2);
+    CHECK(rfm_move_project_load(&M2, 0, b5, (uint32_t)n5) == 0 && M2.seq.fx.afx[0].mod == 5);
+    CHECK(!memcmp(M2.seq.fx.afx[0].val, sl->val, 8) && M2.seq.fx.afx[0].val[11] == 64 && M2.seq.fx.afx[0].val[15] == 77);
+    CHECK(M2.seq.fx.mfx[2].val[7] == 17 && M2.seq.fx.mfx[2].val[9] == 19);   /* (past 8: the default again) */
+    /* .. its modules given after the load: the defaults then */
+    rfm_move_init(&M2, NULL, on_act, NULL);
+    CHECK(rfm_move_project_load(&M2, 0, b5, (uint32_t)n5) == 0 && M2.seq.fx.afx[0].val[15] == RFM_MOVE_FX_UNSET);
+    fx6(&M2);
+    CHECK(M2.seq.fx.afx[0].val[15] == 77);
+    /* a version 6 value out of range (not unset) is refused */
+    blob[body + RFM_MOVE_FX_NAME + 20] = 200;
+    for (h = 2166136261u, k = 0; k < n - 4; k++)
+        h = (h ^ blob[k]) * 16777619u;
+    for (k = 0; k < 4; k++)
+        blob[n - 4 + k] = (uint8_t)(h >> (8 * k));
+    CHECK(rfm_move_project_check(blob, (uint32_t)n) < 0);
+    press(m, MR_CC_MENU);
+}
+
 int main(void)
 {
     test_nolist();
@@ -1544,6 +1701,7 @@ int main(void)
     test_down();
     test_flip_fx();
     test_fx_touch();
+    test_fx_pages();
     test_states();
     test_midi_track();
     test_old_formats();
