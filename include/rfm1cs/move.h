@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 5
-#define RFM1CS_VERSION_PATCH 5
-#define RFM1CS_VERSION "0.5.5"
+#define RFM1CS_VERSION_PATCH 6
+#define RFM1CS_VERSION "0.5.6"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -39,6 +39,15 @@ extern "C" {
 #define RFM_MOVE_NBANKS 4
 #define RFM_MOVE_NLEVELS 44                             /* the FM-1's LEDs: levels[col * 4 + line], 11 columns */
 #define RFM_MOVE_LABEL_MAX 16
+/* (0.5.6) the firmware's live labels, fm1core's DYNAMIC-LABELS slots (FM1CORE_LBL_*): 0..7 the knobs by FM1P_E_* role
+ * (SELECT ALGO PRESETS K1..K4 MASTER), 8..21 the buttons by FM1P_B_* (FX SEL ENV LFO EDIT GLO HOME SAVE ARP SEQ PLAY
+ * REC OCT- OCT+), 22..37 the white keys F3..G5, 38..48 the black keys F#3..F#5 */
+#define RFM_MOVE_LBL_KNOB0 0
+#define RFM_MOVE_LBL_BTN0 8
+#define RFM_MOVE_LBL_WHITE0 22
+#define RFM_MOVE_LBL_BLACK0 38
+#define RFM_MOVE_LBL_N 49
+#define RFM_MOVE_LABEL_HOLD_MS 300                      /* FM-1 mode: a button held this long shows its label */
 
 /* the FM-1's matrix buttons and encoders (proto/rfm1.h order) */
 enum {
@@ -710,6 +719,13 @@ typedef struct {
                                                          * longer the active one: it holds no note_count) */
     uint8_t emit_dest;                                  /* (emit_midi's MIDI dest while a latched note lets go) */
     char pop_text[32];                                  /* rfm_move_popup's words */
+    /* (0.5.6) labels: the live ones (lbl_has 1: given; "" = no job) and the buttons' static names (FM1P_B_* order) */
+    char lbl[RFM_MOVE_LBL_N][RFM_MOVE_LABEL_MAX + 1];
+    uint8_t lbl_has[RFM_MOVE_LBL_N];
+    char btn_nm[RFM_MOVE_NBTN][RFM_MOVE_LABEL_MAX + 1];
+    uint32_t pop_t0;                                    /* when this popup's subject came up (a long label scrolls) */
+    uint16_t pop_delay;                                 /* POP_LABEL: shown once held this long (ms) */
+    uint8_t pop_blank;                                  /* a knob touched, not turned: its name, no value yet */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
@@ -740,6 +756,16 @@ int rfm_move_set_battery(rfm_move_t *m, int battery, int power_bits);
 int rfm_move_sample_levels(rfm_move_t *m, const uint8_t *peaks, int n);
 /* a knob's label from the firmware (fm1core labels: by encoder, RFM_MOVE_E_MASTER for MASTER); NULL or "" = default */
 void rfm_move_set_label(rfm_move_t *m, int enc, const char *text);
+/* (0.5.6) all of the firmware's live labels at once, DYNAMIC-LABELS order (RFM_MOVE_LBL_*, fw_label(fw, i) as it
+ * comes); lbl NULL clears them all. An entry NULL: none given (a knob: its printed name; a button: its static name
+ * below; a key: nothing); "" = no job (nothing shown, a knob's popup neither). Copied (16 characters at most).
+ * FM-1 mode: a button held RFM_MOVE_LABEL_HOLD_MS shows its label in the left half (a tap shows nothing); while any
+ * FM-1 button is held, every other button, pad, step (their keys) and knob pressed shows its label at once (read
+ * when drawn: a label the firmware changes meanwhile shows changed). The knobs' entries also set rfm_move_set_label's. */
+void rfm_move_set_labels(rfm_move_t *m, const char *const lbl[RFM_MOVE_LBL_N]);
+/* (0.5.6) the firmware's own button names (its descriptor's button_names, FM1P_B_* order; NULL entries or names
+ * NULL: none): what a button shows when its live label is NULL */
+void rfm_move_set_button_names(rfm_move_t *m, const char *const names[RFM_MOVE_NBTN]);
 /* the panel's wiring (FM1P_KEYMAP_INIT's shape: id at [row][col], rows 1..4 = LED lines 0..3); NULL = the FM-1's */
 void rfm_move_set_keymap(rfm_move_t *m, const int8_t keymap[6][11]);
 /* the FM-1's LEDs: levels[col * 4 + line] 0..255 and PLAY's green level 0..255 */

@@ -272,15 +272,24 @@ void emit_midi(rfm_move_t *m, int status, int d1, int d2)
 void changed(rfm_move_t *m) { emit(m, RFM_MOVE_ACT_SETTINGS, 0, 0, 0, 0); }
 
 /* a key or button held by several Move controls: down with the first, up with the last */
+static int key_slot(int k);
+static int btn_slot(int b);
+static int any_btn_held(const rfm_move_t *m);
+static void label_pop(rfm_move_t *m, int slot, int at_once);
+static void label_let(rfm_move_t *m, int slot);
 static void key_hold(rfm_move_t *m, int k, int vel)
 {
-    if (m->key_count[k]++ == 0)
+    if (m->key_count[k]++ == 0) {
         emit(m, RFM_MOVE_ACT_KEY, k, 1, clampi(vel, 1, 127), 0);
+        if (any_btn_held(m))                            /* (0.5.6) an FM-1 button held: the key's label */
+            label_pop(m, key_slot(k), 1);
+    }
 }
 static void key_let(rfm_move_t *m, int k)
 {
     if (!m->key_count[k] || --m->key_count[k])
         return;
+    label_let(m, key_slot(k));
     if (m->key_press[k]) {
         m->key_press[k] = 0;
         emit(m, RFM_MOVE_ACT_PRESS, k, 0, 0, 0);
@@ -289,13 +298,18 @@ static void key_let(rfm_move_t *m, int k)
 }
 static void btn_hold(rfm_move_t *m, int b)
 {
-    if (m->btn_count[b]++ == 0)
+    const int other = any_btn_held(m);
+    if (m->btn_count[b]++ == 0) {
         emit(m, RFM_MOVE_ACT_BTN, b, 1, 0, 0);
+        label_pop(m, btn_slot(b), other);               /* (0.5.6) held: its label; another held: at once */
+    }
 }
 static void btn_let(rfm_move_t *m, int b)
 {
-    if (m->btn_count[b] && --m->btn_count[b] == 0)
+    if (m->btn_count[b] && --m->btn_count[b] == 0) {
         emit(m, RFM_MOVE_ACT_BTN, b, 0, 0, 0);
+        label_let(m, btn_slot(b));
+    }
 }
 void note_hold(rfm_move_t *m, int ch, int n, int vel)
 {
@@ -450,6 +464,92 @@ void rfm_move_set_label(rfm_move_t *m, int enc, const char *text)
     if (enc < 0 || enc > RFM_MOVE_NENC)
         return;
     snprintf(m->label[enc], sizeof m->label[enc], "%s", text ? text : "");
+    m->lbl_has[rfmv_enc_slot(enc)] = 0;                 /* (this call's "" is the default, not "no job") */
+}
+
+/* ---- (0.5.6) labels: DYNAMIC-LABELS slots (FM1P_* order) to and from rfm1cs's encoders, buttons and keys */
+static const uint8_t ENC_SLOT[RFM_MOVE_NENC + 1] = { 0, 1, 3, 4, 5, 6, 2, 7 };   /* RFM_MOVE_E_* -> FM1P_E_* */
+int rfmv_enc_slot(int enc) { return enc >= 0 && enc <= RFM_MOVE_NENC ? ENC_SLOT[enc] : 0; }
+static int btn_slot(int b) { return RFM_MOVE_LBL_BTN0 + (b + RFM_MOVE_NBTN - 2) % RFM_MOVE_NBTN; }   /* (FX first) */
+static int key_slot(int k)                              /* key 0 = F3: the F octave's whites and blacks */
+{
+    static const int8_t W[12] = { 0, -1, 1, -1, 2, -1, 3, 4, -1, 5, -1, 6 }, B[12] = { -1, 0, -1, 1, -1, 2, -1, -1, 3, -1, 4, -1 };
+    const int o = k / 12, s = k % 12;
+    return W[s] >= 0 ? RFM_MOVE_LBL_WHITE0 + o * 7 + W[s] : RFM_MOVE_LBL_BLACK0 + o * 5 + B[s];
+}
+static int enc_nojob(const rfm_move_t *m, int enc)
+{
+    const int sl = rfmv_enc_slot(enc);
+    return m->lbl_has[sl] && !m->lbl[sl][0];
+}
+void rfm_move_set_labels(rfm_move_t *m, const char *const lbl[RFM_MOVE_LBL_N])
+{
+    int i, e;
+    for (i = 0; i < RFM_MOVE_LBL_N; i++) {
+        const char *t = lbl ? lbl[i] : NULL;
+        snprintf(m->lbl[i], sizeof m->lbl[i], "%s", t ? t : "");
+        m->lbl_has[i] = t != NULL;
+    }
+    for (e = 0; e <= RFM_MOVE_NENC; e++)
+        snprintf(m->label[e], sizeof m->label[e], "%s", m->lbl[ENC_SLOT[e]]);
+}
+void rfm_move_set_button_names(rfm_move_t *m, const char *const names[RFM_MOVE_NBTN])
+{
+    int i;
+    for (i = 0; i < RFM_MOVE_NBTN; i++)
+        snprintf(m->btn_nm[i], sizeof m->btn_nm[i], "%s", names && names[i] ? names[i] : "");
+}
+int rfmv_label(const rfm_move_t *m, int slot, char *out, int cap)
+{
+    const char *t = "";
+    if (slot < 0 || slot >= RFM_MOVE_LBL_N)
+        return 0;
+    if (m->lbl_has[slot])
+        t = m->lbl[slot];
+    else if (slot >= RFM_MOVE_LBL_BTN0 && slot < RFM_MOVE_LBL_WHITE0)
+        t = m->btn_nm[slot - RFM_MOVE_LBL_BTN0];
+    snprintf(out, (size_t)cap, "%s", t);
+    return out[0] != 0;
+}
+int rfmv_label_held(const rfm_move_t *m, int slot)
+{
+    if (slot >= RFM_MOVE_LBL_BTN0 && slot < RFM_MOVE_LBL_WHITE0)
+        return m->btn_count[(slot - RFM_MOVE_LBL_BTN0 + 2) % RFM_MOVE_NBTN] > 0;
+    if (slot >= RFM_MOVE_LBL_WHITE0 && slot < RFM_MOVE_LBL_N) {
+        int k;
+        for (k = 0; k < RFM_MOVE_NKEYS; k++)
+            if (key_slot(k) == slot)
+                return m->key_count[k] > 0;
+    }
+    return 0;
+}
+static int any_btn_held(const rfm_move_t *m)
+{
+    int b;
+    for (b = 0; b < RFM_MOVE_NBTN; b++)
+        if (m->btn_count[b])
+            return 1;
+    return 0;
+}
+/* FM-1 mode: a button's or key's label up: after RFM_MOVE_LABEL_HOLD_MS (delay), or at once (a button held) */
+static void label_pop(rfm_move_t *m, int slot, int at_once)
+{
+    char t[RFM_MOVE_LABEL_MAX + 1];
+    if (m->s.mode != RFM_MOVE_MODE_FM1 || m->seq.projects || !rfmv_label(m, slot, t, sizeof t))
+        return;
+    rfmv_pop(m, POP_LABEL, slot);
+    m->pop_delay = at_once ? 0 : RFM_MOVE_LABEL_HOLD_MS;
+    if (m->pop_t0 == rfmv_now_ms(m))
+        m->pop_t0 += m->pop_delay;                      /* (a long label scrolls from when it shows) */
+}
+static void label_let(rfm_move_t *m, int slot)          /* its control let go: a tap (not yet shown) shows nothing */
+{
+    if (m->pop != POP_LABEL || m->pop_i != slot)
+        return;
+    if (rfmv_now_ms(m) - m->pop_ms < m->pop_delay)
+        m->pop = POP_NONE;
+    else
+        rfmv_pop_let(m, POP_LABEL, slot), m->pop_delay = 0;
 }
 
 void rfm_move_set_keymap(rfm_move_t *m, const int8_t keymap[6][11])
@@ -873,6 +973,8 @@ static void on_knob(rfm_move_t *m, int k, int d, uint32_t now)
         t /= RFM_MOVE_KNOB_TICKS;
         if (t)
             emit(m, RFM_MOVE_ACT_TURN, KNOB_ENC[k], 0, 0, t);
+        if (enc_nojob(m, KNOB_ENC[k]))                  /* (0.5.6: "" = no job: no popup) */
+            return;
         rfmv_pop(m, POP_ENC, k);
         m->pop_val = (int16_t)clampi(acc + t, -9999, 9999);
     }
@@ -960,8 +1062,16 @@ static void on_touch(rfm_move_t *m, int k, int on)
         rfmv_seq_select(m, m->seq.track_page + k);     /* (session: a knob touched selects the track in its column) */
         return;
     }
-    if (rfmv_half(m) || rfmv_track_held(m, 2))         /* (FM-1 mode, MIDI's NOTES: a touch alone shows the drawing's
-                                                         * highlight; the popup comes with turning) */
+    if (rfmv_half(m)) {                                 /* (0.5.6, the owner's: FM-1 mode, MIDI's NOTES: a touch alone
+                                                         * shows the knob's name (and MASTER its level); a turn its
+                                                         * detents) */
+        if (k == 8)
+            rfmv_pop(m, POP_MASTER, 8);
+        else if (k < RFM_MOVE_NKNOBS && KNOB_ENC[k] >= 0 && !enc_nojob(m, KNOB_ENC[k]))
+            rfmv_pop(m, POP_ENC, k), m->pop_blank = 1;
+        return;
+    }
+    if (rfmv_track_held(m, 2))
         return;
     if (k < RFM_MOVE_NKNOBS && rfmv_menu_knobs(m) >= 0)
         return;                                         /* (a menu or a held Track: its own screen, the legend ring) */

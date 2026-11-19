@@ -118,8 +118,17 @@ stays open after Track 1 is let go (full width; the jog, the knobs and, where it
 the menu's) until Back, which closes it. While Track 1 is held a small SHIFT badge
 sits top left (the FM-1's screen stays on the right in FM-1 mode), and the icons under the steps light; the pads
 stay what they were (FM-1 keys, MIDI notes), at once. A quick tap on Track 1 switches to FM-1 mode (named).
-A knob's popup comes only with turning (its detents, from 0 each gesture): a touch alone lights the knob on the
-drawing; the release drops the popup and its count. MASTER the same. The jog wheel (SELECT) has the same popup
+A knob touched shows its name (the firmware's label, else its printed one) in the left half, with no value yet
+(0.5.6, the owner's; the firmware's values come later); turning shows this gesture's detents (from 0 each gesture);
+the release drops the popup and its count. MASTER the same, with its level. A label "" (no job): no popup.
+
+**Labels (0.5.6).** The host passes the firmware's 49 live labels (`rfm_move_set_labels`) and its 14 button names
+(`rfm_move_set_button_names`, used when a button's live label is NULL). A mapped button held 300 ms
+(`RFM_MOVE_LABEL_HOLD_MS`) shows its label in the left half (a tap shows nothing); while any FM-1 button is held,
+every other button, pad or step (its key) and knob pressed shows its label at once, as the firmware has it when
+drawn (Shift-style layers). Pads and steps show nothing otherwise: they stay an instrument. A label shows until a
+second after its control's release. The left half only (the FM-1's screen stays): words at 2x, a button's or key's
+label wrapped at spaces onto up to three rows, a row that does not fit scrolling (no 1x text). The jog wheel (SELECT) has the same popup
 while it turns (the firmware's SELECT label, its detents), gone and counted from 0 again a second after it stops.
 
 | Move | FM-1 |
@@ -634,6 +643,7 @@ rfm_move_screen_timed(&m);                        /* 1: draw again as the clock 
 rfm_move_release_all(&m);                         /* the link dropped, or the host leaves Move control */
 rfm_move_leds_invalidate(&m);                     /* a new connection: repaint */
 rfm_move_set_master(&m, v); rfm_move_set_label(&m, enc, "CUTOFF"); rfm_move_set_keymap(&m, km);
+rfm_move_set_labels(&m, lbl49); rfm_move_set_button_names(&m, names14);   /* (0.5.6) DYNAMIC-LABELS order */
 rfm_move_save(&m.s, bytes); rfm_move_load(&s, bytes, n);   /* "RMV" + version 3, 80 bytes (versions 2 and 1, 78 and 77 bytes, load) */
 ```
 

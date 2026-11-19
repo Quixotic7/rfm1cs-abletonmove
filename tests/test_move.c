@@ -268,9 +268,8 @@ static void test_buttons_knobs(void)
     CHECK(nact == 0);
     /* knob touch: remembered for the screen */
     {
-        const int was = m.pop;
         touch(&m, 4, 1);
-        CHECK(m.touched == 4 && m.pop == was);          /* (FM-1 mode: the drawing marks it; a turn brings a popup) */
+        CHECK(m.touched == 4 && m.pop == POP_ENC && m.pop_blank);   /* (0.5.6, FM-1 mode: a touch shows its name) */
     }
     touch(&m, 4, 0);
     CHECK(m.touched == -1);
@@ -589,8 +588,8 @@ static void write_pbm(const char *path, const uint8_t *packed)
  * look at the PBMs this test writes into the build directory first (move_*.pbm) */
 #define GOLD_FM1 0xca84fa11u
 #define GOLD_FM1_LIVE 0x714e834du
-#define GOLD_KNOB 0x08192ac2u
-#define GOLD_MASTER 0x292b3b1cu
+#define GOLD_KNOB 0xf14cae88u
+#define GOLD_MASTER 0x1770cd16u
 #define GOLD_MIDI 0x3de84831u
 #define GOLD_MIDI_HIT 0xf3eb1a5bu
 #define GOLD_CONTROL 0x2fd858c1u
@@ -708,21 +707,23 @@ static void test_screen(void)
     rfm_move_screen(&m, NULL, out);
     CHECK(art_diff(out) == 0);
 
-    /* live: a touched encoder's dot inverted in a 6 x 6 block (K1: knob 5, its dot at 35, 20) */
+    /* (0.5.6, the owner's) a touch alone: the knob's name in the left half, no value yet (K1: knob 5); the volume
+     * knob: MASTER and its level; the release: gone */
     touch(&m, 4, 1);
     rfm_move_screen(&m, NULL, out);
-    CHECK(px_at(out, 33, 18) && px_at(out, 38, 23) && !px_at(out, 35, 20) && !px_at(out, 36, 21));
-    CHECK(art_diff(out) == 6 * 6);                      /* (32 lit around it, the 4 of the dot dark) */
-    CHECK(m.pop == POP_NONE);                           /* a touch alone: no popup in FM-1 mode */
+    CHECK(m.pop == POP_ENC && m.pop_blank && lit_in(out, 0, 8, 64, 24) > 10 && !lit_in(out, 0, 26, 64, 64));
+    gold("knob_touch", out, 0);
     touch(&m, 4, 0);
-    touch(&m, 8, 1);                                    /* the volume knob: MASTER, top left */
+    CHECK(m.pop == POP_NONE);
+    touch(&m, 8, 1);
     rfm_move_screen(&m, NULL, out);
-    CHECK(px_at(out, 4, 18) && !px_at(out, 6, 20) && px_at(out, 9, 23));
+    CHECK(m.pop == POP_MASTER && lit_in(out, 0, 28, 64, 56) > 20);
     touch(&m, 8, 0);
-    touch(&m, 0, 1);                                    /* knob 1: PRESETS, bottom left */
-    rfm_move_screen(&m, NULL, out);
-    CHECK(px_at(out, 4, 24) && !px_at(out, 6, 26));
+    touch(&m, 0, 1);                                    /* knob 1: PRESETS */
+    CHECK(m.pop == POP_ENC && m.pop_i == 0);
     touch(&m, 0, 0);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(art_diff(out) == 0);
     jog(&m, 1), jog(&m, 2);                             /* the jog wheel: SELECT's popup on the left half while turning
                                                          * (its detents), the mirror stays */
     rfm_move_screen(&m, NULL, out);
@@ -774,20 +775,20 @@ static void test_screen(void)
     ms(&m, RFM_MOVE_POPUP_MS - 10);                     /* (the owner's: up while turning, a moment after the last
                                                          * detent; a touch alone does not hold it) */
     rfm_move_screen(&m, NULL, out2);
-    CHECK(!memcmp(out, out2, sizeof out) && rfm_move_screen_timed(&m));
+    CHECK(rfmv_pop_up(&m, POP_ENC) && rfm_move_screen_timed(&m));   /* ("Cutoff" scrolls meanwhile) */
     ms(&m, 20);
     rfm_move_screen(&m, NULL, out2);
-    CHECK(!rfmv_pop_up(&m, POP_ENC) && art_diff(out2) == 6 * 6);   /* still touched: the drawing's highlight only */
+    CHECK(rfmv_pop_up(&m, POP_ENC));                    /* (0.5.6: still touched: still up) */
     knob(&m, 4, 2);                                     /* (turning again in the same touch: the count goes on) */
     CHECK(m.pop_val == 4);
     touch(&m, 4, 0);                                    /* the release: gone at once, the count back to 0 */
     rfm_move_screen(&m, NULL, out);
     CHECK(art_diff(out) == 0 && !rfm_move_screen_timed(&m) && m.pop_val == 0 && m.pop == POP_NONE);
-    touch(&m, 4, 1);                                    /* a later touch: the highlight, no popup */
+    touch(&m, 4, 1);                                    /* a later touch: its name, no value */
     rfm_move_screen(&m, NULL, out);
-    CHECK(art_diff(out) == 6 * 6 && !rfmv_pop_up(&m, POP_ENC) && m.pop_val == 0);
+    CHECK(rfmv_pop_up(&m, POP_ENC) && m.pop_blank && m.pop_val == 0);
     knob(&m, 4, -2);                                    /* a new gesture: the count starts again */
-    CHECK(m.pop_val == -1 && rfmv_pop_up(&m, POP_ENC));
+    CHECK(m.pop_val == -1 && rfmv_pop_up(&m, POP_ENC) && !m.pop_blank);
     touch(&m, 4, 0);
     touch(&m, 8, 1), knob(&m, 8, 1), knob(&m, 8, -1);   /* MASTER the same */
     CHECK(rfmv_pop_up(&m, POP_MASTER));
@@ -1038,7 +1039,7 @@ static void test_midi_round(void)
     CHECK(d == 0);
     pad(&m, 0, 0), pad(&m, 2, 0), pad(&m, 4, 0);
     touch(&m, 4, 1);
-    CHECK(!rfmv_pop_up(&m, POP_ENC));                   /* (a touch: nothing) */
+    CHECK(rfmv_pop_up(&m, POP_ENC) && m.pop_blank);     /* (0.5.6: a touch: the name) */
     knob(&m, 4, 4);
     rfm_move_screen(&m, NULL, out);
     CHECK(rfmv_pop_up(&m, POP_ENC) && m.pop_val == 2 && !px_at(out, 0, 0) && lit_in(out, 0, 28, 64, 56) > 40);
@@ -1577,6 +1578,182 @@ static void test_latch_slots(void)
 }
 
 /* (0.5.4) a host's message: big, a second, over any screen; wrapped onto two rows */
+/* (0.5.6) the firmware's labels in FM-1 mode: a button held 300 ms, anything pressed while a button is held, a knob
+ * touched; a contact sheet of them (move_labels_sheet.pbm) */
+static uint8_t g_sheet[12][MR_SCREEN_BYTES];
+static int g_nsheet;
+static void sheet_add(const uint8_t *out, const char *name)
+{
+    char path[64];
+    snprintf(path, sizeof path, "move_labels_%s.pbm", name);
+    write_pbm(path, out);
+    if (g_nsheet < 12)
+        memcpy(g_sheet[g_nsheet++], out, MR_SCREEN_BYTES);
+}
+static void sheet_write(void)                           /* 3 across, a 4-pixel grey-less gap (0) */
+{
+    FILE *f = fopen("move_labels_sheet.pbm", "w");
+    const int rows = (g_nsheet + 2) / 3, W = 3 * 128 + 4 * 4, H = rows * 64 + (rows + 1) * 4;
+    int x, y;
+    if (!f)
+        return;
+    fprintf(f, "P1\n%d %d\n", W, H);
+    for (y = 0; y < H; y++) {
+        for (x = 0; x < W; x++) {
+            const int c = (x - 4) / 132, r = (y - 4) / 68, ix = (x - 4) % 132, iy = (y - 4) % 68, i = r * 3 + c;
+            int v = 1;                                  /* (the gaps white, the screens as they are) */
+            if (x >= 4 && y >= 4 && ix < 128 && iy < 64)
+                v = i < g_nsheet && g_sheet[i][(iy >> 3) * 128 + ix] >> (iy & 7) & 1;
+            fputc(v ? '1' : '0', f);
+        }
+        fputc('\n', f);
+    }
+    fclose(f);
+}
+static int left_lit(const uint8_t *out) { return lit_in(out, 0, 0, 64, 64); }
+static void test_labels(void)
+{
+    static rfm_move_t m;
+    static uint8_t rest_out[MR_SCREEN_BYTES], out[MR_SCREEN_BYTES], out2[MR_SCREEN_BYTES];
+    const char *lbl[RFM_MOVE_LBL_N] = { NULL };
+    const char *names[RFM_MOVE_NBTN] = { "FX", "SEL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE", "ARP", "SEQ",
+                                         "PLAY", "REC", "OCT-", "OCT+" };
+    rfm_move_init(&m, NULL, on_act, NULL);
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
+    m.pop = POP_NONE;
+    lbl[RFM_MOVE_LBL_KNOB0 + 3] = "Resonance";          /* K1 (FM1P_E_K1 = 3): scrolls */
+    lbl[RFM_MOVE_LBL_KNOB0 + 1] = "";                   /* ALGO: no job */
+    lbl[RFM_MOVE_LBL_BTN0 + 11] = "Rec arm";            /* REC (FM1P_B_REC = 11) */
+    lbl[RFM_MOVE_LBL_BTN0 + 7] = "";                    /* SAVE: no job */
+    lbl[RFM_MOVE_LBL_WHITE0 + 0] = "Kick";              /* F3 */
+    lbl[RFM_MOVE_LBL_BLACK0 + 0] = "Clear All Steps";   /* F#3 */
+    lbl[RFM_MOVE_LBL_WHITE0 + 15] = "Snare";            /* G5 */
+    rfm_move_set_labels(&m, lbl);
+    rfm_move_set_button_names(&m, names);
+    CHECK(!strcmp(m.label[RFM_MOVE_E_K1], "Resonance") && !m.label[RFM_MOVE_E_ALGO][0] && !m.label[RFM_MOVE_E_K2][0]);
+    rfm_move_screen(&m, NULL, rest_out);
+
+    /* a tap: nothing shown; held 300 ms: its label (from then until a second after its release) */
+    button(&m, MR_CC_REC, 1);
+    CHECK(m.pop == POP_LABEL && m.pop_i == RFM_MOVE_LBL_BTN0 + 11 && rfm_move_screen_timed(&m));
+    ms(&m, 100);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(art_diff(out) == 9);                          /* (the drawing: REC's cell filled, no label) */
+    button(&m, MR_CC_REC, 0);
+    CHECK(m.pop == POP_NONE);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(!memcmp(out, rest_out, sizeof out));
+    button(&m, MR_CC_REC, 1);
+    ms(&m, RFM_MOVE_LABEL_HOLD_MS - 5);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(art_diff(out) == 9 && rfm_move_screen_timed(&m));
+    ms(&m, 10);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(left_lit(out) > 40 && lit_in(out, 0, 0, 64, 12) == 0);   /* ("Rec" / "Arm": two rows) */
+    sheet_add(out, "rec_held");
+    ms(&m, 3000);
+    CHECK(rfmv_pop_up(&m, POP_LABEL));                  /* (held: it stays) */
+
+    /* a button held: every other control pressed shows its label at once */
+    pad(&m, 16, 100);                                   /* F3 */
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop == POP_LABEL && m.pop_i == RFM_MOVE_LBL_WHITE0 && left_lit(out) > 20);
+    sheet_add(out, "key_kick");
+    pad(&m, 16, 0);
+    pad(&m, 25, 100);                                   /* F#3: three rows */
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop_i == RFM_MOVE_LBL_BLACK0 && lit_in(out, 0, 3, 64, 19) > 0 && lit_in(out, 0, 45, 64, 61) > 0);
+    sheet_add(out, "key_clear_all");
+    pad(&m, 25, 0);
+    step(&m, 15, 1);                                    /* step 16: G5 */
+    CHECK(m.pop_i == RFM_MOVE_LBL_WHITE0 + 15);
+    rfm_move_screen(&m, NULL, out);
+    sheet_add(out, "step_snare");
+    step(&m, 15, 0);
+    pad(&m, 18, 100);                                   /* (a key with no label: nothing new) */
+    CHECK(m.pop_i == RFM_MOVE_LBL_WHITE0 + 15);
+    pad(&m, 18, 0);
+    button(&m, MR_CC_PLAY, 1);                          /* PLAY: no live label, its static name */
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop_i == RFM_MOVE_LBL_BTN0 + 10 && left_lit(out) > 20);
+    sheet_add(out, "play_static");
+    /* the label as it is when drawn: the firmware renames PLAY while it is held */
+    lbl[RFM_MOVE_LBL_BTN0 + 10] = "Stop";
+    rfm_move_set_labels(&m, lbl);
+    rfm_move_screen(&m, NULL, out2);
+    CHECK(memcmp(out, out2, sizeof out) != 0);
+    sheet_add(out2, "play_renamed");
+    button(&m, MR_CC_PLAY, 0);
+    button(&m, MR_CC_REC, 0);
+    CHECK(rfmv_pop_up(&m, POP_LABEL));
+    ms(&m, RFM_MOVE_POPUP_MS + 10);
+    CHECK(!rfmv_pop_up(&m, POP_LABEL));
+    /* keys alone are an instrument: no label */
+    pad(&m, 16, 100);
+    CHECK(!rfmv_pop_up(&m, POP_LABEL));
+    pad(&m, 16, 0);
+    /* "" = no job: SAVE held shows nothing */
+    {
+        int cc;
+        for (cc = 0; cc < 128 && rfm_move_button_of(cc) != RFM_MOVE_B_SAVE; cc++)
+            ;
+        if (cc < 128) {
+            button(&m, cc, 1), ms(&m, 500);
+            CHECK(!rfmv_pop_up(&m, POP_LABEL));
+            button(&m, cc, 0);
+        }
+    }
+
+    /* knobs: a touch shows the name (no value yet), turning the detents; a long name scrolls; "" no popup */
+    touch(&m, 4, 1);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop == POP_ENC && m.pop_blank && lit_in(out, 0, 26, 64, 64) == 0);
+    sheet_add(out, "knob_touch");
+    ms(&m, 1500);
+    rfm_move_screen(&m, NULL, out2);
+    CHECK(memcmp(out, out2, sizeof out) != 0 && rfm_move_screen_timed(&m));   /* ("Resonance" scrolled) */
+    sheet_add(out2, "knob_scrolled");
+    knob(&m, 4, 4);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(!m.pop_blank && m.pop_val == 2 && lit_in(out, 0, 28, 64, 56) > 20);
+    sheet_add(out, "knob_turned");
+    touch(&m, 4, 0);
+    clear();
+    touch(&m, 1, 1);                                    /* ALGO: no job */
+    knob(&m, 1, 4);
+    CHECK(m.pop == POP_NONE && nact == 1 && acts[0].kind == RFM_MOVE_ACT_TURN);
+    touch(&m, 1, 0);
+    touch(&m, 8, 1);                                    /* the volume knob: MASTER and its level */
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop == POP_MASTER);
+    sheet_add(out, "master_touch");
+    touch(&m, 8, 0);
+    /* rfm_move_set_label: its "" is the default name again */
+    rfm_move_set_label(&m, RFM_MOVE_E_ALGO, "");
+    touch(&m, 1, 1);
+    CHECK(m.pop == POP_ENC);
+    touch(&m, 1, 0);
+
+    /* other modes: no labels */
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_CONTROL);
+    m.pop = POP_NONE;
+    button(&m, MR_CC_REC, 1), ms(&m, 500);
+    CHECK(!rfmv_pop_up(&m, POP_LABEL));
+    button(&m, MR_CC_REC, 0);
+    /* cleared: a button's static name stays, keys show nothing */
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
+    rfm_move_set_labels(&m, NULL);
+    CHECK(!m.lbl_has[RFM_MOVE_LBL_BTN0 + 11] && !m.label[RFM_MOVE_E_K1][0]);
+    button(&m, MR_CC_REC, 1), ms(&m, 400);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop == POP_LABEL && left_lit(out) > 20);
+    sheet_add(out, "rec_static");
+    pad(&m, 16, 100);
+    CHECK(m.pop_i == RFM_MOVE_LBL_BTN0 + 11);
+    pad(&m, 16, 0), button(&m, MR_CC_REC, 0);
+    sheet_write();
+}
+
 static void test_host_popup(void)
 {
     static rfm_move_t m;
@@ -1620,6 +1797,7 @@ int main(void)
     test_latch();
     test_latch_slots();
     test_host_popup();
+    test_labels();
     test_drum_settings();
     test_control();
     test_leds();

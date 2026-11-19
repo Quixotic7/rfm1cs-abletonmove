@@ -39,7 +39,10 @@ uint32_t rfmv_now_ms(const rfm_move_t *m) { return (uint32_t)(m->seq.now_us / 10
 
 void rfmv_pop(rfm_move_t *m, int kind, int i)
 {
+    if (m->pop != kind || m->pop_i != i || !rfmv_pop_up(m, kind))
+        m->pop_t0 = rfmv_now_ms(m);                     /* (0.5.6: a new subject: a long label scrolls from its start) */
     m->pop = (uint8_t)kind, m->pop_i = (uint8_t)i, m->pop_ms = rfmv_now_ms(m), m->pop_val = 0;
+    m->pop_delay = 0, m->pop_blank = 0;
 }
 
 void rfmv_pop_let(rfm_move_t *m, int kind, int i)
@@ -58,7 +61,8 @@ static int pop_held(const rfm_move_t *m)
     const int i = m->pop_i;
     switch (m->pop) {
     case POP_ENC:
-    case POP_MASTER: return m->touched == i && !rfmv_half(m);   /* (FM-1 mode, MIDI's NOTES: turning only) */
+    case POP_MASTER: return m->touched == i;            /* (0.5.6: FM-1 mode, MIDI's NOTES too: a touch shows it) */
+    case POP_LABEL: return rfmv_label_held(m, i);
     case POP_CC:
     case POP_TRIG: return m->touched == i;
     case POP_SELECT: return 0;                          /* (turning only: a moment after the last detent) */
@@ -147,11 +151,88 @@ static void bank_strip(const rfm_move_t *m, mr_canvas_t *cv)
         v2_strip(cv, 4, 1u << m->s.bank, -1, 0, 128);
 }
 
+/* (0.5.6) a row of 2x text in the left half (x 1..62): centred if it fits, else it scrolls (the owner's: no 1x
+ * text there): still for LSCROLL_HOLD ms, LSCROLL_MS a pixel to its end, still again, from its start again */
+#define LSCROLL_HOLD 700u
+#define LSCROLL_MS 30u
+static uint32_t g_scroll_ms;                            /* (the popup's age, set by the caller) */
+static void lrow(mr_canvas_t *cv, int y, const char *s)
+{
+    const int w = v2_tw(s, 2);
+    int off, x;
+    if (w <= 62) {
+        v2_TC(cv, 32, y, s, 2, 1);
+        return;
+    }
+    {
+        const uint32_t run = (uint32_t)(w - 62) * LSCROLL_MS, cyc = LSCROLL_HOLD * 2 + run, t = g_scroll_ms % cyc;
+        off = t < LSCROLL_HOLD ? 0 : t >= LSCROLL_HOLD + run ? w - 62 : (int)((t - LSCROLL_HOLD) / LSCROLL_MS);
+    }
+    for (x = 0; s[x]; x++) {                            /* (each glyph clipped to the half) */
+        const uint8_t *g = mr_glyph(s[x]);
+        int i, j;
+        for (i = 0; i < 5; i++)
+            for (j = 0; j < 8; j++)
+                if (g[i] >> j & 1) {
+                    const int px = 1 + x * 12 + i * 2 - off;
+                    if (px >= 1 && px + 1 <= 62)
+                        v2_R(cv, px, y + j * 2, 2, 2, 1);
+                }
+    }
+}
+static void lpop(mr_canvas_t *cv, const char *label, const char *val)   /* the name (a row), the value */
+{
+    int k;
+    v2_R(cv, 0, 0, 64, 64, 0);
+    lrow(cv, 8, label);
+    if (!val || !val[0])
+        return;
+    k = v2_tw(val, 4) <= 62 ? 4 : 2;
+    if (k == 4)
+        v2_TC(cv, 32, 28, val, 4, 1);
+    else
+        lrow(cv, 34, val);
+}
+/* a button's or key's label: wrapped at spaces onto up to 3 rows of 2x, a row that does not fit scrolling */
+static void label_rows(mr_canvas_t *cv, const char *text)
+{
+    char r[3][RFM_MOVE_LABEL_MAX + 8];
+    const char *p = text;
+    int n = 0, i;
+    v2_R(cv, 0, 0, 64, 64, 0);
+    while (*p == ' ')
+        p++;
+    while (*p && n < 3) {                               /* greedy: words while the row fits; the third takes the rest */
+        int len = 0, end;
+        while (p[len] && p[len] != ' ')
+            len++;                                      /* (the first word, whatever its width) */
+        end = len;
+        while (n < 2 && p[end] == ' ') {
+            char t[RFM_MOVE_LABEL_MAX + 8];
+            int e = end + 1;
+            while (p[e] && p[e] != ' ')
+                e++;
+            snprintf(t, sizeof t, "%.*s", e, p);
+            if (v2_tw(t, 2) > 62)
+                break;
+            end = e;
+        }
+        if (n == 2)
+            end = (int)strlen(p);
+        snprintf(r[n], sizeof r[n], "%.*s", end, p);
+        p += end, n++;
+        while (*p == ' ')
+            p++;
+    }
+    for (i = 0; i < n; i++)
+        lrow(cv, n == 1 ? 24 : n == 2 ? 14 + i * 22 : 3 + i * 21, r[i]);
+}
+
 /* a value popup: the left half (the name, the value), else the whole screen (the name, the value, a bar) */
 static void value_pop(mr_canvas_t *cv, const char *label, const char *val, double frac, int bar)
 {
     if (g_half) {
-        v2_lpop(cv, label, val);
+        lpop(cv, label, val);
         return;
     }
     mr_gfx_clear(cv, 0);
@@ -177,6 +258,8 @@ static void value_popup(const rfm_move_t *m, mr_canvas_t *cv)
         const int e = m->pop == POP_SELECT ? RFM_MOVE_E_SELECT : rfm_move_knob_enc(i), t = m->pop_val;
         rfmv_tcase(enc_label(m, e), l, sizeof l);
         snprintf(v, sizeof v, t ? "%+d" : "0", t);
+        if (m->pop_blank)                               /* (0.5.6: touched, not turned: the name alone) */
+            v[0] = 0;
         value_pop(cv, l, v, clampi(t, -32, 32) / 32.0, 2);
         return;
     }
@@ -565,6 +648,9 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
              !(m->pop == POP_MODE && m->pop_i < 4 && rfmv_hold_shown(m, m->pop_i));   /* (its button held: its menu) */
     if (up && m->pop == POP_STEP && (q->view || q->projects || m->s.mode != RFM_MOVE_MODE_SEQ))
         up = 0;
+    if (up && m->pop == POP_LABEL && rfmv_now_ms(m) - m->pop_ms < m->pop_delay)
+        up = 0;                                         /* (0.5.6: a button not yet held long enough) */
+    g_scroll_ms = rfmv_now_ms(m) - m->pop_t0;
     if (msg && (!up || (int32_t)(q->msg_ms - m->pop_ms) >= 0)) {
         message_popup(m, cv);
         return;
@@ -620,7 +706,13 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             project_popup(m, cv);
         else if (m->pop == POP_HOST)
             host_popup(m, cv);
-        else
+        else if (m->pop == POP_LABEL) {                 /* (0.5.6) FM-1 mode: a button's or key's label */
+            char t[RFM_MOVE_LABEL_MAX + 1], l[RFM_MOVE_LABEL_MAX + 8];
+            if (g_half && rfmv_label(m, m->pop_i, t, sizeof t)) {
+                rfmv_tcase(t, l, sizeof l);
+                label_rows(cv, l);
+            }
+        } else
             value_popup(m, cv);
         return;
     }

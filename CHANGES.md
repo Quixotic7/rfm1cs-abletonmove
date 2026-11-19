@@ -3,6 +3,29 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.6 (2026-11-19)
+
+The firmware's labels on the Move (the labels plan's phase 0; the owner's answers). `rfm_move_t` has new last
+fields: rebuild everything. No format changes.
+
+- **`rfm_move_set_labels(core, lbl[49])`**: the live labels in DYNAMIC-LABELS order (`RFM_MOVE_LBL_*`: 0..7 knobs by
+  FM1P_E_* role, 8..21 buttons by FM1P_B_*, 22..37 white keys F3..G5, 38..48 black keys F#3..F#5), as the host's
+  `fw_label(fw, i)` gives them. NULL entry: none given; "" = no job (nothing shown). The knobs' entries also set
+  `rfm_move_set_label`'s (which keeps working; its "" is still the default name). NULL array: all cleared.
+- **`rfm_move_set_button_names(core, names[14])`** (FM1P_B_* order): a button's name when its live label is NULL.
+- **FM-1 mode**: a mapped button held 300 ms (`RFM_MOVE_LABEL_HOLD_MS`) shows its label (a tap: nothing); while
+  any FM-1 button is held every other button, pad or step (its key) and knob pressed shows its label at once, read
+  when drawn (a label the firmware changes meanwhile shows changed). Up while held, a second after the release.
+- **Knob touch** (FM-1 mode and MIDI's NOTES view): a touch alone shows the knob's name, no value yet (MASTER its
+  level); turning shows the detents as before. A knob labelled "" shows no popup.
+- **Left half only, 2x only**: a name that does not fit scrolls (still 0.7 s, 30 ms a pixel, still, again); the
+  knob popups' 1x fallback is gone. A button's or key's label wraps at spaces onto up to three rows.
+
+**Tests:** `move` `test_labels` (967 checks): the tap and the 300 ms hold, keys only while a button is held, a
+static name, a live rename, "" for a button and a knob, the knob touch, the scroll, other modes, cleared labels.
+Contact sheet `move_labels_sheet.pbm` (and `move_labels_*.pbm`). The knob and master goldens changed ("Cutoff" and
+"Master" scroll at 2x now instead of 1x); FM-1 mode's touch checks now expect the name.
+
 ## 0.5.5 (2026-11-19)
 
 The sequencer runs on its own clock (the owner's: it locked up and stalled following a firmware). `rfm_move_seq_t`
