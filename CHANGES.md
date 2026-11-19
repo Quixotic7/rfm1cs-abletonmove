@@ -19,8 +19,15 @@ version: `fw_fx` rides in bit 7 of the FX page byte (an older build reading it f
 - **FX setup is remembered across the flip**, on its page: left showing FX setup (by any way out), the view opens on
   it again (Back, Shift + step 1, Track 1 held + step 1 alike); left on a firmware or project page, it opens there as
   before. Saved in the settings (`fw_fx`), so it survives a restart.
+- **FX setup's knob popups on touch** (the owner's): with a module selected (MIDI FX, Audio FX) or on the Mixer, a
+  knob touched shows its parameter popup (name, value, a list's word) for as long as it is touched; a turn updates
+  it; letting go drops it at once, as FM-1 mode's knob popups. A knob with no parameter there (past the module's
+  count, the Mixer's knobs 6..8, the Routing page, the module list open): no popup. Untouched turns (a host without
+  touch) keep the 1 s popup.
 
-**Tests:** `move_fw` `test_flip_fx` (447 checks in all): the popups both ways (FM-1, MIDI, Firmwares, Projects,
+**Tests:** `move_fw` `test_fx_touch` (touch shows, held without turning stays, a turn keeps it, release hides, a knob
+with no parameter, the Mixer's Pan; renders `fw_fx_touch_param.pbm`, `fw_fx_touch_mix_pan.pbm`; 462 checks in all)
+and `test_flip_fx`: the popups both ways (FM-1, MIDI, Firmwares, Projects,
 FX & Mix) and the first press dropping it, Back out of FX setup, Back in to FX setup on the Mix page, the settings
 round trip, Menu still toggling, a module list closed first, Track 1 held + step 1 opening FX setup; `test_back` and
 `test_fx` updated. Renders: `fw_flip_out_mode.pbm`, `fw_flip_in_firmwares.pbm`, `fw_flip_in_fx.pbm`.

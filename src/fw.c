@@ -568,7 +568,9 @@ static void pop_msg(rfm_move_t *m, int kind, int a, int b, const char *t)
 static int pop_up(const rfm_move_t *m, int kind)
 {
     const rfm_move_fw_state_t *f = &m->fw;
-    return f->pop && (kind < 0 || f->pop == kind) && rfmv_now_ms(m) - f->pop_ms < RFM_MOVE_POPUP_MS;
+    return f->pop && (kind < 0 || f->pop == kind) &&
+           (rfmv_now_ms(m) - f->pop_ms < RFM_MOVE_POPUP_MS || (f->pop == FP_PARAM && f->pop_b));   /* (0.4.5: an FX
+                                                         * parameter's knob touched: up while it is) */
 }
 static void pop_clear(rfm_move_t *m) { m->fw.pop = FP_NONE; }
 
@@ -1352,6 +1354,23 @@ static void fx_load(rfm_move_t *m, int kind, int slot, int mod)
     act_fx_load(m, kind, slot);
     rfmv_seq_dirty(m);
 }
+/* (0.4.5) a knob with a parameter on this FX page (the Mixer's Level, Pan, sends; a selected module's parameters) */
+static int fx_knob_param(const rfm_move_t *m, int k)
+{
+    const int pg = fx_page(m), kind = pg == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO;
+    if (m->fw.browse >= 0 || k < 0 || k >= RFM_MOVE_NKNOBS)
+        return 0;
+    if (pg == PG_MIX)
+        return k <= 4;
+    if (pg == PG_MIDI || pg == PG_AUDIO) {
+        const rfm_move_fxslot_t *sl = kind == RFM_MOVE_FX_MIDI ? &m->seq.fx.mfx[m->fw.fx_focus] : &m->seq.fx.afx[m->fw.fx_focus];
+        const rfm_move_fx_module_t *md = module(m, kind, sl->mod);
+        return md && k < nparams(md);
+    }
+    return 0;
+}
+/* .. the knob still touched (its popup up by a touch) */
+static int touching(const rfm_move_t *m, int k) { return m->fw.pop == FP_PARAM && m->fw.pop_a == k && m->fw.pop_b; }
 static void fx_input(rfm_move_t *m, const mr_event_t *ev)
 {
     rfm_move_fw_state_t *f = F(m);
@@ -1424,7 +1443,7 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
             f->browse = (int8_t)(fxslot(m, kind, i)->mod + 1);
         return;
     case MR_EV_KNOB: {
-        const int k = ev->index, d = ev->value;
+        const int k = ev->index, d = ev->value, tch = touching(m, k);
         if (k < 0 || k >= RFM_MOVE_NKNOBS || !d)
             return;
         if (pg == PG_MIX) {
@@ -1440,7 +1459,7 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
                 }
             } else
                 return;
-            pop(m, FP_PARAM, k, 0);
+            pop(m, FP_PARAM, k, tch);
             return;
         }
         if (pg == PG_MIDI || pg == PG_AUDIO) {
@@ -1458,7 +1477,7 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
                 nv = ((sl->val[k] + n) % nw + nw) % nw;
             } else
                 nv = clampi(sl->val[k] + d, 0, 127);
-            pop(m, FP_PARAM, k, 0);
+            pop(m, FP_PARAM, k, tch);
             if (nv != sl->val[k]) {
                 sl->val[k] = (uint8_t)nv;
                 act_fx_param(m, kind, i, k);
@@ -1467,10 +1486,20 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
         }
         return;
     }
-    case MR_EV_TOUCH:
-        if (!ev->value && ev->index < RFM_MOVE_NKNOBS)
-            f->knob_acc[ev->index] = 0;
+    case MR_EV_TOUCH: {
+        const int k = ev->index;
+        if (k < 0 || k >= RFM_MOVE_NKNOBS)
+            return;
+        if (!ev->value) {
+            f->knob_acc[k] = 0;
+            if (f->pop == FP_PARAM && f->pop_a == k && f->pop_b)
+                pop_clear(m);                           /* (let go: gone at once, as FM-1 mode's knob popups) */
+            return;
+        }
+        if (fx_knob_param(m, k))                        /* (0.4.5) touched: its parameter, while it is touched */
+            pop(m, FP_PARAM, k, 1);
         return;
+    }
     default: return;
     }
 }

@@ -72,6 +72,7 @@ static void step(rfm_move_t *m, int s, int down) { raw(m, down ? 0x90 : 0x80, (u
 static void tap_step(rfm_move_t *m, int s) { step(m, s, 1), step(m, s, 0); }
 static void button(rfm_move_t *m, int cc, int down) { raw(m, 0xB0, (uint8_t)cc, down ? 127 : 0); }
 static void press(rfm_move_t *m, int cc) { button(m, cc, 1), button(m, cc, 0); }
+static void touch(rfm_move_t *m, int k, int on) { raw(m, on ? 0x90 : 0x80, (uint8_t)k, on ? 127 : 0); }
 static void knob(rfm_move_t *m, int k, int d) { raw(m, 0xB0, (uint8_t)(MR_CC_KNOB1 + k), (uint8_t)(d & 127)); }
 
 static void jog(rfm_move_t *m, int d) { raw(m, 0xB0, MR_CC_JOG, (uint8_t)(d & 127)); }
@@ -1481,6 +1482,52 @@ static void test_flip_fx(void)
     rfm_move_set_mode(m, RFM_MOVE_MODE_FM1);
 }
 
+/* (0.4.5) FX setup: a knob touched shows its parameter for as long as it is touched (a turn updates it; let go: gone
+ * at once); a knob with no parameter there: nothing */
+static void test_fx_touch(void)
+{
+    rfm_move_t *m = &M;
+    uint8_t img[MR_SCREEN_BYTES];
+    fixture(m);
+    press(m, MR_CC_MENU);                               /* FX setup, MIDI FX, slot 1: Arp */
+    CHECK(m->fw.fx && m->s.fx_page == 0 && m->seq.fx.mfx[0].mod >= 0);
+    rest_pop(m);
+    touch(m, 0, 1);
+    CHECK(m->fw.pop == FP_PARAM && m->fw.pop_a == 0 && rfmv_fw_timed(m));
+    screen(m), memcpy(img, scr, sizeof img), write_pbm("fx_touch_param");
+    adv_ms(m, 3 * RFM_MOVE_POPUP_MS);                   /* held, no turn: still up */
+    CHECK(m->fw.pop == FP_PARAM && rfmv_fw_timed(m));
+    screen(m);
+    CHECK(!memcmp(scr, img, sizeof img));
+    knob(m, 0, 1);                                      /* a turn: updated, still held */
+    adv_ms(m, 3 * RFM_MOVE_POPUP_MS);
+    CHECK(m->fw.pop == FP_PARAM && m->fw.pop_b && rfmv_fw_timed(m));
+    touch(m, 0, 0);                                     /* let go: gone */
+    CHECK(!rfmv_fw_timed(m));
+    screen(m);
+    CHECK(memcmp(scr, img, sizeof img) != 0);
+    knob(m, 1, 1);                                      /* untouched turn: the timed popup, as before */
+    CHECK(m->fw.pop == FP_PARAM && !m->fw.pop_b);
+    rest_pop(m);
+    CHECK(!rfmv_fw_timed(m));
+    touch(m, 7, 1);                                     /* knob 8: no parameter on Arp: nothing */
+    CHECK(!rfmv_fw_timed(m));
+    touch(m, 7, 0);
+    /* the Mixer: Level, Pan, sends; knob 6 nothing */
+    tap_track(m, 3), rest_pop(m);
+    CHECK(m->s.fx_page == 3);
+    touch(m, 1, 1);
+    adv_ms(m, 3 * RFM_MOVE_POPUP_MS);
+    CHECK(m->fw.pop == FP_PARAM && m->fw.pop_a == 1 && rfmv_fw_timed(m));
+    screen(m), write_pbm("fx_touch_mix_pan");
+    touch(m, 1, 0);
+    CHECK(!rfmv_fw_timed(m));
+    touch(m, 5, 1);
+    CHECK(!rfmv_fw_timed(m));
+    touch(m, 5, 0);
+    press(m, MR_CC_MENU);
+}
+
 int main(void)
 {
     test_nolist();
@@ -1496,6 +1543,7 @@ int main(void)
     test_back();
     test_down();
     test_flip_fx();
+    test_fx_touch();
     test_states();
     test_midi_track();
     test_old_formats();
