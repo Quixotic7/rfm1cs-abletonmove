@@ -2520,6 +2520,30 @@ int rfmv_fw_switch(rfm_move_t *m, int t)
         rfmv_pop(m, POP_FW, t);
     return 1;
 }
+/* (0.4.4) Down in FM-1 mode: the next loaded slot after the active one (1 -> 2 -> 3 -> 1, empty ones skipped); with
+ * only one loaded, its name again. 1 done */
+int rfmv_fw_cycle(rfm_move_t *m)
+{
+    const rfm_move_fw_state_t *f = F(m);
+    int i;
+    if (!f->host)
+        return 0;
+    for (i = 1; i <= RFM_MOVE_FW_SLOTS; i++) {
+        const int s = (f->active + i) % RFM_MOVE_FW_SLOTS;
+        if (slot_loaded(m, s))
+            return rfmv_fw_switch(m, s);
+    }
+    return 0;
+}
+int rfmv_fw_loaded(const rfm_move_t *m)             /* loaded slots, 0 with no host list */
+{
+    int s, n = 0;
+    if (!m->fw.host)
+        return 0;
+    for (s = 0; s < RFM_MOVE_FW_SLOTS; s++)
+        n += slot_loaded(m, s);
+    return n;
+}
 void rfmv_fw_slot_name(const rfm_move_t *m, int s, char *o, int cap)
 {
     if (s >= 0 && s < RFM_MOVE_FW_SLOTS)

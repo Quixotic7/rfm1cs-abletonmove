@@ -3,6 +3,24 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.4.4 (2026-11-18)
+
+The FM-1 mode button layout the owner chose: Back flips (as in 0.4.3), Up is SEQ, Down cycles the firmwares. No API,
+format, action or `rfm_move_t` changes.
+
+- **Up presses the FM-1's SEQ in FM-1 mode** (press and release like the other mapped buttons; its LED shows SEQ's
+  level). `rfm_move_button_of(MR_CC_UP)` is now `RFM_MOVE_B_SEQ`. In the MIDI modes Up / Down stay the octave;
+  Sequencer mode and the projects view keep theirs; Track 4 held + Up / Down is still the rate.
+- **Down cycles the firmware slots in FM-1 mode**: on the press, `FW_ACTIVE` for the next loaded slot after the
+  playing one (1 → 2 → 3 → 1, empty slots skipped), with the Back + Track popup naming it. With only one slot
+  loaded: the popup names it, nothing is sent. No firmware list: nothing. Held: no repeat. Its LED is lit (127)
+  when another loaded slot is there to go to, off otherwise.
+- FM-1 mode only, as the MIDI modes need Down for the octave and Sequencer mode uses it.
+
+**Tests:** `move` (the Up mapping, its press / release and LED; Down without a list; the MIDI modes' octave) and
+`move_fw` `test_down` (424 checks in all): the cycle with slot 3 empty and with three, one slot, the LED, a long
+hold, the MIDI and Sequencer modes. Render: `fw_down_cycle_firmware.pbm`.
+
 ## 0.4.3 (2026-11-18)
 
 Back becomes the way between the modes and the projects view (the owner's), and leaving Loop shows the sequencer at

@@ -195,13 +195,28 @@ static void test_buttons_knobs(void)
         }
     }
     CHECK(covered == (((1 << 14) - 1) & ~(1 << RFM_MOVE_B_SEQ)) && rfm_move_button_of(MR_CC_BACK) < 0);
-    CHECK(rfm_move_button_of(MR_CC_UP) < 0 && rfm_move_button_of(MR_CC_DOWN) < 0 &&
+    CHECK(rfm_move_button_of(MR_CC_UP) == RFM_MOVE_B_SEQ && rfm_move_button_of(MR_CC_DOWN) < 0 &&
           rfm_move_button_of(MR_CC_TRACK1) < 0);
+    /* (0.4.4) FM-1 mode: Up is the FM-1's SEQ; Down (no host firmware list here) nothing; no octave */
     rfm_move_set_mode(&m, 0);
     clear();
-    button(&m, MR_CC_UP, 1), button(&m, MR_CC_UP, 0);   /* FM-1 mode: Up / Down do nothing */
+    button(&m, MR_CC_UP, 1);
+    CHECK(nact == 1 && has(RFM_MOVE_ACT_BTN, RFM_MOVE_B_SEQ, 1, 0));
+    button(&m, MR_CC_UP, 1);
+    CHECK(nact == 1);
+    button(&m, MR_CC_UP, 0);
+    CHECK(nact == 2 && has(RFM_MOVE_ACT_BTN, RFM_MOVE_B_SEQ, 0, 0));
+    clear();
     button(&m, MR_CC_DOWN, 1), button(&m, MR_CC_DOWN, 0);
     CHECK(nact == 0 && m.s.octave == 0);
+    /* .. the MIDI modes: Up the octave, not SEQ */
+    rfm_move_set_mode(&m, 1);
+    clear();
+    button(&m, MR_CC_UP, 1), button(&m, MR_CC_UP, 0);
+    CHECK(count(RFM_MOVE_ACT_BTN) == 0 && m.s.octave == 1);
+    button(&m, MR_CC_DOWN, 1), button(&m, MR_CC_DOWN, 0);
+    CHECK(m.s.octave == 0);
+    rfm_move_set_mode(&m, 0);
 
     /* the knobs, the jog wheel, the volume knob */
     for (i = 0; i < 8; i++) {
@@ -526,11 +541,11 @@ static void test_leds(void)
     rfm_move_panel(&m, lv, 255);
     n = rfm_move_leds(&m, out, RFM_MOVE_NLEDS);
     CHECK(n == 1 && out[0].cc && out[0].number == MR_CC_PLAY && out[0].r == 0 && out[0].g == 255 && out[0].b == 0);
-    /* SEQ's LED (id 11 at row 1 column 1): (0.4.3) nowhere, Back is no FM-1 button now */
+    /* SEQ's LED (id 11 at row 1 column 1): (0.4.4) on Up, in FM-1 mode */
     lv[1 * 4 + 0] = 255;
     rfm_move_panel(&m, lv, 255);
     n = rfm_move_leds(&m, out, RFM_MOVE_NLEDS);
-    CHECK(n == 0);
+    CHECK(n == 1 && out[0].cc && out[0].number == MR_CC_UP && out[0].r == 127);
     /* a mode change repaints what changes, once; at most max a call, the rest next time */
     track(&m, 1, 1), track(&m, 1, 0);
     n = rfm_move_leds(&m, out, 5);

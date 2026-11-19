@@ -53,6 +53,7 @@ static const struct { uint8_t cc, b; } BUTTONS[] = {
     { MR_CC_MENU, RFM_MOVE_B_HOME }, { MR_CC_UNDO, RFM_MOVE_B_SAVE }, { MR_CC_LOOP, RFM_MOVE_B_ARP },
     { MR_CC_PLAY, RFM_MOVE_B_PLAY },   /* (0.4.3: Back is the view flip, no longer SEQ) */ { MR_CC_REC, RFM_MOVE_B_REC },
     { MR_CC_LEFT, RFM_MOVE_B_OCTDN }, { MR_CC_RIGHT, RFM_MOVE_B_OCTUP },
+    { MR_CC_UP, RFM_MOVE_B_SEQ },   /* (0.4.4: FM-1 mode only; the MIDI modes' octave there) */
 };
 #define NBUTTONS ((int)(sizeof BUTTONS / sizeof BUTTONS[0]))
 
@@ -669,7 +670,12 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
     }
     if (cc == MR_CC_SHIFT)
         m->shift_down = (uint8_t)down;
-    if (cc == MR_CC_UP || cc == MR_CC_DOWN) {
+    if (cc == MR_CC_DOWN && m->s.mode == RFM_MOVE_MODE_FM1) {
+        if (down)                                       /* (0.4.4) FM-1 mode: the next loaded firmware (no repeat) */
+            rfmv_fw_cycle(m);
+        return;
+    }
+    if ((cc == MR_CC_UP && midi_mode(m)) || cc == MR_CC_DOWN) {   /* (FM-1 mode's Up: the FM-1's SEQ, below) */
         const int o = clampi(m->s.octave + (cc == MR_CC_UP ? 1 : -1), RFM_MOVE_OCT_MIN, RFM_MOVE_OCT_MAX);
         if (down && midi_mode(m) && o != m->s.octave) {
             m->s.octave = (int8_t)o;
@@ -1132,8 +1138,10 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
     for (i = 0; i < 13; i++) {
         const int cc = WHITE_CC[i], b = rfm_move_button_of(cc);
         int v = 0;
-        if (cc == MR_CC_UP || cc == MR_CC_DOWN)
-            v = !midi_mode(m) ? 0 : (cc == MR_CC_UP ? m->s.octave > 0 : m->s.octave < 0) ? 127 : 24;
+        if (cc == MR_CC_DOWN && !midi_mode(m))
+            v = rfmv_fw_loaded(m) > 1 ? 127 : 0;       /* (0.4.4: lit with another firmware to cycle to) */
+        else if (cc == MR_CC_UP || cc == MR_CC_DOWN)
+            v = !midi_mode(m) ? clampi(alpha(level_of(m, b)) * 127 / 256, 6, 127) : (cc == MR_CC_UP ? m->s.octave > 0 : m->s.octave < 0) ? 127 : 24;
         else if (b >= 0)
             v = clampi(alpha(level_of(m, b)) * 127 / 256, 6, 127);
         wv[i] = (uint8_t)v;

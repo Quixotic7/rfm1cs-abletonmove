@@ -1367,6 +1367,56 @@ static void test_back(void)
     press(m, MR_CC_BACK);
 }
 
+/* (0.4.4) Down in FM-1 mode: the next loaded firmware (1 -> 2 -> 3 -> 1, empty slots skipped), its popup; lit with
+ * another to go to. The MIDI modes and Sequencer mode keep Down */
+static void test_down(void)
+{
+    rfm_move_t *m = &M;
+    const act_t *a;
+    uint8_t rgb[3];
+    fixture(m);
+    press(m, MR_CC_BACK);
+    rfm_move_set_mode(m, RFM_MOVE_MODE_FM1);
+    CHECK(!m->seq.projects && m->fw.active == 0);
+    CHECK(led_of(m, 1, MR_CC_DOWN, rgb) && rgb[0] == 127);
+    rest_pop(m), clear();
+    button(m, MR_CC_DOWN, 1);
+    CHECK(m->fw.active == 1 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && a->a.slot == 1 && !strcmp(a->id, "choralroot") &&
+          m->pop == POP_FW && !m->seq.projects && m->s.mode == RFM_MOVE_MODE_FM1 && count(RFM_MOVE_ACT_BTN) == 0);
+    adv_ms(m, 1500);                                    /* (held: no repeat) */
+    button(m, MR_CC_DOWN, 0);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && m->s.octave == 0);
+    screen(m), write_pbm("down_cycle_firmware");
+    press(m, MR_CC_DOWN);                               /* slot 3 empty: back to 1 */
+    CHECK(m->fw.active == 0 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && a->a.slot == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 2);
+    three(m);
+    clear();
+    press(m, MR_CC_DOWN), press(m, MR_CC_DOWN), press(m, MR_CC_DOWN);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 3 && m->fw.active == 0);
+    /* one loaded slot: its name only, nothing played; unlit */
+    rfm_move_fw_slots(m, (const char *const[3]){ "sloop", NULL, NULL });
+    rest_pop(m), clear();
+    press(m, MR_CC_DOWN);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.active == 0 && m->pop == POP_FW);
+    CHECK(led_of(m, 1, MR_CC_DOWN, rgb) && rgb[0] == 0);
+    /* the MIDI modes: the octave; Sequencer mode: its own (no firmware) */
+    rfm_move_fw_slots(m, (const char *const[3]){ "sloop", "choralroot", NULL });
+    rfm_move_set_mode(m, RFM_MOVE_MODE_MIDI);
+    clear();
+    press(m, MR_CC_DOWN);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->s.octave == -1);
+    press(m, MR_CC_UP);
+    rfm_move_set_mode(m, RFM_MOVE_MODE_SEQ);
+    clear();
+    press(m, MR_CC_DOWN);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.active == 0);
+    /* Up in FM-1 mode: the FM-1's SEQ */
+    rfm_move_set_mode(m, RFM_MOVE_MODE_FM1);
+    clear();
+    press(m, MR_CC_UP);
+    CHECK(count(RFM_MOVE_ACT_BTN) == 2 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0);
+}
+
 int main(void)
 {
     test_nolist();
@@ -1380,6 +1430,7 @@ int main(void)
     test_filter_popup();
     test_download_load();
     test_back();
+    test_down();
     test_states();
     test_midi_track();
     test_old_formats();

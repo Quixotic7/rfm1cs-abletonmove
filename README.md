@@ -134,7 +134,8 @@ while it turns (the firmware's SELECT label, its detents), gone and counted from
 | knob 1, 2, 5, 6, 7, 8 (3 and 4 unused) | PRESETS, ALGO, K1, K2, K3, K4: an FM-1 detent every 2 of the Move's ticks (`RFM_MOVE_KNOB_TICKS`, the owner's: half as fast; a turn back or the knob let go forgets a half); the same in MIDI mode |
 | jog wheel turn | SELECT (the click does nothing: the FM-1 has no encoder push) |
 | volume knob | MASTER, 16 a detent, 0..1023 |
-| Up / Down | nothing (they are the MIDI modes' octave) |
+| Up | SEQ (0.4.4; FM-1 mode only: the MIDI modes' octave there), its LED SEQ's level |
+| Down | the next loaded firmware (0.4.4; FM-1 mode only): see [Up and Down in FM-1 mode](#up-and-down-in-fm-1-mode-044) |
 
 Pads glow white (white keys) or pink `#ff7aa8` (black keys) at the FM-1's own LED level for that key (panel.js's
 `ledAlpha` curve, as the OMX-27's `leds(keyLevel)`), never below a faint floor so the keyboard stays visible; a
@@ -423,6 +424,17 @@ Back works the same in every mode and in the projects view, on its release:
 
 Shift + step 1 and Track 1 held + step 1 still open the projects view.
 
+## Up and Down in FM-1 mode (0.4.4)
+
+The owner's layout: Back flips, Up is the FM-1's SEQ, Down cycles the firmwares.
+
+| Button | FM-1 mode | MIDI modes (2, 3) | Sequencer mode | projects view |
+|---|---|---|---|---|
+| Up | the FM-1's SEQ (press and release; its LED SEQ's level) | octave up | as before (its own) | as before (its own) |
+| Down | the next loaded firmware slot after the playing one, 1 → 2 → 3 → 1, empty slots skipped (`FW_ACTIVE`, the same popup as Back + Track); with only one loaded, its name and nothing played; no firmware list: nothing. On the press; held: no repeat. Lit when another firmware is loaded to go to | octave down | as before | as before |
+
+Track 4 held + Up / Down is still the selected sequencer track's rate in every mode.
+
 ## Firmwares (0.4.0): the projects view's Tracks 1..3, FX setup, states
 
 The owner's design (move-firmware-browser-design.md, revision 2) and its mockup's screens (ported pixel for pixel,
@@ -507,7 +519,9 @@ The sequencer's (the design gives labels only):
   time. A live pad note and a sequenced note on the same channel and note are not reconciled.
 
 - **Back is the view flip (0.4.3, the owner's).** Until 0.4.2 Back pressed the FM-1's SEQ (the design labels it "OCT-",
-  a second OCT- beside Left, and maps nothing to SEQ). Now no Move button presses SEQ.
+  a second OCT- beside Left, and maps nothing to SEQ). Since 0.4.4 Up presses SEQ, in FM-1 mode only.
+- **Down cycles only in FM-1 mode (0.4.4).** The MIDI modes need it for the octave and Sequencer mode uses it, and the
+  projects view has its Tracks for the firmwares.
 - **MIDI modes keep the FM-1 mapping elsewhere**: only the pads, steps and Up / Down change in mode 2 (and the
   knobs and jog wheel in mode 3); Left / Right, the named buttons and the knobs stay the FM-1's. Mode 4 takes over
   everything but the Track buttons and the volume knob.
