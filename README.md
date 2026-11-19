@@ -194,8 +194,9 @@ Track tap does, the owner's).
 **Tracks: Track 4 held** (the owner's). The 16 steps are the 16 tracks: **a tap selects** one, **a double tap solos**
 it (on / off), **a hold mutes** it (on / off, 300 ms). LEDs: the selected track full, the others dim, muted red,
 soloed blue. Solo: while any track is soloed only the soloed tracks sound. While Track 4 is held the knobs set the
-bank's CC numbers ("K3 CC74"), the pads the layout (top row) and scale (row 2), Up / Down the rate, the jog the MIDI
-channel; Copy / Delete + a step copy / clear a track; Mute + step mutes. The track view shows which of the 16 (a 4 x
+bank's CC numbers ("K3 CC74"), Up / Down the rate, the jog the MIDI channel; Copy / Delete + a step copy / clear a
+track; Mute + step mutes. The pads do nothing while it is held (0.5.0, the owner's: the layout and scale are Track
+2's; Track 2 held in Sequencer mode sets the selected track's). The track view shows which of the 16 (a 4 x
 4 in the top-right corner: tracks 1-4 the first column, the selected one filled). Session view's Left / Right move
 its 8 columns through the 16 tracks.
 

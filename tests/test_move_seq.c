@@ -1906,8 +1906,10 @@ static void test_controls(void)
     i = m->s.cc[0][2];
     knob(m, 2, -1);
     CHECK(m->s.cc[0][2] == i - 1 && m->menu_what == MENU_CC);
-    pad(m, 25, 100), pad(m, 25, 0);                     /* chromatic */
-    CHECK(m->s.layout == RFM_MOVE_LAYOUT_CHROMATIC);
+    pad(m, 25, 100), pad(m, 25, 0);                     /* (0.5.0: the pads do nothing; Track 2's job) */
+    CHECK(m->s.layout != RFM_MOVE_LAYOUT_CHROMATIC);
+    track(m, 1, 1), pad(m, 25, 100), pad(m, 25, 0), track(m, 1, 0);   /* (Track 2 held too: chromatic) */
+    CHECK(m->s.layout == RFM_MOVE_LAYOUT_CHROMATIC && m->s.mode == RFM_MOVE_MODE_SEQ);
     press(m, MR_CC_DOWN);                               /* 1/16 -> 1/8T: slower */
     CHECK(m->seq.tr[0].rate == RFM_MOVE_SEQ_RATE_16 + 1 && m->menu_what == MENU_RATE);
     press(m, MR_CC_DOWN), press(m, MR_CC_UP), press(m, MR_CC_DOWN);   /* 1/8 */
@@ -2261,8 +2263,9 @@ static void test_tracks16(void)
     clear();
     pad(m, 0, 100), pad(m, 0, 0);
     CHECK(find_midi(0x9C, 48, 100, NULL));              /* (track 13 plays channel 13) */
-    /* each track its own layout and CC numbers (Track 4 held: the top row's pads, the knobs, the steps) */
-    track(m, 3, 1), pad(m, 26, 100), pad(m, 26, 0), knob(m, 0, 5);
+    /* each track its own layout and CC numbers (Track 4 held: the knobs, the steps; 0.5.0: Track 2 held the layout) */
+    track(m, 1, 1), pad(m, 26, 100), pad(m, 26, 0), track(m, 1, 0);
+    track(m, 3, 1), knob(m, 0, 5);
     CHECK(m->s.layout == RFM_MOVE_LAYOUT_DRUM && m->s.cc[0][0] == 21);
     now_ms += 1000;
     tap_step(m, 14);                                    /* track 15: its own (the defaults) */

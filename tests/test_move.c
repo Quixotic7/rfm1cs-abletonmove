@@ -1408,6 +1408,31 @@ static void test_menu_knob_leds(void)
     CHECK(!memcmp(a, n0, 3));
 }
 
+/* (0.5.0) the owner's: Track 4 held + a pad changes neither the layout nor the scale (Track 2's job), in any mode;
+ * Track 2 held + a pad still does */
+static void test_track4_pads(void)
+{
+    static rfm_move_t m;
+    int mode;
+    rfm_move_init(&m, NULL, on_act, NULL);
+    for (mode = 0; mode < 4; mode++) {
+        rfm_move_set_mode(&m, mode);
+        m.s.layout = RFM_MOVE_LAYOUT_SCALE, m.s.scale = RFM_MOVE_SCALE_MAJOR;
+        clear();
+        track(&m, 3, 1);
+        pad(&m, 25, 100), pad(&m, 25, 0);               /* (top row, 2nd: CHROMA under Track 2) */
+        pad(&m, 3, 100), pad(&m, 3, 0);                 /* (a scale pad) */
+        now_ms += 400, track(&m, 3, 0);                 /* (a hold: no mode change) */
+        CHECKF(m.s.layout == RFM_MOVE_LAYOUT_SCALE && m.s.scale == RFM_MOVE_SCALE_MAJOR && count(RFM_MOVE_ACT_SETTINGS) == 0,
+               "mode %d: layout %d scale %d", mode, m.s.layout, m.s.scale);
+        track(&m, 1, 1);
+        pad(&m, 25, 100), pad(&m, 25, 0);
+        pad(&m, 3, 100), pad(&m, 3, 0);
+        now_ms += 400, track(&m, 1, 0);
+        CHECKF(m.s.mode == mode && m.s.layout == RFM_MOVE_LAYOUT_CHROMATIC && m.s.scale == rfmv_scale_of_pad(3), "mode %d", mode);
+    }
+}
+
 int main(void)
 {
     test_fm1_pads();
@@ -1415,6 +1440,7 @@ int main(void)
     test_buttons_knobs();
     test_modes();
     test_layouts();
+    test_track4_pads();
     test_drum_settings();
     test_control();
     test_leds();

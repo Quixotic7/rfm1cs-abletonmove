@@ -37,6 +37,9 @@ pages (0.5.0)". **Rebuild everything**: `rfm_move_fx_module_t`, `rfm_move_fx_par
 - **Projects version 6**: 128 values a slot (`RFM_MOVE_FXSET_BYTES` +720; `RFM_MOVE_PROJECT_MAX` 40136,
   `RFM1CS_FILE_MAX` 1284680; `move-core.js` `PROJECT_MAX` too). Version 5 loads: 8 values as parameters 0..7, the
   rest unset (255) until the module is known, then its defaults. A version 6 value over 127 other than 255 is refused.
+- **Fix (the owner's): Track 4 held + a pad no longer changes the layout or scale**, in any mode; that is Track 2's
+  job (Track 2 held, also in Sequencer mode, where it sets the selected track's layout). The pads do nothing while
+  Track 4 is held. Test: `move` `test_track4_pads`.
 - Not in 0.5.0: Schwung's preset browsers (`list_param` / `items_param`), `menu` lists, `visible_if`, the
   `ui_chain.js` UIs, and the web player's own module glue (`move_web.c` still gives flat lists: pages of 8).
 
