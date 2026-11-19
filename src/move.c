@@ -523,6 +523,57 @@ int rfmv_label_held(const rfm_move_t *m, int slot)
     }
     return 0;
 }
+/* ---- (0.5.7) readouts */
+int rfmv_pop_slot(const rfm_move_t *m)
+{
+    switch (m->pop) {
+    case POP_ENC: return KNOB_ENC[m->pop_i & 7] >= 0 ? rfmv_enc_slot(KNOB_ENC[m->pop_i & 7]) : -1;
+    case POP_SELECT: return RFM_MOVE_LBL_KNOB0 + 0;
+    case POP_MASTER: return RFM_MOVE_LBL_KNOB0 + 7;
+    default: return -1;
+    }
+}
+static void rd_copy(char *o, const char *t)             /* printable ASCII, 16 kept */
+{
+    int i, k = 0;
+    for (i = 0; t && t[i] && k < RFM_MOVE_LABEL_MAX; i++)
+        if (t[i] >= 32 && t[i] < 127)
+            o[k++] = t[i];
+    o[k] = 0;
+}
+void rfm_move_readouts_clear(rfm_move_t *m)
+{
+    memset(m->rd, 0, sizeof m->rd);
+    memset(&m->rd_pop, 0, sizeof m->rd_pop);
+    if (m->pop == POP_READ)
+        m->pop = POP_NONE;
+}
+void rfm_move_readout(rfm_move_t *m, int control, int kind, const char *title, const char *value, int frac, int flags,
+                      int ms)
+{
+    rfm_move_readout_t r;
+    const int up = m->pop && rfmv_pop_up(m, m->pop), knob_up = up ? rfmv_pop_slot(m) : -1;
+    memset(&r, 0, sizeof r);
+    rd_copy(r.title, title), rd_copy(r.value, value);
+    r.frac = (int16_t)(frac < 0 ? -1 : clampi(frac, 0, 1000));
+    r.kind = (uint8_t)clampi(kind, RFM_MOVE_RD_PARAM, RFM_MOVE_RD_MESSAGE), r.flags = (uint8_t)flags, r.on = 1;
+    if (!r.title[0] && !r.value[0])
+        return;
+    if (control < 0 && knob_up >= 0 &&                  /* (the gesture in progress: a knob touched or just moved) */
+        (m->touched == m->pop_i || rfmv_now_ms(m) - m->pop_ms < RFM_MOVE_RD_PAIR_MS))
+        control = knob_up;
+    if (control >= RFM_MOVE_LBL_KNOB0 && control < RFM_MOVE_LBL_BTN0) {
+        m->rd[control] = r;                             /* (kept: the knob's touch shows it) */
+        if (knob_up == control)
+            return;                                     /* (its popup is up: drawn in place) */
+    }
+    if (!rfmv_half(m) || m->seq.projects)
+        return;
+    m->rd_pop = r;
+    rfmv_pop(m, POP_READ, control < 0 ? 255 : control);
+    m->rd_ms = (uint16_t)(ms > 0 ? clampi(ms, 1, 60000) : RFM_MOVE_POPUP_MS);
+}
+
 static int any_btn_held(const rfm_move_t *m)
 {
     int b;

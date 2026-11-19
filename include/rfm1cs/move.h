@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 5
-#define RFM1CS_VERSION_PATCH 6
-#define RFM1CS_VERSION "0.5.6"
+#define RFM1CS_VERSION_PATCH 7
+#define RFM1CS_VERSION "0.5.7"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -48,6 +48,15 @@ extern "C" {
 #define RFM_MOVE_LBL_BLACK0 38
 #define RFM_MOVE_LBL_N 49
 #define RFM_MOVE_LABEL_HOLD_MS 300                      /* FM-1 mode: a button held this long shows its label */
+/* (0.5.7) readouts: what a control does now and its value, in the firmware's words (the labels plan's rd1) */
+enum { RFM_MOVE_RD_PARAM = 1, RFM_MOVE_RD_PRESET = 2, RFM_MOVE_RD_MESSAGE = 3 };
+#define RFM_MOVE_RD_BIPOLAR 1                           /* flags: the bar from the middle */
+#define RFM_MOVE_RD_PAIR_MS 250                         /* control -1: the gesture this recent takes it */
+typedef struct {
+    char title[RFM_MOVE_LABEL_MAX + 1], value[RFM_MOVE_LABEL_MAX + 1];
+    int16_t frac;                                       /* 0..1000 a bar, -1 none */
+    uint8_t kind, flags, on;
+} rfm_move_readout_t;
 
 /* the FM-1's matrix buttons and encoders (proto/rfm1.h order) */
 enum {
@@ -726,6 +735,9 @@ typedef struct {
     uint32_t pop_t0;                                    /* when this popup's subject came up (a long label scrolls) */
     uint16_t pop_delay;                                 /* POP_LABEL: shown once held this long (ms) */
     uint8_t pop_blank;                                  /* a knob touched, not turned: its name, no value yet */
+    /* (0.5.7) readouts: the last one for each knob (FM1P_E_* role), and the one shown on its own */
+    rfm_move_readout_t rd[8], rd_pop;
+    uint16_t rd_ms;                                     /* rd_pop's time up */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
@@ -766,6 +778,17 @@ void rfm_move_set_labels(rfm_move_t *m, const char *const lbl[RFM_MOVE_LBL_N]);
 /* (0.5.6) the firmware's own button names (its descriptor's button_names, FM1P_B_* order; NULL entries or names
  * NULL: none): what a button shows when its live label is NULL */
 void rfm_move_set_button_names(rfm_move_t *m, const char *const names[RFM_MOVE_NBTN]);
+/* (0.5.7) a readout from the firmware (its rd1 record when seq moves). control: a DYNAMIC-LABELS slot 0..48, or -1:
+ * the control in use (a knob turned or touched, the jog turned, a button held: within RFM_MOVE_RD_PAIR_MS of its last
+ * move, else none). kind RFM_MOVE_RD_*; title / value printable ASCII (16 kept; NULL ""); frac 0..1000 a bar, -1
+ * none; flags RFM_MOVE_RD_BIPOLAR; ms how long its own popup stays (0: RFM_MOVE_POPUP_MS).
+ * A knob's (slots 0..7, or -1 paired with a knob or the jog) is kept: that knob's popup shows it in place of the
+ * detents (touched: what it controls and the last value; turned: updated live). Shown at once if its popup is up,
+ * else as a popup of its own; anything else (a preset's name, a message, a button's) is a popup of its own. FM-1
+ * mode and MIDI's NOTES view only (the left half); elsewhere a knob's is only kept. */
+void rfm_move_readout(rfm_move_t *m, int control, int kind, const char *title, const char *value, int frac, int flags,
+                      int ms);
+void rfm_move_readouts_clear(rfm_move_t *m);            /* (0.5.7) a firmware changed (a slot switch, a load): forget */
 /* the panel's wiring (FM1P_KEYMAP_INIT's shape: id at [row][col], rows 1..4 = LED lines 0..3); NULL = the FM-1's */
 void rfm_move_set_keymap(rfm_move_t *m, const int8_t keymap[6][11]);
 /* the FM-1's LEDs: levels[col * 4 + line] 0..255 and PLAY's green level 0..255 */

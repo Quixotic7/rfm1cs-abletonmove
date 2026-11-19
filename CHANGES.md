@@ -3,6 +3,29 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.7 (2026-11-19)
+
+Readouts (the labels plan's phase 1, rfm1cs's half; the owner: "the name of what the knob is actively controlling
+and also the value"). `rfm_move_t` has new last fields: rebuild everything. No format changes.
+
+- **`rfm_move_readout(core, control, kind, title, value, frac, flags, ms)`**: kind `RFM_MOVE_RD_PARAM` / `PRESET` /
+  `MESSAGE`; control a DYNAMIC-LABELS slot 0..48, or -1: the control in use (a knob touched, or turned or the jog
+  within `RFM_MOVE_RD_PAIR_MS` = 250 ms); frac 0..1000 or -1; flags `RFM_MOVE_RD_BIPOLAR`; ms its own popup's time
+  (0: a second). Printable ASCII, 16 characters kept; title and value both empty: ignored.
+- **A knob keeps its last readout** (slots 0..7: SELECT ALGO PRESETS K1..K4 MASTER): its popup shows it in place of
+  the detents, touched (what it controls, the last value) or turned (live as new ones come). None yet: as 0.5.6.
+- **Its own popup** (`POP_READ`): a readout with no control in use, a button's or key's, or a knob's whose popup is
+  down (kept too). FM-1 mode and MIDI's NOTES view only; elsewhere a knob's is only kept.
+- **Layout, the left half, never 1x**: the title on row 1 (scrolling when long), the value at 4x or 3x when it fits,
+  else up to two 2x rows; a 2-pixel bar along the bottom with frac (bipolar: from the middle, which is marked). A
+  message (or a readout with only one of the two): its words wrapped onto up to three rows.
+- **`rfm_move_readouts_clear(core)`**: forget them (a slot switch, a firmware loaded or unloaded).
+
+**Tests:** `move` `test_readouts` (989 checks): paired with a touched knob, kept for a later touch, live while
+turning, bipolar, a scrolled title, a preset's popup and its time, a long name, a message, a knob's with its popup
+down, pairing within and after 250 ms, the jog, ignored when empty, other modes, cleared. Contact sheet
+`move_readouts_sheet.pbm`.
+
 ## 0.5.6 (2026-11-19)
 
 The firmware's labels on the Move (the labels plan's phase 0; the owner's answers). `rfm_move_t` has new last

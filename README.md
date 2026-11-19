@@ -128,7 +128,14 @@ the release drops the popup and its count. MASTER the same, with its level. A la
 every other button, pad or step (its key) and knob pressed shows its label at once, as the firmware has it when
 drawn (Shift-style layers). Pads and steps show nothing otherwise: they stay an instrument. A label shows until a
 second after its control's release. The left half only (the FM-1's screen stays): words at 2x, a button's or key's
-label wrapped at spaces onto up to three rows, a row that does not fit scrolling (no 1x text). The jog wheel (SELECT) has the same popup
+label wrapped at spaces onto up to three rows, a row that does not fit scrolling (no 1x text).
+
+**Readouts (0.5.7).** The host passes the firmware's readouts (`rfm_move_readout`: what a control does now and its
+value, in the firmware's words, from its rd1 record). A knob keeps its last one: touched, the knob shows what it
+controls and the last value; turned, the readout replaces the detents and updates live. Without any readout the knob
+shows its name and detents as before. A readout for no control in use (a preset's name, a message) is a popup of
+its own, for the time the firmware gives (else a second). Left half: the title on the first row, the value at 4x or
+3x when it fits (else up to two 2x rows), a 2-pixel bar at the bottom when it has one (bipolar: from the middle). The jog wheel (SELECT) has the same popup
 while it turns (the firmware's SELECT label, its detents), gone and counted from 0 again a second after it stops.
 
 | Move | FM-1 |
@@ -644,6 +651,7 @@ rfm_move_release_all(&m);                         /* the link dropped, or the ho
 rfm_move_leds_invalidate(&m);                     /* a new connection: repaint */
 rfm_move_set_master(&m, v); rfm_move_set_label(&m, enc, "CUTOFF"); rfm_move_set_keymap(&m, km);
 rfm_move_set_labels(&m, lbl49); rfm_move_set_button_names(&m, names14);   /* (0.5.6) DYNAMIC-LABELS order */
+rfm_move_readout(&m, ctl, RFM_MOVE_RD_PARAM, "Cutoff", "1.2k", frac, flags, ms); rfm_move_readouts_clear(&m);   /* (0.5.7) */
 rfm_move_save(&m.s, bytes); rfm_move_load(&s, bytes, n);   /* "RMV" + version 3, 80 bytes (versions 2 and 1, 78 and 77 bytes, load) */
 ```
 

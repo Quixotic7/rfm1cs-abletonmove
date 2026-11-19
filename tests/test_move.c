@@ -1582,20 +1582,23 @@ static void test_latch_slots(void)
  * touched; a contact sheet of them (move_labels_sheet.pbm) */
 static uint8_t g_sheet[12][MR_SCREEN_BYTES];
 static int g_nsheet;
+static const char *g_sheet_pre = "labels";
 static void sheet_add(const uint8_t *out, const char *name)
 {
     char path[64];
-    snprintf(path, sizeof path, "move_labels_%s.pbm", name);
+    snprintf(path, sizeof path, "move_%s_%s.pbm", g_sheet_pre, name);
     write_pbm(path, out);
     if (g_nsheet < 12)
         memcpy(g_sheet[g_nsheet++], out, MR_SCREEN_BYTES);
 }
 static void sheet_write(void)                           /* 3 across, a 4-pixel grey-less gap (0) */
 {
-    FILE *f = fopen("move_labels_sheet.pbm", "w");
+    char path[64];
+    FILE *f;
     const int rows = (g_nsheet + 2) / 3, W = 3 * 128 + 4 * 4, H = rows * 64 + (rows + 1) * 4;
     int x, y;
-    if (!f)
+    snprintf(path, sizeof path, "move_%s_sheet.pbm", g_sheet_pre);
+    if (!(f = fopen(path, "w")))
         return;
     fprintf(f, "P1\n%d %d\n", W, H);
     for (y = 0; y < H; y++) {
@@ -1754,6 +1757,112 @@ static void test_labels(void)
     sheet_write();
 }
 
+/* (0.5.7) readouts: a knob's kept (its touch: what it controls now and the last value; turned: live, no detents),
+ * paired with the gesture in progress, or a popup of their own (a preset's name, a message); a contact sheet */
+static void test_readouts(void)
+{
+    static rfm_move_t m;
+    static uint8_t out[MR_SCREEN_BYTES], out2[MR_SCREEN_BYTES];
+    const char *lbl[RFM_MOVE_LBL_N] = { NULL };
+    g_sheet_pre = "readouts", g_nsheet = 0;
+    rfm_move_init(&m, NULL, on_act, NULL);
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
+    m.pop = POP_NONE;
+    lbl[RFM_MOVE_LBL_KNOB0 + 3] = "K1";
+    rfm_move_set_labels(&m, lbl);
+    /* no readout yet: 0.5.6's touch (the name, no value) */
+    touch(&m, 4, 1);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop == POP_ENC && m.pop_blank && lit_in(out, 0, 26, 64, 64) == 0);
+    /* the firmware's readout while touched (control -1: paired with K1): drawn in place */
+    rfm_move_readout(&m, -1, RFM_MOVE_RD_PARAM, "Cutoff", "1.2k", 400, 0, 0);
+    CHECK(m.rd[3].on && !strcmp(m.rd[3].title, "Cutoff") && m.pop == POP_ENC);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(lit_in(out, 0, 3, 64, 19) > 10 && lit_in(out, 0, 23, 64, 55) > 40 && lit_in(out, 1, 61, 25, 63) == 2 * 24 &&
+          lit_in(out, 26, 61, 63, 63) == 0);            /* (the title, the value at 4x, the bar 40 %) */
+    sheet_add(out, "knob_touched");
+    touch(&m, 4, 0);
+    ms(&m, 3000);
+    /* a later touch: what it controls and the last value */
+    touch(&m, 4, 1);
+    rfm_move_screen(&m, NULL, out2);
+    CHECK(m.pop == POP_ENC && !memcmp(out, out2, sizeof out));
+    /* turned: the detents give way to the readout; a new one updates it live */
+    knob(&m, 4, 4);
+    rfm_move_screen(&m, NULL, out2);
+    CHECK(!memcmp(out, out2, sizeof out));
+    rfm_move_readout(&m, 3, RFM_MOVE_RD_PARAM, "Cutoff", "2.4 kHz", 600, 0, 0);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop == POP_ENC && lit_in(out, 1, 61, 39, 63) == 2 * 37);   /* ("2.4 kHz": two 2x rows... or 3x) */
+    sheet_add(out, "knob_turned");
+    rfm_move_readout(&m, 3, RFM_MOVE_RD_PARAM, "Filter Resonance", "-12", 250, RFM_MOVE_RD_BIPOLAR, 0);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(lit_in(out, 16, 61, 33, 63) > 0 && lit_in(out, 34, 61, 63, 63) == 0);   /* (from the middle, left) */
+    sheet_add(out, "knob_bipolar");
+    ms(&m, 1500);
+    rfm_move_screen(&m, NULL, out2);
+    CHECK(memcmp(out, out2, sizeof out) != 0);          /* (the long title scrolled) */
+    touch(&m, 4, 0);
+
+    /* nothing in use: a popup of its own, for its time (a preset's name; ms 2000) */
+    ms(&m, 3000);
+    rfm_move_readout(&m, -1, RFM_MOVE_RD_PRESET, "Preset", "Warm Pad", -1, 0, 2000);
+    CHECK(m.pop == POP_READ && rfm_move_screen_timed(&m));
+    rfm_move_screen(&m, NULL, out);
+    CHECK(lit_in(out, 0, 3, 64, 19) > 10 && lit_in(out, 0, 23, 64, 60) > 20 && lit_in(out, 0, 61, 64, 63) == 0);
+    sheet_add(out, "preset");
+    ms(&m, 1500);
+    CHECK(rfmv_pop_up(&m, POP_READ));
+    ms(&m, 600);
+    CHECK(!rfmv_pop_up(&m, POP_READ));
+    rfm_move_readout(&m, -1, RFM_MOVE_RD_PRESET, "Preset", "A Very Long Patch Name", -1, 0, 0);
+    rfm_move_screen(&m, NULL, out);
+    sheet_add(out, "preset_long");
+    rfm_move_readout(&m, -1, RFM_MOVE_RD_MESSAGE, "Pattern saved", NULL, -1, 0, 0);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop == POP_READ && lit_in(out, 0, 0, 64, 64) > 40);
+    sheet_add(out, "message");
+    ms(&m, RFM_MOVE_POPUP_MS + 10);
+    CHECK(!rfmv_pop_up(&m, POP_READ));
+    /* a knob's readout with its popup down: kept, and shown on its own */
+    rfm_move_readout(&m, 4, RFM_MOVE_RD_PARAM, "Decay", "87", 870, 0, 0);
+    CHECK(m.pop == POP_READ && m.rd[4].on && !strcmp(m.rd[4].value, "87"));
+    rfm_move_screen(&m, NULL, out);
+    sheet_add(out, "knob_own");
+    ms(&m, RFM_MOVE_POPUP_MS + 10);
+    /* pairing: within 250 ms of a turn (no touch) it is the knob's; later, its own */
+    knob(&m, 5, 2);                                     /* K2 (FM1P_E_K2 = 4) */
+    ms(&m, 100);
+    rfm_move_readout(&m, -1, RFM_MOVE_RD_PARAM, "Decay", "90", 900, 0, 0);
+    CHECK(m.pop == POP_ENC && !strcmp(m.rd[4].value, "90"));
+    ms(&m, 300);
+    rfm_move_readout(&m, -1, RFM_MOVE_RD_PARAM, "Decay", "91", 910, 0, 0);
+    CHECK(m.pop == POP_READ && !strcmp(m.rd[4].value, "90"));
+    ms(&m, RFM_MOVE_POPUP_MS + 10);
+    jog(&m, 1);                                         /* the jog: SELECT's (slot 0) */
+    rfm_move_readout(&m, -1, RFM_MOVE_RD_PARAM, "Program", "12", -1, 0, 0);
+    CHECK(m.pop == POP_SELECT && m.rd[0].on);
+    rfm_move_screen(&m, NULL, out);
+    sheet_add(out, "jog");
+    ms(&m, RFM_MOVE_POPUP_MS + 10);
+    /* nothing to show: ignored; another mode: a knob's kept, no popup */
+    rfm_move_readout(&m, -1, RFM_MOVE_RD_PARAM, NULL, "", -1, 0, 0);
+    CHECK(!rfmv_pop_up(&m, POP_READ));
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_CONTROL);
+    m.pop = POP_NONE;
+    rfm_move_readout(&m, 6, RFM_MOVE_RD_PARAM, "Sustain", "64", 500, 0, 0);
+    rfm_move_readout(&m, -1, RFM_MOVE_RD_PRESET, "Preset", "Bass", -1, 0, 0);
+    CHECK(m.rd[6].on && m.pop == POP_NONE);
+    /* a firmware change: forgotten */
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
+    rfm_move_readouts_clear(&m);
+    CHECK(!m.rd[3].on && !m.rd[6].on);
+    touch(&m, 4, 1);
+    CHECK(m.pop_blank);
+    touch(&m, 4, 0);
+    sheet_write();
+}
+
 static void test_host_popup(void)
 {
     static rfm_move_t m;
@@ -1798,6 +1907,7 @@ int main(void)
     test_latch_slots();
     test_host_popup();
     test_labels();
+    test_readouts();
     test_drum_settings();
     test_control();
     test_leds();

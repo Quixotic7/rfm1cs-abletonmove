@@ -76,7 +76,8 @@ static int pop_held(const rfm_move_t *m)
 
 int rfmv_pop_up(const rfm_move_t *m, int kind)
 {
-    return m->pop && m->pop == kind && (pop_held(m) || rfmv_now_ms(m) - m->pop_ms < RFM_MOVE_POPUP_MS);
+    const uint32_t dur = m->pop == POP_READ ? m->rd_ms : RFM_MOVE_POPUP_MS;   /* (0.5.7: a readout's own time) */
+    return m->pop && m->pop == kind && (pop_held(m) || rfmv_now_ms(m) - m->pop_ms < dur);
 }
 
 /* (0.5.4) a host's message: printable ASCII kept, big, wrapped at spaces onto two rows (each cut to fit) */
@@ -194,20 +195,19 @@ static void lpop(mr_canvas_t *cv, const char *label, const char *val)   /* the n
         lrow(cv, 34, val);
 }
 /* a button's or key's label: wrapped at spaces onto up to 3 rows of 2x, a row that does not fit scrolling */
-static void label_rows(mr_canvas_t *cv, const char *text)
+/* text wrapped at spaces onto up to max rows of 2x (the last takes the rest); returns the rows' count */
+static int wrap_rows(const char *text, char r[3][RFM_MOVE_LABEL_MAX + 8], int max)
 {
-    char r[3][RFM_MOVE_LABEL_MAX + 8];
     const char *p = text;
-    int n = 0, i;
-    v2_R(cv, 0, 0, 64, 64, 0);
+    int n = 0;
     while (*p == ' ')
         p++;
-    while (*p && n < 3) {                               /* greedy: words while the row fits; the third takes the rest */
+    while (*p && n < max) {                             /* greedy: words while the row fits; the last takes the rest */
         int len = 0, end;
         while (p[len] && p[len] != ' ')
             len++;                                      /* (the first word, whatever its width) */
         end = len;
-        while (n < 2 && p[end] == ' ') {
+        while (n < max - 1 && p[end] == ' ') {
             char t[RFM_MOVE_LABEL_MAX + 8];
             int e = end + 1;
             while (p[e] && p[e] != ' ')
@@ -217,15 +217,64 @@ static void label_rows(mr_canvas_t *cv, const char *text)
                 break;
             end = e;
         }
-        if (n == 2)
+        if (n == max - 1)
             end = (int)strlen(p);
-        snprintf(r[n], sizeof r[n], "%.*s", end, p);
+        snprintf(r[n], RFM_MOVE_LABEL_MAX + 8, "%.*s", end, p);
         p += end, n++;
         while (*p == ' ')
             p++;
     }
+    return n;
+}
+static void label_rows(mr_canvas_t *cv, const char *text)
+{
+    char r[3][RFM_MOVE_LABEL_MAX + 8];
+    const int n = wrap_rows(text, r, 3);
+    int i;
+    v2_R(cv, 0, 0, 64, 64, 0);
     for (i = 0; i < n; i++)
         lrow(cv, n == 1 ? 24 : n == 2 ? 14 + i * 22 : 3 + i * 21, r[i]);
+}
+
+/* (0.5.7) a readout: the left half: the title (a row), the value (4x or 3x when it fits, else up to two 2x rows),
+ * a 2-pixel bar at the bottom with frac; the whole screen: the edit popup and its bar. A message: its words wrapped */
+static void readout_draw(mr_canvas_t *cv, const rfm_move_readout_t *r)
+{
+    if (!g_half) {
+        mr_gfx_clear(cv, 0);
+        v2_titleBox(cv, r->title, r->value, 64, 124);
+        if (r->frac >= 0)
+            v2_vbar(cv, r->frac / 1000.0, r->flags & RFM_MOVE_RD_BIPOLAR, 4, 120, 52);
+        return;
+    }
+    if (r->kind == RFM_MOVE_RD_MESSAGE || !r->value[0] || !r->title[0]) {
+        char t[RFM_MOVE_LABEL_MAX * 2 + 2];
+        snprintf(t, sizeof t, "%s%s%s", r->title, r->title[0] && r->value[0] ? " " : "", r->value);
+        label_rows(cv, t);
+    } else {
+        v2_R(cv, 0, 0, 64, 64, 0);
+        lrow(cv, 3, r->title);
+        if (v2_tw(r->value, 4) <= 62)
+            v2_TC(cv, 32, 23, r->value, 4, 1);
+        else if (v2_tw(r->value, 3) <= 62)
+            v2_TC(cv, 32, 27, r->value, 3, 1);
+        else {
+            char rows[3][RFM_MOVE_LABEL_MAX + 8];
+            const int n = wrap_rows(r->value, rows, 2);
+            int i;
+            for (i = 0; i < n; i++)
+                lrow(cv, n == 1 ? 30 : 23 + i * 18, rows[i]);
+        }
+    }
+    if (r->frac >= 0) {                                 /* (the thin bar, x 1..62) */
+        const int w = r->frac * 62 / 1000;
+        if (r->flags & RFM_MOVE_RD_BIPOLAR) {
+            const int x = 1 + w, c = 32;
+            v2_R(cv, x < c ? x : c, 61, x < c ? c - x : x - c + 1, 2, 1);
+            v2_R(cv, c, 59, 1, 2, 1);                   /* (the middle marked) */
+        } else
+            v2_R(cv, 1, 61, w, 2, 1);
+    }
 }
 
 /* a value popup: the left half (the name, the value), else the whole screen (the name, the value, a bar) */
@@ -252,6 +301,19 @@ static void value_popup(const rfm_move_t *m, mr_canvas_t *cv)
     const rfm_move_seq_t *q = &m->seq;
     char l[24], v[24];
     const int i = m->pop_i;
+    switch (m->pop) {
+    case POP_SELECT:
+    case POP_ENC:
+    case POP_MASTER: {                                  /* (0.5.7) a readout kept for the knob: it, not the detents */
+        const int sl = rfmv_pop_slot(m);
+        if (sl >= 0 && m->rd[sl].on) {
+            readout_draw(cv, &m->rd[sl]);
+            return;
+        }
+        break;
+    }
+    default: break;
+    }
     switch (m->pop) {
     case POP_SELECT:
     case POP_ENC: {                                     /* an FM-1 encoder: this turn's detents */
@@ -706,7 +768,10 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             project_popup(m, cv);
         else if (m->pop == POP_HOST)
             host_popup(m, cv);
-        else if (m->pop == POP_LABEL) {                 /* (0.5.6) FM-1 mode: a button's or key's label */
+        else if (m->pop == POP_READ) {                  /* (0.5.7) a readout of its own (the left half) */
+            if (g_half)
+                readout_draw(cv, &m->rd_pop);
+        } else if (m->pop == POP_LABEL) {                 /* (0.5.6) FM-1 mode: a button's or key's label */
             char t[RFM_MOVE_LABEL_MAX + 1], l[RFM_MOVE_LABEL_MAX + 8];
             if (g_half && rfmv_label(m, m->pop_i, t, sizeof t)) {
                 rfmv_tcase(t, l, sizeof l);

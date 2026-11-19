@@ -32,7 +32,8 @@ int rfmv_track_held(const rfm_move_t *m, int t);
 int rfmv_half(const rfm_move_t *m);
 int rfmv_label(const rfm_move_t *m, int slot, char *out, int cap);   /* (0.5.6) a slot's label to show: 1 if any */
 int rfmv_label_held(const rfm_move_t *m, int slot);    /* its control is held */
-int rfmv_enc_slot(int enc);                            /* an encoder (RFM_MOVE_E_*): its label slot */
+int rfmv_enc_slot(int enc);
+int rfmv_pop_slot(const rfm_move_t *m);                 /* (0.5.7) the knob slot a knob popup is for (-1: none) */                            /* an encoder (RFM_MOVE_E_*): its label slot */
 int rfmv_list_ticks(rfm_move_t *m, int k, int d);      /* a list-type menu knob's items (one per RFM_MOVE_LIST_TICKS) */
 void rfmv_release_holds(rfm_move_t *m);                /* every held control let go (entering projects mode) */
 void rfmv_proj_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now);   /* projects mode's input */
@@ -55,7 +56,7 @@ int rfmv_level(const rfm_move_t *m, int id);           /* the FM-1 LED level 0..
 /* ---- screen.c: the screen (every mode's picture, the popups, the held Track buttons' menus) */
 enum { POP_NONE = 0, POP_ENC, POP_MASTER, POP_CC, POP_SELECT, POP_DRUM, POP_TEMPO, POP_LOOP, POP_BANK, POP_STEP,
        POP_PROJ, POP_TRIG, POP_BAR, POP_TRACK, POP_MODE, POP_FW,
-       POP_HOST, POP_LABEL };   /* (POP_LABEL 0.5.6: a button's or key's label, pop_i its slot) */   /* (POP_HOST 0.5.4: rfm_move_popup's words) */   /* (POP_FW 0.4.3: Back + Track, a firmware) */
+       POP_HOST, POP_LABEL, POP_READ };   /* (POP_READ 0.5.7: a readout of its own, rd_pop) */   /* (POP_LABEL 0.5.6: a button's or key's label, pop_i its slot) */   /* (POP_HOST 0.5.4: rfm_move_popup's words) */   /* (POP_FW 0.4.3: Back + Track, a firmware) */
 #define RFM_MOVE_TAP_MS 300                             /* a Track button released this soon: a tap (not its menu) */
 enum { MENU_NONE = 0, MENU_LAYOUT, MENU_SCALE, MENU_ROOT, MENU_CHANNEL, MENU_CC, MENU_TRACK, MENU_TCH, MENU_RATE, MENU_SHIFT };
 uint32_t rfmv_now_ms(const rfm_move_t *m);             /* the sequencer clock's ms (what popups time out on) */
