@@ -156,6 +156,10 @@ ones latch when released; pads pressed together latch together. Pressing a latch
 (nothing plays). A framed "L" in the screen's top-right corner says it is on. Turning it off, a mode change, a project
 load and `rfm_move_release_all` (the link lost) let every latched note go; flipping to the projects view does not.
 FM-1 mode and Sequencer mode do not latch. `rfm_move_set_latch(&m, on)`, `rfm_move_latch(&m)` for a host.
+(0.5.4) A latched note stays on the firmware slot it was played on: switching the active slot (Down, Back + Track,
+the projects view) leaves it sounding there, and the new slot plays its own. A new chord and a re-press act on the
+active slot's latched notes only; turning latch off, a mode change, a project load and `rfm_move_release_all` let
+every slot's go, each note off to its own slot (`RFM_MOVE_ACT_MIDI` with `dest` = slot + 1).
 
 | Layout | Notes (base = 48 + root + 12 × octave: C3 at the defaults) |
 |---|---|
@@ -461,8 +465,9 @@ an empty slot faint white, a slot past the host's voices blinking slowly; in FX 
 |---|---|
 | Pads | a bank of up to 32 (A-Z; Favorites in their order); a pad selects; this track's firmware breathes, on the screen a white cell; one on another track a dotted cell |
 | Jog press / turn | load into this track (`FW_LOAD`; a bar until the host says) / the description, a row a detent (0: the name view) |
-| Steps 1 / 2, 3..7, 8..16 | Favorites / All (installed); the catalog's five categories and nine user tags: (0.4.2) one at a time, radio-style (a step shows just that one; the lit one again: all categories), within Favorites / All (AND). (0.4.1) No favourites: All is shown on entering the view or a firmware track, and when the last one is removed; step 1 / 2 is still the user's choice, kept in the settings. (0.4.2) A tap acts on release; the popup names the step big, its state, and what the list shows (2 lines); holding a step shows that without changing it |
-| Sampling, knob 1, Capture held + step | favourite, pad colour (16), tag (a free step makes "Tag N") |
+| Steps 1 / 2, 3..7, 8..15, 16 | Favorites / All (installed); the catalog's five categories, eight user tags and (0.5.4) Fantasy (magenta: the Fantasy CFWs, virtual firmwares such as Elasticat and Ripple, `rfm_move_fw_t.virt`; built in, never a tag; a ninth user tag from an older library moves to a free step 8..15): (0.4.2) one at a time, radio-style (a step shows just that one; the lit one again: all categories), within Favorites / All (AND). (0.4.1) No favourites: All is shown on entering the view or a firmware track, and when the last one is removed; step 1 / 2 is still the user's choice, kept in the settings. (0.4.2) A tap acts on release; the popup names the step big, its state, and what the list shows (2 lines); holding a step shows that without changing it |
+| Sampling, knob 1, Capture held + step | favourite, pad colour (16), tag (a free step makes "Tag N"; step 16, Fantasy, only shows) |
+| (0.5.4) badge | a Fantasy CFW: a small diamond in its grid cell's top-left corner, a framed diamond on the name view's image (the library and the catalog) |
 | Delete | unloads this track's firmware at once (`FW_UNLOAD`), with a message |
 | Left / Right | banks (lit when there is one) |
 | Mute | the catalog: step 1 Update ready (on the Move, a newer version) / step 2 Not installed, one at a time (the lit one again: everything), 3..16 the same one category or tag; an update breathes with an up arrow, a firmware not on the Move faint white, dashed under; a jog press downloads or updates (`FW_DOWNLOAD`), and (0.4.2) loads one on the Move and current into this track (`FW_LOAD`). A download or update done while that firmware is still selected: the popup offers "Jog: load on Track n" |

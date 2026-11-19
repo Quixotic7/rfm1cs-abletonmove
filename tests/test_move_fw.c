@@ -103,6 +103,7 @@ static void catalog_reset(void)
     for (i = 0; i < NFW; i++) {
         E[i].id = FWB[i].id, E[i].name = FWB[i].name, E[i].version = FWB[i].version, E[i].installed = FWB[i].installed;
         E[i].desc = FWB[i].desc, E[i].thumb = FWB[i].thumb, E[i].cats = FWB[i].cats, E[i].cat = FWB[i].cat;
+        E[i].virt = 0;
     }
 }
 static const char *const W_RATE[] = { "1/8", "1/16", "1/32" }, *const W_MODE[] = { "Up", "Down", "Up/Dn", "Random" };
@@ -994,15 +995,17 @@ static void test_screens(void)
         h = hash_scr();
         write_pbm(n + 4);
         if (!strcmp(n, "fwb.step_favorites_chords") || !strcmp(n, "fwb.mixer_track_4") ||
-            !strcmp(n, "fwb.mixer_a_send_knob")) {      /* (0.4.2: the filter popup redrawn, test_filter_popup; 0.5.0:
-                                                         * the owner's Mixer, test_fx) */
+            !strcmp(n, "fwb.mixer_a_send_knob") || !strcmp(n, "fwb.capture_held") ||
+            !strcmp(n, "fwb.capture_held_step_9")) {    /* (0.4.2: the filter popup redrawn, test_filter_popup; 0.5.0:
+                                                         * the owner's Mixer, test_fx; 0.5.4: Tags' step 16 is
+                                                         * Fantasy's, always there, test_fantasy) */
             CHECK(h != FWB_REF[i].hash);
             continue;
         }
         same += h == FWB_REF[i].hash;
         CHECKF(h == FWB_REF[i].hash, "%s: %08x, the mockup %08x", n, h, FWB_REF[i].hash);
     }
-    printf("move_fw: %d of %d screens as the mockup's, pixel for pixel (1 redrawn in 0.4.2, 2 in 0.5.0)\n", same,
+    printf("move_fw: %d of %d screens as the mockup's, pixel for pixel (1 redrawn in 0.4.2, 2 in 0.5.0, 2 in 0.5.4)\n", same,
            (int)(sizeof FWB_REF / sizeof FWB_REF[0]));
     /* two of the core's own (not in the mockup): Track 4 in the view, States */
     fixture(m), tap_track(m, 3), rest_pop(m), screen(m), write_pbm("track4_projects");
@@ -1251,9 +1254,9 @@ static void test_filter_popup(void)
     CHECK(!strcmp(fstate, "off"));
     step(m, 4, 1), adv_ms(m, 50), step(m, 4, 0);        /* a tap */
     CHECK((m->s.fw_filter & T(5)) && count(RFM_MOVE_ACT_SETTINGS) == 1);
-    step(m, 15, 1);                                     /* (step 16: no tag made) */
+    step(m, 14, 1);                                     /* (step 15: no tag made; 0.5.4: step 16 is Fantasy's) */
     CHECK(!m->fw.hold_step);
-    step(m, 15, 0);
+    step(m, 14, 0);
     /* a tag's name at its longest: never cut, small when past 10 */
     fixture(m), rest_pop(m);
     strcpy(m->fw.tag[0], "Late night pads");            /* (RFM_MOVE_FW_TAG_NAME - 1) */
@@ -1756,6 +1759,62 @@ static void test_menu_names(void)
     press(m, MR_CC_MENU);
 }
 
+/* (0.5.4) Fantasy CFWs: rfm_move_fw_t.virt, their badge, step 16's filter (built in), a ninth user tag moved */
+static void test_fantasy(void)
+{
+    rfm_move_t *m = &M;
+    static uint8_t blob[RFM_MOVE_FW_LIB_BYTES];
+    static const int lv[3] = { 100, 80, 80 };
+    static const char *const slots[3] = { "sloop", NULL, NULL };
+    static const char *const tags[9] = { "Ambient", "Live set", "Retro", NULL, NULL, NULL, NULL, NULL, "Ninth" };
+    recdef_t r[2] = { { "golf", 0, T(16) | T(8), T(16) | T(8) }, { "elasticat", 0, T(16), T(16) } };
+    int ids[32], ve = idx("elasticat"), va = idx("aurora"), rec;
+    uint8_t rgb[3];
+    CHECK(ve >= 0 && va >= 0);
+    fixture(m);
+    E[ve].virt = 1, E[va].virt = 1;                     /* (Elasticat on the Move, AURORA not) */
+    rfm_move_fw_list(m, E, NFW);
+    rest_pop(m);
+    tap_step(m, 1);                                     /* All */
+    clear();
+    tap_step(m, 15);                                    /* step 16: Fantasy */
+    CHECK(m->s.fw_filter == T(16) && count(RFM_MOVE_ACT_SETTINGS) == 1);
+    CHECK(rfmv_fw_list_len(m) == 1 && rfmv_fw_bank(m, ids) && ids[0] == ve);
+    words(m, 16);
+    CHECK(!strcmp(fname, "Fantasy") && !strcmp(fstate, "ON") && !strcmp(frows[0], "Showing: Fantasy,"));
+    CHECK(led_of(m, 0, MR_NOTE_STEP0 + 15, rgb) && rgb[0] > 200 && rgb[1] < 90 && rgb[2] > 150);
+    rest_pop(m), screen(m), write_pbm("fantasy_grid");
+    CHECK(px(2, 1) && px(1, 2) && px(3, 2) && px(2, 3) && !px(2, 2));   /* (the cell's diamond) */
+    select_fw(m, "elasticat"), screen(m), write_pbm("fantasy_name");
+    CHECK(px(119, 0) && px(127, 8) && px(123, 2) && px(121, 4) && !px(123, 4));   /* (the framed diamond) */
+    select_fw(m, "sloop"), screen(m);
+    CHECK(!px(123, 2));                                 /* (none on a real firmware) */
+    /* the catalog: both, the same filter */
+    press(m, MR_CC_MUTE), rest_pop(m);
+    CHECK(m->fw.catalog && rfmv_fw_list_len(m) == 2);
+    select_fw(m, "aurora"), screen(m), write_pbm("fantasy_catalog");
+    CHECK(px(119, 0) && px(123, 2));
+    m->fw.sel = -1, screen(m), write_pbm("fantasy_catalog_grid");
+    press(m, MR_CC_MUTE), rest_pop(m);
+    /* Capture: step 16 shows it, toggles nothing */
+    select_fw(m, "elasticat"), button(m, MR_CC_CAPTURE, 1);
+    CHECK(led_of(m, 0, MR_NOTE_STEP0 + 15, rgb) && rgb[0] > 200 && rgb[2] > 150);
+    clear();
+    tap_step(m, 15);
+    CHECK(m->fw.cap_step < 0 && (rec = rfmv_fw_rec(m, ve), rec < 0 || !(m->fw.rec[rec].tag_set & T(16))));
+    button(m, MR_CC_CAPTURE, 0);
+    tap_step(m, 15);                                    /* (the filter off) */
+    CHECK(!m->s.fw_filter);
+    /* a library with a ninth user tag (step 16): it moves to the first free step (11), its marks with it */
+    CHECK(rfm_move_fw_library(m, blob, lib_write(blob, 0, lv, slots, tags, r, 2, NULL, 0)) == 0);
+    CHECK(!strcmp(m->fw.tag[3], "Ninth") && !m->fw.tag[8][0]);
+    rec = rfmv_fw_rec(m, idx("golf"));
+    CHECK(rec >= 0 && (m->fw.rec[rec].tag_on & T(11)) && (m->fw.rec[rec].tag_on & T(8)) && !(m->fw.rec[rec].tag_on & T(16)));
+    rec = rfmv_fw_rec(m, ve);
+    CHECK(rec >= 0 && (m->fw.rec[rec].tag_set & T(11)) && !(m->fw.rec[rec].tag_set & T(16)));
+    catalog_reset();
+}
+
 int main(void)
 {
     test_nolist();
@@ -1774,6 +1833,7 @@ int main(void)
     test_fx_touch();
     test_fx_pages();
     test_menu_names();
+    test_fantasy();
     test_states();
     test_midi_track();
     test_old_formats();

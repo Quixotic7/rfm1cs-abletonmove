@@ -9,7 +9,7 @@
 #   moveremote_gfx   Move Remote's 1-bit graphics and font (third_party/moveremote, vendored)
 #   moveremote       Move Remote's POSIX socket client (hosts that talk TCP themselves need not link it)
 cmake_minimum_required(VERSION 3.16)
-project(rfm1cs_abletonmove VERSION 0.5.3 LANGUAGES C)
+project(rfm1cs_abletonmove VERSION 0.5.4 LANGUAGES C)
 
 set(RFM1CS_TOP OFF)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

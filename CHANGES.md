@@ -3,6 +3,31 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.4 (2026-11-19)
+
+A host's popup, latch kept per slot, Fantasy CFWs in the browser (the owner's). `rfm_move_t`, `rfm_move_act_t`
+and `rfm_move_fw_t` have new last fields: rebuild everything. No format changes (the library blob reads as before;
+see the ninth tag below).
+
+- **`rfm_move_popup(core, text)`**: a host's message ("FM-1 linked" / "FM-1 lost") shown as a mode's name is: big,
+  full screen, a second, over any screen (the projects view and Track menus too); a newer popup replaces it.
+  Printable ASCII kept (31 bytes at most), wrapped at a space onto two rows, each cut where it does not fit.
+- **Latch per slot**: a latched note keeps the firmware slot it was played on. Switching the active slot leaves it
+  sounding there (nothing sent) and the new slot can play the same note. A new chord and a re-press act on the
+  active slot's latched notes; off, a mode change, a project load and `rfm_move_release_all` let every slot's go.
+  A latched note's note off carries `rfm_move_act_t.dest` = its slot + 1 (MIDI, track 0); 0, as always, is the
+  active slot. Up to 96 latched notes (`RFM_MOVE_LATCH_MAX`, 32 a slot).
+- **Fantasy CFWs**: `rfm_move_fw_t.virt` 1 marks a virtual firmware (Elasticat, Ripple). A diamond badge in its
+  grid cell and on the name view's image (library and catalog). Step 16 is their filter, built in like the
+  categories (magenta; one choice, as 0.4.2's model): the user tags are steps 8..15 now. A library whose ninth
+  tag (step 16) was made: it moves to the first free step 8..15 with its marks, or goes when all eight are taken.
+  Capture + step 16 shows whether the firmware is one, toggles nothing.
+
+**Tests:** `move` `test_latch_slots`, `test_host_popup` (938 checks); `move_fw` `test_fantasy` (543): the filter,
+its words and LED, both badges, the catalog, Capture, the ninth tag moved. Tags' screens (`capture_held`,
+`capture_held_step_9`) differ from the mockup now (step 16 always there). Renders: `move_host_popup*.pbm`,
+`fw_fantasy_*.pbm`.
+
 ## 0.5.3 (2026-11-18)
 
 Latch for MIDI and Control modes (the owner's). `rfm_move_t` has new last fields (`latch`, `nlat`, `lat_ch`,

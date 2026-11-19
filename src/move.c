@@ -265,6 +265,7 @@ void emit_midi(rfm_move_t *m, int status, int d1, int d2)
     a.frame = m->seq.frame;
     a.kind = RFM_MOVE_ACT_MIDI, a.n = 3;
     a.bytes[0] = (uint8_t)status, a.bytes[1] = (uint8_t)(d1 & 127), a.bytes[2] = (uint8_t)(d2 & 127);
+    a.dest = m->emit_dest;                              /* (0.5.4: a latched note's off, its slot) */
     if (m->fn)
         m->fn(m->ctx, &a);
 }
@@ -319,23 +320,59 @@ void let_go(rfm_move_t *m, rfm_move_hold_t *h)
 
 /* (0.5.3) latch (MIDI and Control modes): a pad's note keeps sounding after its release (it keeps its hold). A press
  * with no other pad down starts a new chord: the latched notes go first; a press on a latched note lets that note
- * go (and plays nothing). Off, a mode change, a project load and rfm_move_release_all let them all go */
-static int latch_find(const rfm_move_t *m, int ch, int n)
+ * go (and plays nothing). Off, a mode change, a project load and rfm_move_release_all let them all go.
+ * (0.5.4) Each latched note keeps the firmware slot it was played on. While another slot is active it is parked: it
+ * holds no note_count (the active slot may play the same note), and its note off goes straight to its slot (dest).
+ * A new chord and a re-press act on the active slot's latched notes only */
+#define LAT_PARK 0x80
+static int act_slot(const rfm_move_t *m) { return m->fw.active < RFM_MOVE_FW_SLOTS ? m->fw.active : 0; }
+static void latch_sync(rfm_move_t *m)                   /* park / unpark against the active slot */
+{
+    const int a = act_slot(m);
+    int i;
+    for (i = 0; i < m->nlat; i++) {
+        const int s = m->lat_slot[i] & 3, park = (m->lat_slot[i] & LAT_PARK) != 0, ch = m->lat_ch[i], n = m->lat_n[i];
+        if (s != a && !park) {
+            if (m->note_count[ch][n])
+                m->note_count[ch][n]--;                 /* (it sounds on its slot; nothing sent) */
+            m->lat_slot[i] |= LAT_PARK;
+        } else if (s == a && park) {
+            m->note_count[ch][n]++;                     /* (back on its slot: a hold again) */
+            m->lat_slot[i] &= (uint8_t)~LAT_PARK;
+        }
+    }
+}
+static int latch_find(rfm_move_t *m, int ch, int n)     /* on the active slot */
 {
     int i;
+    latch_sync(m);
     for (i = 0; i < m->nlat; i++)
-        if (m->lat_ch[i] == ch && m->lat_n[i] == n)
+        if (m->lat_ch[i] == ch && m->lat_n[i] == n && !(m->lat_slot[i] & LAT_PARK))
             return i;
     return -1;
 }
 static void latch_drop(rfm_move_t *m, int i)
 {
-    note_let(m, m->lat_ch[i], m->lat_n[i]);
+    m->emit_dest = (uint8_t)((m->lat_slot[i] & 3) + 1);
+    if (m->lat_slot[i] & LAT_PARK)
+        emit_midi(m, 0x80 | m->lat_ch[i], m->lat_n[i], 0);
+    else
+        note_let(m, m->lat_ch[i], m->lat_n[i]);
+    m->emit_dest = 0;
     m->nlat--;
-    m->lat_ch[i] = m->lat_ch[m->nlat], m->lat_n[i] = m->lat_n[m->nlat];
+    m->lat_ch[i] = m->lat_ch[m->nlat], m->lat_n[i] = m->lat_n[m->nlat], m->lat_slot[i] = m->lat_slot[m->nlat];
+}
+static void latch_drop_slot(rfm_move_t *m)              /* the active slot's (a new chord) */
+{
+    int i;
+    latch_sync(m);
+    for (i = m->nlat - 1; i >= 0; i--)
+        if (!(m->lat_slot[i] & LAT_PARK))
+            latch_drop(m, i);
 }
 void rfmv_latch_drop_all(rfm_move_t *m)
 {
+    latch_sync(m);
     while (m->nlat)
         latch_drop(m, m->nlat - 1);
 }
@@ -536,8 +573,9 @@ static void on_pad(rfm_move_t *m, int p, int vel, uint32_t now)
         if (m->pad_down[p] && m->s.mode == RFM_MOVE_MODE_SEQ)
             rfmv_seq_pad(m, p, 0, now);
         if (m->latch && h->kind == H_NOTE && midi_mode(m) && m->s.mode != RFM_MOVE_MODE_SEQ &&
-            m->nlat < RFM_MOVE_NPADS && latch_find(m, h->a, h->b) < 0) {
-            m->lat_ch[m->nlat] = h->a, m->lat_n[m->nlat] = h->b, m->nlat++;   /* (0.5.3) latched: its hold kept */
+            m->nlat < RFM_MOVE_LATCH_MAX && latch_find(m, h->a, h->b) < 0) {
+            m->lat_ch[m->nlat] = h->a, m->lat_n[m->nlat] = h->b;   /* (0.5.3) latched: its hold kept, (0.5.4) on */
+            m->lat_slot[m->nlat++] = (uint8_t)act_slot(m);      /* the active slot */
             h->kind = H_NONE;
         }
         let_go(m, h);
@@ -602,7 +640,7 @@ static void on_pad(rfm_move_t *m, int p, int vel, uint32_t now)
             for (i = 0; i < RFM_MOVE_NPADS; i++)
                 others += i != p && m->pad[i].kind == H_NOTE;
             if (!others)
-                rfmv_latch_drop_all(m);                 /* (a new chord: the old one goes) */
+                latch_drop_slot(m);                     /* (a new chord: the old one goes, this slot's) */
         }
         h->kind = H_NOTE, h->a = m->s.channel, h->b = (uint8_t)n;
         note_hold(m, h->a, n, vel);

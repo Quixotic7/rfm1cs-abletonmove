@@ -75,6 +75,47 @@ int rfmv_pop_up(const rfm_move_t *m, int kind)
     return m->pop && m->pop == kind && (pop_held(m) || rfmv_now_ms(m) - m->pop_ms < RFM_MOVE_POPUP_MS);
 }
 
+/* (0.5.4) a host's message: printable ASCII kept, big, wrapped at spaces onto two rows (each cut to fit) */
+void rfm_move_popup(rfm_move_t *m, const char *text)
+{
+    int i, k = 0;
+    for (i = 0; text && text[i] && k < (int)sizeof m->pop_text - 1; i++)
+        if (text[i] >= 32 && text[i] < 127)
+            m->pop_text[k++] = text[i];
+    m->pop_text[k] = 0;
+    if (k)
+        rfmv_pop(m, POP_HOST, 0);
+}
+static void fit_row(char *r, int k)                     /* cut r until it fits 124 px at k x */
+{
+    int n = (int)strlen(r);
+    while (n > 0 && v2_tw(r, k) > 124)
+        r[--n] = 0;
+}
+static void host_popup(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    char a[32], b[32];
+    int i, cut = -1;
+    mr_gfx_clear(cv, 0);
+    snprintf(a, sizeof a, "%s", m->pop_text);
+    b[0] = 0;
+    if (v2_tw(a, 2) > 124) {                            /* the last space that leaves a first row that fits */
+        for (i = 1; a[i]; i++)
+            if (a[i] == ' ') {
+                char t[32];
+                snprintf(t, sizeof t, "%.*s", i, a);
+                if (v2_tw(t, 2) <= 124)
+                    cut = i;
+            }
+        if (cut > 0) {
+            snprintf(b, sizeof b, "%s", a + cut + 1);
+            a[cut] = 0;
+        }
+    }
+    fit_row(a, 2), fit_row(b, 2);
+    v2_msg(cv, a, b);
+}
+
 /* ---- v2 (the design canvas's V2Screen, see v2.h): full-screen popups with no frame, the left-half ones (FM-1
  * mode, MIDI's NOTES) the name and the value only; Title Case words */
 static int g_half;
@@ -577,6 +618,8 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             g_full = 1;
         } else if (m->pop == POP_PROJ)
             project_popup(m, cv);
+        else if (m->pop == POP_HOST)
+            host_popup(m, cv);
         else
             value_popup(m, cv);
         return;
@@ -853,6 +896,11 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
     int t, x, y;
     if (rgb565)
         thumb_from(m, rgb565);
+    if (m->pop == POP_HOST && rfmv_pop_up(m, POP_HOST)) {   /* (0.5.4) a host's message: over any screen */
+        host_popup(m, &cv);
+        mr_gfx_pack(&cv, out);
+        return;
+    }
     if (m->seq.projects && m->pop == POP_MODE && m->pop_i >= 20 && m->pop_i <= 23 && rfmv_pop_up(m, POP_MODE)) {
         mr_gfx_clear(&cv, 0);                           /* (0.4.5) Back into the view: its name, a second */
         popups(m, &cv);

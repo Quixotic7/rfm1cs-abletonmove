@@ -51,7 +51,8 @@ int rfmv_level(const rfm_move_t *m, int id);           /* the FM-1 LED level 0..
 
 /* ---- screen.c: the screen (every mode's picture, the popups, the held Track buttons' menus) */
 enum { POP_NONE = 0, POP_ENC, POP_MASTER, POP_CC, POP_SELECT, POP_DRUM, POP_TEMPO, POP_LOOP, POP_BANK, POP_STEP,
-       POP_PROJ, POP_TRIG, POP_BAR, POP_TRACK, POP_MODE, POP_FW };   /* (POP_FW 0.4.3: Back + Track, a firmware) */
+       POP_PROJ, POP_TRIG, POP_BAR, POP_TRACK, POP_MODE, POP_FW,
+       POP_HOST };   /* (POP_HOST 0.5.4: rfm_move_popup's words) */   /* (POP_FW 0.4.3: Back + Track, a firmware) */
 #define RFM_MOVE_TAP_MS 300                             /* a Track button released this soon: a tap (not its menu) */
 enum { MENU_NONE = 0, MENU_LAYOUT, MENU_SCALE, MENU_ROOT, MENU_CHANNEL, MENU_CC, MENU_TRACK, MENU_TCH, MENU_RATE, MENU_SHIFT };
 uint32_t rfmv_now_ms(const rfm_move_t *m);             /* the sequencer clock's ms (what popups time out on) */

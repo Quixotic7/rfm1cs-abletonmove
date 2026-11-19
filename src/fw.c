@@ -331,15 +331,19 @@ static int color(const rfm_move_t *m, int fw)           /* palette index 0..15 *
 }
 static int has_tag_r(const rfm_move_t *m, int fw, int r, int step);
 static int has_tag(const rfm_move_t *m, int fw, int step) { return has_tag_r(m, fw, rec_of(m, fw), step); }
+#define VIRT_STEP 16                                    /* (0.5.4) Fantasy CFWs (rfm_move_fw_t.virt): built in */
+static const rgb_t VIRTCOL = { 255, 50, 210 };          /* (its step: magenta) */
 static int tag_defined(const rfm_move_t *m, int step)
 {
-    return (step >= CAT0 && step < CAT0 + 5) || (step >= 8 && step <= 16 && m->fw.tag[step - 8][0]);
+    return (step >= CAT0 && step < CAT0 + 5) || step == VIRT_STEP || (step >= 8 && step < VIRT_STEP && m->fw.tag[step - 8][0]);
 }
 static void tag_name(const rfm_move_t *m, int step, char *o, int cap)
 {
     const int c = step - CAT0;
     if (c >= 0 && c < 5)
         snprintf(o, (size_t)cap, "%s", CATS[c]);
+    else if (step == VIRT_STEP)
+        snprintf(o, (size_t)cap, "Fantasy");
     else if (step >= 8 && step <= 16 && m->fw.tag[step - 8][0])
         snprintf(o, (size_t)cap, "%s", m->fw.tag[step - 8]);
     else
@@ -403,6 +407,8 @@ static int has_tag_r(const rfm_move_t *m, int fw, int r, int step)
 {
     const int c = step - CAT0;
     const rfm_move_fw_t *e = ent(m, fw);
+    if (step == VIRT_STEP)
+        return e && e->virt;                            /* (a fact of the catalog's, never a user tag) */
     if (r >= 0 && (m->fw.rec[r].tag_set >> (step - 1) & 1))
         return m->fw.rec[r].tag_on >> (step - 1) & 1;
     return c >= 0 && c < 5 && e && (e->cats >> c & 1);
@@ -896,6 +902,26 @@ int rfm_move_fw_library(rfm_move_t *m, const uint8_t *b, uint32_t n)
         c->tag_on = (uint16_t)r16(p + RFM_MOVE_FW_ID_MAX + 1), c->tag_set = (uint16_t)r16(p + RFM_MOVE_FW_ID_MAX + 3);
     }
     f->nrec = (uint16_t)nr;
+    if (f->tag[8][0]) {                                 /* (0.5.4) step 16 is Fantasy now: a ninth user tag moves to a
+                                                         * free step 8..15, else it goes */
+        int to = -1, jj;
+        for (jj = 0; jj < 8 && to < 0; jj++)
+            if (!f->tag[jj][0])
+                to = jj;
+        if (to >= 0)
+            memcpy(f->tag[to], f->tag[8], RFM_MOVE_FW_TAG_NAME);
+        for (jj = 0; jj < (int)nr; jj++) {
+            rfm_move_lib_rec_t *rc = &f->rec[jj];
+            if (to >= 0) {
+                const uint16_t bt = (uint16_t)(1u << (to + 7));
+                rc->tag_on = (uint16_t)((rc->tag_on & ~bt) | (rc->tag_on >> 15 & 1 ? bt : 0));
+                rc->tag_set = (uint16_t)((rc->tag_set & ~bt) | (rc->tag_set >> 15 & 1 ? bt : 0));
+            }
+        }
+        memset(f->tag[8], 0, RFM_MOVE_FW_TAG_NAME);
+    }
+    for (k = 0; k < nr; k++)
+        f->rec[k].tag_on &= 0x7FFF, f->rec[k].tag_set &= 0x7FFF;
     for (k = 0; k < nf; k++)
         f->fav[k] = (uint16_t)r16(p + k * 2);
     f->nfav = (uint16_t)nf;
@@ -1275,7 +1301,7 @@ static void fw_input(rfm_move_t *m, const mr_event_t *ev)
             return;
         }
         if (f->capture && fw >= 0) {
-            if (s >= CAT0)
+            if (s >= CAT0 && s != VIRT_STEP)            /* (Fantasy is no tag: it shows, nothing toggles) */
                 tag_toggle(m, fw, s);
         } else if (s <= 2 || tag_defined(m, s))
             f->hold_step = (uint8_t)s, f->hold_ms = rfmv_now_ms(m);
@@ -1962,7 +1988,7 @@ void rfmv_fw_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
         rgb_t v = OFF;
         if (f->capture && fw >= 0) {
             if (i >= CAT0)
-                v = has_tag(m, fw, i) ? (i < CAT0 + 5 ? PAL[CATCOL[i - CAT0]] : WHITE)
+                v = has_tag(m, fw, i) ? (i < CAT0 + 5 ? PAL[CATCOL[i - CAT0]] : i == VIRT_STEP ? VIRTCOL : WHITE)
                                       : lit(WHITE, tag_defined(m, i) ? A(0.15) : A(0.05));
         } else if (i <= 2) {
             if (f->catalog)
@@ -1970,7 +1996,8 @@ void rfmv_fw_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             else
                 v = lit(i == 1 ? FAVCOL : WHITE, scope(m) == i - 1 ? 256 : A(0.2));
         } else if (tag_defined(m, i))
-            v = lit(i < CAT0 + 5 ? PAL[CATCOL[i - CAT0]] : WHITE, m->s.fw_filter >> (i - 1) & 1 ? 256 : A(0.18));
+            v = lit(i < CAT0 + 5 ? PAL[CATCOL[i - CAT0]] : i == VIRT_STEP ? VIRTCOL : WHITE,
+                    m->s.fw_filter >> (i - 1) & 1 ? 256 : A(0.18));
         c[L_STEP0 + i - 1] = v;
     }
     c[L_SAMPLE] = fw >= 0 && !f->catalog ? lit(FAVCOL, is_fav(m, fw) ? 256 : A(0.2)) : OFF;
@@ -2029,6 +2056,23 @@ static void thumb(B *g, const rfm_move_t *m, int fw, int x0)
     ctext_in(g, 18, ini, 3, x0, 64);
     ctext_in(g, 48, "no image", 1, x0, 64);
 }
+/* (0.5.4) a Fantasy CFW's badge: a diamond, 3 x 3 in a grid cell (colour v), 5 x 5 framed on the name view's image */
+static int is_virt(const rfm_move_t *m, int fw)
+{
+    const rfm_move_fw_t *e = ent(m, fw);
+    return e && e->virt;
+}
+static void badge_small(B *g, int x, int y, int v)
+{
+    px(g, x + 1, y, v), px(g, x, y + 1, v), px(g, x + 2, y + 1, v), px(g, x + 1, y + 2, v);
+}
+static void badge(B *g, int x, int y)                   /* 9 x 9 at x, y */
+{
+    fill(g, x, y, 9, 9, 0);
+    rect(g, x, y, 9, 9);
+    px(g, x + 4, y + 2, 1), px(g, x + 3, y + 3, 1), px(g, x + 5, y + 3, 1), px(g, x + 2, y + 4, 1);
+    px(g, x + 6, y + 4, 1), px(g, x + 3, y + 5, 1), px(g, x + 5, y + 5, 1), px(g, x + 4, y + 6, 1);
+}
 static void scope_title(const rfm_move_t *m, char *o, int cap)
 {
     snprintf(o, (size_t)cap, "%s", m->fw.catalog ? "Catalog" : !scope(m) ? "Favorites" : "All");
@@ -2043,6 +2087,8 @@ static void selected(B *g, const rfm_move_t *m, int fw)
     int nl, sc, i;
     if (f->jog == 0 || pop_up(m, FP_COLOR)) {
         thumb(g, m, fw, 64);
+        if (is_virt(m, fw))
+            badge(g, W - 9, 0);                         /* (0.5.4) a Fantasy CFW */
         if (pop_up(m, FP_COLOR)) {
             const int c = color(m, fw);
             const int s2 = strlen(PALNAME[c]) <= 5;
@@ -2185,6 +2231,8 @@ static void rest(B *g, const rfm_move_t *m)             /* the bank: 8 x 4 cells
             text(g, x + 3, y + 5, ab, 1, 0);
         } else
             text(g, x + 3, y + 5, ab, 1, 1);
+        if (is_virt(m, id))                             /* (0.5.4) a Fantasy CFW: the top-left corner */
+            badge_small(g, x + 1, y + 1, !(!f->catalog && track_of(m, id) == f->track));
         if (f->catalog) {
             const int st = status(m, id);
             if (st == ST_UPDATE)

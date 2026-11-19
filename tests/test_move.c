@@ -1508,6 +1508,107 @@ static void test_latch(void)
     rfm_move_set_latch(&m, 0);
 }
 
+/* (0.5.4) latched notes stay on their firmware slot: a slot switch leaves them sounding there, their offs go there */
+static int midi_dest(int st, int d1)                    /* the dest of the first such MIDI action, -1 none */
+{
+    int i;
+    for (i = 0; i < nact; i++)
+        if (acts[i].kind == RFM_MOVE_ACT_MIDI && acts[i].bytes[0] == st && acts[i].bytes[1] == d1)
+            return acts[i].dest;
+    return -1;
+}
+static void test_latch_slots(void)
+{
+    static rfm_move_t m;
+    static rfm_move_fw_t fl[2];
+    static const char *const sl[3] = { "a", "b", NULL };
+    int n0, n1;
+    fl[0].id = "a", fl[0].name = "A", fl[0].version = fl[0].installed = "1";
+    fl[1].id = "b", fl[1].name = "B", fl[1].version = fl[1].installed = "1";
+    rfm_move_init(&m, NULL, on_act, NULL);
+    rfm_move_fw_list(&m, fl, 2);
+    rfm_move_fw_slots(&m, sl);
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_MIDI);
+    rfm_move_set_latch(&m, 1);
+    n0 = rfm_move_pad_note(&m.s, 0), n1 = rfm_move_pad_note(&m.s, 1);
+    /* slot 1 latched n0; slot 2 active: nothing sent, the same note plays there anew */
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    CHECK(m.nlat == 1 && rfm_move_fw_active(&m) == 0);
+    clear();
+    rfm_move_fw_set_active(&m, 1);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && !has_midi(0x80, n0, 0));
+    pad(&m, 0, 100);
+    CHECK(has_midi(0x90, n0, 100) && midi_dest(0x90, n0) == 0 && !has_midi(0x80, n0, 0));   /* (a new chord: slot 1's
+                                                         * stays) */
+    pad(&m, 0, 0);
+    CHECK(m.nlat == 2 && sounding_notes(&m) == 1);
+    /* a new chord on slot 2: only slot 2's latched note goes (to slot 2) */
+    clear();
+    pad(&m, 1, 100), pad(&m, 1, 0);
+    CHECK(has_midi(0x80, n0, 0) && midi_dest(0x80, n0) == 2 && has_midi(0x90, n1, 100) && m.nlat == 2);
+    /* back on slot 1: its note is a hold again; a re-press there lets it go, to slot 1 */
+    clear();
+    rfm_move_fw_set_active(&m, 0);
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    CHECK(has_midi(0x80, n0, 0) && midi_dest(0x80, n0) == 1 && !has_midi(0x90, n0, 100) && m.nlat == 1);
+    /* latch off: slot 2's n1 goes to slot 2, while slot 1 is active */
+    clear();
+    rfm_move_set_latch(&m, 0);
+    CHECK(has_midi(0x80, n1, 0) && midi_dest(0x80, n1) == 2 && m.nlat == 0 && sounding_notes(&m) == 0);
+    /* release_all and a mode change: every slot's, each to its own */
+    rfm_move_set_latch(&m, 1);
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    rfm_move_fw_set_active(&m, 1);
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    clear();
+    rfm_move_release_all(&m);
+    CHECK(count(RFM_MOVE_ACT_MIDI) == 2 && m.nlat == 0 && sounding_notes(&m) == 0);
+    CHECK(acts[0].dest + acts[1].dest == 3 && acts[0].dest != acts[1].dest);
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    rfm_move_fw_set_active(&m, 0);
+    clear();
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_CONTROL);
+    CHECK(has_midi(0x80, n0, 0) && midi_dest(0x80, n0) == 2 && m.nlat == 0 && sounding_notes(&m) == 0);
+    /* a pad played unlatched: no dest, as always */
+    rfm_move_set_latch(&m, 0);
+    clear();
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    CHECK(midi_dest(0x90, n0) == 0 && midi_dest(0x80, n0) == 0);
+}
+
+/* (0.5.4) a host's message: big, a second, over any screen; wrapped onto two rows */
+static void test_host_popup(void)
+{
+    static rfm_move_t m;
+    static uint8_t out[MR_SCREEN_BYTES];
+    rfm_move_init(&m, NULL, on_act, NULL);
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_MIDI);
+    rfm_move_popup(&m, "FM-1 linked");
+    CHECK(m.pop == POP_HOST && !strcmp(m.pop_text, "FM-1 linked") && rfm_move_screen_timed(&m));
+    rfm_move_screen(&m, NULL, out);
+    write_pbm("move_host_popup.pbm", out);
+    CHECK(lit_in(out, 0, 8, 128, 30) > 0 && lit_in(out, 0, 30, 128, 50) > 0);   /* (two rows at 2x) */
+    rfm_move_popup(&m, "FM-1 lost");
+    rfm_move_screen(&m, NULL, out);
+    write_pbm("move_host_popup_lost.pbm", out);
+    CHECK(lit_in(out, 0, 18, 128, 38) > 0 && lit_in(out, 0, 0, 128, 14) == 0);   /* (one row) */
+    m.seq.now_us += (RFM_MOVE_POPUP_MS + 10) * 1000u;
+    CHECK(!rfmv_pop_up(&m, POP_HOST) && !rfm_move_screen_timed(&m));
+    rfm_move_popup(&m, "\x01\x02");                     /* (nothing printable: no popup) */
+    CHECK(!rfmv_pop_up(&m, POP_HOST));
+    rfm_move_popup(&m, "A very long message that cannot fit on the screen at all");
+    CHECK(strlen(m.pop_text) == 31 && rfmv_pop_up(&m, POP_HOST));
+    rfm_move_screen(&m, NULL, out);
+    write_pbm("move_host_popup_long.pbm", out);
+    /* the projects view: over it too */
+    rfm_move_fw_list(&m, NULL, 0);
+    m.seq.projects = 1;
+    rfm_move_popup(&m, "FM-1 lost");
+    rfm_move_screen(&m, NULL, out);
+    CHECK(lit_in(out, 0, 18, 128, 38) > 0 && lit_in(out, 0, 0, 128, 14) == 0);
+    m.seq.projects = 0;
+}
+
 int main(void)
 {
     test_fm1_pads();
@@ -1517,6 +1618,8 @@ int main(void)
     test_layouts();
     test_track4_pads();
     test_latch();
+    test_latch_slots();
+    test_host_popup();
     test_drum_settings();
     test_control();
     test_leds();

@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 5
-#define RFM1CS_VERSION_PATCH 3
-#define RFM1CS_VERSION "0.5.3"
+#define RFM1CS_VERSION_PATCH 4
+#define RFM1CS_VERSION "0.5.4"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -136,6 +136,10 @@ typedef struct {
     uint8_t param;                                      /* FX_PARAM: the parameter's index */
     uint8_t mix[5];                                     /* MIX: level, pan, send 1, send 2, send 3 (0..127) */
     uint16_t filt[6];                                   /* ROUTE: firmware 1..3, MIDI FX 1..3 track filters */
+    /* (0.5.4) */
+    uint8_t dest;                                       /* MIDI (track 0): 0 the active slot, as always; 1..3 firmware
+                                                         * slot dest - 1, whichever is active now (a latched note's
+                                                         * note off: the slot it was played on) */
 } rfm_move_act_t;
 typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
@@ -202,6 +206,7 @@ typedef struct {
  * edit of the live one). The one exception is the core's own: rfm_move_fw_installed writes entries[i].installed.
  * Entries come in the order the pads show them (A-Z by name, as the catalog lists them). */
 #define RFM_MOVE_FW_SLOTS 3
+#define RFM_MOVE_LATCH_MAX (RFM_MOVE_NPADS * RFM_MOVE_FW_SLOTS)   /* (0.5.4) notes latched at once, all slots */
 #define RFM_MOVE_FW_ID_MAX 32                           /* an id's bytes with its NUL (longer ids are refused) */
 #define RFM_MOVE_FW_THUMB 64                            /* a thumbnail: 64 x 64, 1 bit, rows top first, MSB left */
 #define RFM_MOVE_FW_THUMB_BYTES (RFM_MOVE_FW_THUMB * RFM_MOVE_FW_THUMB / 8)
@@ -223,6 +228,8 @@ typedef struct {
     uint8_t cats;                                       /* RFM_MOVE_CAT_* bits */
     uint8_t cat;                                        /* its main category, 0..4 (Synth .. Other; its default pad
                                                          * colour), 255 none */
+    uint8_t virt;                                       /* (0.5.4) 1: a Fantasy CFW (a virtual firmware: Elasticat,
+                                                         * Ripple); badged, and step 16's filter */
 } rfm_move_fw_t;
 
 /* ---- (0.4.0) FX setup (Session in the projects view): 3 MIDI FX slots in series, each firmware's track filter, 3
@@ -691,9 +698,20 @@ typedef struct {
     /* (0.5.3) latch, MIDI and Control modes (Track 2 held + the top row's pad 8): RAM only */
     uint8_t latch;                                      /* on */
     uint8_t nlat;                                       /* notes latched now */
-    uint8_t lat_ch[RFM_MOVE_NPADS], lat_n[RFM_MOVE_NPADS];   /* .. each one's channel and note (one hold each) */
+    uint8_t lat_ch[RFM_MOVE_LATCH_MAX], lat_n[RFM_MOVE_LATCH_MAX];   /* .. each one's channel and note (one hold each) */
+    /* (0.5.4) */
+    uint8_t lat_slot[RFM_MOVE_LATCH_MAX];               /* .. the firmware slot it went to (bit 7: parked, its slot no
+                                                         * longer the active one: it holds no note_count) */
+    uint8_t emit_dest;                                  /* (emit_midi's MIDI dest while a latched note lets go) */
+    char pop_text[32];                                  /* rfm_move_popup's words */
 } rfm_move_t;
-/* (0.5.3) latch on or off (MIDI and Control modes' pads); off lets every latched note go. rfm_move_latch: 1 on */
+/* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
+ * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
+ * (at most 31 bytes kept). Call it on the core's thread; rfm_move_screen_timed is 1 while it is up (draw again) */
+void rfm_move_popup(rfm_move_t *m, const char *text);
+/* (0.5.3) latch on or off (MIDI and Control modes' pads); off lets every latched note go. rfm_move_latch: 1 on.
+ * (0.5.4) A latched note stays on the firmware slot it was played on: switching the active slot leaves it sounding
+ * there, and its note off goes there later (MIDI with dest = slot + 1) */
 void rfm_move_set_latch(rfm_move_t *m, int on);
 int rfm_move_latch(const rfm_move_t *m);
 
