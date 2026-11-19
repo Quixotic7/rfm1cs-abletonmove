@@ -5,7 +5,7 @@
  * firmware list. Input goes in as the Move's raw USB-MIDI packets through mr_decode (a fake Move). Then every screen of
  * the mockup's gallery (move-firmware-browser-mockup.html, its catalog in move_fwb_data.h) set up on a live core and
  * compared with the mockup's pixels (move_fwb_ref.h, from move_v2_ref.mjs); writes fw_<name>.pbm for the contact
- * sheet. */
+ * sheet. 0.4.1: the host's edits (rfm_move_fw_set_active .. rfm_move_fx_set_page) against the Move's own. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -951,6 +951,175 @@ static void test_screens(void)
     fixture(m), rfm_move_fw_list(m, NULL, 0), rest_pop(m), screen(m), write_pbm("no_firmwares");
 }
 
+/* ================================================================ the host's edits (0.4.1) === */
+static uint8_t scr2[MR_SCREEN_BYTES];
+static void undirty(rfm_move_t *m) { m->seq.dirty = 0, m->fw.lib_dirty = 0; }
+static int same_screens(rfm_move_t *a, rfm_move_t *b)
+{
+    screen(a), memcpy(scr2, scr, sizeof scr), screen(b);
+    return !memcmp(scr, scr2, sizeof scr);
+}
+static void test_host_edits(void)
+{
+    rfm_move_t *m = &M;
+    const act_t *a;
+    uint32_t h0;
+    static const int fwf_bad[3] = { 0x10000, -1, -1 };
+    /* the active slot in the projects view: a Track press (the track shown, its popup), screen and all */
+    fixture(m), fixture(&M2);
+    undirty(m);
+    CHECK(rfm_move_fw_set_active(m, 1) == 1);
+    CHECK(m->fw.active == 1 && m->fw.track == 1 && m->fw.pop == FP_TRACK && m->fw.lib_dirty && !m->seq.dirty);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && a->a.slot == 1 && !strcmp(a->id, "choralroot"));
+    tap_track(&M2, 1);
+    CHECK(same_screens(m, &M2));
+    rest_pop(m), rest_pop(&M2);
+    CHECK(same_screens(m, &M2));
+    CHECK(rfm_move_fw_set_active(m, 3) == -1 && rfm_move_fw_set_active(m, -1) == -1 && m->fw.active == 1);
+    /* .. in FX setup: the page stays, no Track popup; FX setup left: that firmware's track */
+    press(m, MR_CC_MENU);
+    clear(), undirty(m);
+    CHECK(rfm_move_fw_set_active(m, 0) == 1 && m->fw.active == 0 && m->fw.fx && m->fw.pop == FP_RPAGE && m->fw.lib_dirty);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && !strcmp(a->id, "sloop"));
+    CHECK(rfm_move_fw_set_active(m, 0) == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 1);
+    press(m, MR_CC_MENU);
+    CHECK(!m->fw.fx && m->fw.track == 0);
+
+    /* a level: FW_LEVEL and the library, not the project */
+    fixture(m), undirty(m);
+    CHECK(rfm_move_fw_set_level(m, 1, 50) == 1);
+    CHECK(m->fw.level[1] == 50 && rfm_move_fw_level(m, 1) == 50 && m->fw.lib_dirty && !m->seq.dirty);
+    CHECK((a = last(RFM_MOVE_ACT_FW_LEVEL)) && a->a.slot == 1 && a->a.value == 50 && !strcmp(a->id, "choralroot"));
+    clear();
+    CHECK(rfm_move_fw_set_level(m, 1, 50) == 0 && nact == 0);
+    CHECK(rfm_move_fw_set_level(m, 1, 128) == -1 && rfm_move_fw_set_level(m, 3, 0) == -1 && m->fw.level[1] == 50);
+    /* the library's save follows (FW_LIBRARY, its level) */
+    nlib = 0;
+    adv_ms(m, RFM_MOVE_FW_LIB_SAVE_MS + 20);
+    CHECK(nlib == 1 && lib[7] == 50 && !m->fw.lib_dirty);
+
+    /* the mix: pan and sends are MIX and the project; the level FW_LEVEL alone, as the Mixer's knobs */
+    fixture(m), undirty(m);
+    CHECK(rfm_move_mix_set(m, 2, -1, 30, (const int[3]){ 10, -1, -1 }) == 1);
+    CHECK(m->seq.fx.pan[2] == 30 && m->seq.fx.send[2][0] == 10 && m->seq.fx.send[2][1] == 70 && m->seq.dirty && !m->fw.lib_dirty);
+    CHECK(count(RFM_MOVE_ACT_MIX) == 1 && count(RFM_MOVE_ACT_FW_LEVEL) == 0 && (a = last(RFM_MOVE_ACT_MIX)) && a->a.slot == 2 &&
+          a->a.mix[0] == 80 && a->a.mix[1] == 30 && a->a.mix[2] == 10 && a->a.mix[3] == 70 && a->a.mix[4] == 0);
+    clear(), undirty(m);
+    CHECK(rfm_move_mix_set(m, 2, 70, -1, NULL) == 1);
+    CHECK(count(RFM_MOVE_ACT_MIX) == 0 && count(RFM_MOVE_ACT_FW_LEVEL) == 1 && m->fw.lib_dirty && !m->seq.dirty);
+    clear();
+    CHECK(rfm_move_mix_set(m, 2, 70, 30, (const int[3]){ 10, 70, 0 }) == 0 && nact == 0);
+    CHECK(rfm_move_mix_set(m, 2, -2, -1, NULL) == -1 && rfm_move_mix_set(m, 0, -1, -1, (const int[3]){ 0, 128, 0 }) == -1 &&
+          rfm_move_mix_set(m, 3, -1, -1, NULL) == -1 && nact == 0);
+    /* .. the same as the Move's own Mixer */
+    fixture(&M2), press(&M2, MR_CC_MENU), tap_track(&M2, 3), tap_pad(&M2, pad_of(2));
+    knob(&M2, 0, -10), knob(&M2, 1, -34), knob(&M2, 2, -20);   /* (send 1: 30 -> 10) */
+    CHECK(!memcmp(&m->seq.fx, &M2.seq.fx, sizeof m->seq.fx) && M2.fw.level[2] == m->fw.level[2]);
+
+    /* the routing: one ROUTE, the project; a MIDI FX filter is one track or all */
+    fixture(m), undirty(m);
+    CHECK(rfm_move_route_set(m, (const int[3]){ 0x3, -1, 0 }, (const int[3]){ -1, 0x30, T(4) }) == 0);   /* (not shown) */
+    CHECK(m->seq.fx.ffilt[0] == 3 && m->seq.fx.ffilt[1] == (T(7) | T(8)) && m->seq.fx.ffilt[2] == 0 &&
+          m->seq.fx.mfx[0].filt == T(7) && m->seq.fx.mfx[1].filt == 0xFFFF && m->seq.fx.mfx[2].filt == T(4) && m->seq.dirty);
+    CHECK(count(RFM_MOVE_ACT_ROUTE) == 1 && (a = last(RFM_MOVE_ACT_ROUTE)) && a->a.filt[0] == 3 && a->a.filt[2] == 0 &&
+          a->a.filt[3] == T(7) && a->a.filt[4] == 0xFFFF && a->a.filt[5] == T(4));
+    clear(), undirty(m);
+    CHECK(rfm_move_route_set(m, (const int[3]){ 0x3, -1, 0 }, NULL) == 0 && nact == 0 && !m->seq.dirty);
+    CHECK(rfm_move_route_set(m, fwf_bad, NULL) == -1 && m->seq.fx.ffilt[0] == 3);
+    press(m, MR_CC_MENU), tap_track(m, 1), rest_pop(m);    /* FX setup's Routing on screen */
+    screen(m), h0 = hash_scr();
+    CHECK(rfm_move_route_set(m, (const int[3]){ 0xFFFF, -1, -1 }, NULL) == 1);
+    screen(m);
+    CHECK(hash_scr() != h0);
+
+    /* a module: fx_load's defaults, FX_LOAD (no FX_PARAM), the project; as the jog's press */
+    fixture(m), fixture(&M2);
+    press(m, MR_CC_MENU), tap_pad(m, pad_of(2)), rest_pop(m);
+    press(&M2, MR_CC_MENU), tap_pad(&M2, pad_of(2)), jog(&M2, 1), jog_press(&M2), rest_pop(&M2);
+    clear(), undirty(m);
+    screen(m), h0 = hash_scr();
+    CHECK(rfm_move_fx_set_module(m, RFM_MOVE_FX_MIDI, 2, 0) == 1);
+    CHECK(m->seq.fx.mfx[2].mod == 0 && !strcmp(m->seq.fx.mfx[2].name, "Arp") && m->seq.fx.mfx[2].val[3] == 64 && m->seq.dirty);
+    CHECK(count(RFM_MOVE_ACT_FX_LOAD) == 1 && count(RFM_MOVE_ACT_FX_PARAM) == 0 && (a = last(RFM_MOVE_ACT_FX_LOAD)) &&
+          a->a.fx == RFM_MOVE_FX_MIDI && a->a.slot == 2 && a->a.value == 0 && !strcmp(a->id, "Arp"));
+    CHECK(!memcmp(&m->seq.fx, &M2.seq.fx, sizeof m->seq.fx) && same_screens(m, &M2));
+    screen(m);
+    CHECK(hash_scr() != h0);
+    /* .. a parameter: clamped as the knob clamps, FX_PARAM, the project */
+    clear(), undirty(m);
+    CHECK(rfm_move_fx_set_param(m, RFM_MOVE_FX_MIDI, 2, 0, 7) == 1);   /* Rate: 3 words */
+    CHECK(m->seq.fx.mfx[2].val[0] == 2 && m->seq.dirty && (a = last(RFM_MOVE_ACT_FX_PARAM)) && a->a.fx == RFM_MOVE_FX_MIDI &&
+          a->a.slot == 2 && a->a.param == 0 && a->a.value == 2);
+    CHECK(rfm_move_fx_set_param(m, RFM_MOVE_FX_MIDI, 2, 3, 200) == 1 && m->seq.fx.mfx[2].val[3] == 127);
+    clear();
+    CHECK(rfm_move_fx_set_param(m, RFM_MOVE_FX_MIDI, 2, 3, 127) == 0 && nact == 0);
+    CHECK(rfm_move_fx_set_param(m, RFM_MOVE_FX_MIDI, 2, 4, 1) == -1);   /* (Arp has 4) */
+    CHECK(rfm_move_fx_set_param(m, RFM_MOVE_FX_AUDIO, 2, 0, 1) == -1);  /* (empty) */
+    CHECK(rfm_move_fx_set_module(m, RFM_MOVE_FX_AUDIO, 0, 5) == -1 && rfm_move_fx_set_module(m, 2, 0, 0) == -1 &&
+          rfm_move_fx_set_module(m, RFM_MOVE_FX_MIDI, 3, 0) == -1 && nact == 0);
+    /* .. the same module again: its defaults back (as the Move); -1 empties */
+    CHECK(rfm_move_fx_set_module(m, RFM_MOVE_FX_MIDI, 2, 0) == 1 && m->seq.fx.mfx[2].val[0] == 0 && m->seq.fx.mfx[2].val[3] == 64);
+    CHECK(rfm_move_fx_set_module(m, RFM_MOVE_FX_MIDI, 2, -1) == 1 && m->seq.fx.mfx[2].mod == -1 && !m->seq.fx.mfx[2].name[0] &&
+          (a = last(RFM_MOVE_ACT_FX_LOAD)) && a->a.value == -1);
+    /* the page: SETTINGS, as a Track press in FX setup */
+    clear();
+    screen(m), h0 = hash_scr();
+    CHECK(rfm_move_fx_set_page(m, RFM_MOVE_FX_PAGE_AUDIO) == 1 && m->s.fx_page == 2 && count(RFM_MOVE_ACT_SETTINGS) == 1);
+    screen(m);
+    CHECK(hash_scr() != h0);
+    CHECK(rfm_move_fx_set_page(m, RFM_MOVE_FX_PAGE_AUDIO) == 0 && count(RFM_MOVE_ACT_SETTINGS) == 1);
+    CHECK(rfm_move_fx_set_page(m, 4) == -1);
+    rfm_move_fx_modules(m, RFM_MOVE_FX_MIDI, NULL, 0);
+    CHECK(rfm_move_fx_set_page(m, RFM_MOVE_FX_PAGE_MIDI) == -1 && rfm_move_fx_set_module(m, RFM_MOVE_FX_MIDI, 0, 0) == -1);
+
+    /* the projects view not on screen: done, nothing to redraw */
+    fixture(m);
+    press(m, MR_CC_BACK);
+    CHECK(!m->seq.projects);
+    clear();
+    CHECK(rfm_move_fw_set_level(m, 0, 10) == 0 && rfm_move_fx_set_module(m, RFM_MOVE_FX_AUDIO, 2, 1) == 0 &&
+          rfm_move_fx_set_page(m, RFM_MOVE_FX_PAGE_MIX) == 0 && rfm_move_fw_set_active(m, 2) == 0);
+    CHECK(count(RFM_MOVE_ACT_FW_LEVEL) == 1 && count(RFM_MOVE_ACT_FX_LOAD) == 1 && count(RFM_MOVE_ACT_SETTINGS) == 1 &&
+          count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && m->fw.active == 2 && m->s.fx_page == 3);
+}
+
+/* ---- (0.4.1) no favourites: the view shows All; the setting keeps the user's choice */
+static void reenter(rfm_move_t *m) { press(m, MR_CC_BACK), projects(m); }
+static void test_no_favs(void)
+{
+    rfm_move_t *m = &M;
+    fixture(m);
+    m->s.fw_scope = 0, reenter(m);                      /* favourites: the saved choice (Favorites) */
+    CHECK(m->seq.projects && m->fw.track == 0 && !m->fw.all_auto && rfmv_fw_list_len(m) == m->fw.nfav && m->fw.nfav > 1);
+    m->s.fw_scope = 1, reenter(m);
+    CHECK(!m->fw.all_auto && rfmv_fw_list_len(m) == n_installed());
+    /* none: All on entry, the setting kept */
+    m->s.fw_scope = 0, m->fw.nfav = 0, reenter(m);
+    CHECK(m->fw.all_auto && m->s.fw_scope == 0 && rfmv_fw_list_len(m) == n_installed());
+    screen(m);
+    CHECK(lit_in(0, 0, 128, 64) > 0);
+    /* step 1 pressed: the user's choice holds (an empty Favorites) */
+    tap_step(m, 0);
+    CHECK(!m->fw.all_auto && rfmv_fw_list_len(m) == 0);
+    /* .. until the next entry, or another firmware track */
+    tap_track(m, 1);
+    CHECK(m->fw.all_auto && rfmv_fw_list_len(m) == n_installed());
+    /* the last favourite removed (Sampling): All at once; one added again: All stays until the next entry */
+    fixture(m);
+    m->s.fw_scope = 0, m->fw.nfav = 1, reenter(m);
+    CHECK(!m->fw.all_auto && rfmv_fw_list_len(m) == 1);
+    m->fw.sel = (int16_t)idx(m->fw.rec[m->fw.fav[0]].id);
+    press(m, MR_CC_SAMPLE);
+    CHECK(m->fw.nfav == 0 && m->fw.all_auto && m->s.fw_scope == 0 && rfmv_fw_list_len(m) == n_installed());
+    press(m, MR_CC_SAMPLE);
+    CHECK(m->fw.nfav == 1 && m->fw.all_auto && rfmv_fw_list_len(m) == n_installed());
+    reenter(m);
+    CHECK(!m->fw.all_auto && rfmv_fw_list_len(m) == 1);
+    /* the catalog (Mute) is unchanged */
+    m->fw.nfav = 0, reenter(m), press(m, MR_CC_MUTE);
+    CHECK(m->fw.catalog && rfmv_fw_list_len(m) > n_installed());
+}
+
 int main(void)
 {
     test_nolist();
@@ -959,6 +1128,8 @@ int main(void)
     test_library();
     test_catalog();
     test_fx();
+    test_host_edits();
+    test_no_favs();
     test_states();
     test_midi_track();
     test_old_formats();

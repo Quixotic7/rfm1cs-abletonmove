@@ -3,6 +3,33 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.4.1 (2026-11-18)
+
+The host's edits: a public way to apply FX setup, mix, routing and firmware-slot edits made outside the Move (a web
+page), so a host no longer writes `rfm_move_t`'s fields and copies `fx_load`'s rule (RemoteFM14Move's page edit ops
+16..22). Nothing changes for a host that does not call them; no format or action changes.
+
+**API (move.h, new):** `rfm_move_fw_set_active(core, slot)`, `rfm_move_fw_set_level(core, slot, level)`,
+`rfm_move_mix_set(core, slot, level, pan, sends[3])`, `rfm_move_route_set(core, fw_filt[3], mfx_filt[3])`,
+`rfm_move_fx_set_module(core, kind, slot, module | -1)`, `rfm_move_fx_set_param(core, kind, slot, index, value)`,
+`rfm_move_fx_set_page(core, page)`, and `RFM_MOVE_FX_PAGE_MIDI / _ROUTE / _AUDIO / _MIX` (settings.fx_page's values).
+Call them on the core's thread. Each makes the Move's own edit: the same change, the same action through the act
+callback (`FW_ACTIVE`, `FW_LEVEL`, `MIX`, `ROUTE`, `FX_LOAD`, `FX_PARAM`, `SETTINGS`), the same dirty marks (the
+project's autosave; the library for the active slot and levels); nothing when nothing changes. They return -1
+refused (out of range, nothing changed), 0 done, 1 done and on the Move's screen now (redraw). `-1` / NULL arguments
+leave a value. In the projects view `fw_set_active` is a Track press (the firmware track shown, its popup); other
+edits show no popup. The host guide's v0.4.1 section.
+
+**Behaviour (the owner's ask):** with no favourites, a firmware track shows All (step 2 lit, "All") on entering the
+view, on switching to a firmware track, and when the last favourite is removed (Sampling). The setting
+(`fw_scope`) keeps the user's choice: once favourites exist again, the next entry shows the saved choice; while
+browsing, nothing flips back on its own; pressing step 1 / 2 is always obeyed (an empty Favorites included). The
+catalog (Mute) is unchanged. `rfm_move_fw_state_t` has a new last field, `all_auto` (`rfm_move_t` grew by a byte or
+so: rebuild everything).
+
+**Tests:** `move_fw` has `test_host_edits` and `test_no_favs` (336 checks in all, was 261): the dirty flags, the actions, the library save, and the
+setters against the Move's own Track press, Mixer knobs and jog-press load (state and screen identical).
+
 ## 0.4.0 (2026-11-18)
 
 The Move firmware browser and FX setup (the owner's design, revision 2, and its mockup), for a RemoteFM1 hosted on

@@ -28,7 +28,7 @@ extern "C" {
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 4
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.4.0"
+#define RFM1CS_VERSION "0.4.1"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -224,6 +224,8 @@ typedef struct {
 /* ---- (0.4.0) FX setup (Session in the projects view): 3 MIDI FX slots in series, each firmware's track filter, 3
  * audio FX slots on send / return busses, and the mix; saved with the project (version 5) */
 enum { RFM_MOVE_FX_MIDI = 0, RFM_MOVE_FX_AUDIO = 1 };
+enum { RFM_MOVE_FX_PAGE_MIDI = 0, RFM_MOVE_FX_PAGE_ROUTE = 1, RFM_MOVE_FX_PAGE_AUDIO = 2, RFM_MOVE_FX_PAGE_MIX = 3 };   /* (0.4.1)
+                                                         * settings.fx_page: Track 1..4 in FX setup */
 #define RFM_MOVE_FX_SLOTS 3
 #define RFM_MOVE_FX_PARAMS 8                            /* knobs 1..8: a module's first 8 parameters */
 #define RFM_MOVE_FX_NAME 24                             /* a module's name with its NUL, as the project keeps it */
@@ -318,6 +320,8 @@ typedef struct {
     uint8_t fx_focus;                                   /* the slot (pad 1..3) on the page */
     int8_t browse;                                      /* the module list: -1 closed, 0 "(empty)", n the n-th module */
     int8_t knob_acc[RFM_MOVE_NKNOBS];                   /* list parameters: the ticks short of a word */
+    /* (0.4.1) */
+    uint8_t all_auto;                                   /* no favourites: All shown (settings.fw_scope kept) */
 } rfm_move_fw_state_t;
 
 /* ---- the sequencer (Track 4; README.md, "Sequencer") */
@@ -750,6 +754,39 @@ void rfm_move_fx_refused(rfm_move_t *m, int kind, int slot);
 /* the whole FX setup as actions now (FX_LOAD and FX_PARAM for every slot, MIX for every firmware, ROUTE): after the
  * modules are given at start. A project load does it too (when the browser is on) */
 void rfm_move_fx_sync(rfm_move_t *m);
+
+/* ---- (0.4.1) the host's edits: FX setup, the mix, the routing and the firmware slots changed outside the Move (a web
+ * page), applied as the Move's own edit applies them. Call them on the core's thread (where rfm_move_input is
+ * called). Each makes the same change, emits the same action through the act callback (the session passes it on as
+ * EV_ACTION, so the host's own handler follows) and marks the same things dirty: the project (its autosave, as after
+ * any edit) or the library (FW_LIBRARY, RFM_MOVE_FW_LIB_SAVE_MS later). Nothing is emitted when nothing changes.
+ * No popup is shown, except the Track popup of rfm_move_fw_set_active in the projects view.
+ * Returns -1 refused (an argument out of range: nothing changed), 0 done (or nothing to change), 1 done and the Move's
+ * screen shows it now (the projects view, FX setup): redraw (rfm1cs_session_redraw). */
+/* the firmware the Move's controls play (FW_ACTIVE, the library). In the projects view (not FX setup) it is a Track
+ * 1..3 press: that firmware track shown with its Track popup (FW_ACTIVE only if the slot changes; the view's track
+ * may change SETTINGS). Any slot 0..2, loaded or not, as the Track button */
+int rfm_move_fw_set_active(rfm_move_t *m, int slot);
+/* a slot's level 0..127 (FW_LEVEL, the library), as the Mixer's knob 1 or Track held + volume */
+int rfm_move_fw_set_level(rfm_move_t *m, int slot, int level);
+/* a firmware slot's mix; -1 (or sends NULL, or a send -1) leaves that value. The level as rfm_move_fw_set_level
+ * (FW_LEVEL, the library); pan 0..127 (64 centre) and the sends to the audio FX busses 0..127: one MIX for the slot
+ * (it carries all five values), the project. A level-only change emits FW_LEVEL alone, as the Move does */
+int rfm_move_mix_set(rfm_move_t *m, int slot, int level, int pan, const int sends[RFM_MOVE_FX_SLOTS]);
+/* the routing: each firmware's track filter (bit t: track t + 1; any of the 16, 0 none) and each MIDI FX slot's (one
+ * track's bit, or 0xFFFF all; any other value is all, as the Move offers only these); NULL or -1 leaves one. One
+ * ROUTE (all six filters), the project */
+int rfm_move_route_set(rfm_move_t *m, const int fw_filt[RFM_MOVE_FW_SLOTS], const int mfx_filt[RFM_MOVE_FX_SLOTS]);
+/* a slot's module: an index in the kind's rfm_move_fx_modules list, -1 empty. Its parameters take their defaults
+ * (each param's def, clamped to its words or 0..127), even when it is the module already there, as the jog's press
+ * loads it. FX_LOAD (no FX_PARAM for the defaults: the host's module starts at them), the project */
+int rfm_move_fx_set_module(rfm_move_t *m, int kind, int slot, int module_index);
+/* a loaded module's parameter (index < its nparams and RFM_MOVE_FX_PARAMS): a word's index (clamped to its words) or
+ * 0..127 (clamped). FX_PARAM, the project. -1: no module there, or no such parameter */
+int rfm_move_fx_set_param(rfm_move_t *m, int kind, int slot, int index, int value);
+/* FX setup's page (RFM_MOVE_FX_PAGE_*; settings.fx_page), as Track 1..4 pressed in FX setup: SETTINGS. -1: a page
+ * the host has no modules for (MIDI FX, Audio FX). 1 when FX setup is on screen (its module list closed) */
+int rfm_move_fx_set_page(rfm_move_t *m, int page);
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */

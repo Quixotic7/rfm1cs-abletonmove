@@ -318,6 +318,9 @@ static void resolve(rfm_move_t *m)                      /* the records' and the 
         f->slot_fw[s] = (int16_t)find_id(m, f->slot_id[s]);
 }
 static int is_fav(const rfm_move_t *m, int fw) { return fav_pos(m, rec_of(m, fw)) >= 0; }
+/* Favorites (0) or All (1) as shown: All while there are no favourites (on entering the view or a firmware track,
+ * or the last one removed) until step 1 / 2 is pressed; the setting keeps the user's choice (0.4.1) */
+static int scope(const rfm_move_t *m) { return m->s.fw_scope == 1 || m->fw.all_auto; }
 static int color(const rfm_move_t *m, int fw)           /* palette index 0..15 */
 {
     const int r = rec_of(m, fw);
@@ -383,7 +386,7 @@ static int in_list(const rfm_move_t *m, int fw)
         return 0;
     if (m->fw.catalog)
         return passes(m, fw);
-    return installed(m, fw) && (m->s.fw_scope == 1 || is_fav(m, fw)) && passes(m, fw);
+    return installed(m, fw) && (scope(m) || is_fav(m, fw)) && passes(m, fw);
 }
 /* the list's length; its rows [from, from + cnt) into out (list indexes, -1 past the end) */
 static int walk(const rfm_move_t *m, int from, int cnt, int *out)
@@ -391,7 +394,7 @@ static int walk(const rfm_move_t *m, int from, int cnt, int *out)
     int i, n = 0;
     for (i = 0; i < cnt; i++)
         out[i] = -1;
-    if (m->fw.catalog || m->s.fw_scope == 1) {
+    if (m->fw.catalog || scope(m)) {
         for (i = 0; i < m->fw.n; i++)
             if ((m->fw.catalog || installed(m, i)) && passes(m, i)) {
                 if (n >= from && n < from + cnt)
@@ -412,7 +415,7 @@ static int walk(const rfm_move_t *m, int from, int cnt, int *out)
 static int list_len(const rfm_move_t *m) { return walk(m, 0, 0, NULL); }
 static int nbanks_n(int n) { return n > 32 ? (n + 31) / 32 : 1; }
 static int nbanks(const rfm_move_t *m) { return nbanks_n(list_len(m)); }
-static int bank_key(const rfm_move_t *m) { return m->fw.catalog ? 2 : m->s.fw_scope ? 1 : 0; }
+static int bank_key(const rfm_move_t *m) { return m->fw.catalog ? 2 : scope(m) ? 1 : 0; }
 static int cur_bank(const rfm_move_t *m)
 {
     const int b = m->fw.bank[bank_key(m)], n = nbanks(m);
@@ -946,6 +949,7 @@ void rfmv_fw_enter(rfm_move_t *m)
     f->track = (uint8_t)(f->host ? (m->s.fw_track == 3 ? 3 : f->active) : 3);
     f->catalog = 0, f->sel = -1, f->jog = 0, f->capture = 0, f->cap_step = -1, f->states = 0, f->smods = 0;
     f->fx = 0, f->browse = -1;
+    f->all_auto = !f->nfav;                             /* (no favourites: All) */
     pop_clear(m);
     if (f->track < 3 && m->pop == POP_MODE)
         m->pop = POP_NONE;                              /* (a firmware track: its own screen at once) */
@@ -972,6 +976,7 @@ static void show_track(rfm_move_t *m, int t)
         rfmv_changed(m);
     }
     f->sel = -1, f->jog = 0, f->capture = 0, f->cap_step = -1, f->catalog = 0, f->states = 0, f->smods = 0;
+    f->all_auto = !f->nfav;
     pop(m, FP_TRACK, t, 0);
 }
 static void set_level(rfm_move_t *m, int t, int d)
@@ -1037,6 +1042,8 @@ static void fav_toggle(rfm_move_t *m, int fw)
     if (k >= 0) {
         memmove(&f->fav[k], &f->fav[k + 1], (size_t)(f->nfav - k - 1) * sizeof f->fav[0]);
         f->nfav--;
+        if (!f->nfav)
+            f->all_auto = 1;                            /* (the last one gone: All) */
     } else
         f->fav[f->nfav++] = (uint16_t)r;
     pop(m, FP_FAV, fw, k < 0);
@@ -1155,7 +1162,7 @@ static void fw_input(rfm_move_t *m, const mr_event_t *ev)
             if (f->catalog)
                 m->s.fw_cat_scope ^= (uint8_t)s;
             else
-                m->s.fw_scope = (uint8_t)(s - 1);
+                m->s.fw_scope = (uint8_t)(s - 1), f->all_auto = 0;   /* (the user's choice, favourites or not) */
             after_filter(m);
         } else if (tag_defined(m, s)) {
             m->s.fw_filter ^= (uint16_t)(1u << (s - 1));
@@ -1408,6 +1415,134 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
     }
 }
 
+/* ================================================================ the host's edits (0.4.1) === */
+/* An edit made outside the Move (a web page), applied as the Move's own edit applies it: the same state change, the
+ * same action, the same dirty marks (the project's autosave, the library's save). No popup, except the Track popup
+ * of rfm_move_fw_set_active in the projects view (a Track press). -1 refused (out of range; nothing changed), 0 done
+ * or nothing to change, 1 done and the Move's screen shows it: redraw (rfm1cs_session_redraw). */
+typedef char rfmv_pg_check[PG_MIDI == RFM_MOVE_FX_PAGE_MIDI && PG_ROUTE == RFM_MOVE_FX_PAGE_ROUTE &&
+                           PG_AUDIO == RFM_MOVE_FX_PAGE_AUDIO && PG_MIX == RFM_MOVE_FX_PAGE_MIX ? 1 : -1];
+static int fx_shown(const rfm_move_t *m) { return m->seq.projects && m->fw.fx; }
+int rfm_move_fw_set_active(rfm_move_t *m, int slot)
+{
+    rfm_move_fw_state_t *f = F(m);
+    if (slot < 0 || slot >= RFM_MOVE_FW_SLOTS)
+        return -1;
+    if (m->seq.projects && !f->fx) {                    /* the projects view: a Track press (the track shown, its popup) */
+        show_track(m, slot);
+        return 1;
+    }
+    if (slot == f->active)
+        return 0;
+    f->active = (uint8_t)slot;
+    if (f->track < 3)
+        f->track = (uint8_t)slot;                       /* (FX setup left: the firmware track played) */
+    act_fw(m, RFM_MOVE_ACT_FW_ACTIVE, slot, f->slot_fw[slot], 0);
+    lib_changed(m);
+    return m->seq.projects;
+}
+static int level_to(rfm_move_t *m, int slot, int level)
+{
+    rfm_move_fw_state_t *f = F(m);
+    const int v = clampi(level, 0, 127);
+    if (v == f->level[slot])
+        return 0;
+    f->level[slot] = (uint8_t)v;
+    act_fw(m, RFM_MOVE_ACT_FW_LEVEL, slot, f->slot_fw[slot], v);
+    lib_changed(m);
+    return 1;
+}
+int rfm_move_fw_set_level(rfm_move_t *m, int slot, int level)
+{
+    if (slot < 0 || slot >= RFM_MOVE_FW_SLOTS || level < 0 || level > 127)
+        return -1;
+    return level_to(m, slot, level) && m->seq.projects;
+}
+int rfm_move_mix_set(rfm_move_t *m, int slot, int level, int pan, const int sends[RFM_MOVE_FX_SLOTS])
+{
+    rfm_move_fxset_t *x = &m->seq.fx;
+    int k, lv, mix = 0;
+    if (slot < 0 || slot >= RFM_MOVE_FW_SLOTS || level < -1 || level > 127 || pan < -1 || pan > 127)
+        return -1;
+    for (k = 0; sends && k < RFM_MOVE_FX_SLOTS; k++)
+        if (sends[k] < -1 || sends[k] > 127)
+            return -1;
+    lv = level >= 0 && level_to(m, slot, level);        /* (FW_LEVEL and the library, as the Mixer's knob 1) */
+    if (pan >= 0 && pan != x->pan[slot])
+        x->pan[slot] = (uint8_t)pan, mix = 1;
+    for (k = 0; sends && k < RFM_MOVE_FX_SLOTS; k++)
+        if (sends[k] >= 0 && sends[k] != x->send[slot][k])
+            x->send[slot][k] = (uint8_t)sends[k], mix = 1;
+    if (mix) {                                          /* (MIX and the project, as knobs 2..5) */
+        act_mix(m, slot);
+        rfmv_seq_dirty(m);
+    }
+    return (lv || mix) && m->seq.projects;
+}
+int rfm_move_route_set(rfm_move_t *m, const int fw_filt[RFM_MOVE_FW_SLOTS], const int mfx_filt[RFM_MOVE_FX_SLOTS])
+{
+    rfm_move_fxset_t *x = &m->seq.fx;
+    int k, any = 0;
+    for (k = 0; k < 3; k++)
+        if ((fw_filt && (fw_filt[k] < -1 || fw_filt[k] > 0xFFFF)) || (mfx_filt && (mfx_filt[k] < -1 || mfx_filt[k] > 0xFFFF)))
+            return -1;
+    for (k = 0; k < 3; k++) {
+        if (fw_filt && fw_filt[k] >= 0 && fw_filt[k] != x->ffilt[k])
+            x->ffilt[k] = (uint16_t)fw_filt[k], any = 1;
+        if (mfx_filt && mfx_filt[k] >= 0) {
+            const unsigned f = (unsigned)mfx_filt[k];
+            const uint16_t v = f && !(f & (f - 1)) ? (uint16_t)f : 0xFFFF;   /* (one track, or all) */
+            if (v != x->mfx[k].filt)
+                x->mfx[k].filt = v, any = 1;
+        }
+    }
+    if (!any)
+        return 0;
+    act_route(m);
+    rfmv_seq_dirty(m);
+    return fx_shown(m);
+}
+int rfm_move_fx_set_module(rfm_move_t *m, int kind, int slot, int module_index)
+{
+    if ((kind != RFM_MOVE_FX_MIDI && kind != RFM_MOVE_FX_AUDIO) || slot < 0 || slot >= RFM_MOVE_FX_SLOTS ||
+        module_index < -1 || module_index >= m->fw.nmods[kind])
+        return -1;
+    fx_load(m, kind, slot, module_index);               /* (the defaults, FX_LOAD, the project; as the jog's press) */
+    return fx_shown(m);
+}
+int rfm_move_fx_set_param(rfm_move_t *m, int kind, int slot, int index, int value)
+{
+    rfm_move_fxslot_t *sl;
+    const rfm_move_fx_module_t *md;
+    int v;
+    if ((kind != RFM_MOVE_FX_MIDI && kind != RFM_MOVE_FX_AUDIO) || slot < 0 || slot >= RFM_MOVE_FX_SLOTS)
+        return -1;
+    sl = fxslot(m, kind, slot);
+    md = module(m, kind, sl->mod);
+    if (!md || index < 0 || index >= nparams(md))
+        return -1;
+    v = md->params[index].nwords > 0 ? clampi(value, 0, md->params[index].nwords - 1) : clampi(value, 0, 127);
+    if (v == sl->val[index])
+        return 0;
+    sl->val[index] = (uint8_t)v;
+    act_fx_param(m, kind, slot, index);
+    rfmv_seq_dirty(m);
+    return fx_shown(m);
+}
+int rfm_move_fx_set_page(rfm_move_t *m, int page)
+{
+    if (page < 0 || page > PG_MIX || !fx_page_ok(m, page))
+        return -1;
+    if (m->s.fx_page == page)
+        return 0;
+    m->s.fx_page = (uint8_t)page;
+    rfmv_changed(m);                                    /* (SETTINGS, as a Track press in FX setup) */
+    if (!fx_shown(m))
+        return 0;
+    m->fw.browse = -1;
+    return 1;
+}
+
 /* the projects view's input: the Track buttons, then FX setup, a firmware track, or Track 4 (project.c's) */
 void rfmv_view_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
 {
@@ -1578,7 +1713,7 @@ void rfmv_fw_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             if (f->catalog)
                 v = lit(i == 1 ? AMBER : WHITE, m->s.fw_cat_scope & i ? 256 : A(0.2));
             else
-                v = lit(i == 1 ? FAVCOL : WHITE, m->s.fw_scope == i - 1 ? 256 : A(0.2));
+                v = lit(i == 1 ? FAVCOL : WHITE, scope(m) == i - 1 ? 256 : A(0.2));
         } else if (tag_defined(m, i))
             v = lit(i < CAT0 + 5 ? PAL[CATCOL[i - CAT0]] : WHITE, m->s.fw_filter >> (i - 1) & 1 ? 256 : A(0.18));
         c[L_STEP0 + i - 1] = v;
@@ -1641,7 +1776,7 @@ static void thumb(B *g, const rfm_move_t *m, int fw, int x0)
 }
 static void scope_title(const rfm_move_t *m, char *o, int cap)
 {
-    snprintf(o, (size_t)cap, "%s", m->fw.catalog ? "Catalog" : m->s.fw_scope == 0 ? "Favorites" : "All");
+    snprintf(o, (size_t)cap, "%s", m->fw.catalog ? "Catalog" : !scope(m) ? "Favorites" : "All");
 }
 
 /* the name view, the colour popup, the description (a firmware selected) */
@@ -1774,7 +1909,7 @@ static void rest(B *g, const rfm_move_t *m)             /* the bank: 8 x 4 cells
     const rfm_move_fw_state_t *f = &m->fw;
     int ids[32], i;
     if (!bank_ids(m, ids)) {
-        if (!f->catalog && m->s.fw_scope == 0 && !m->s.fw_filter)
+        if (!f->catalog && !scope(m) && !m->s.fw_filter)
             ctext(g, 12, f->n ? "None yet" : "Empty", 2), ctext(g, 38, f->n ? "Sampling adds one" : "no firmwares listed", 1);
         else
             ctext(g, 12, "Nothing", 2), ctext(g, 38, "matches the filter", 1);

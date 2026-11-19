@@ -426,7 +426,7 @@ an empty slot faint white, a slot past the host's voices blinking slowly; in FX 
 |---|---|
 | Pads | a bank of up to 32 (A-Z; Favorites in their order); a pad selects; this track's firmware breathes, on the screen a white cell; one on another track a dotted cell |
 | Jog press / turn | load into this track (`FW_LOAD`; a bar until the host says) / the description, a row a detent (0: the name view) |
-| Steps 1 / 2, 3..7, 8..16 | Favorites / All (installed), the catalog's five categories, nine user tags: any of the categories (OR), within Favorites / All (AND) |
+| Steps 1 / 2, 3..7, 8..16 | Favorites / All (installed), the catalog's five categories, nine user tags: any of the categories (OR), within Favorites / All (AND). (0.4.1) No favourites: All is shown on entering the view or a firmware track, and when the last one is removed; step 1 / 2 is still the user's choice, kept in the settings |
 | Sampling, knob 1, Capture held + step | favourite, pad colour (16), tag (a free step makes "Tag N") |
 | Delete | unloads this track's firmware at once (`FW_UNLOAD`), with a message |
 | Left / Right | banks (lit when there is one) |
@@ -450,6 +450,9 @@ Decisions where the spec left a gap:
   settings (version 4).
 - The mockup's text drew font5x7's first 7 rows; the core draws its 8-row cell (descenders), and the reference
   (`tests/move_v2_ref.mjs`) is made the same way.
+- (0.4.1) Edits made outside the Move (a web page) go in through `rfm_move_fw_set_active`, `_fw_set_level`,
+  `rfm_move_mix_set`, `_route_set`, `rfm_move_fx_set_module`, `_fx_set_param`, `_fx_set_page`: the Move's own edit
+  (its action, the project's or the library's save), never a write to `rfm_move_t`'s fields.
 
 ## Decisions where the design left a gap
 
