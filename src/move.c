@@ -522,9 +522,13 @@ static void on_pad(rfm_move_t *m, int p, int vel, uint32_t now)
         rfmv_seq_pad(m, p, vel, now);
         return;
     }
-    if (track_held(m, 1) || rfmv_seq_trk_held(m) || (m->mmenu && m->s.mode == RFM_MOVE_MODE_MIDI)) {   /* Track 2 held,
-                                                         * MIDI mode's Keys & Scales (the sequencer: Track 4): the
-                                                         * layout, the scale */
+    if (rfmv_seq_trk_held(m) && !track_held(m, 1)) {   /* (0.4.6, the owner's) Track 4 held: the pads do nothing (the
+                                                         * layout and scale are Track 2's) */
+        h->kind = H_MENU;
+        return;
+    }
+    if (track_held(m, 1) || (m->mmenu && m->s.mode == RFM_MOVE_MODE_MIDI)) {   /* Track 2 held, MIDI mode's Keys &
+                                                         * Scales: the layout, the scale */
         h->kind = H_MENU;
         rfmv_pick_layout(m, p);
         return;

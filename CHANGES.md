@@ -3,6 +3,16 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.4.6 (2026-11-18)
+
+A fix on 0.4.5 (the owner's), on its own so it can ship before 0.5.0. No API, format or struct changes.
+
+- **Track 4 held + a pad no longer changes the layout or scale**, in any mode; that is Track 2's job (Track 2 held,
+  also in Sequencer mode, where it sets the selected track's layout). The pads do nothing while Track 4 is held.
+
+**Tests:** `move` `test_track4_pads` (Track 4 held + pads leave the layout and scale, Track 2 held + pads change
+them, in all four modes); `move_seq` moved its per-track layout checks to Track 2 held.
+
 ## 0.4.5 (2026-11-18)
 
 The Back flip is named, and FX setup stays where the user left it (the owner's). No API or action changes;
