@@ -219,6 +219,8 @@ void rfmv_fx_loaded(rfm_move_t *m);                    /* a project loaded: modu
 int rfmv_fw_bank(const rfm_move_t *m, int ids[32]);   /* (tests) the bank shown, its size */
 int rfmv_fw_list_len(const rfm_move_t *m);
 int rfmv_fw_rec(const rfm_move_t *m, int fw);          /* the library record of list index fw, -1 */
+/* (tests, 0.4.2) the filter popup's words for a step (0: none): its name, its state, what the list shows (lines) */
+int rfmv_fw_filter_text(const rfm_move_t *m, int step, char name[24], const char **state, char rows[3][22]);
 /* move.c, project.c for fw.c */
 void rfmv_master_turn(rfm_move_t *m, int d);           /* the volume knob as MASTER */
 void rfmv_proj_back(rfm_move_t *m);                    /* Back in the projects view: out */

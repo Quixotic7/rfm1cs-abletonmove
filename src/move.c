@@ -234,7 +234,11 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
         s->fw_track = p[3] < 4 ? p[3] : d.fw_track;
         s->fw_scope = p[4] < 2 ? p[4] : d.fw_scope;
         s->fw_filter = (uint16_t)(f & 0xFFFC);          /* (steps 3..16) */
+        s->fw_filter &= (uint16_t)-s->fw_filter;        /* (0.4.2: one category or tag; an older choice of several: the
+                                                         * lowest) */
         s->fw_cat_scope = (uint8_t)(p[7] & 3);
+        if (s->fw_cat_scope == 3)
+            s->fw_cat_scope = 1;                        /* (0.4.2: one scope; both were: Update ready) */
         s->fx_page = p[8] < 4 ? p[8] : d.fx_page;
     }
     return 0;

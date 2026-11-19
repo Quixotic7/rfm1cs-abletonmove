@@ -3,6 +3,37 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.4.2 (2026-11-18)
+
+The firmware browser's filters, simpler and clearer, and launching a firmware from the catalog (the owner's
+feedback). No API, format or action changes; `rfm_move_fw_state_t` has two new last fields (`hold_step`, `hold_ms`:
+rebuild everything).
+
+- **One category at a time:** steps 3..7 (the categories) and 8..16 (the user tags) are one radio group: a step shows
+  just that category or tag, the lit one again goes back to all categories (no step lit). Steps 1 / 2 stay the scope
+  (Favorites / All); the category applies within it. `settings.fw_filter` holds one bit at most: settings saved
+  with several load as the lowest (never an empty list from an old choice).
+- **The catalog's scope is one choice too:** step 1 "Update ready" (on the Move, a newer version in the catalog),
+  step 2 "Not installed", neither: everything (`fw_cat_scope` 0 / 1 / 2; an old 3 loads as 1). An "Installed" scope
+  has no free step (3..7 categories, 8..16 tags); All outside the catalog lists the installed firmwares.
+- **The filter popup answers "what did I just press":** the step's name big (small past 10 characters, never cut),
+  ON (inverted) or off, then what the list shows now on up to 2 lines at word boundaries ("Showing: Synth, not
+  installed"), then the count. (Without "Showing:" when that fits, "..." only past 2 lines.)
+- **Hold a filter step to see what it is:** the popup shows its name and state after `RFM_MOVE_TAP_MS` (300 ms);
+  released after that, nothing changes. A tap acts on release (Capture + step still tags on the press).
+- **Launch from the catalog:** a jog press on a firmware that is on the Move and current loads it into the firmware
+  track the view is on (`FW_LOAD`, as on Favorites / All); one not on the Move still downloads, one with an update
+  still updates. When a download or update finishes and that firmware is still selected in the catalog, the popup
+  adds "Jog: load on Track n"; nothing loads by itself (moved to another pad or out of the catalog: no offer, no load).
+- Capture + step's tag name is drawn small past 10 characters instead of cut (tag names up to 15).
+
+**Tests:** `move_fw` (383 checks in all): `test_filters` for the one-choice model and the old settings;
+`test_filter_popup` (the words for one category, another replacing it, all categories, the catalog's scopes, hold
+and tap, a 15-character tag); `test_download_load` (download -> offer -> jog -> `FW_LOAD` into the track's slot;
+installed -> jog loads; update ready -> jog updates; a download finishing after moving on loads nothing); renders
+`fw_filter_*.pbm`, `fw_download_offer.pbm`, `fw_capture_long_tag.pbm`. The mockup's `step_favorites_chords` screen is
+checked as redrawn (33 of 34 still the mockup's, pixel for pixel).
+
 ## 0.4.1 (2026-11-18)
 
 The host's edits: a public way to apply FX setup, mix, routing and firmware-slot edits made outside the Move (a web

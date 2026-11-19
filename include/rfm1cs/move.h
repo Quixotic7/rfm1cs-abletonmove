@@ -28,7 +28,7 @@ extern "C" {
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 4
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.4.1"
+#define RFM1CS_VERSION "0.4.2"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -156,8 +156,10 @@ typedef struct {
     /* (version 4) the projects view as it was left (the firmware browser) */
     uint8_t fw_track;                                   /* the track shown, 0..3 (3: Sequencer Projects) */
     uint8_t fw_scope;                                   /* step 1 Favorites (0) or step 2 All (1) */
-    uint16_t fw_filter;                                 /* the category / tag filter: bit s - 1 for step s (3..16) */
-    uint8_t fw_cat_scope;                               /* the catalog's toggles: bit 0 Updates, bit 1 New */
+    uint16_t fw_filter;                                 /* the category / tag filter: bit s - 1 for step s (3..16);
+                                                         * (0.4.2) one bit at most, 0 all */
+    uint8_t fw_cat_scope;                               /* the catalog's scope: 0 everything, 1 Update ready, 2 Not
+                                                         * installed (0.4.2: one at a time; 3 loads as 1) */
     uint8_t fx_page;                                    /* FX setup's page 0..3 */
 } rfm_move_settings_t;
 enum { RFM_MOVE_VEL_DYNAMIC, RFM_MOVE_VEL_FIXED, RFM_MOVE_VEL_SOFT, RFM_MOVE_VEL_HARD, RFM_MOVE_VEL_LINEAR, RFM_MOVE_VEL_N };
@@ -322,6 +324,10 @@ typedef struct {
     int8_t knob_acc[RFM_MOVE_NKNOBS];                   /* list parameters: the ticks short of a word */
     /* (0.4.1) */
     uint8_t all_auto;                                   /* no favourites: All shown (settings.fw_scope kept) */
+    /* (0.4.2) */
+    uint8_t hold_step;                                  /* a filter step down (1..16; 0 none): a tap toggles it on
+                                                         * release, a hold (RFM_MOVE_TAP_MS) only shows it */
+    uint32_t hold_ms;
 } rfm_move_fw_state_t;
 
 /* ---- the sequencer (Track 4; README.md, "Sequencer") */

@@ -345,6 +345,50 @@ static void tag_name(const rfm_move_t *m, int step, char *o, int cap)
     else
         snprintf(o, (size_t)cap, "Tag %d", step - 7);
 }
+/* (0.4.2) a filter step's name, its state, and what the list shows now (the filter popup's words) */
+static int scope(const rfm_move_t *m);
+static void step_name(const rfm_move_t *m, int step, char *o, int cap)
+{
+    if (step == 1 || step == 2)
+        snprintf(o, (size_t)cap, "%s", m->fw.catalog ? (step == 1 ? "Update ready" : "Not installed")
+                                                     : (step == 1 ? "Favorites" : "All"));
+    else
+        tag_name(m, step, o, cap);
+}
+static int step_on(const rfm_move_t *m, int step)
+{
+    if (step == 1 || step == 2)
+        return m->fw.catalog ? (m->s.fw_cat_scope & step) != 0 : scope(m) == step - 1;
+    return step >= CAT0 && step <= 16 && (m->s.fw_filter >> (step - 1) & 1);
+}
+static void showing(const rfm_move_t *m, char *o, int cap)
+{
+    char cats[260], q[40], nm[24];
+    int n = 0, s, k = 0, nsel = 0;
+    cats[0] = 0;
+    for (s = CAT0; s <= 16; s++)
+        nsel += m->s.fw_filter >> (s - 1) & 1;
+    for (s = CAT0; s <= 16; s++)                        /* "Synth", "Synth or Drums", "Synth, Chords or Drums" */
+        if (m->s.fw_filter >> (s - 1) & 1) {
+            tag_name(m, s, nm, sizeof nm);
+            n += snprintf(cats + n, sizeof cats - (size_t)n, "%s%s", !k ? "" : k == nsel - 1 ? " or " : ", ", nm);
+            if (n >= (int)sizeof cats)
+                n = (int)sizeof cats - 1;
+            k++;
+        }
+    if (m->fw.catalog) {
+        const int c = m->s.fw_cat_scope & 3;
+        snprintf(q, sizeof q, "%s", c == 3 ? "update ready or not installed" : c == 1 ? "update ready"
+                                    : c == 2 ? "not installed" : "");
+    } else
+        snprintf(q, sizeof q, "%s", scope(m) ? "installed" : "favorites");
+    if (n && q[0])
+        snprintf(o, (size_t)cap, "Showing: %s, %s", cats, q);
+    else if (n)
+        snprintf(o, (size_t)cap, "Showing: %s", cats);
+    else
+        snprintf(o, (size_t)cap, "Showing: %s", q[0] ? (!m->fw.catalog && scope(m) ? "all installed" : q) : "the whole catalog");
+}
 static int track_of(const rfm_move_t *m, int fw)        /* the first slot holding it, -1 */
 {
     int s;
@@ -950,6 +994,7 @@ void rfmv_fw_enter(rfm_move_t *m)
     f->catalog = 0, f->sel = -1, f->jog = 0, f->capture = 0, f->cap_step = -1, f->states = 0, f->smods = 0;
     f->fx = 0, f->browse = -1;
     f->all_auto = !f->nfav;                             /* (no favourites: All) */
+    f->hold_step = 0;
     pop_clear(m);
     if (f->track < 3 && m->pop == POP_MODE)
         m->pop = POP_NONE;                              /* (a firmware track: its own screen at once) */
@@ -1003,7 +1048,7 @@ int rfmv_fw_volume(rfm_move_t *m, int d)
         }
     return 0;
 }
-static void after_filter(rfm_move_t *m)
+static void after_filter(rfm_move_t *m, int step)
 {
     rfm_move_fw_state_t *f = F(m);
     f->bank[bank_key(m)] = 0;
@@ -1011,7 +1056,7 @@ static void after_filter(rfm_move_t *m)
         f->sel = -1;
     f->jog = 0;
     rfmv_changed(m);                                    /* (the filter is a setting) */
-    pop(m, FP_FILTER, 0, 0);
+    pop(m, FP_FILTER, step, 0);
 }
 static void tag_toggle(rfm_move_t *m, int fw, int s)
 {
@@ -1113,13 +1158,14 @@ static void fw_jog_press(rfm_move_t *m)
     if (f->catalog) {
         const int st = status(m, fw);
         if (st == ST_OK)
-            return;
+            goto load;                                  /* (0.4.2: on the Move and current: loaded, as outside the catalog) */
         f->busy_kind = (int8_t)(st == ST_NEW ? BUSY_DOWNLOAD : BUSY_UPDATE), f->busy_fw = (int16_t)fw;
         f->busy_slot = -1, f->busy_pct = 0;
         snprintf(f->busy_id, sizeof f->busy_id, "%s", ent(m, fw)->id ? ent(m, fw)->id : "");
         act_fw(m, RFM_MOVE_ACT_FW_DOWNLOAD, 0, fw, fw);
         return;
     }
+load:
     f->busy_kind = BUSY_LOAD, f->busy_fw = (int16_t)fw, f->busy_slot = (int8_t)f->track, f->busy_pct = 0;
     snprintf(f->busy_id, sizeof f->busy_id, "%s", ent(m, fw)->id ? ent(m, fw)->id : "");
     act_fw(m, RFM_MOVE_ACT_FW_LOAD, f->track, fw, fw);
@@ -1153,21 +1199,33 @@ static void fw_input(rfm_move_t *m, const mr_event_t *ev)
     }
     case MR_EV_STEP: {
         const int s = ev->index + 1;
-        if (!ev->value || f->states)
+        if (f->states || s < 1 || s > 16)
             return;
+        if (!ev->value) {                               /* (0.4.2) a filter step let go: a tap toggles, a hold did not */
+            if (f->hold_step != s)
+                return;
+            f->hold_step = 0;
+            if (rfmv_now_ms(m) - f->hold_ms >= RFM_MOVE_TAP_MS) {
+                pop(m, FP_FILTER, s, 0);                /* (what it is stays up a while; nothing changed) */
+                return;
+            }
+            if (s <= 2) {                               /* (the catalog: everything, Update ready or Not installed) */
+                if (f->catalog)
+                    m->s.fw_cat_scope = (uint8_t)(m->s.fw_cat_scope == s ? 0 : s);
+                else
+                    m->s.fw_scope = (uint8_t)(s - 1), f->all_auto = 0;   /* (the user's choice, favourites or not) */
+            } else {                                    /* (one category or tag, or the lit one again: all) */
+                const uint16_t b = (uint16_t)(1u << (s - 1));
+                m->s.fw_filter = m->s.fw_filter == b ? 0 : b;
+            }
+            after_filter(m, s);
+            return;
+        }
         if (f->capture && fw >= 0) {
             if (s >= CAT0)
                 tag_toggle(m, fw, s);
-        } else if (s <= 2) {
-            if (f->catalog)
-                m->s.fw_cat_scope ^= (uint8_t)s;
-            else
-                m->s.fw_scope = (uint8_t)(s - 1), f->all_auto = 0;   /* (the user's choice, favourites or not) */
-            after_filter(m);
-        } else if (tag_defined(m, s)) {
-            m->s.fw_filter ^= (uint16_t)(1u << (s - 1));
-            after_filter(m);
-        }
+        } else if (s <= 2 || tag_defined(m, s))
+            f->hold_step = (uint8_t)s, f->hold_ms = rfmv_now_ms(m);
         return;
     }
     case MR_EV_BUTTON: {
@@ -1872,8 +1930,10 @@ static void tagging(B *g, const rfm_move_t *m, int fw)
     text(g, W - 1 - tw(nm, 1), 1, nm, 1, 0);
     if (f->cap_step >= CAT0 && rfmv_now_ms(m) - f->cap_ms < CAP_MS) {
         tag_name(m, f->cap_step, t, sizeof t);
-        cut(t, 10);
-        ctext(g, 16, t, 2);
+        if (strlen(t) <= 10)                            /* (0.4.2: a long name small, never cut) */
+            ctext(g, 16, t, 2);
+        else
+            ctext(g, 20, t, 1);
         ctext(g, 36, has_tag(m, fw, f->cap_step) ? "tagged" : "untagged", 1);
     } else {
         char all[256], rows[3][LW];
@@ -2200,6 +2260,65 @@ static void fx_screen(B *g, const rfm_move_t *m)
 }
 
 /* the level popup (Track held + volume), the view's own popups that cover any track */
+/* (0.4.2) the filter popup: the step pressed (or held), big, and its state; what the list shows now (2 lines at
+ * word boundaries, "..." past them); the count */
+static int held_peek(const rfm_move_t *m)
+{
+    return m->fw.hold_step && rfmv_now_ms(m) - m->fw.hold_ms >= RFM_MOVE_TAP_MS;
+}
+/* its words: the step's name ("" none), its state ("ON", "off", ""), what the list shows (lines 0..2) */
+static int filter_words(const rfm_move_t *m, int step, char name[24], const char **state, char rows[3][LW])
+{
+    char all[260];
+    int k;
+    name[0] = 0, *state = "";
+    if (step >= 1 && step <= 16)
+        step_name(m, step, name, 24), *state = step_on(m, step) ? "ON" : "off";
+    showing(m, all, sizeof all);
+    k = wrap(all, 21, rows, 0, 3);
+    if (k > 2)                                          /* (too long: without "Showing: ") */
+        k = wrap(all + 9, 21, rows, 0, 3);
+    if (k > 2) {                                        /* (still: the second line ends in "...") */
+        char *sp;
+        int l;
+        while (strlen(rows[1]) > 18 && (sp = strrchr(rows[1], ' ')) != NULL)
+            *sp = 0;                                    /* (whole words) */
+        cut(rows[1], 18);
+        for (l = (int)strlen(rows[1]); l > 0 && (rows[1][l - 1] == ' ' || rows[1][l - 1] == ','); l--)
+            rows[1][l - 1] = 0;
+        strcat(rows[1], "...");
+        k = 2;
+    }
+    return k;
+}
+static void filter_pop(B *g, const rfm_move_t *m, int step)
+{
+    char t[40], name[24], rows[3][LW];
+    const char *state;
+    const int k = filter_words(m, step, name, &state, rows);
+    int n;
+    if (name[0]) {
+        if (strlen(name) <= 10)
+            ctext(g, 2, name, 2);
+        else
+            ctext(g, 6, name, 1);
+        if (state[0] == 'O') {
+            const int w = tw(state, 1) + 6;             /* (inverted) */
+            fill(g, (W - w) / 2, 19, w, 10, 1);
+            text(g, (W - tw(state, 1)) / 2, 20, state, 1, 0);
+        } else
+            ctext(g, 20, state, 1);
+    } else {
+        scope_title(m, t, sizeof t);
+        ctext(g, 6, t, 1);
+    }
+    for (n = 0; n < k; n++)
+        ctext(g, 32 + n * 9, rows[n], 1);
+    n = list_len(m);
+    plural(t, sizeof t, n, "firmware");
+    ctext(g, 52, t, 1);
+    strip(g, nbanks_n(n), 0);
+}
 static int cover_popup(B *g, const rfm_move_t *m)
 {
     const rfm_move_fw_state_t *f = &m->fw;
@@ -2289,7 +2408,12 @@ static void fw_screen(B *g, const rfm_move_t *m)
             snprintf(t, sizeof t, "on the Move");
         else
             snprintf(t, sizeof t, "loaded on Track %d", f->pop_b + 1);
-        ctext(g, 36, t, 1);
+        if (f->pop_b >= 10 && f->catalog && f->sel == f->pop_a && f->track < 3 && status(m, f->pop_a) == ST_OK) {
+            ctext(g, 32, t, 1);                         /* (0.4.2: still selected: the jog loads it) */
+            snprintf(t, sizeof t, "Jog: load on Track %d", f->track + 1);
+            ctext(g, 46, t, 1);
+        } else
+            ctext(g, 36, t, 1);
         return;
     }
     if (pop_up(m, FP_MSG)) {
@@ -2312,34 +2436,8 @@ static void fw_screen(B *g, const rfm_move_t *m)
         states_grid(g, m);
         return;
     }
-    if (pop_up(m, FP_FILTER)) {
-        char parts[200];
-        int n = 0, s;
-        scope_title(m, t, sizeof t);
-        ctext(g, 4, t, 1);
-        parts[0] = 0;
-        if (f->catalog && (m->s.fw_cat_scope & 2))
-            n += snprintf(parts + n, sizeof parts - (size_t)n, "%sNew", n ? " + " : "");
-        if (f->catalog && (m->s.fw_cat_scope & 1))
-            n += snprintf(parts + n, sizeof parts - (size_t)n, "%sUpdates", n ? " + " : "");
-        for (s = CAT0; s <= 16; s++)
-            if (m->s.fw_filter >> (s - 1) & 1) {
-                tag_name(m, s, nm, sizeof nm);
-                n += snprintf(parts + n, sizeof parts - (size_t)n, "%s%s", n ? " + " : "", nm);
-                if (n >= (int)sizeof parts)
-                    n = (int)sizeof parts - 1;
-            }
-        if (!n)
-            snprintf(parts, sizeof parts, "%s", f->catalog ? "Everything" : "Any category");
-        {
-            const int s2 = strlen(parts) <= 10;
-            cut(parts, 21);
-            ctext(g, s2 ? 19 : 22, parts, s2 ? 2 : 1);
-        }
-        n = list_len(m);
-        plural(t, sizeof t, n, "firmware");
-        ctext(g, 44, t, 1);
-        strip(g, nbanks_n(n), 0);
+    if (pop_up(m, FP_FILTER) || held_peek(m)) {
+        filter_pop(g, m, held_peek(m) ? f->hold_step : f->pop_a);
         return;
     }
     if (pop_up(m, FP_BANK)) {
@@ -2396,10 +2494,14 @@ int rfmv_fw_screen(const rfm_move_t *m, mr_canvas_t *cv)
 int rfmv_fw_timed(const rfm_move_t *m)
 {
     const rfm_move_fw_state_t *f = &m->fw;
-    return pop_up(m, -1) || (m->seq.projects && (f->busy_kind || (f->capture && f->cap_step >= 0)));
+    return pop_up(m, -1) || (m->seq.projects && (f->busy_kind || (f->capture && f->cap_step >= 0) || f->hold_step));
 }
 
 /* (for the tests) */
 int rfmv_fw_bank(const rfm_move_t *m, int ids[32]) { return bank_ids(m, ids); }
 int rfmv_fw_list_len(const rfm_move_t *m) { return list_len(m); }
 int rfmv_fw_rec(const rfm_move_t *m, int fw) { return rec_of(m, fw); }
+int rfmv_fw_filter_text(const rfm_move_t *m, int step, char name[24], const char **state, char rows[3][22])
+{
+    return filter_words(m, step, name, state, rows);
+}

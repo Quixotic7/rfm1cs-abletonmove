@@ -298,32 +298,38 @@ static void test_filters(void)
     for (i = 0, want = 0; i < NFW; i++)
         want += FWB[i].installed && (FWB[i].cats & RFM_MOVE_CAT_CHORDS);
     CHECK(rfmv_fw_list_len(m) == want && want > 0);
-    tap_step(m, 3 + 2);                                 /* + step 6: Drums: either (OR) */
+    tap_step(m, 3 + 2);                                 /* step 6: Drums: just Drums (0.4.2: one category) */
     for (i = 0, want = 0; i < NFW; i++)
-        want += FWB[i].installed && (FWB[i].cats & (RFM_MOVE_CAT_CHORDS | RFM_MOVE_CAT_DRUMS));
-    CHECK(rfmv_fw_list_len(m) == want);
-    tap_step(m, 0);                                     /* Favorites that are Chords or Drums (AND) */
+        want += FWB[i].installed && (FWB[i].cats & RFM_MOVE_CAT_DRUMS);
+    CHECK(m->s.fw_filter == T(6) && rfmv_fw_list_len(m) == want && want > 0);
+    tap_step(m, 0);                                     /* Favorites that are Drums (AND) */
     for (i = 0, want = 0; i < (int)(sizeof FWB_FAV0 / sizeof FWB_FAV0[0]); i++) {
         const int k = idx(FWB_FAV0[i]);
-        want += k >= 0 && FWB[k].installed && (FWB[k].cats & (RFM_MOVE_CAT_CHORDS | RFM_MOVE_CAT_DRUMS));
+        want += k >= 0 && FWB[k].installed && (FWB[k].cats & RFM_MOVE_CAT_DRUMS);
     }
     CHECK(rfmv_fw_list_len(m) == want);
-    tap_step(m, 4), tap_step(m, 5);
+    tap_step(m, 5);                                     /* the lit one again: all categories */
+    CHECK(m->s.fw_filter == 0 && rfmv_fw_list_len(m) == (int)(sizeof FWB_FAV0 / sizeof FWB_FAV0[0]));
+    tap_step(m, 1);
     tap_step(m, 8);                                     /* step 9: the user tag "Live set" (sloop, elasticat, x0x) */
     CHECK(rfmv_fw_list_len(m) == 3);
+    tap_step(m, 4);                                     /* a category replaces the tag too */
+    CHECK(m->s.fw_filter == T(5));
     tap_step(m, 14);                                    /* step 15: no tag there: nothing happens */
-    CHECK(!(m->s.fw_filter >> 14 & 1));
-    tap_step(m, 8);
-    /* the catalog: Updates / New toggles, off = all */
+    CHECK(m->s.fw_filter == T(5));
+    tap_step(m, 4);
+    CHECK(m->s.fw_filter == 0);
+    /* the catalog: one scope (everything, Update ready, Not installed) */
     press(m, MR_CC_MUTE);
     CHECK(m->fw.catalog && m->fw.pop == FP_CATALOG && rfmv_fw_list_len(m) == NFW);
     tap_step(m, 0);
     for (i = 0, want = 0; i < NFW; i++)
         want += FWB[i].installed && strcmp(FWB[i].installed, FWB[i].version) != 0;
-    CHECK(rfmv_fw_list_len(m) == want && want == 4);
-    tap_step(m, 1);                                     /* Updates or New */
-    CHECK(rfmv_fw_list_len(m) == want + NFW - n_installed());
-    tap_step(m, 0), tap_step(m, 1);
+    CHECK(m->s.fw_cat_scope == 1 && rfmv_fw_list_len(m) == want && want == 4);
+    tap_step(m, 1);                                     /* Not installed (instead) */
+    CHECK(m->s.fw_cat_scope == 2 && rfmv_fw_list_len(m) == NFW - n_installed());
+    tap_step(m, 1);
+    CHECK(m->s.fw_cat_scope == 0 && rfmv_fw_list_len(m) == NFW);
     press(m, MR_CC_MUTE);
     /* banks: All has 2 + 1 banks; Right / Left; a filter starts again at bank 1 */
     tap_step(m, 1);
@@ -357,10 +363,13 @@ static void test_filters(void)
     {
         uint8_t img[RFM_MOVE_SETTINGS_BYTES];
         rfm_move_settings_t st;
-        m->s.fw_filter = T(5) | T(9), m->s.fw_cat_scope = 2, m->s.fx_page = 3, m->s.fw_track = 3;
+        m->s.fw_filter = T(9), m->s.fw_cat_scope = 2, m->s.fx_page = 3, m->s.fw_track = 3;
         CHECK(rfm_move_save(&m->s, img) == RFM_MOVE_SETTINGS_BYTES && img[3] == 4);
-        CHECK(rfm_move_load(&st, img, sizeof img) == 0 && st.fw_scope == 1 && st.fw_filter == (T(5) | T(9)) &&
+        CHECK(rfm_move_load(&st, img, sizeof img) == 0 && st.fw_scope == 1 && st.fw_filter == T(9) &&
               st.fw_cat_scope == 2 && st.fx_page == 3 && st.fw_track == 3);
+        m->s.fw_filter = T(5) | T(9), m->s.fw_cat_scope = 3;   /* (0.4.1 saved several: the lowest; both scopes: 1) */
+        rfm_move_save(&m->s, img);
+        CHECK(rfm_move_load(&st, img, sizeof img) == 0 && st.fw_filter == T(5) && st.fw_cat_scope == 1);
         img[3] = 3, img[4] = (uint8_t)RFM_MOVE_SETTINGS_BYTES_V3;   /* (version 3: the view's defaults) */
         CHECK(rfm_move_load(&st, img, RFM_MOVE_SETTINGS_BYTES_V3) == 0 && st.fw_scope == 0 && st.fw_filter == 0 &&
               st.fw_track == 0 && st.vel_level == m->s.vel_level);
@@ -612,8 +621,11 @@ static void test_catalog(void)
         rfm_move_fw_installed(m, ids[upd], E[ids[upd]].version);
         CHECK(E[ids[upd]].installed == E[ids[upd]].version);
         clear();
-        jog_press(m);                                   /* (current now: nothing to do) */
-        CHECK(count(RFM_MOVE_ACT_FW_DOWNLOAD) == 0);
+        jog_press(m);                                   /* (0.4.2: current now: loaded on the track shown) */
+        CHECK(count(RFM_MOVE_ACT_FW_DOWNLOAD) == 0 && (a = last(RFM_MOVE_ACT_FW_LOAD)) && a->a.slot == m->fw.track &&
+              !strcmp(a->id, E[ids[upd]].id) && m->fw.busy_kind == 1);
+        rfm_move_fw_progress(m, E[ids[upd]].id, 100);
+        CHECK(!m->fw.busy_kind && m->fw.slot_fw[m->fw.track] == ids[upd]);
     }
     /* not on the Move: downloaded, then in All */
     press(m, MR_CC_LEFT), press(m, MR_CC_LEFT), press(m, MR_CC_LEFT);
@@ -941,10 +953,15 @@ static void test_screens(void)
         screen(m);
         h = hash_scr();
         write_pbm(n + 4);
+        if (!strcmp(n, "fwb.step_favorites_chords")) {   /* (0.4.2: the filter popup redrawn; test_filter_popup) */
+            CHECK(h != FWB_REF[i].hash);
+            continue;
+        }
         same += h == FWB_REF[i].hash;
         CHECKF(h == FWB_REF[i].hash, "%s: %08x, the mockup %08x", n, h, FWB_REF[i].hash);
     }
-    printf("move_fw: %d of %d screens as the mockup's, pixel for pixel\n", same, (int)(sizeof FWB_REF / sizeof FWB_REF[0]));
+    printf("move_fw: %d of %d screens as the mockup's, pixel for pixel (1 redrawn in 0.4.2)\n", same,
+           (int)(sizeof FWB_REF / sizeof FWB_REF[0]));
     /* two of the core's own (not in the mockup): Track 4 in the view, States */
     fixture(m), tap_track(m, 3), rest_pop(m), screen(m), write_pbm("track4_projects");
     fixture(m), rfm_move_fw_states(m, 0, 0x8013), press(m, MR_CC_LOOP), tap_pad(m, pad_of(1)), rest_pop(m), screen(m), write_pbm("states");
@@ -1120,6 +1137,151 @@ static void test_no_favs(void)
     CHECK(m->fw.catalog && rfmv_fw_list_len(m) > n_installed());
 }
 
+/* ================================================================ the filter popup (0.4.2) === */
+static char fname[24], frows[3][22];
+static const char *fstate;
+static int fk;
+static void words(rfm_move_t *m, int step) { fk = rfmv_fw_filter_text(m, step, fname, &fstate, frows); }
+static void test_filter_popup(void)
+{
+    rfm_move_t *m = &M;
+    uint32_t h0;
+    /* one filter: the step's name big, ON, what is shown */
+    fixture(m);
+    tap_step(m, 4);                                     /* step 5: Chords */
+    CHECK(m->fw.pop == FP_FILTER && m->fw.pop_a == 5);
+    words(m, 5);
+    CHECK(!strcmp(fname, "Chords") && !strcmp(fstate, "ON") && fk == 2 && !strcmp(frows[0], "Showing: Chords,") &&
+          !strcmp(frows[1], "favorites"));
+    screen(m), write_pbm("filter_one");
+    /* another category replaces it; the lit one again: all categories */
+    tap_step(m, 2);                                     /* Synth */
+    CHECK(m->fw.pop_a == 3 && m->s.fw_filter == T(3));
+    words(m, 3);
+    CHECK(!strcmp(fname, "Synth") && !strcmp(fstate, "ON") && fk == 2 && !strcmp(frows[0], "Showing: Synth,") &&
+          !strcmp(frows[1], "favorites"));
+    words(m, 5);
+    CHECK(!strcmp(fstate, "off"));
+    tap_step(m, 2);
+    words(m, 3);
+    CHECK(!strcmp(fstate, "off") && fk == 1 && !strcmp(frows[0], "Showing: favorites"));
+    screen(m), write_pbm("filter_all_categories");
+    tap_step(m, 1);                                     /* All */
+    words(m, 2);
+    CHECK(!strcmp(fname, "All") && !strcmp(fstate, "ON") && fk == 2 && !strcmp(frows[0], "Showing: all") &&
+          !strcmp(frows[1], "installed"));
+    tap_step(m, 5);
+    words(m, 6);
+    CHECK(!strcmp(fname, "Drums") && !strcmp(frows[0], "Showing: Drums,") && !strcmp(frows[1], "installed"));
+    /* the catalog's scope: Update ready (on the Move, a newer version in the catalog) or Not installed */
+    fixture(m), press(m, MR_CC_MUTE), rest_pop(m);
+    tap_step(m, 0);
+    words(m, 1);
+    CHECK(!strcmp(fname, "Update ready") && !strcmp(fstate, "ON") && fk == 1 && !strcmp(frows[0], "Showing: update ready"));
+    screen(m), write_pbm("filter_update_ready");
+    tap_step(m, 1);
+    words(m, 2);
+    CHECK(!strcmp(fname, "Not installed") && !strcmp(fstate, "ON") && fk == 2 && !strcmp(frows[0], "Showing: not") &&
+          !strcmp(frows[1], "installed"));
+    words(m, 1);
+    CHECK(!strcmp(fstate, "off"));
+    tap_step(m, 1);
+    words(m, 2);
+    CHECK(!strcmp(fstate, "off") && !strcmp(frows[0], "Showing: the whole") && !strcmp(frows[1], "catalog"));
+    tap_step(m, 1), tap_step(m, 2);
+    words(m, 3);
+    CHECK(!strcmp(fname, "Synth") && !strcmp(frows[0], "Showing: Synth, not") && !strcmp(frows[1], "installed"));
+    screen(m), write_pbm("filter_catalog_synth");
+    /* a hold shows the step without changing it; a tap toggles on release */
+    fixture(m), rest_pop(m);
+    screen(m), h0 = hash_scr();
+    clear();
+    step(m, 4, 1);
+    CHECK(m->fw.hold_step == 5 && !(m->s.fw_filter & T(5)));
+    adv_ms(m, RFM_MOVE_TAP_MS + 20);
+    CHECK(rfm_move_screen_timed(m));
+    screen(m), write_pbm("filter_hold");
+    CHECK(hash_scr() != h0);
+    step(m, 4, 0);
+    CHECK(!m->fw.hold_step && !(m->s.fw_filter & T(5)) && count(RFM_MOVE_ACT_SETTINGS) == 0 && m->fw.pop == FP_FILTER &&
+          m->fw.pop_a == 5);
+    words(m, 5);
+    CHECK(!strcmp(fstate, "off"));
+    step(m, 4, 1), adv_ms(m, 50), step(m, 4, 0);        /* a tap */
+    CHECK((m->s.fw_filter & T(5)) && count(RFM_MOVE_ACT_SETTINGS) == 1);
+    step(m, 15, 1);                                     /* (step 16: no tag made) */
+    CHECK(!m->fw.hold_step);
+    step(m, 15, 0);
+    /* a tag's name at its longest: never cut, small when past 10 */
+    fixture(m), rest_pop(m);
+    strcpy(m->fw.tag[0], "Late night pads");            /* (RFM_MOVE_FW_TAG_NAME - 1) */
+    tap_step(m, 7);
+    words(m, 8);
+    CHECK(!strcmp(fname, "Late night pads") && !strcmp(frows[0], "Showing: Late night") && !strcmp(frows[1], "pads, favorites"));
+    screen(m), write_pbm("filter_long_tag");
+    rest_pop(m), select_fw(m, "elasticat"), button(m, MR_CC_CAPTURE, 1), tap_step(m, 7);
+    screen(m), write_pbm("capture_long_tag");
+    CHECK(lit_in(0, 20, 128, 28) > 0);
+    button(m, MR_CC_CAPTURE, 0);
+}
+
+/* ================================================================ download, then load (0.4.2) === */
+static void test_download_load(void)
+{
+    rfm_move_t *m = &M;
+    const act_t *a;
+    const int nf = idx(FWB_NEWFW);
+    int other;
+    CHECK(nf >= 0 && !FWB[nf].installed);
+    /* not on the Move: the jog downloads; done and still selected: the popup offers the load; the jog loads */
+    fixture(m), tap_track(m, 1), press(m, MR_CC_MUTE), rest_pop(m), select_fw(m, FWB_NEWFW);
+    clear();
+    jog_press(m);
+    CHECK((a = last(RFM_MOVE_ACT_FW_DOWNLOAD)) && !strcmp(a->id, FWB_NEWFW) && count(RFM_MOVE_ACT_FW_LOAD) == 0);
+    rfm_move_fw_progress(m, FWB_NEWFW, 100);
+    rfm_move_fw_installed(m, nf, E[nf].version);
+    CHECK(m->fw.pop == FP_LOADED && m->fw.pop_a == nf && count(RFM_MOVE_ACT_FW_LOAD) == 0);
+    screen(m), write_pbm("download_offer");
+    CHECK(lit_in(0, 46, 128, 54) > 0);
+    jog_press(m);
+    CHECK((a = last(RFM_MOVE_ACT_FW_LOAD)) && a->a.slot == 1 && !strcmp(a->id, FWB_NEWFW) && count(RFM_MOVE_ACT_FW_DOWNLOAD) == 1);
+    rfm_move_fw_progress(m, FWB_NEWFW, 100);
+    CHECK(m->fw.slot_fw[1] == nf && m->fw.pop == FP_LOADED && m->fw.pop_b == 1);
+    /* installed and current: the jog loads at once */
+    select_fw(m, "golf");
+    clear();
+    jog_press(m);
+    CHECK((a = last(RFM_MOVE_ACT_FW_LOAD)) && a->a.slot == 1 && !strcmp(a->id, "golf") && count(RFM_MOVE_ACT_FW_DOWNLOAD) == 0);
+    rfm_move_fw_progress(m, "golf", 100);
+    /* an update ready: the jog updates (no load) */
+    select_fw(m, "sloop");
+    CHECK(E[idx("sloop")].installed && strcmp(E[idx("sloop")].installed, E[idx("sloop")].version));
+    clear();
+    jog_press(m);
+    CHECK(count(RFM_MOVE_ACT_FW_DOWNLOAD) == 1 && count(RFM_MOVE_ACT_FW_LOAD) == 0 && m->fw.busy_kind == 3);
+    rfm_move_fw_progress(m, "sloop", 100);
+    rfm_move_fw_installed(m, idx("sloop"), E[idx("sloop")].version);
+    screen(m);
+    CHECK(m->fw.pop_b == 10 && lit_in(0, 46, 128, 54) > 0);   /* (still selected: the offer) */
+    /* moved on before it finished: no offer, nothing loaded */
+    fixture(m), press(m, MR_CC_MUTE), rest_pop(m), select_fw(m, FWB_NEWFW), jog_press(m);
+    other = idx("golf");
+    m->fw.sel = (int16_t)other;                         /* (another pad) */
+    clear();
+    rfm_move_fw_progress(m, FWB_NEWFW, 100);
+    rfm_move_fw_installed(m, nf, E[nf].version);
+    screen(m);
+    CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 0 && m->fw.pop == FP_LOADED && lit_in(0, 46, 128, 54) == 0);
+    fixture(m), press(m, MR_CC_MUTE), rest_pop(m), select_fw(m, FWB_NEWFW), jog_press(m);
+    press(m, MR_CC_MUTE);                               /* (the catalog left) */
+    clear();
+    rfm_move_fw_progress(m, FWB_NEWFW, 100);
+    rfm_move_fw_installed(m, nf, E[nf].version);
+    screen(m);
+    CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 0 && !m->fw.catalog && lit_in(0, 46, 128, 54) == 0);
+    catalog_reset();
+}
+
 int main(void)
 {
     test_nolist();
@@ -1130,6 +1292,8 @@ int main(void)
     test_fx();
     test_host_edits();
     test_no_favs();
+    test_filter_popup();
+    test_download_load();
     test_states();
     test_midi_track();
     test_old_formats();
