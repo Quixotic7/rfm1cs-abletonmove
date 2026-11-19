@@ -3,6 +3,29 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.9 (2026-11-19)
+
+The FM-1 popups over the whole screen (the owner's, with a setting). `rfm_move_settings_t` has a new last field and
+the settings image is version 5, 87 bytes (`RFM_MOVE_SETTINGS_BYTES`): rebuild everything; a host that stores the
+image in a fixed buffer sizes it by the constant.
+
+- **Whole screen by default**: FM-1 mode's (and MIDI's NOTES view's) knob popups (the name, the detents, MASTER),
+  labels (held, the jog touched, a button held) and readouts (a knob's, PRESETS's, a preset's, a message) are drawn
+  128 pixels wide with bigger words: the name on a 2x row, the value at 4x or 3x (else two 2x rows), a 3-pixel bar
+  along the bottom (bipolar: from the marked middle); a label or message one row at 4x or 3x, two at 3x, else 2x
+  rows. Never 1x; a row that does not fit scrolls. A label with no words leaves the FM-1's screen on the right.
+- **The setting `pop_half`** (Global Settings, knob 4: `Popup Full` / `Popup Half`): 1 the left half as 0.5.6..0.5.8,
+  the FM-1's screen staying on the right (its layout uses the same bigger sizes where they fit: 3x labels). Saved in
+  the settings (version 5, its last byte); older images (versions 1..4) load as the whole screen.
+- **Global Settings' screen**: three rows now (Clock, Vel, Popup) under the battery; four knob rings; the battery two
+  pixels right.
+
+**Tests:** `move` `test_popup_width` (1025 checks): the default, save and load, a version 4 image, knob 4 (and its
+end), the same popups in both widths (right half covered or the FM-1's screen kept; the bars' widths), a label with
+no words. Contact sheets `move_popups_full_sheet.pbm`, `move_popups_half_sheet.pbm`; `move_global_popup_*.pbm`. The
+0.5.6..0.5.8 tests and `test_screen` run with `pop_half` 1; the knob and master goldens changed (the half layout's
+name row and value moved); `move_seq`'s Global screen's battery checks moved 2 pixels.
+
 ## 0.5.8 (2026-11-19)
 
 The owner's feedback on 0.5.6 on the Move. `rfm_move_t` has two new last fields: rebuild everything.

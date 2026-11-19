@@ -1427,7 +1427,7 @@ static int smenu_list(const rfm_move_seq_t *q, int k)
             return (k == 0 && q->arp_page == 1) || k == 1 || k == 2;
         return k == 0 || k == 1 || k == 2 || k == 4 || k == 7;
     case RFM_MOVE_SM_REC: return k <= 1;
-    case RFM_MOVE_SM_GLOBAL: return k <= 1;
+    case RFM_MOVE_SM_GLOBAL: return k <= 1 || k == 3;
     default: return 0;
     }
 }
@@ -1445,7 +1445,7 @@ int rfmv_seq_menu_knobs(const rfm_move_t *m)
     case RFM_MOVE_SM_ARP: return q->arp_page ? 0x0F : 0xFF;
     case RFM_MOVE_SM_REC: return 0x03;
     case RFM_MOVE_SM_VEL: return 0x01;
-    case RFM_MOVE_SM_GLOBAL: return 0x07;
+    case RFM_MOVE_SM_GLOBAL: return 0x0F;
     default: return 0;
     }
 }
@@ -1553,13 +1553,19 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
         }
         break;
     case RFM_MOVE_SM_GLOBAL:                            /* the jog or knob 1: the clock source; knob 2: the velocity
-                                                         * option; knob 3: its level */
+                                                         * option; knob 3: its level; (0.5.9) knob 4: the FM-1
+                                                         * popups' width (Full, Half) */
         if (k <= 0)
             rfm_move_seq_set_clock(m, clampi(q->clock_mode + d, 0, 2));
         else if (k == 1)
             rfmv_vel_step(m, d), rfmv_changed(m);
         else if (k == 2)
             m->s.vel_level = (uint8_t)clampi(m->s.vel_level + d, 1, 127), rfmv_changed(m);
+        else if (k == 3) {
+            const int h = clampi(m->s.pop_half + d, 0, 1);
+            if (h != m->s.pop_half)
+                m->s.pop_half = (uint8_t)h, rfmv_changed(m);
+        }
         break;
     case RFM_MOVE_SM_VEL:                               /* the jog: the option (1:1, five); knob 1: the level */
         if (k < 0)
@@ -2412,16 +2418,17 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
             v2_vbar(cv, m->s.vel_level / 127.0, 0, 4, 120, 52);
             break;
         }
-        v2_knobs(cv, 7, tk);
-        v2_battery(cv, 60, 1, bt > 0 ? bt : 0, 0);
+        v2_knobs(cv, 15, tk);
+        v2_battery(cv, 62, 1, bt > 0 ? bt : 0, 0);   /* (0.5.9: past knob 4's ring) */
         if (bt >= 0)
             snprintf(b, sizeof b, "%d%%", bt);
         else
             snprintf(b, sizeof b, "--");
         v2_T(cv, 90, 0, b, 2, 1);
-        snprintf(b, sizeof b, "Clock %s", CK[q->clock_mode % 3]), v2_T(cv, 0, 22, b, 2, 1);
+        snprintf(b, sizeof b, "Clock %s", CK[q->clock_mode % 3]), v2_T(cv, 0, 16, b, 2, 1);
         rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), c, sizeof c);
-        snprintf(b, sizeof b, "Vel %s", c), v2_T(cv, 0, 42, b, 2, 1);
+        snprintf(b, sizeof b, "Vel %s", c), v2_T(cv, 0, 32, b, 2, 1);
+        v2_T(cv, 0, 48, m->s.pop_half ? "Popup Half" : "Popup Full", 2, 1);   /* (0.5.9) knob 4 */
         break;
     }
     default: break;

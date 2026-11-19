@@ -588,8 +588,8 @@ static void write_pbm(const char *path, const uint8_t *packed)
  * look at the PBMs this test writes into the build directory first (move_*.pbm) */
 #define GOLD_FM1 0xca84fa11u
 #define GOLD_FM1_LIVE 0x714e834du
-#define GOLD_KNOB 0xf14cae88u
-#define GOLD_MASTER 0x1770cd16u
+#define GOLD_KNOB 0xa5cf1bbau
+#define GOLD_MASTER 0x7ac52bc1u
 #define GOLD_MIDI 0x3de84831u
 #define GOLD_MIDI_HIT 0xf3eb1a5bu
 #define GOLD_CONTROL 0x2fd858c1u
@@ -688,6 +688,7 @@ static void test_screen(void)
             lcd[y * 240 + x] = v;
         }
     rfm_move_init(&m, NULL, on_act, NULL);
+    m.s.pop_half = 1;                                   /* (0.5.9: the left half here; the whole screen: test_popup_width) */
     rfm_move_set_label(&m, RFM_MOVE_E_K1, "CUTOFF");
     /* at rest: the left half is the owner's drawing, pixel for pixel; the right half the FM-1's screen */
     rfm_move_screen(&m, lcd, out);
@@ -1622,6 +1623,7 @@ static void test_labels(void)
     const char *names[RFM_MOVE_NBTN] = { "FX", "SEL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE", "ARP", "SEQ",
                                          "PLAY", "REC", "OCT-", "OCT+" };
     rfm_move_init(&m, NULL, on_act, NULL);
+    m.s.pop_half = 1;                                   /* (0.5.9: the left half; the whole screen: test_popup_width) */
     rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
     m.pop = POP_NONE;
     lbl[RFM_MOVE_LBL_KNOB0 + 3] = "Resonance";          /* K1 (FM1P_E_K1 = 3): scrolls */
@@ -1652,7 +1654,7 @@ static void test_labels(void)
     CHECK(art_diff(out) == 9 && rfm_move_screen_timed(&m));
     ms(&m, 10);
     rfm_move_screen(&m, NULL, out);
-    CHECK(left_lit(out) > 40 && lit_in(out, 0, 0, 64, 12) == 0);   /* ("Rec" / "Arm": two rows) */
+    CHECK(left_lit(out) > 40);                          /* ("Rec" / "Arm": two rows, 0.5.9: at 3x) */
     sheet_add(out, "rec_held");
     ms(&m, 3000);
     CHECK(rfmv_pop_up(&m, POP_LABEL));                  /* (held: it stays) */
@@ -1768,6 +1770,7 @@ static void test_readouts(void)
     const char *lbl[RFM_MOVE_LBL_N] = { NULL };
     g_sheet_pre = "readouts", g_nsheet = 0;
     rfm_move_init(&m, NULL, on_act, NULL);
+    m.s.pop_half = 1;                                   /* (0.5.9: the left half; the whole screen: test_popup_width) */
     rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
     m.pop = POP_NONE;
     lbl[RFM_MOVE_LBL_KNOB0 + 3] = "K1";
@@ -1875,6 +1878,7 @@ static void test_labels_058(void)
     const char *lbl[RFM_MOVE_LBL_N] = { NULL };
     g_sheet_pre = "labels058", g_nsheet = 0;
     rfm_move_init(&m, NULL, on_act, NULL);
+    m.s.pop_half = 1;                                   /* (0.5.9: the left half; the whole screen: test_popup_width) */
     rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
     m.pop = POP_NONE;
     lbl[RFM_MOVE_LBL_BTN0 + 11] = "Rec arm";            /* REC */
@@ -1975,6 +1979,114 @@ static void test_labels_058(void)
     sheet_write();
 }
 
+/* (0.5.9, the owner's) the FM-1 popups (labels, readouts, the knobs') over the whole screen by default; the setting
+ * (Global Settings, knob 4; settings version 5) gives the left half back; contact sheets of both */
+static void popup_shots(rfm_move_t *m, uint8_t *out, int full)
+{
+    const char *lbl[RFM_MOVE_LBL_N] = { NULL };
+    uint8_t pix[64 * 64];
+    int i;
+    for (i = 0; i < 64 * 64; i++)                       /* (a thumbnail: a checkerboard, to see it covered or not) */
+        m->thumb[i / 64][i % 64] = (uint8_t)((i / 64 / 8 + i % 64 / 8) & 1);
+    (void)pix;
+    lbl[RFM_MOVE_LBL_KNOB0 + 3] = "Resonance";
+    lbl[RFM_MOVE_LBL_BTN0 + 11] = "Rec arm";
+    lbl[RFM_MOVE_LBL_BLACK0] = "Clear All Steps";
+    lbl[RFM_MOVE_LBL_WHITE0] = "Kick";
+    lbl[RFM_MOVE_LBL_BTN0 + 10] = "";
+    rfm_move_set_labels(m, lbl);
+    rfm_move_readouts_clear(m);
+    m->pop = POP_NONE;
+    touch(m, 4, 1);                                     /* a knob touched, no readout: its name */
+    rfm_move_screen(m, NULL, out);
+    CHECKF(full ? lit_in(out, 64, 0, 128, 64) > 20 && lit_in(out, 0, 0, 128, 64) < 1000 : lit_in(out, 64, 0, 128, 64) == 2048,
+           "full %d: right %d, all %d", full, lit_in(out, 64, 0, 128, 64), lit_in(out, 0, 0, 128, 64));   /* (whole: no
+                                                         * checkerboard; half: the FM-1's screen on the right) */
+    sheet_add(out, "knob_name");
+    knob(m, 4, 6);                                      /* turned: the detents */
+    rfm_move_screen(m, NULL, out);
+    sheet_add(out, "knob_detents");
+    rfm_move_readout(m, -1, RFM_MOVE_RD_PARAM, "Cutoff", "1.2 kHz", 400, 0, 0);
+    rfm_move_screen(m, NULL, out);
+    CHECK(full ? lit_in(out, 1, 60, 51, 63) == 3 * 50 : lit_in(out, 1, 61, 25, 63) == 2 * 24);   /* (the bar 40 %) */
+    sheet_add(out, "readout");
+    rfm_move_readout(m, -1, RFM_MOVE_RD_PARAM, "Pan", "L12", 406, RFM_MOVE_RD_BIPOLAR, 0);
+    rfm_move_screen(m, NULL, out);
+    sheet_add(out, "bipolar");
+    touch(m, 4, 0);
+    ms(m, 3000);
+    rfm_move_readout(m, -1, RFM_MOVE_RD_PRESET, "Preset 12", "Warm Pad", -1, 0, 0);
+    rfm_move_screen(m, NULL, out);
+    CHECK(m->pop == POP_READ);
+    sheet_add(out, "preset");
+    ms(m, 3000);
+    rfm_move_readout(m, -1, RFM_MOVE_RD_MESSAGE, "Pattern saved", NULL, -1, 0, 0);
+    rfm_move_screen(m, NULL, out);
+    sheet_add(out, "message");
+    ms(m, 3000);
+    touch(m, 9, 1);                                     /* the jog touched: a button's label at once */
+    button(m, MR_CC_REC, 1);
+    rfm_move_screen(m, NULL, out);
+    CHECK(m->pop == POP_LABEL && m->pop_shown);
+    sheet_add(out, "button");
+    pad(m, 25, 100);                                    /* a key, a button held */
+    rfm_move_screen(m, NULL, out);
+    sheet_add(out, "key_long");
+    pad(m, 25, 0);
+    pad(m, 16, 100);
+    rfm_move_screen(m, NULL, out);
+    sheet_add(out, "key");
+    pad(m, 16, 0), button(m, MR_CC_REC, 0);
+    ms(m, 3000);
+    button(m, MR_CC_PLAY, 1);                           /* no words: the FM-1's screen stays (right half) */
+    rfm_move_screen(m, NULL, out);
+    CHECK(m->pop == POP_LABEL && !m->pop_shown && lit_in(out, 64, 0, 128, 64) == 2048);
+    button(m, MR_CC_PLAY, 0);
+    touch(m, 9, 0);
+    ms(m, 3000);
+}
+static void test_popup_width(void)
+{
+    static rfm_move_t m;
+    static uint8_t out[MR_SCREEN_BYTES];
+    uint8_t img[RFM_MOVE_SETTINGS_BYTES];
+    rfm_move_settings_t st;
+    /* the setting: whole screen by default; saved (version 5); older settings: the default */
+    rfm_move_settings_default(&st);
+    CHECK(st.pop_half == 0);
+    st.pop_half = 1;
+    CHECK(rfm_move_save(&st, img) == RFM_MOVE_SETTINGS_BYTES && img[3] == 5 && img[RFM_MOVE_SETTINGS_BYTES - 1] == 1);
+    CHECK(rfm_move_load(&st, img, sizeof img) == 0 && st.pop_half == 1);
+    img[3] = 4, img[4] = (uint8_t)(RFM_MOVE_SETTINGS_BYTES - 1);   /* (a version 4 image: 86 bytes) */
+    CHECK(rfm_move_load(&st, img, RFM_MOVE_SETTINGS_BYTES - 1) == 0 && st.pop_half == 0);
+    /* Global Settings (Shift + step 2 in Sequencer mode): knob 4 the width */
+    rfm_move_init(&m, NULL, on_act, NULL);
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_SEQ);
+    button(&m, MR_CC_SHIFT, 1), step(&m, 1, 1), step(&m, 1, 0), button(&m, MR_CC_SHIFT, 0);
+    CHECK(m.seq.smenu == RFM_MOVE_SM_GLOBAL);
+    rfm_move_screen(&m, NULL, out);
+    write_pbm("move_global_popup_full.pbm", out);
+    clear();
+    knob(&m, 3, RFM_MOVE_LIST_TICKS);
+    CHECK(m.s.pop_half == 1 && nact >= 1 && acts[nact - 1].kind == RFM_MOVE_ACT_SETTINGS);
+    rfm_move_screen(&m, NULL, out);
+    write_pbm("move_global_popup_half.pbm", out);
+    knob(&m, 3, RFM_MOVE_LIST_TICKS);
+    CHECK(m.s.pop_half == 1);                           /* (the end) */
+    knob(&m, 3, -RFM_MOVE_LIST_TICKS);
+    CHECK(m.s.pop_half == 0);
+    /* both widths, the same popups */
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
+    m.seq.smenu = 0;
+    g_sheet_pre = "popups_full", g_nsheet = 0;
+    popup_shots(&m, out, 1);
+    sheet_write();
+    m.s.pop_half = 1;
+    g_sheet_pre = "popups_half", g_nsheet = 0;
+    popup_shots(&m, out, 0);
+    sheet_write();
+}
+
 static void test_host_popup(void)
 {
     static rfm_move_t m;
@@ -2021,6 +2133,7 @@ int main(void)
     test_labels();
     test_readouts();
     test_labels_058();
+    test_popup_width();
     test_drum_settings();
     test_control();
     test_leds();

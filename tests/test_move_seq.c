@@ -526,13 +526,13 @@ static void test_external(void)
         uint8_t out[MR_SCREEN_BYTES];
         m->seq.msg = 0;
         rfm_move_screen(m, NULL, out);
-        CHECK(m->battery == -1 && px_at(out, 60, 1) && !px_at(out, 64, 6));   /* ("--": the battery empty) */
+        CHECK(m->battery == -1 && px_at(out, 62, 1) && !px_at(out, 66, 6));   /* ("--": the battery empty) */
         CHECK(rfm_move_set_battery(m, 63, 0) == 1 && rfm_move_set_battery(m, 63, 0) == 0);
         CHECK(rfm_move_set_battery(m, 120, 0) == 1 && m->battery == 100);   /* (clamped) */
         rfm_move_set_battery(m, 63, 0);
         rfm_move_screen(m, NULL, out);
         write_pbm("move_seq_global.pbm", out);
-        CHECK(px_at(out, 60, 1) && px_at(out, 64, 6) && px_at(out, 72, 6) && !px_at(out, 74, 6));   /* (63 % filled) */
+        CHECK(px_at(out, 62, 1) && px_at(out, 66, 6) && px_at(out, 74, 6) && !px_at(out, 76, 6));   /* (63 % filled) */
     }
     m->s.vel_mode = RFM_MOVE_VEL_DYNAMIC, m->s.vel_level = 127;
     tap_step(m, 1);                                     /* (a plain step: the mode's, the menu stays) */

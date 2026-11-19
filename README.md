@@ -118,6 +118,11 @@ stays open after Track 1 is let go (full width; the jog, the knobs and, where it
 the menu's) until Back, which closes it. While Track 1 is held a small SHIFT badge
 sits top left (the FM-1's screen stays on the right in FM-1 mode), and the icons under the steps light; the pads
 stay what they were (FM-1 keys, MIDI notes), at once. A quick tap on Track 1 switches to FM-1 mode (named).
+**Popup width (0.5.9, the owner's).** FM-1 mode's knob, label and readout popups (and MIDI's NOTES view's) cover
+the whole screen by default, with bigger words: the name on a 2x row, the value at 4x or 3x, a 3-pixel bar. Global
+Settings' knob 4 (`Popup Full` / `Popup Half`, the setting `pop_half`) gives today's left half back, the FM-1's
+screen staying on the right. Where the text below says the left half, it is the popup's place, either width.
+
 A knob touched shows its name (the firmware's label, else its printed one) in the left half, with no value yet
 (0.5.6, the owner's; the firmware's values come later); turning shows this gesture's detents (from 0 each gesture);
 the release drops the popup and its count. MASTER the same, with its level. A label "" (no job): no popup.
@@ -130,8 +135,8 @@ live (a firmware that names a button only once it is pressed shows the name then
 release. While any FM-1 button is held,
 every other button, pad or step (its key) and knob pressed shows its label at once, as the firmware has it when
 drawn (Shift-style layers). Pads and steps show nothing otherwise: they stay an instrument. A label shows until a
-second after its control's release. The left half only (the FM-1's screen stays): words at 2x, a button's or key's
-label wrapped at spaces onto up to three rows, a row that does not fit scrolling (no 1x text).
+second after its control's release. Never 1x text: a button's or key's label one row at 4x or 3x when it fits, two
+rows at 3x, else up to three 2x rows wrapped at spaces, a row that does not fit scrolling.
 
 **Readouts (0.5.7).** The host passes the firmware's readouts (`rfm_move_readout`: what a control does now and its
 value, in the firmware's words, from its rd1 record). A knob keeps its last one: touched, the knob shows what it
@@ -388,7 +393,7 @@ Workflow 1-3, Tempo 1-2 (none while following), Groove 1-2, Layout 1, Keys & Sca
 | Step | Function |
 |---|---|
 | 1 Set Overview | the project grid |
-| 2 Global Settings | menu, sticky (Back, Session or Shift + step 2 closes it): on top the Move's battery (an icon filled, the %; "--" until its first STATUS; "PWR" while the power button is held), then the jog or knob 1 the clock source (AUTO, INT, EXT; * following. INT is the default (0.5.5); AUTO follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), knob 2 the velocity option, knob 3 its level (as the Velocity menu). The battery is Move Remote's STATUS byte 4, as the surface reports it (taken as 0..100 %, clamped); the host passes it with `rfm_move_set_battery` (the web page on every STATUS). No power bit is known to mean charging, so none is shown |
+| 2 Global Settings | menu, sticky (Back, Session or Shift + step 2 closes it): on top the Move's battery (an icon filled, the %; "--" until its first STATUS; "PWR" while the power button is held), then the jog or knob 1 the clock source (AUTO, INT, EXT; * following. INT is the default (0.5.5); AUTO follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), knob 2 the velocity option, knob 3 its level (as the Velocity menu), knob 4 the FM-1 popups' width (0.5.9: Popup Full, the default, or Popup Half). The battery is Move Remote's STATUS byte 4, as the surface reports it (taken as 0..100 %, clamped); the host passes it with `rfm_move_set_battery` (the web page on every STATUS). No power bit is known to mean charging, so none is shown |
 | 3 Workflow Settings | menu: the jog the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent) |
 | 5 Tempo | each press is a tap (tap tempo: the average of up to 4 taps) and opens the menu: the tempo at 4x; the jog 1 BPM (Shift, or knob 2: 0.1); following the firmware's clock: locked (a padlock, EXT; taps ignored) |
 | 6 Metronome | on / off (off at first): a click a beat, the bar's first higher (`RFM_MOVE_ACT_CLICK`, frame-stamped; the web player plays it after the volume, never into a recording); also in the count-in |
@@ -656,7 +661,7 @@ rfm_move_leds_invalidate(&m);                     /* a new connection: repaint *
 rfm_move_set_master(&m, v); rfm_move_set_label(&m, enc, "CUTOFF"); rfm_move_set_keymap(&m, km);
 rfm_move_set_labels(&m, lbl49); rfm_move_set_button_names(&m, names14);   /* (0.5.6) DYNAMIC-LABELS order */
 rfm_move_readout(&m, ctl, RFM_MOVE_RD_PARAM, "Cutoff", "1.2k", frac, flags, ms); rfm_move_readouts_clear(&m);   /* (0.5.7) */
-rfm_move_save(&m.s, bytes); rfm_move_load(&s, bytes, n);   /* "RMV" + version 3, 80 bytes (versions 2 and 1, 78 and 77 bytes, load) */
+rfm_move_save(&m.s, bytes); rfm_move_load(&s, bytes, n);   /* "RMV" + version 5, 87 bytes (versions 4..1, 86, 80, 78, 77 bytes, load) */
 ```
 
 `rfm_move_t` is about 150 KB with the sequencer: keep it static or on the heap. The sequencer:

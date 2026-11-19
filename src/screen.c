@@ -158,46 +158,82 @@ static void bank_strip(const rfm_move_t *m, mr_canvas_t *cv)
 #define LSCROLL_HOLD 700u
 #define LSCROLL_MS 30u
 static uint32_t g_scroll_ms;                            /* (the popup's age, set by the caller) */
-static void lrow(mr_canvas_t *cv, int y, const char *s)
+/* (0.5.9) the label and readout popups' width: 64 the left half, 128 the whole screen (the owner's default; the
+ * setting pop_half picks the half); g_wide_drawn: one drew over the whole screen (no thumbnail drawn back) */
+static int g_lw = 64, g_wide_drawn;
+static void lclear(mr_canvas_t *cv)
 {
-    const int w = v2_tw(s, 2);
+    v2_R(cv, 0, 0, g_lw, 64, 0);
+    if (g_lw > 64)
+        g_wide_drawn = 1;
+}
+/* a row of k x text across the popup (x 1..g_lw-2): centred if it fits, else it scrolls (no 1x text) */
+static void lrowk(mr_canvas_t *cv, int y, const char *s, int k)
+{
+    const int w = v2_tw(s, k), room = g_lw - 2;
     int off, x;
-    if (w <= 62) {
-        v2_TC(cv, 32, y, s, 2, 1);
+    if (w <= room) {
+        v2_TC(cv, g_lw / 2.0, y, s, k, 1);
         return;
     }
     {
-        const uint32_t run = (uint32_t)(w - 62) * LSCROLL_MS, cyc = LSCROLL_HOLD * 2 + run, t = g_scroll_ms % cyc;
-        off = t < LSCROLL_HOLD ? 0 : t >= LSCROLL_HOLD + run ? w - 62 : (int)((t - LSCROLL_HOLD) / LSCROLL_MS);
+        const uint32_t run = (uint32_t)(w - room) * LSCROLL_MS, cyc = LSCROLL_HOLD * 2 + run, t = g_scroll_ms % cyc;
+        off = t < LSCROLL_HOLD ? 0 : t >= LSCROLL_HOLD + run ? w - room : (int)((t - LSCROLL_HOLD) / LSCROLL_MS);
     }
-    for (x = 0; s[x]; x++) {                            /* (each glyph clipped to the half) */
+    for (x = 0; s[x]; x++) {                            /* (each glyph clipped to the popup) */
         const uint8_t *g = mr_glyph(s[x]);
         int i, j;
         for (i = 0; i < 5; i++)
             for (j = 0; j < 8; j++)
                 if (g[i] >> j & 1) {
-                    const int px = 1 + x * 12 + i * 2 - off;
-                    if (px >= 1 && px + 1 <= 62)
-                        v2_R(cv, px, y + j * 2, 2, 2, 1);
+                    const int px = 1 + x * 6 * k + i * k - off;
+                    if (px >= 1 && px + k - 1 <= room)
+                        v2_R(cv, px, y + j * k, k, k, 1);
                 }
     }
 }
+static void lrow(mr_canvas_t *cv, int y, const char *s) { lrowk(cv, y, s, 2); }
+/* the value: the biggest of 4x / 3x that fits on a row, else 2x rows (up to two); y0 its top, y1 the room's end */
+static int wrap_rows(const char *text, char r[3][RFM_MOVE_LABEL_MAX + 8], int max, int k);
+static void big_value(mr_canvas_t *cv, const char *v, int y0, int y1)
+{
+    const int room = g_lw - 2, mid = (y0 + y1) / 2;
+    int k;
+    for (k = 4; k >= 3; k--)
+        if (v2_tw(v, k) <= room) {
+            v2_TC(cv, g_lw / 2.0, mid - 4 * k, v, k, 1);
+            return;
+        }
+    {
+        char rows[3][RFM_MOVE_LABEL_MAX + 8];
+        const int n = wrap_rows(v, rows, 2, 2);
+        int i;
+        for (i = 0; i < n; i++)
+            lrow(cv, n == 1 ? mid - 8 : mid - 17 + i * 18, rows[i]);
+    }
+}
+static void lbar(mr_canvas_t *cv, double frac, int bip)   /* a thin bar along the bottom (bipolar: from the middle) */
+{
+    const int room = g_lw - 2, h = g_lw > 64 ? 3 : 2, y = 63 - h, w = (int)(frac * room + 0.5);
+    if (bip) {
+        const int x = 1 + w, c = g_lw / 2;
+        v2_R(cv, x < c ? x : c, y, x < c ? c - x : x - c + 1, h, 1);
+        v2_R(cv, c, y - 2, 1, 2, 1);                    /* (the middle marked) */
+    } else
+        v2_R(cv, 1, y, w, h, 1);
+}
 static void lpop(mr_canvas_t *cv, const char *label, const char *val)   /* the name (a row), the value */
 {
-    int k;
-    v2_R(cv, 0, 0, 64, 64, 0);
-    lrow(cv, 8, label);
-    if (!val || !val[0])
+    lclear(cv);
+    if (!val || !val[0]) {                              /* (a name alone: as a label) */
+        lrow(cv, 8, label);
         return;
-    k = v2_tw(val, 4) <= 62 ? 4 : 2;
-    if (k == 4)
-        v2_TC(cv, 32, 28, val, 4, 1);
-    else
-        lrow(cv, 34, val);
+    }
+    lrow(cv, 3, label);
+    big_value(cv, val, 21, 59);
 }
-/* a button's or key's label: wrapped at spaces onto up to 3 rows of 2x, a row that does not fit scrolling */
-/* text wrapped at spaces onto up to max rows of 2x (the last takes the rest); returns the rows' count */
-static int wrap_rows(const char *text, char r[3][RFM_MOVE_LABEL_MAX + 8], int max)
+/* text wrapped at spaces onto up to max rows of k x (the last takes the rest); returns the rows' count */
+static int wrap_rows(const char *text, char r[3][RFM_MOVE_LABEL_MAX + 8], int max, int k)
 {
     const char *p = text;
     int n = 0;
@@ -214,7 +250,7 @@ static int wrap_rows(const char *text, char r[3][RFM_MOVE_LABEL_MAX + 8], int ma
             while (p[e] && p[e] != ' ')
                 e++;
             snprintf(t, sizeof t, "%.*s", e, p);
-            if (v2_tw(t, 2) > 62)
+            if (v2_tw(t, k) > g_lw - 2)
                 break;
             end = e;
         }
@@ -227,18 +263,32 @@ static int wrap_rows(const char *text, char r[3][RFM_MOVE_LABEL_MAX + 8], int ma
     }
     return n;
 }
+/* a button's or key's label (a message): one row at 4x or 3x if it fits, two at 3x if both fit, else up to three
+ * 2x rows (one that does not fit scrolls) */
 static void label_rows(mr_canvas_t *cv, const char *text)
 {
     char r[3][RFM_MOVE_LABEL_MAX + 8];
-    const int n = wrap_rows(text, r, 3);
-    int i;
-    v2_R(cv, 0, 0, 64, 64, 0);
+    int n, i, k;
+    lclear(cv);
+    for (k = 4; k >= 3; k--)
+        if (v2_tw(text, k) <= g_lw - 2) {
+            v2_TC(cv, g_lw / 2.0, 32 - 4 * k, text, k, 1);
+            return;
+        }
+    n = wrap_rows(text, r, 2, 3);
+    if (n == 2 && v2_tw(r[0], 3) <= g_lw - 2 && v2_tw(r[1], 3) <= g_lw - 2) {
+        v2_TC(cv, g_lw / 2.0, 5, r[0], 3, 1);
+        v2_TC(cv, g_lw / 2.0, 35, r[1], 3, 1);
+        return;
+    }
+    n = wrap_rows(text, r, 3, 2);
     for (i = 0; i < n; i++)
         lrow(cv, n == 1 ? 24 : n == 2 ? 14 + i * 22 : 3 + i * 21, r[i]);
 }
 
-/* (0.5.7) a readout: the left half: the title (a row), the value (4x or 3x when it fits, else up to two 2x rows),
- * a 2-pixel bar at the bottom with frac; the whole screen: the edit popup and its bar. A message: its words wrapped */
+/* (0.5.7) a readout: the title (a row), the value (4x or 3x when it fits, else up to two 2x rows), a thin bar at the
+ * bottom with frac; (0.5.9) the left half or the whole screen (g_lw). A message: its words wrapped. Not in the FM-1
+ * popups' place (another mode's full screen): the edit popup and its bar */
 static void readout_draw(mr_canvas_t *cv, const rfm_move_readout_t *r)
 {
     if (!g_half) {
@@ -254,37 +304,20 @@ static void readout_draw(mr_canvas_t *cv, const rfm_move_readout_t *r)
         char t[RFM_MOVE_LABEL_MAX * 2 + 2];
         snprintf(t, sizeof t, "%s%s%s", r->title, r->title[0] && r->value[0] ? " " : "", r->value);
         label_rows(cv, t);
-    } else {
-        v2_R(cv, 0, 0, 64, 64, 0);
-        lrow(cv, 3, r->title);
-        if (v2_tw(r->value, 4) <= 62)
-            v2_TC(cv, 32, 23, r->value, 4, 1);
-        else if (v2_tw(r->value, 3) <= 62)
-            v2_TC(cv, 32, 27, r->value, 3, 1);
-        else {
-            char rows[3][RFM_MOVE_LABEL_MAX + 8];
-            const int n = wrap_rows(r->value, rows, 2);
-            int i;
-            for (i = 0; i < n; i++)
-                lrow(cv, n == 1 ? 30 : 23 + i * 18, rows[i]);
-        }
-    }
-    if (r->frac >= 0) {                                 /* (the thin bar, x 1..62) */
-        const int w = r->frac * 62 / 1000;
-        if (r->flags & RFM_MOVE_RD_BIPOLAR) {
-            const int x = 1 + w, c = 32;
-            v2_R(cv, x < c ? x : c, 61, x < c ? c - x : x - c + 1, 2, 1);
-            v2_R(cv, c, 59, 1, 2, 1);                   /* (the middle marked) */
-        } else
-            v2_R(cv, 1, 61, w, 2, 1);
-    }
+    } else
+        lpop(cv, r->title, r->value);
+    if (r->frac >= 0)
+        lbar(cv, r->frac / 1000.0, r->flags & RFM_MOVE_RD_BIPOLAR);
 }
 
-/* a value popup: the left half (the name, the value), else the whole screen (the name, the value, a bar) */
+/* a value popup: the FM-1 popups' place (the name, the value; whole screen: a bar), else the whole screen (the name,
+ * the value, a bar) */
 static void value_pop(mr_canvas_t *cv, const char *label, const char *val, double frac, int bar)
 {
     if (g_half) {
         lpop(cv, label, val);
+        if (bar && g_lw > 64 && val && val[0])
+            lbar(cv, bar == 2 ? frac / 2 + 0.5 : frac, bar == 2);
         return;
     }
     mr_gfx_clear(cv, 0);
@@ -1146,11 +1179,13 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
             v2_R(&cv, 0, 0, 15, 15, 0);
         v2_ic(&cv, V2I_SHIFT, 2, 2, 1);
     }
-    g_half = rfmv_half(m), g_full = 0, g_label_drawn = 0;
+    g_half = rfmv_half(m), g_full = 0, g_label_drawn = 0, g_wide_drawn = 0;
+    g_lw = m->s.pop_half ? 64 : 128;                    /* (0.5.9: the labels' and readouts' width, the owner's) */
     popups(m, &cv);
+    g_lw = 64;
     if (g_label_drawn && rfmv_label_held(m, m->pop_i))
         m->pop_shown = 1;                               /* (0.5.8: shown while held: its second after the release) */
-    if (g_half && !g_full) {                                       /* (any wider popup: the FM-1's screen drawn back over it) */
+    if (g_half && !g_full && !g_wide_drawn) {          /* (any wider popup: the FM-1's screen drawn back over it) */
         for (y = 0; y < 64; y++)
             for (x = 0; x < 64; x++)
                 cv.px[y][64 + x] = m->thumb[y][x];

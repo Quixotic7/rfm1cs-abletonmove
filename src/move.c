@@ -192,6 +192,7 @@ uint32_t rfm_move_save(const rfm_move_settings_t *s, uint8_t *o)
     *p++ = s->fw_track, *p++ = s->fw_scope, *p++ = (uint8_t)(s->fw_filter & 0xFF), *p++ = (uint8_t)(s->fw_filter >> 8);
     *p++ = s->fw_cat_scope, *p++ = (uint8_t)(s->fx_page | (s->fw_fx ? 0x80 : 0));   /* (version 4; 0.4.5: FX setup's
                                                          * memory in bit 7) */
+    *p++ = s->pop_half;                                 /* (version 5) */
     return (uint32_t)(p - o);
 }
 
@@ -203,6 +204,7 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
     rfm_move_settings_default(s);
     if (!b || n < 6 || b[0] != 'R' || b[1] != 'M' || b[2] != 'V' ||
         !((b[3] == RFM_MOVE_SETTINGS_VERSION && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES && n >= RFM_MOVE_SETTINGS_BYTES) ||
+          (b[3] == 4 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES - 1 && n >= RFM_MOVE_SETTINGS_BYTES - 1) ||
           (b[3] == 3 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V3 && n >= RFM_MOVE_SETTINGS_BYTES_V3) ||
           (b[3] == 2 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V3 - 2 && n >= RFM_MOVE_SETTINGS_BYTES_V3 - 2) ||
           (b[3] == 1 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V3 - 3 && n >= RFM_MOVE_SETTINGS_BYTES_V3 - 3)))
@@ -244,6 +246,8 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
         s->fx_page = (p[8] & 0x7F) < 4 ? p[8] & 0x7F : d.fx_page;
         s->fw_fx = p[8] >> 7;
     }
+    if (b[3] >= 5)                                      /* (0.5.9; older: the whole screen, the default) */
+        s->pop_half = p[9] & 1;
     return 0;
 }
 

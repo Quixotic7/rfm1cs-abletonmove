@@ -72,7 +72,7 @@ export const STORE_PENDING = -2;
 const EV_NAMES = { 1: "send", 2: "open", 3: "close", 4: "action", 5: "released", 6: "lost", 7: "bye", 8: "status", 100: "loaded" };
 const STORE_KINDS = { projectSave: ACT.PROJECT_SAVE, projectLoad: ACT.PROJECT_LOAD, projectDelete: ACT.PROJECT_DELETE,
   projectCut: ACT.PROJECT_CUT, projectCopy: ACT.PROJECT_COPY, projectPaste: ACT.PROJECT_PASTE, projectColor: ACT.PROJECT_COLOR };
-export const SCREEN_BYTES = 1024, SETTINGS_BYTES = 86, NLEDS = 92, POPUP_MS = 1000;   // (RFM_MOVE_POPUP_MS: a popup stays this long)
+export const SCREEN_BYTES = 1024, SETTINGS_BYTES = 87, NLEDS = 92, POPUP_MS = 1000;   // (RFM_MOVE_POPUP_MS: a popup stays this long)
 const ACT_BYTES = 10, ACT_EXT = 21, LED_BYTES = 6;
 // pressure 0..127 as key_lean 0..100 (move.h rfm_move_lean)
 export const lean = (p) => Math.floor((Math.max(0, Math.min(127, p | 0)) * 100 + 63) / 127);

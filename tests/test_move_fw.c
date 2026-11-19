@@ -373,7 +373,7 @@ static void test_filters(void)
         uint8_t img[RFM_MOVE_SETTINGS_BYTES];
         rfm_move_settings_t st;
         m->s.fw_filter = T(9), m->s.fw_cat_scope = 2, m->s.fx_page = 3, m->s.fw_track = 3;
-        CHECK(rfm_move_save(&m->s, img) == RFM_MOVE_SETTINGS_BYTES && img[3] == 4);
+        CHECK(rfm_move_save(&m->s, img) == RFM_MOVE_SETTINGS_BYTES && img[3] == RFM_MOVE_SETTINGS_VERSION);
         CHECK(rfm_move_load(&st, img, sizeof img) == 0 && st.fw_scope == 1 && st.fw_filter == T(9) &&
               st.fw_cat_scope == 2 && st.fx_page == 3 && st.fw_track == 3);
         m->s.fw_filter = T(5) | T(9), m->s.fw_cat_scope = 3;   /* (0.4.1 saved several: the lowest; both scopes: 1) */

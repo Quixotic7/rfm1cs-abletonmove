@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 5
-#define RFM1CS_VERSION_PATCH 8
-#define RFM1CS_VERSION "0.5.8"
+#define RFM1CS_VERSION_PATCH 9
+#define RFM1CS_VERSION "0.5.9"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -185,6 +185,10 @@ typedef struct {
     uint8_t fx_page;                                    /* FX setup's page 0..3 */
     uint8_t fw_fx;                                      /* (0.4.5) FX setup was showing when the view was left: the
                                                          * view opens on it again (saved as fx_page's bit 7) */
+    /* (version 5) */
+    uint8_t pop_half;                                   /* FM-1 mode's label, readout and knob popups: 0 the whole
+                                                         * screen (the default, 0.5.9), 1 the left half (the FM-1's
+                                                         * screen stays on the right) */
 } rfm_move_settings_t;
 enum { RFM_MOVE_VEL_DYNAMIC, RFM_MOVE_VEL_FIXED, RFM_MOVE_VEL_SOFT, RFM_MOVE_VEL_HARD, RFM_MOVE_VEL_LINEAR, RFM_MOVE_VEL_N };
 /* (the jog's order: Dynamic, Fixed, Soft, Linear, Hard; LINEAR came last, so older settings keep their values) */
@@ -192,10 +196,11 @@ const char *rfm_move_vel_name(int v);                   /* "DYNAMIC", "FIXED", "
 int rfm_move_vel(const rfm_move_settings_t *s, int v);  /* a pad's velocity 1..127 through the setting */
 #define RFM_MOVE_LIST_TICKS 5                           /* a list-type menu knob (scale, root, layout ..): ticks an item */
 #define RFM_MOVE_KNOB_TICKS 2                           /* the Move's knob ticks an FM-1 encoder detent (the jog: 1) */
-#define RFM_MOVE_SETTINGS_VERSION 4                     /* (versions 1, 2 and 3, 77, 78 and 80 bytes, load too: no
-                                                         * MIDI screen, no velocity setting, no projects view state) */
+#define RFM_MOVE_SETTINGS_VERSION 5                     /* (versions 1, 2, 3 and 4, 77, 78, 80 and 86 bytes, load too:
+                                                         * no MIDI screen, no velocity setting, no projects view state,
+                                                         * no popup width (full)) */
 #define RFM_MOVE_SETTINGS_BYTES_V3 (6 + 7 + RFM_MOVE_NBANKS * RFM_MOVE_NKNOBS + RFM_MOVE_NPADS + 3)
-#define RFM_MOVE_SETTINGS_BYTES (RFM_MOVE_SETTINGS_BYTES_V3 + 6)
+#define RFM_MOVE_SETTINGS_BYTES (RFM_MOVE_SETTINGS_BYTES_V3 + 7)
 enum { RFM_MOVE_MV_PADS, RFM_MOVE_MV_NOTES, RFM_MOVE_MV_N };   /* MIDI mode's screens (a tap on Track 2 turns them) */
 void rfm_move_settings_default(rfm_move_settings_t *s);
 /* "RMV" version8 len16, then the fields; returns RFM_MOVE_SETTINGS_BYTES */
