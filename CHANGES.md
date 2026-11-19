@@ -3,6 +3,29 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.5 (2026-11-19)
+
+The sequencer runs on its own clock (the owner's: it locked up and stalled following a firmware). `rfm_move_seq_t`
+has new fields: rebuild everything. Projects: header byte 5 bit 0 now set on save (older readers ignore it).
+
+- **The cause**: the host feeds the active firmware's realtime MIDI out to the core. ChoralRoot 0.42's looper sends
+  FA on loop play and FC on stop with no steady F8. In EXT (and AUTO, since FA followed at once) FA stopped,
+  relocated and waited for clocks that never came: notes hung; F8 bursts then fired a run of ticks at once (repeats).
+- **INT is the default**: a new project, and a project saved before 0.5.5 with AUTO (then only the default; byte 5
+  bit 0 clear), run on the internal clock. A project saved since keeps the source it was given.
+- **AUTO follows a master only**: a Start (FA) or Continue (FB), then 24 steady clocks (each gap under 125 ms, the
+  average 20..300 BPM); then it follows at the master's measured tempo and starts at the master's next bar. FA / FC
+  with no clocks, clocks with no start, a burst, or clocks too slow never take the transport; FC only clears the
+  start seen. Following ends at FC or 500 ms with no clock, as before.
+- **EXT made safe**: following and playing (or waiting to start), 500 ms with no clock lets every sounding note go
+  (`ext_stall`); the position holds and goes on when clocks come back. Catching up is capped at 3 clocks (12 ticks)
+  a block out loud: the rest of a burst moves the position silently (note ons skipped; offs and locks as usual).
+
+**Tests:** `move_seq` `test_clock_055` (735 checks): AUTO with FA/FC only (the transport stays ours, its FC
+stops nothing), 23 vs 24 clocks, a burst, gaps over 125 ms; EXT with FA/FC only, a clock stopped mid-bar (released
+at 500 ms, held, resumed), a burst of 48 F8s (the position +48 clocks, at most one note); an old project's AUTO
+loading as INT. `test_external`, `test_record_8_bars` and `session` set the source they test.
+
 ## 0.5.4 (2026-11-19)
 
 A host's popup, latch kept per slot, Fantasy CFWs in the browser (the owner's). `rfm_move_t`, `rfm_move_act_t`

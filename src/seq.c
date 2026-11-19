@@ -514,7 +514,7 @@ void rfmv_seq_project_clear(rfm_move_t *m)
 {
     rfm_move_seq_t *q = &m->seq;
     int t, c;
-    q->bpm10 = 1200, q->clock_mode = RFM_MOVE_CLOCK_AUTO, q->sel_track = 0;
+    q->bpm10 = 1200, q->clock_mode = RFM_MOVE_CLOCK_INTERNAL, q->sel_track = 0;   /* (0.5.5: its own clock) */
     q->rec_mode = RFM_MOVE_RM_CAPTURE, q->rec_style = RFM_MOVE_RS_OVERDUB;
     q->groove = 0, q->color = 0;
     q->root = q->in_seq ? m->seq.stash_root : m->s.root;   /* (a new project: MIDI mode's key and scale) */
@@ -586,6 +586,8 @@ static void note_on(rfm_move_t *m, int track, int note, int vel, int len)
     rfm_move_seq_t *q = &m->seq;
     const int ch = q->tr[track].ch;
     int i, old = 0;
+    if (q->hush)                                        /* (0.5.5: a skipped step sounds nothing) */
+        return;
     for (i = 0; i < q->nsnd; i++)
         if (q->snd[i].ch == ch && q->snd[i].note == note) {
             snd_off(m, i);                              /* the same note again: off first */
@@ -1397,12 +1399,21 @@ void rfm_move_seq_set_bpm(rfm_move_t *m, int bpm10)
 
 static void follow(rfm_move_seq_t *q)
 {
+    q->ext_arm = 0, q->ext_arm_n = 0;
     if (q->following)
         return;
-    q->following = 1;
+    q->following = 1, q->ext_stall = 0;
     q->ext_clocks = q->tl >= 0 ? q->tl / 4 - 1 : -1;    /* the next clock is the next 4 ticks */
     q->ext_win_n = -1;
 }
+
+/* (0.5.5) AUTO follows a clock master only: a start, then EXT_ARM_CLOCKS steady clocks at a tempo from 20 to 300
+ * BPM. A firmware's own FA / FC (a looper's play and stop) with no clock stream never takes the transport. */
+#define EXT_ARM_CLOCKS 24
+#define EXT_GAP_MAX_US 125000u                          /* 20 BPM */
+#define EXT_GAP_MIN_US 8333u                            /* 300 BPM (the average over the clocks) */
+#define EXT_STALL_US 500000u
+#define EXT_CATCHUP_MAX 12                              /* ticks (3 clocks) a block may catch up out loud */
 
 void rfm_move_seq_set_clock(rfm_move_t *m, int mode)
 {
@@ -1410,7 +1421,8 @@ void rfm_move_seq_set_clock(rfm_move_t *m, int mode)
     if (mode < 0 || mode > RFM_MOVE_CLOCK_EXTERNAL)
         return;
     q->clock_mode = (uint8_t)mode;
-    if (mode == RFM_MOVE_CLOCK_INTERNAL)
+    q->ext_arm = 0, q->ext_arm_n = 0;
+    if (mode != RFM_MOVE_CLOCK_EXTERNAL)                /* (0.5.5: AUTO waits for a master's clocks again) */
         q->following = 0;
     else if (mode == RFM_MOVE_CLOCK_EXTERNAL)
         follow(q);
@@ -1443,11 +1455,40 @@ void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
     switch (msg[0]) {
     case 0xF8: {
         int32_t target;
-        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->ext_run && !q->following)
-            break;                                      /* (0.5.1) AUTO: a clock with no start (FA / FB) is not
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following) {
+            if (!q->ext_arm)
+                break;                                  /* (0.5.1) AUTO: a clock with no start (FA / FB) is not
                                                          * followed: a firmware that sends clock unasked, at its own
                                                          * tempo, does not take the sequencer over */
+            if (q->ext_arm_n > 0 && q->now_us - q->ext_arm_last_us > EXT_GAP_MAX_US)
+                q->ext_arm_n = 0;                       /* (0.5.5: a gap: the count starts again) */
+            if (q->ext_arm_n++ == 0)
+                q->ext_arm_us = q->now_us;
+            q->ext_arm_last_us = q->now_us;
+            if (q->ext_arm_n < EXT_ARM_CLOCKS)
+                break;
+            {
+                const uint64_t per = (q->now_us - q->ext_arm_us) / (uint64_t)(EXT_ARM_CLOCKS - 1);
+                const int32_t k = q->ext_arm_n, kind = q->ext_arm;
+                if (per < EXT_GAP_MIN_US) {             /* a burst, not a tempo: count again */
+                    q->ext_arm_n = 0;
+                    break;
+                }
+                follow(q);                              /* a master: its transport, from its next bar */
+                rfmv_seq_stop(m);
+                if (kind == 2)
+                    relocate(m, (int32_t)q->spp * TPS + (k - 1) * 4, (int32_t)q->spp * 6 + k - 1);
+                else
+                    relocate(m, (k - 1) * 4, k - 1);
+                q->ext_period_us = (uint32_t)per, q->ext_last_us = q->now_us;
+                q->ext_win_n = k - 1, q->ext_win_us = q->now_us;
+                q->start_pending = 2;
+            }
+            break;
+        }
         follow(q);
+        if (q->ext_stall)                               /* (0.5.5: the clock is back) */
+            q->ext_stall = 0;
         q->ext_last_us = q->now_us;
         q->ext_clocks++;
         if (q->ext_win_n < 0 || q->ext_clocks < q->ext_win_n)
@@ -1457,12 +1498,22 @@ void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
             q->ext_win_n = q->ext_clocks, q->ext_win_us = q->now_us;
         }
         target = q->ext_clocks * 4;
-        while (q->tl < target)                          /* catch up: this clock is due now */
+        while (q->tl < target) {                        /* catch up: this clock is due now */
+            q->hush = q->ext_cu >= EXT_CATCHUP_MAX;     /* (0.5.5: a burst jumps ahead without sounding the
+                                                         * steps it skips) */
+            if (!q->hush)
+                q->ext_cu++;
             tick(m, 0);
+        }
+        q->hush = 0;
         q->ph = 0;
         break;
     }
     case 0xFA:                                          /* start: bar 1 on the next clock */
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following) {
+            q->ext_arm = 1, q->ext_arm_n = 0;           /* (0.5.5: a master only once its clocks come) */
+            break;
+        }
         follow(q);
         q->ext_run = 1;
         rfmv_seq_stop(m);
@@ -1470,6 +1521,10 @@ void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
         q->start_pending = 2;
         break;
     case 0xFB:                                          /* continue: from the song position, at its next bar */
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following) {
+            q->ext_arm = 2, q->ext_arm_n = 0;
+            break;
+        }
         follow(q);
         q->ext_run = 1;
         if (!q->playing) {
@@ -1478,7 +1533,7 @@ void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
         }
         break;
     case 0xFC:
-        q->ext_run = 0;
+        q->ext_run = 0, q->ext_arm = 0, q->ext_arm_n = 0;
         if (q->following)
             rfmv_seq_stop(m);
         if (q->clock_mode == RFM_MOVE_CLOCK_AUTO)
@@ -1535,8 +1590,16 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
     q->us_rem += (uint64_t)frames * 1000000u;
     q->now_us += q->us_rem / rate;
     q->us_rem %= rate;
-    if (q->following && q->clock_mode == RFM_MOVE_CLOCK_AUTO && q->now_us - q->ext_last_us > 500000u)
-        q->following = 0;                               /* the external clock is gone: ours again */
+    q->ext_cu = 0;
+    if (q->following && q->now_us - q->ext_last_us > EXT_STALL_US) {
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO)
+            q->following = 0, q->ext_run = 0;           /* the external clock is gone: ours again */
+        else if (!q->ext_stall && (q->playing || q->start_pending)) {
+            q->ext_stall = 1;                           /* (0.5.5) EXT: nothing hangs; the position holds until
+                                                         * the clocks come back */
+            rfmv_seq_release(m, -1);
+        }
+    }
     rfmv_seq_ui_poll(m);
     rfmv_proj_poll(m);
     rfmv_fw_poll(m);                                    /* (0.4.0: the library's FW_LIBRARY, debounced) */

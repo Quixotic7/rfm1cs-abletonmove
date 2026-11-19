@@ -55,7 +55,7 @@ int rfm_move_project_save(rfm_move_t *m, uint8_t *out, uint32_t cap)
         return -1;
     memset(p, 0, HDR);
     memcpy(p, "RMSQ", 4);
-    p[4] = RFM_MOVE_PROJECT_VERSION, p[5] = 0;
+    p[4] = RFM_MOVE_PROJECT_VERSION, p[5] = 1;         /* (p[5] bit 0, 0.5.5: the clock byte is a choice) */
     w16(p + 6, q->bpm10);
     p[8] = q->clock_mode, p[9] = m->s.vel_mode == RFM_MOVE_VEL_FIXED,   /* (was the project's Full Velocity; now a setting) */
     p[10] = q->sel_track;
@@ -233,6 +233,8 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
     if (!q)
         return 0;
     q->bpm10 = (uint16_t)r16(b + 6), q->clock_mode = b[8], q->sel_track = b[10];
+    if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !(b[5] & 1))
+        q->clock_mode = RFM_MOVE_CLOCK_INTERNAL;        /* (0.5.5: AUTO was only the default then; its own clock) */
     q->rec_mode = b[13], q->rec_style = b[14], q->color = b[18];
     if (ver >= 3)                                       /* (older: the key and scale MIDI mode has now) */
         q->groove = b[15], q->root = b[16], q->scale = b[17];
@@ -372,8 +374,9 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
         parse(b, n, q);
         q->proj_used |= 1u << slot;
     }
-    if (q->clock_mode == RFM_MOVE_CLOCK_INTERNAL)
+    if (q->clock_mode != RFM_MOVE_CLOCK_EXTERNAL)
         q->following = 0;
+    q->ext_arm = 0, q->ext_arm_n = 0, q->ext_stall = 0;
     q->bank = (uint8_t)(q->sel_track / 4);
     rfmv_seq_load_track(m);                             /* (the selected track's layout, CC numbers, key) */
     q->proj_cur = (int8_t)slot, q->proj_pending = -1;   /* (projects mode stays: the owner's, left with Back / Menu) */

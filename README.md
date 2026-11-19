@@ -368,7 +368,7 @@ Workflow 1-3, Tempo 1-2 (none while following), Groove 1-2, Layout 1, Keys & Sca
 | Step | Function |
 |---|---|
 | 1 Set Overview | the project grid |
-| 2 Global Settings | menu, sticky (Back, Session or Shift + step 2 closes it): on top the Move's battery (an icon filled, the %; "--" until its first STATUS; "PWR" while the power button is held), then the jog or knob 1 the clock source (AUTO, INT, EXT; * following. AUTO follows the firmware's clock only while its transport runs: from its Start or Continue to its Stop, 0.5.1), knob 2 the velocity option, knob 3 its level (as the Velocity menu). The battery is Move Remote's STATUS byte 4, as the surface reports it (taken as 0..100 %, clamped); the host passes it with `rfm_move_set_battery` (the web page on every STATUS). No power bit is known to mean charging, so none is shown |
+| 2 Global Settings | menu, sticky (Back, Session or Shift + step 2 closes it): on top the Move's battery (an icon filled, the %; "--" until its first STATUS; "PWR" while the power button is held), then the jog or knob 1 the clock source (AUTO, INT, EXT; * following. INT is the default (0.5.5); AUTO follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), knob 2 the velocity option, knob 3 its level (as the Velocity menu). The battery is Move Remote's STATUS byte 4, as the surface reports it (taken as 0..100 %, clamped); the host passes it with `rfm_move_set_battery` (the web page on every STATUS). No power bit is known to mean charging, so none is shown |
 | 3 Workflow Settings | menu: the jog the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent) |
 | 5 Tempo | each press is a tap (tap tempo: the average of up to 4 taps) and opens the menu: the tempo at 4x; the jog 1 BPM (Shift, or knob 2: 0.1); following the firmware's clock: locked (a padlock, EXT; taps ignored) |
 | 6 Metronome | on / off (off at first): a click a beat, the bar's first higher (`RFM_MOVE_ACT_CLICK`, frame-stamped; the web player plays it after the volume, never into a recording); also in the count-in |
@@ -563,10 +563,16 @@ the centre). The meters show the set values, not live audio.
 The sequencer's (the design gives labels only):
 
 - **Time**: 96 PPQN ticks (24 a 16th step); the external MIDI clock (24 PPQN) is 4 ticks a clock, interpolated at
-  the measured tempo and never more than 3 ticks ahead of the last clock (each clock catches up, stamped "now").
+  the measured tempo and never more than 3 ticks ahead of the last clock (each clock catches up, stamped "now"; 0.5.5:
+  at most 3 clocks a block out loud, so a burst of clocks jumps ahead without sounding the steps it skips).
   4/4 bars (16 steps = a page = a bar).
-- **Clock source**: AUTO (default; per project) follows an external clock while clocks arrive (500 ms timeout,
-  then the internal clock at the project's tempo, playing on), INT ignores it, EXT waits for it. Following: the
+- **Clock source** (per project): INT (0.5.5: the default, and what a project saved before 0.5.5 with AUTO loads
+  as) runs on its own clock and ignores the firmware's. AUTO follows a clock master only: a Start or Continue, then 24
+  steady clocks (gaps under 125 ms, 20..300 BPM on average), and the sequencer starts at the master's next bar; a
+  firmware's own Start / Stop with no clock stream (a looper's play and stop) never takes the transport. It is the
+  master's until its Stop or 500 ms with no clock (then the internal clock at the project's tempo, playing on). EXT
+  follows every clock, Start, Continue and Stop and waits for clocks; 500 ms with none while playing lets every
+  sounding note go and the position holds until clocks come back. Following: the
   clock's Start starts the sequencer at bar 1 on the next clock, Stop stops it, Song Position + Continue resumes at
   the position's next bar; Play on the Move starts at the external clock's next bar (counted from its last Start or
   Song Position, else from the first clock seen). Play on the Move never sends transport to the firmware.
@@ -811,7 +817,7 @@ queued note on of the same note. Live pads are not delayed.
 
 **The firmware's MIDI clock.** The worklet posts the firmware's MIDI out with the frame of the quantum that made it;
 the page takes F8 FA FB FC and F2 out of it (SysEx skipped) and feeds each to `rfm_move_seq_midi_in` at that frame
-plus the lead, in the core's timeline. In AUTO the sequencer then follows the firmware's tempo, start and stop, its
+plus the lead, in the core's timeline. In AUTO (a master: a start, then 24 steady clocks) the sequencer then follows the firmware's tempo, start and stop, its
 notes the lead (30 ms) behind the firmware's own beat, steadily; 500 ms without a clock and it is on its own BPM again.
 The Move section of the page says which (`clock INT` / `from the firmware`, and the BPM). Recorded pad notes land the
 lead late too (the core runs that far ahead of what is heard); quantize takes it out.

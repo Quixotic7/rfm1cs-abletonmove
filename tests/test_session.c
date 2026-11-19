@@ -499,10 +499,11 @@ static void test_sequencer_projects(void)
     CHECKF(s->st.playing && (g_changed & RFM1CS_CH_PLAYING) && led_writes() > 0,
            "playing: the status says so (%d, %x), the step LEDs follow (%d screens, %d LEDs)", s->st.playing, g_changed,
            count(MR_H_DISPLAY), led_writes());
-    /* the firmware's clock: FA then F8s, AUTO follows it */
+    /* the firmware's clock: FA then F8s, AUTO follows it (after 24 steady clocks) */
     {
         const uint8_t fa = 0xFA, f8 = 0xF8;
         g_changed = 0;
+        rfm_move_seq_set_clock(&s->core, RFM_MOVE_CLOCK_AUTO);   /* (0.5.5: INT is the default) */
         rfm1cs_session_midi_in(s, t, &fa, 1);
         for (i = 0; i < 48; i++) {
             rfm1cs_session_midi_in(s, t, &f8, 1);

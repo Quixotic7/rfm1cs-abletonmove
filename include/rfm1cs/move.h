@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 5
-#define RFM1CS_VERSION_PATCH 4
-#define RFM1CS_VERSION "0.5.4"
+#define RFM1CS_VERSION_PATCH 5
+#define RFM1CS_VERSION "0.5.5"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -532,6 +532,12 @@ typedef struct {
     uint64_t ext_last_us, ext_win_us;
     int32_t ext_win_n;
     uint32_t ext_period_us;                             /* one MIDI clock, measured (0 unknown) */
+    /* (0.5.5) AUTO, not following yet: a start (FA 1 / FB 2) seen, and the steady clocks counted since */
+    uint8_t ext_arm, ext_stall, hush;                   /* ext_stall: EXT, no clock for 500 ms: what sounded let go;
+                                                         * hush: ticks that sound nothing (a burst's catch-up) */
+    int16_t ext_arm_n;
+    uint64_t ext_arm_us, ext_arm_last_us;
+    uint16_t ext_cu;                                    /* catch-up ticks since the last rfm_move_seq_advance */
     uint16_t spp;                                       /* the last song position (16ths) */
     uint32_t frame;                                     /* the frame actions are stamped with now */
     rfm_move_sounding_t snd[RFM_MOVE_SEQ_SOUNDING];
@@ -756,10 +762,13 @@ int rfm_move_screen_timed(const rfm_move_t *m);
  * also runs blinking, tap tempo's display and autosave). Actions it gives carry `frame`: the offset in this call's
  * units at which the host plays them (sample accurate when frames are audio frames). rate 1000000 = microseconds.
  * The external clock: the firmware's MIDI out realtime bytes, one message a call: F8 clock (24 PPQN), FA start,
- * FB continue, FC stop, F2 lsb msb song position. In RFM_MOVE_CLOCK_AUTO the external clock wins only while its
- * transport runs (0.5.1: from FA or FB to FC; clocks with no start are ignored, so a firmware sending clock at its
- * own tempo unasked does not take the sequencer over), and for 500 ms after the last clock; FC gives the internal
- * clock back at once. RFM_MOVE_CLOCK_EXTERNAL follows every F8. Its events are stamped frame 0 (now). */
+ * FB continue, FC stop, F2 lsb msb song position. RFM_MOVE_CLOCK_INTERNAL (0.5.5: the default, and what a project
+ * saved before 0.5.5 with AUTO loads as) ignores it all. In RFM_MOVE_CLOCK_AUTO the external clock wins only once a
+ * master shows itself (0.5.5: FA or FB, then 24 steady clocks at 20..300 BPM; the sequencer starts at the master's
+ * next bar), so a firmware's own FA / FC with no clock stream (a looper) never takes the transport; it stays the
+ * master's until FC or 500 ms with no clock. RFM_MOVE_CLOCK_EXTERNAL follows every F8, FA, FB and FC; 0.5.5: 500 ms
+ * with no clock while playing lets every sounding note go and the position holds until clocks come back, and a burst
+ * catches up at most 3 clocks out loud a block, the rest skipped silently. Its events are stamped frame 0 (now). */
 void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate);
 void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n);
 void rfm_move_seq_play(rfm_move_t *m, int on);         /* as Play in Sequencer mode (1 start, 0 stop) */

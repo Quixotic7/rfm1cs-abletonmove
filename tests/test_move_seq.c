@@ -433,7 +433,10 @@ static void test_external(void)
     fresh(m);
     rfmv_seq_note_put(m, 0, 0, 60, 100, 24, 0);
     rfmv_seq_note_put(m, 0, 2, 62, 100, 6, 0);
-    /* the firmware's clock at 120 BPM (a clock every 1000 frames at 48 kHz): Start, then clocks */
+    /* the firmware's clock at 120 BPM (a clock every 1000 frames at 48 kHz): Start, then clocks (0.5.5: EXT, the
+     * user's choice; INT is the default) */
+    CHECK(m->seq.clock_mode == RFM_MOVE_CLOCK_INTERNAL);
+    rfm_move_seq_set_clock(m, RFM_MOVE_CLOCK_EXTERNAL);
     adv(m, 480);                                        /* (the internal clock ran a little: no matter) */
     clock_in(m, 0xFA);
     CHECK(rfm_move_seq_following(m) && m->seq.start_pending == 2 && !m->seq.playing);
@@ -467,6 +470,7 @@ static void test_external(void)
     CHECK(!m->seq.playing && stuck() == 0);
     /* (0.5.1) clocks keep coming after its stop: AUTO is ours again (a stopped firmware's clock is not followed);
      * Play on the Move starts at once, on its own clock */
+    rfm_move_seq_set_clock(m, RFM_MOVE_CLOCK_AUTO);
     CHECK(!rfm_move_seq_following(m));
     for (i = 0; i < 10; i++)
         clock_in(m, 0xF8), adv(m, 1000);
@@ -480,6 +484,8 @@ static void test_external(void)
         rfm_move_seq_midi_in(m, spp, 3);
     }
     CHECK(m->seq.spp == 8 && !rfm_move_seq_following(m));
+    rfm_move_seq_set_clock(m, RFM_MOVE_CLOCK_EXTERNAL);
+    m->seq.following = 0;                               /* (as before EXT's set: FB takes it from here) */
     clock_in(m, 0xFB);
     CHECK(rfm_move_seq_following(m) && m->seq.tl == 8 * 24 - 1);
     for (i = 0; i < 48; i++)
@@ -487,13 +493,13 @@ static void test_external(void)
     CHECK(!m->seq.playing);
     clock_in(m, 0xF8), adv(m, 1000);
     CHECK(m->seq.playing && m->seq.tl - m->seq.T == RFM_MOVE_SEQ_BAR);
-    /* the clock goes away (AUTO): after 500 ms our own clock again, still playing */
-    adv(m, RATE);
-    CHECK(!rfm_move_seq_following(m) && m->seq.playing);
+    /* the clock goes away (EXT, 0.5.5): still following, still playing, the position held, nothing sounding */
     {
         const int32_t T = m->seq.T;
+        adv(m, RATE);
+        CHECK(rfm_move_seq_following(m) && m->seq.playing && m->seq.ext_stall && stuck() == 0);
         adv(m, 16 * FPS);
-        CHECK(m->seq.T == T + 384);                     /* a bar on the internal clock */
+        CHECK(m->seq.T <= T + 3);
     }
     rfm_move_seq_play(m, 0);
     CHECK(stuck() == 0);
@@ -2865,7 +2871,9 @@ static void test_record_8_bars(void)
     for (run = 0; run < 3; run++) {                     /* the internal clock; a firmware's F8 at a quarter of the
                                                          * tempo, not started (no FA); the same with FA in EXT */
         fresh(m);
-        CHECK(m->seq.clock_mode == RFM_MOVE_CLOCK_AUTO);
+        CHECK(m->seq.clock_mode == RFM_MOVE_CLOCK_INTERNAL);   /* (0.5.5: the default) */
+        if (run)
+            rfm_move_seq_set_clock(m, RFM_MOVE_CLOCK_AUTO);
         press(m, MR_CC_PLAY), adv(m, 128);
         press(m, MR_CC_REC);                            /* (Capture mode, playing, the clip empty: at once) */
         CHECK(m->seq.srec == 2 && m->seq.tr[0].t0 == 0);
@@ -2885,9 +2893,11 @@ static void test_record_8_bars(void)
     play_bars(m, 1, 0, 4 * FPT * 4, 0);
     CHECK(m->seq.following && rfm_move_seq_bpm10(m) < 400);
     rfm_move_seq_play(m, 0);
-    /* AUTO, the firmware's transport started (FA): followed, as before; its stop (FC): ours again */
+    /* AUTO, the firmware's transport started (FA) with a steady clock: followed (0.5.5: from its next bar); its stop
+     * (FC): ours again */
     fresh(m);
-    play_bars(m, 1, 0, 4 * FPT, 1);
+    rfm_move_seq_set_clock(m, RFM_MOVE_CLOCK_AUTO);
+    play_bars(m, 2, 0, 4 * FPT, 1);
     CHECK(m->seq.following && m->seq.playing && rfm_move_seq_bpm10(m) > 1150 && rfm_move_seq_bpm10(m) < 1250);
     clock_in(m, 0xFC);
     CHECK(!m->seq.following && !m->seq.playing);
@@ -2909,12 +2919,134 @@ static void test_record_8_bars(void)
     CHECKF(m->seq.len[0] == 192 && nnotes_clip(m, 0) == 12 * 16 * 4, "len %d, %d notes", m->seq.len[0], nnotes_clip(m, 0));
 }
 
+/* (0.5.5) the sequencer's own clock: INT by default; AUTO follows a master only (a start and 24 steady clocks); EXT
+ * lets go of what sounds when the clock stops, and a burst of clocks skips ahead without sounding */
+static uint8_t g_pj[RFM_MOVE_PROJECT_MAX];
+static void test_clock_055(void)
+{
+    rfm_move_t *m = &M;
+    int i, n;
+    /* AUTO, a looper's FA and FC with no clock: the transport stays ours, on its own clock */
+    fresh(m);
+    CHECK(m->seq.clock_mode == RFM_MOVE_CLOCK_INTERNAL);
+    rfm_move_seq_set_clock(m, RFM_MOVE_CLOCK_AUTO);
+    for (i = 0; i < 16; i++)
+        rfmv_seq_note_put(m, 0, i, 60, 100, 12, 0);
+    rfm_move_seq_play(m, 1), adv(m, 128);
+    clock_in(m, 0xFA);
+    CHECK(!rfm_move_seq_following(m) && m->seq.playing && m->seq.ext_arm == 1);
+    {
+        const int32_t T = m->seq.T;
+        clear(), adv(m, 16 * FPS);
+        CHECKF(m->seq.T >= T + 383 && m->seq.T <= T + 385, "AUTO, FA alone: a bar on our clock (%d)", m->seq.T - T);
+        CHECK(count_midi(0x90, 60) == 16 && stuck() <= 1);
+    }
+    clock_in(m, 0xFC);
+    CHECK(!rfm_move_seq_following(m) && m->seq.playing && !m->seq.ext_arm);   /* (its stop: not ours to stop) */
+    clock_in(m, 0xFA);
+    for (i = 0; i < 23; i++)                            /* a start and 23 clocks: not yet a master */
+        clock_in(m, 0xF8), adv(m, 1000);
+    CHECK(!rfm_move_seq_following(m) && m->seq.playing);
+    clock_in(m, 0xF8), adv(m, 1000);                    /* the 24th: a master, from its next bar */
+    CHECK(rfm_move_seq_following(m) && m->seq.start_pending == 2 && !m->seq.playing && stuck() == 0);
+    CHECKF(abs(rfm_move_seq_bpm10(m) - 1200) <= 2, "its tempo at once: %d", rfm_move_seq_bpm10(m));
+    for (i = 24; i < 96; i++)
+        clock_in(m, 0xF8), adv(m, 1000);
+    CHECK(!m->seq.playing);
+    clock_in(m, 0xF8);                                  /* clock 96: its bar 2 */
+    CHECK(m->seq.playing && m->seq.T == 0);
+    adv(m, RATE);                                       /* the master's clock goes: ours again, still playing */
+    CHECK(!rfm_move_seq_following(m) && m->seq.playing);
+    rfm_move_seq_play(m, 0);
+    CHECK(stuck() == 0);
+    /* AUTO, a burst after a start (48 clocks in one block): not a tempo, not followed */
+    clock_in(m, 0xFA);
+    for (i = 0; i < 48; i++)
+        clock_in(m, 0xF8);
+    adv(m, 128);
+    CHECK(!rfm_move_seq_following(m) && !m->seq.playing);
+    clock_in(m, 0xFC);
+    /* AUTO, clocks with gaps over 125 ms (under 20 BPM): the count starts again */
+    clock_in(m, 0xFA);
+    for (i = 0; i < 30; i++)
+        clock_in(m, 0xF8), adv(m, 7000);
+    CHECK(!rfm_move_seq_following(m));
+    clock_in(m, 0xFC);
+
+    /* EXT, a looper's FA and FC with no clock: it waits; after 500 ms nothing sounds; FC stops it */
+    fresh(m);
+    rfm_move_seq_set_clock(m, RFM_MOVE_CLOCK_EXTERNAL);
+    rfmv_seq_note_put(m, 0, 0, 60, 100, 24 * 8, 0);     /* a long note */
+    clock_in(m, 0xFA);
+    for (i = 0; i < 6; i++)                             /* (a step of clocks: the long note sounds) */
+        clock_in(m, 0xF8), adv(m, 1000);
+    CHECK(m->seq.playing && stuck() == 1);
+    {
+        const int32_t T = m->seq.T;
+        adv(m, RATE / 4);
+        CHECK(stuck() == 1 && !m->seq.ext_stall);       /* (250 ms: a slow clock may still come) */
+        adv(m, RATE / 2);
+        CHECK(stuck() == 0 && m->seq.ext_stall && m->seq.playing && m->seq.T <= T + 3);
+        /* the clock stopped mid-bar comes back: on from where it held, one clock = 4 ticks */
+        for (i = 0; i < 6; i++)
+            clock_in(m, 0xF8), adv(m, 1000);
+        CHECKF(!m->seq.ext_stall && m->seq.T >= T + 24 - 3 && m->seq.T <= T + 24 + 3, "resumed: %d", m->seq.T - T);
+    }
+    clock_in(m, 0xFC);
+    CHECK(!m->seq.playing && stuck() == 0);
+    /* EXT, a looper's FA then FC with nothing between: waits, then stopped; nothing sounds */
+    clock_in(m, 0xFA), adv(m, RATE), clock_in(m, 0xFC), adv(m, 128);
+    CHECK(!m->seq.playing && !m->seq.start_pending && stuck() == 0);
+
+    /* EXT, a burst of 48 clocks in one block: the position jumps 48 clocks; at most 3 clocks of it sound */
+    fresh(m);
+    rfm_move_seq_set_clock(m, RFM_MOVE_CLOCK_EXTERNAL);
+    for (i = 0; i < 16; i++)
+        rfmv_seq_note_put(m, 0, i, 60 + i, 100, 6, 0);
+    clock_in(m, 0xFA);
+    for (i = 0; i < 12; i++)                            /* steps 1 and 2 */
+        clock_in(m, 0xF8), adv(m, 1000);
+    {
+        const int32_t T = m->seq.T;
+        clear();
+        for (i = 0; i < 48; i++)
+            clock_in(m, 0xF8);
+        n = count_midi(0x90, -1);
+        CHECKF(m->seq.T >= T + 48 * 4 - 3 && m->seq.T <= T + 48 * 4 + 3, "the burst: T +%d", m->seq.T - T);
+        CHECKF(n <= 1, "the burst: %d notes sounded (8 steps skipped)", n);
+        adv(m, 1000);
+        clear();
+        for (i = 0; i < 6; i++)                         /* the next step sounds as usual */
+            clock_in(m, 0xF8), adv(m, 1000);
+        CHECK(count_midi(0x90, -1) == 1);
+    }
+    rfm_move_seq_play(m, 0);
+    CHECK(stuck() == 0);
+
+    /* a project saved before 0.5.5 with AUTO (then only the default) loads as INT; one saved since keeps AUTO */
+    fresh(m);
+    rfm_move_seq_set_clock(m, RFM_MOVE_CLOCK_AUTO);
+    n = rfm_move_project_save(m, g_pj, sizeof g_pj);
+    CHECK(n > 0 && g_pj[5] == 1 && g_pj[8] == RFM_MOVE_CLOCK_AUTO);
+    CHECK(rfm_move_project_load(m, 1, g_pj, (uint32_t)n) == 0 && m->seq.clock_mode == RFM_MOVE_CLOCK_AUTO);
+    {
+        uint32_t h = 2166136261u, k;
+        g_pj[5] = 0;
+        for (k = 0; k < (uint32_t)n - 4; k++)
+            h = (h ^ g_pj[k]) * 16777619u;
+        for (k = 0; k < 4; k++)
+            g_pj[n - 4 + k] = (uint8_t)(h >> (8 * k));
+    }
+    CHECK(rfm_move_project_load(m, 1, g_pj, (uint32_t)n) == 0 && m->seq.clock_mode == RFM_MOVE_CLOCK_INTERNAL);
+}
+
 int main(void)
 {
     test_record_8_bars();
     test_model();
     test_playback();
     test_external();
+    test_clock_055();
     test_launch();
     test_note_offs();
     test_record();
