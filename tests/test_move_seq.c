@@ -465,22 +465,23 @@ static void test_external(void)
         clock_in(m, 0xF8), adv(m, 1000);
     clock_in(m, 0xFC);
     CHECK(!m->seq.playing && stuck() == 0);
-    /* clocks keep coming (stopped): Play on the Move waits for the clock's next bar */
+    /* (0.5.1) clocks keep coming after its stop: AUTO is ours again (a stopped firmware's clock is not followed);
+     * Play on the Move starts at once, on its own clock */
+    CHECK(!rfm_move_seq_following(m));
     for (i = 0; i < 10; i++)
         clock_in(m, 0xF8), adv(m, 1000);
-    press(m, MR_CC_PLAY);
-    CHECK(m->seq.start_pending == 2 && !m->seq.playing);
-    for (i = 0; i < 200 && !m->seq.playing; i++)
-        clock_in(m, 0xF8), adv(m, 1000);
-    CHECK(m->seq.playing && (m->seq.tl - m->seq.T) % RFM_MOVE_SEQ_BAR == 0 && m->seq.T <= 3);
-    /* Continue from a song position: at its next bar */
-    clock_in(m, 0xFC);
+    CHECK(!rfm_move_seq_following(m));
+    press(m, MR_CC_PLAY), adv(m, 128);
+    CHECK(m->seq.playing && !rfm_move_seq_following(m));
+    rfm_move_seq_play(m, 0);
+    /* Continue from a song position: followed again, at its next bar */
     {
         const uint8_t spp[3] = { 0xF2, 8, 0 };          /* 16th 8: half a bar */
         rfm_move_seq_midi_in(m, spp, 3);
     }
-    CHECK(m->seq.tl == 8 * 24 - 1);
+    CHECK(m->seq.spp == 8 && !rfm_move_seq_following(m));
     clock_in(m, 0xFB);
+    CHECK(rfm_move_seq_following(m) && m->seq.tl == 8 * 24 - 1);
     for (i = 0; i < 48; i++)
         clock_in(m, 0xF8), adv(m, 1000);
     CHECK(!m->seq.playing);
@@ -2821,8 +2822,96 @@ static void test_repeat(void)
     }
 }
 
+/* (0.5.1, the owner's bug: "8 bars played, 2 bars recorded") 8 bars played in real time (120 BPM, 48 kHz blocks of
+ * 128): a note a beat (4 pads in turn), or a 4-note chord a step. fw_period: a firmware's F8 every that many frames
+ * meanwhile (0 none); fa: its transport started (FA) first */
+static void play_bars(rfm_move_t *m, int bars, int chords, uint32_t fw_period, int fa)
+{
+    const uint32_t every = chords ? FPS : 4 * FPS, total = (uint32_t)bars * 16 * FPS;
+    uint32_t t = 0, next_clk = 0;
+    int held = 0;
+    if (fa)
+        clock_in(m, 0xFA);
+    while (t < total) {
+        const uint32_t n = 128;
+        if (t % every < n) {                            /* (a block holding the beat or step: the pads at its start) */
+            int p;
+            for (p = 0; p < (chords ? 4 : 1); p++)
+                pad(m, chords ? p : (int)(t / every) % 4, 100);
+            held = 1;
+        } else if (held && t % every >= every / 2) {
+            int p;
+            for (p = 0; p < 4; p++)
+                pad(m, p, 0);
+            held = 0;
+        }
+        rfm_move_seq_advance(m, n, RATE);
+        base += n, t += n;
+        while (fw_period && next_clk < t)
+            clock_in(m, 0xF8), next_clk += fw_period;
+        if (nact > 6000)
+            clear();
+    }
+    if (held) {
+        int p;
+        for (p = 0; p < 4; p++)
+            pad(m, p, 0);
+    }
+}
+static void test_record_8_bars(void)
+{
+    rfm_move_t *m = &M;
+    int run;
+    for (run = 0; run < 3; run++) {                     /* the internal clock; a firmware's F8 at a quarter of the
+                                                         * tempo, not started (no FA); the same with FA in EXT */
+        fresh(m);
+        CHECK(m->seq.clock_mode == RFM_MOVE_CLOCK_AUTO);
+        press(m, MR_CC_PLAY), adv(m, 128);
+        press(m, MR_CC_REC);                            /* (Capture mode, playing, the clip empty: at once) */
+        CHECK(m->seq.srec == 2 && m->seq.tr[0].t0 == 0);
+        play_bars(m, 8, 0, run ? 4 * FPT * 4 : 0, 0);  /* (a clock is 4 ticks: FPT * 4; a quarter as often) */
+        CHECKF(!m->seq.following, "run %d: a firmware's F8 alone (no FA) is not followed in AUTO", run);
+        press(m, MR_CC_REC);
+        adv(m, FPS);
+        CHECKF(m->seq.len[0] == 128 && nnotes_clip(m, 0) == 32, "run %d: len %d, %d notes", run, m->seq.len[0],
+               nnotes_clip(m, 0));
+        rfm_move_seq_play(m, 0);
+    }
+    /* EXT (the user's choice): the firmware's clock is followed, a quarter as fast: what was played over 8 bars of
+     * real time lands in 2 bars of its clock (as the owner saw: the sequencer was following) */
+    fresh(m);
+    rfm_move_seq_set_clock(m, RFM_MOVE_CLOCK_EXTERNAL);
+    press(m, MR_CC_PLAY);
+    play_bars(m, 1, 0, 4 * FPT * 4, 0);
+    CHECK(m->seq.following && rfm_move_seq_bpm10(m) < 400);
+    rfm_move_seq_play(m, 0);
+    /* AUTO, the firmware's transport started (FA): followed, as before; its stop (FC): ours again */
+    fresh(m);
+    play_bars(m, 1, 0, 4 * FPT, 1);
+    CHECK(m->seq.following && m->seq.playing && rfm_move_seq_bpm10(m) > 1150 && rfm_move_seq_bpm10(m) < 1250);
+    clock_in(m, 0xFC);
+    CHECK(!m->seq.following && !m->seq.playing);
+    clock_in(m, 0xF8), clock_in(m, 0xF8);               /* (clocks after its stop: not followed) */
+    CHECK(!m->seq.following);
+    /* Capture: 8 bars of 4-note chords a step (1024 pad events), stopped: all of it; 12 bars (1536, past 0.5.0's
+     * 1024-event buffer, which kept the last 8): all of it */
+    fresh(m);
+    play_bars(m, 8, 1, 0, 0);
+    adv(m, 4 * FPS);
+    CHECK(m->seq.ncap == 8 * 16 * 4 * 2);
+    press(m, MR_CC_CAPTURE);
+    CHECKF(m->seq.len[0] == 128 && nnotes_clip(m, 0) == 8 * 16 * 4, "len %d, %d notes", m->seq.len[0], nnotes_clip(m, 0));
+    fresh(m);
+    play_bars(m, 12, 1, 0, 0);
+    adv(m, 4 * FPS);
+    CHECK(m->seq.ncap == 12 * 16 * 4 * 2);
+    press(m, MR_CC_CAPTURE);
+    CHECKF(m->seq.len[0] == 192 && nnotes_clip(m, 0) == 12 * 16 * 4, "len %d, %d notes", m->seq.len[0], nnotes_clip(m, 0));
+}
+
 int main(void)
 {
+    test_record_8_bars();
     test_model();
     test_playback();
     test_external();

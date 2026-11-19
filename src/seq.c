@@ -1443,6 +1443,10 @@ void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
     switch (msg[0]) {
     case 0xF8: {
         int32_t target;
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->ext_run && !q->following)
+            break;                                      /* (0.5.1) AUTO: a clock with no start (FA / FB) is not
+                                                         * followed: a firmware that sends clock unasked, at its own
+                                                         * tempo, does not take the sequencer over */
         follow(q);
         q->ext_last_us = q->now_us;
         q->ext_clocks++;
@@ -1477,6 +1481,8 @@ void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
         q->ext_run = 0;
         if (q->following)
             rfmv_seq_stop(m);
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO)
+            q->following = 0;                           /* (0.5.1: AUTO, stopped: ours again at once) */
         break;
     case 0xF2:
         if (n >= 3) {
@@ -1813,7 +1819,8 @@ typedef struct { int32_t on, off; uint8_t note, vel; } cnote_t;
  * (timeline ticks at bpm10) */
 static int detect_bpm10(const cnote_t *c, int n, int bpm10)
 {
-    double ms[RFM_MOVE_SEQ_CAPTURE], best = 1e18, ioi = 0;
+    static double ms[RFM_MOVE_SEQ_CAPTURE];             /* (32 KB: not on the stack) */
+    double best = 1e18, ioi = 0;
     int i, b, best_b = 0;
     if (n < 3)
         return 0;

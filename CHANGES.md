@@ -3,6 +3,28 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.1 (2026-11-18)
+
+The owner's "8 bars played, 2 bars recorded, notes skipped". No API or format changes; `rfm_move_t` is larger
+(`RFM_MOVE_SEQ_CAPTURE`): rebuild everything.
+
+- **The cause: AUTO followed any clock.** In `RFM_MOVE_CLOCK_AUTO` (the default) a firmware's F8 alone made the
+  sequencer follow it, and hosts pass the active firmware's MIDI out to `rfm1cs_session_midi_in`. A firmware that
+  sends clock unasked at another rate (OberVave: its own sequencer's clock) then ran the Move's sequencer at that
+  rate: a quarter as fast puts 8 bars of real time into 2 bars, and notes played closer than a step apart land on
+  the same step (one kept). Now AUTO follows only while the external transport runs: from FA (start) or FB
+  (continue) until FC (stop), which gives the internal clock back at once. F8 with no start is ignored; F2 is kept
+  for the next FB. `RFM_MOVE_CLOCK_EXTERNAL` follows every F8 as before (the user's choice); INT ignores it all.
+  Behaviour change: after the firmware's FC, AUTO no longer waits for its clock's bar on the Move's Play.
+- **Capture keeps 4096 pad events** (was 1024): 8 bars of 4-note chords on every step were exactly 1024, so a phrase
+  any longer lost its start. 16 bars of 4-note chords a step now fit. (`detect_bpm10`'s buffer is static.)
+- The Capture record mode itself had no bar cap or wrap for 8 bars: an 8-bar take is 8 pages.
+
+**Tests:** `move_seq` `test_record_8_bars` (707 checks in all): 8 bars of a note a beat, recorded in Capture mode,
+on the internal clock and with a firmware's F8 at a quarter of the tempo (not followed: 8 pages, 32 notes); EXT
+follows that clock; AUTO with FA follows and FC gives it back; Capture of 8 and 12 bars of 4-note chords whole.
+`test_external` updated for the stop rule.
+
 ## 0.5.0 (2026-11-18)
 
 Schwung modules' own parameter pages on the Move (the owner's): each `ui_hierarchy` level's knobs as pages of 8, Left
