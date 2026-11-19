@@ -317,6 +317,36 @@ void let_go(rfm_move_t *m, rfm_move_hold_t *h)
     h->kind = H_NONE;
 }
 
+/* (0.5.3) latch (MIDI and Control modes): a pad's note keeps sounding after its release (it keeps its hold). A press
+ * with no other pad down starts a new chord: the latched notes go first; a press on a latched note lets that note
+ * go (and plays nothing). Off, a mode change, a project load and rfm_move_release_all let them all go */
+static int latch_find(const rfm_move_t *m, int ch, int n)
+{
+    int i;
+    for (i = 0; i < m->nlat; i++)
+        if (m->lat_ch[i] == ch && m->lat_n[i] == n)
+            return i;
+    return -1;
+}
+static void latch_drop(rfm_move_t *m, int i)
+{
+    note_let(m, m->lat_ch[i], m->lat_n[i]);
+    m->nlat--;
+    m->lat_ch[i] = m->lat_ch[m->nlat], m->lat_n[i] = m->lat_n[m->nlat];
+}
+void rfmv_latch_drop_all(rfm_move_t *m)
+{
+    while (m->nlat)
+        latch_drop(m, m->nlat - 1);
+}
+void rfm_move_set_latch(rfm_move_t *m, int on)
+{
+    m->latch = on != 0;
+    if (!m->latch)
+        rfmv_latch_drop_all(m);
+}
+int rfm_move_latch(const rfm_move_t *m) { return m->latch; }
+
 /* every pad, step and button let go (the track buttons stay as they are) */
 static void release_holds(rfm_move_t *m)
 {
@@ -336,6 +366,7 @@ static void release_holds(rfm_move_t *m)
 void rfm_move_release_all(rfm_move_t *m)
 {
     release_holds(m);
+    rfmv_latch_drop_all(m);                             /* (0.5.3) */
     rfmv_seq_stop(m);                                   /* the link is gone: nothing may keep sounding */
     m->track_held = 0;
     m->back_down = m->back_used = m->back_trk = 0;
@@ -348,6 +379,7 @@ void rfm_move_set_mode(rfm_move_t *m, int mode)
     if (mode < 0 || mode > 3 || mode == m->s.mode)
         return;
     release_holds(m);
+    rfmv_latch_drop_all(m);                             /* (0.5.3: a mode change lets the latched notes go) */
     m->mmenu = 0;
     if (m->s.mode == RFM_MOVE_MODE_SEQ)
         rfmv_seq_leave(m);                              /* (the tracks' own layout and CC numbers out, MIDI mode's back) */
@@ -503,6 +535,11 @@ static void on_pad(rfm_move_t *m, int p, int vel, uint32_t now)
     if (!vel) {                                         /* released */
         if (m->pad_down[p] && m->s.mode == RFM_MOVE_MODE_SEQ)
             rfmv_seq_pad(m, p, 0, now);
+        if (m->latch && h->kind == H_NOTE && midi_mode(m) && m->s.mode != RFM_MOVE_MODE_SEQ &&
+            m->nlat < RFM_MOVE_NPADS && latch_find(m, h->a, h->b) < 0) {
+            m->lat_ch[m->nlat] = h->a, m->lat_n[m->nlat] = h->b, m->nlat++;   /* (0.5.3) latched: its hold kept */
+            h->kind = H_NONE;
+        }
         let_go(m, h);
         m->pad_down[p] = 0, m->pad_press[p] = 0;
         if (m->edit_pad == p)
@@ -530,6 +567,12 @@ static void on_pad(rfm_move_t *m, int p, int vel, uint32_t now)
     if (track_held(m, 1) || (m->mmenu && m->s.mode == RFM_MOVE_MODE_MIDI)) {   /* Track 2 held, MIDI mode's Keys &
                                                          * Scales: the layout, the scale */
         h->kind = H_MENU;
+        if (p == 31 && track_held(m, 1)) {              /* (0.5.3) the top row's pad 8: latch, named */
+            rfm_move_set_latch(m, !m->latch);
+            rfmv_menu(m, MENU_LAYOUT, m->s.layout);     /* (used: Track 2's release changes no mode) */
+            rfmv_pop(m, POP_MODE, m->latch ? 31 : 30);
+            return;
+        }
         rfmv_pick_layout(m, p);
         return;
     }
@@ -547,8 +590,20 @@ static void on_pad(rfm_move_t *m, int p, int vel, uint32_t now)
     }
     {
         const int n = rfm_move_pad_note(&m->s, p);
+        int i, others = 0;
         if (n < 0)
             return;
+        if (m->latch) {                                 /* (0.5.3) latch */
+            if ((i = latch_find(m, m->s.channel, n)) >= 0) {
+                latch_drop(m, i);                       /* (a latched note pressed again: it goes) */
+                h->kind = H_MENU;
+                return;
+            }
+            for (i = 0; i < RFM_MOVE_NPADS; i++)
+                others += i != p && m->pad[i].kind == H_NOTE;
+            if (!others)
+                rfmv_latch_drop_all(m);                 /* (a new chord: the old one goes) */
+        }
         h->kind = H_NOTE, h->a = m->s.channel, h->b = (uint8_t)n;
         note_hold(m, h->a, n, vel);
         if (m->s.layout == RFM_MOVE_LAYOUT_DRUM)
@@ -1109,7 +1164,9 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
     uint8_t wv[13];
     int i;
     for (i = 0; i < RFM_MOVE_NPADS; i++) {
-        if (t2)
+        if (t2 && i == 31 && track_held(m, 1))         /* (0.5.3) latch: amber, bright while on */
+            c[i] = sc((rgb_t){ 255, 170, 30 }, m->latch ? 256 : 40);
+        else if (t2)
             c[i] = i >= 24 && i < 28 ? sc(mode, m->s.layout == i - 24 ? 256 : 64)
                  : i < 24 ? sc(SCALE_RGB, m->s.scale == rfmv_scale_of_pad(i) ? 256 : 56) : OFF;
         else if (fm1) {

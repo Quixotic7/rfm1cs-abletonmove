@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 5
-#define RFM1CS_VERSION_PATCH 2
-#define RFM1CS_VERSION "0.5.2"
+#define RFM1CS_VERSION_PATCH 3
+#define RFM1CS_VERSION "0.5.3"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -688,7 +688,14 @@ typedef struct {
     uint8_t back_down, back_used;
     uint8_t back_trk;                                   /* bit t: Track t + 1 pressed with Back held (its release too) */
     uint32_t back_ms;
+    /* (0.5.3) latch, MIDI and Control modes (Track 2 held + the top row's pad 8): RAM only */
+    uint8_t latch;                                      /* on */
+    uint8_t nlat;                                       /* notes latched now */
+    uint8_t lat_ch[RFM_MOVE_NPADS], lat_n[RFM_MOVE_NPADS];   /* .. each one's channel and note (one hold each) */
 } rfm_move_t;
+/* (0.5.3) latch on or off (MIDI and Control modes' pads); off lets every latched note go. rfm_move_latch: 1 on */
+void rfm_move_set_latch(rfm_move_t *m, int on);
+int rfm_move_latch(const rfm_move_t *m);
 
 /* settings NULL: the defaults. fn gets every action (it may be NULL). */
 /* the library's version, "MAJOR.MINOR.PATCH" (RFM1CS_VERSION when it was built) */

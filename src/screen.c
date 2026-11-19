@@ -557,6 +557,8 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             if (m->pop_i == 20) {                       /* projects mode entered: Move's set icon over the name */
                 v2_ic(cv, V2I_PROJ, 58, 4, 1);
                 v2_TC(cv, 64, 26, "Projects", 2, 1);
+            } else if (m->pop_i == 30 || m->pop_i == 31) {   /* (0.5.3) Track 2 held + pad 8: latch */
+                v2_TC(cv, 64, 22, m->pop_i == 31 ? "Latch on" : "Latch off", 2, 1);
             } else if (m->pop_i >= 21 && m->pop_i <= 23) {   /* (0.4.5) Back into the view, (0.5.2) Menu: Firmwares,
                                                          * FX & Mix, Mixer */
                 v2_ic(cv, V2I_PROJ, 58, 4, 1);
@@ -863,6 +865,11 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
         return;
     }
     mr_gfx_clear(&cv, 0);
+    if (m->pop == POP_MODE && (m->pop_i == 30 || m->pop_i == 31) && rfmv_pop_up(m, POP_MODE)) {
+        popups(m, &cv);                                 /* (0.5.3) latch's name: over Track 2's menu too */
+        mr_gfx_pack(&cv, out);
+        return;
+    }
     for (t = 1; t < 4 && (m->seq.projects || !rfmv_hold_shown(m, t)); t++) {}   /* (Track 1 has no menu: FM-1 mode
                                                          * stays in view; a tap: nothing of a hold screen; the
                                                          * projects view: the Track buttons pick its tracks) */
@@ -898,6 +905,12 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
             for (x = 0; x < 64; x++)
                 cv.px[y][64 + x] = m->thumb[y][x];
         break;
+    }
+    if (m->latch && (m->s.mode == RFM_MOVE_MODE_MIDI || m->s.mode == RFM_MOVE_MODE_CONTROL)) {
+        v2_R(&cv, 119, 0, 9, 11, 1);                    /* (0.5.3) latched: a framed "L" in the top-right corner
+                                                         * (readable over a lit or dark pad) */
+        v2_R(&cv, 120, 1, 7, 9, 0);
+        v2_T(&cv, 121, 1, "L", 1, 1);
     }
     if (rfmv_hold_shown(m, 0)) {                        /* Track 1 held (any mode): the Shift layer, the shift icon
                                                          * in the top-left corner (the drawing's empty one) */

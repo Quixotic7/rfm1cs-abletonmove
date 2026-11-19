@@ -1433,6 +1433,81 @@ static void test_track4_pads(void)
     }
 }
 
+/* (0.5.3) latch, MIDI and Control modes: Track 2 held + the top row's pad 8 toggles it (named); released pads keep
+ * sounding; a press with no pad down is a new chord (the old one goes); a latched note pressed again goes; off, a
+ * mode change, release_all and a project load let them all go */
+static int sounding_notes(const rfm_move_t *m)
+{
+    int c, n, k = 0;
+    for (c = 0; c < 16; c++)
+        for (n = 0; n < 128; n++)
+            k += m->note_count[c][n] != 0;
+    return k;
+}
+static void test_latch(void)
+{
+    static rfm_move_t m;
+    static uint8_t out[MR_SCREEN_BYTES];
+    int n0, n1, n2;
+    rfm_move_init(&m, NULL, on_act, NULL);
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_MIDI);
+    n0 = rfm_move_pad_note(&m.s, 0), n1 = rfm_move_pad_note(&m.s, 1), n2 = rfm_move_pad_note(&m.s, 2);
+    CHECK(!rfm_move_latch(&m) && n0 >= 0 && n1 >= 0 && n2 >= 0);
+    /* the toggle: Track 2 held + pad 32 (the top row's 8th), its popup over the menu, the pad lit */
+    clear();
+    track(&m, 1, 1), pad(&m, 31, 100), pad(&m, 31, 0);
+    CHECK(rfm_move_latch(&m) && m.pop == POP_MODE && m.pop_i == 31 && count(RFM_MOVE_ACT_SETTINGS) == 0);
+    rfm_move_screen(&m, NULL, out);
+    write_pbm("move_latch_on.pbm", out);
+    CHECK(lit_in(out, 20, 18, 108, 40) > 0);
+    now_ms += 400, track(&m, 1, 0);
+    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && m.s.layout == RFM_MOVE_LAYOUT_SCALE);
+    /* a note latched: no off at its release */
+    clear();
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    CHECK(has_midi(0x90, n0, 100) && !has_midi(0x80, n0, 0) && m.nlat == 1);
+    m.pop = POP_NONE;
+    rfm_move_screen(&m, NULL, out);
+    write_pbm("move_latch_midi.pbm", out);
+    CHECK(px_at(out, 119, 5) && px_at(out, 121, 5) && !px_at(out, 124, 3));   /* (the framed "L") */
+    /* a new chord (no pad down): the old one goes; its notes latched together */
+    clear();
+    pad(&m, 1, 100), pad(&m, 2, 100);
+    CHECK(has_midi(0x80, n0, 0) && has_midi(0x90, n1, 100) && has_midi(0x90, n2, 100));
+    pad(&m, 1, 0), pad(&m, 2, 0);
+    CHECK(m.nlat == 2 && !has_midi(0x80, n1, 0) && !has_midi(0x80, n2, 0));
+    /* a latched note pressed again: it goes, nothing played */
+    clear();
+    pad(&m, 1, 100), pad(&m, 1, 0);
+    CHECK(has_midi(0x80, n1, 0) && !has_midi(0x90, n1, 100) && m.nlat == 1 && sounding_notes(&m) == 1);
+    /* off: all go */
+    clear();
+    track(&m, 1, 1), pad(&m, 31, 100), pad(&m, 31, 0), now_ms += 400, track(&m, 1, 0);
+    CHECK(!rfm_move_latch(&m) && m.pop_i == 30 && has_midi(0x80, n2, 0) && m.nlat == 0 && sounding_notes(&m) == 0);
+    /* off: a pad's release ends it, as before */
+    clear();
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    CHECK(has_midi(0x80, n0, 0) && sounding_notes(&m) == 0);
+    /* a mode change lets them go (latch stays on); Control mode latches too; release_all; a project load */
+    rfm_move_set_latch(&m, 1);
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    clear();
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_CONTROL);
+    CHECK(has_midi(0x80, n0, 0) && m.nlat == 0 && rfm_move_latch(&m) && sounding_notes(&m) == 0);
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    CHECK(m.nlat == 1 && sounding_notes(&m) == 1);
+    rfm_move_release_all(&m);
+    CHECK(m.nlat == 0 && sounding_notes(&m) == 0);
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    CHECK(rfm_move_project_load(&m, 0, NULL, 0) == 0 && m.nlat == 0 && sounding_notes(&m) == 0);
+    /* FM-1 mode: no latch (the keys let go) */
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
+    clear();
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    CHECK(count(RFM_MOVE_ACT_KEY) == 2 && m.nlat == 0);
+    rfm_move_set_latch(&m, 0);
+}
+
 int main(void)
 {
     test_fm1_pads();
@@ -1441,6 +1516,7 @@ int main(void)
     test_modes();
     test_layouts();
     test_track4_pads();
+    test_latch();
     test_drum_settings();
     test_control();
     test_leds();

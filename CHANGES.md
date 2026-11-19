@@ -3,6 +3,24 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.3 (2026-11-18)
+
+Latch for MIDI and Control modes (the owner's). `rfm_move_t` has new last fields (`latch`, `nlat`, `lat_ch`,
+`lat_n`): rebuild everything. No format changes.
+
+- **Track 2 held + the top row's pad 8** (it was free: pads 1..4 pick the layout) toggles latch, with a full-screen
+  "Latch on" / "Latch off" popup (over Track 2's menu); the pad is amber, bright while on. Shared by MIDI and
+  Control modes, RAM only.
+- **While on**: a released pad's note keeps sounding (its hold kept). A press with no other pad down is a new chord:
+  the latched notes go first. A latched note's pad pressed again lets it go and plays nothing. A framed "L" in the
+  screen's top-right corner while on (MIDI, Control).
+- **No stuck notes**: off, a mode change, a project load and `rfm_move_release_all` let every latched note go.
+  FM-1 and Sequencer modes do not latch. New `rfm_move_set_latch`, `rfm_move_latch`.
+
+**Tests:** `move` `test_latch` (920 checks in all): the toggle and its popup, a note latched, a new chord replacing
+it, a re-press letting one go, off, a mode change, Control mode, release_all, a project load, FM-1 mode unlatched.
+Renders: `move_latch_on.pbm`, `move_latch_midi.pbm`.
+
 ## 0.5.2 (2026-11-18)
 
 Menu's toggle is named (the owner's). No API, format or struct changes.

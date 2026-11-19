@@ -149,6 +149,14 @@ Pads play notes into the firmware's MIDI in (`RFM_MOVE_ACT_MIDI`: note on with t
 aftertouch, note off) on the selected channel (default 1). **Hold Track 2**: the top row's pads 1..4 pick the
 layout (the current one bright), steps 1..16 pick the channel (the current one lit). Up / Down: the octave, -4..+4.
 
+**Latch** (0.5.3, the owner's; MIDI and Control modes, shared, RAM only): Track 2 held + the top row's pad 8 turns it
+on or off ("Latch on" / "Latch off" for a second, full screen; the pad amber, bright while on). While on, a released
+pad's note keeps sounding. Pressing a pad with no other pad down starts a new chord: the latched notes go and the new
+ones latch when released; pads pressed together latch together. Pressing a latched note's pad again lets that note go
+(nothing plays). A framed "L" in the screen's top-right corner says it is on. Turning it off, a mode change, a project
+load and `rfm_move_release_all` (the link lost) let every latched note go; flipping to the projects view does not.
+FM-1 mode and Sequencer mode do not latch. `rfm_move_set_latch(&m, on)`, `rfm_move_latch(&m)` for a host.
+
 | Layout | Notes (base = 48 + root + 12 × octave: C3 at the defaults) |
 |---|---|
 | 1 Isomorphic in scale (default; C major) | bottom-left = root; +1 scale degree a column, +3 degrees (a 4th) a row |

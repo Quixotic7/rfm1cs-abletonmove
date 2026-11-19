@@ -221,6 +221,7 @@ int rfmv_fw_list_len(const rfm_move_t *m);
 int rfmv_fw_rec(const rfm_move_t *m, int fw);          /* the library record of list index fw, -1 */
 int rfmv_fw_switch(rfm_move_t *m, int slot);           /* (0.4.3) Back held + Track 1..3: that firmware played; 1 done */
 void rfmv_fw_slot_name(const rfm_move_t *m, int slot, char *o, int cap);
+void rfmv_latch_drop_all(rfm_move_t *m);               /* (0.5.3) every latched note let go */
 void rfmv_fw_view_pop(rfm_move_t *m);                 /* (0.5.2) the view named: Back's flip in, Menu */
 int rfmv_fw_cycle(rfm_move_t *m);                       /* (0.4.4) Down in FM-1 mode: the next loaded slot; 1 done */
 int rfmv_fw_loaded(const rfm_move_t *m);                /* loaded slots (0 with no host list) */
