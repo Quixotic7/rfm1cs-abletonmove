@@ -356,7 +356,7 @@ Workflow 1-3, Tempo 1-2 (none while following), Groove 1-2, Layout 1, Keys & Sca
 | Step | Function |
 |---|---|
 | 1 Set Overview | the project grid |
-| 2 Global Settings | menu, sticky (Back, Session or Shift + step 2 closes it): on top the Move's battery (an icon filled, the %; "--" until its first STATUS; "PWR" while the power button is held), then the jog or knob 1 the clock source (AUTO, INT, EXT; * following), knob 2 the velocity option, knob 3 its level (as the Velocity menu). The battery is Move Remote's STATUS byte 4, as the surface reports it (taken as 0..100 %, clamped); the host passes it with `rfm_move_set_battery` (the web page on every STATUS). No power bit is known to mean charging, so none is shown |
+| 2 Global Settings | menu, sticky (Back, Session or Shift + step 2 closes it): on top the Move's battery (an icon filled, the %; "--" until its first STATUS; "PWR" while the power button is held), then the jog or knob 1 the clock source (AUTO, INT, EXT; * following. AUTO follows the firmware's clock only while its transport runs: from its Start or Continue to its Stop, 0.4.7), knob 2 the velocity option, knob 3 its level (as the Velocity menu). The battery is Move Remote's STATUS byte 4, as the surface reports it (taken as 0..100 %, clamped); the host passes it with `rfm_move_set_battery` (the web page on every STATUS). No power bit is known to mean charging, so none is shown |
 | 3 Workflow Settings | menu: the jog the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent) |
 | 5 Tempo | each press is a tap (tap tempo: the average of up to 4 taps) and opens the menu: the tempo at 4x; the jog 1 BPM (Shift, or knob 2: 0.1); following the firmware's clock: locked (a padlock, EXT; taps ignored) |
 | 6 Metronome | on / off (off at first): a click a beat, the bar's first higher (`RFM_MOVE_ACT_CLICK`, frame-stamped; the web player plays it after the volume, never into a recording); also in the count-in |
@@ -504,7 +504,7 @@ The sequencer's (the design gives labels only):
   pressed with no other pad held (pads pressed while a step is held edit the step instead).
 - **The count-in** is a bar of the internal clock's ticks from the Play press (Rec armed) (T 0 exactly a bar later); following an
   external clock there is none (the start waits for its next bar, as Play does).
-- **Capture** keeps the last 256 pad events (track view). Stopped: the first note lands on step 1; playing: the
+- **Capture** keeps the last 4096 pad events (0.4.7; was 1024) (track view). Stopped: the first note lands on step 1; playing: the
   clip starts on the bar of the first note and plays on in phase. 1..8 bars; into the edited clip if empty, else
   the track's first empty clip ("NO EMPTY CLIP" otherwise).
 - **CC locks** are stored by CC number (not knob), so they follow the bank; sent at the step (no reset after).

@@ -3,6 +3,20 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.4.7 (2026-11-18)
+
+0.5.1's sequencer fix on 0.4.6, to ship before 0.5.x (the owner's "8 bars played, 2 bars recorded"). No API or
+format changes; `rfm_move_t` is larger (`RFM_MOVE_SEQ_CAPTURE`): rebuild everything.
+
+- **AUTO follows only a running external clock**: in `RFM_MOVE_CLOCK_AUTO` (the default) a firmware's F8 alone no
+  longer makes the sequencer follow it (a firmware sending clock unasked at another rate ran the Move's sequencer at
+  that rate: a quarter as fast puts 8 bars into 2, notes closer than a step merge). It follows from FA / FB until
+  FC, which gives the internal clock back at once; F2 is kept for the next FB. EXT follows every F8 as before.
+- **Capture keeps 4096 pad events** (was 1024, exactly 8 bars of 4-note chords a step).
+
+**Tests:** `move_seq` `test_record_8_bars` (8 bars recorded in Capture mode on the internal clock and with a
+firmware's quarter-rate F8; EXT and AUTO with FA / FC; Capture of 8 and 12 bars of chords); `test_external` updated.
+
 ## 0.4.6 (2026-11-18)
 
 A fix on 0.4.5 (the owner's), on its own so it can ship before 0.5.0. No API, format or struct changes.
