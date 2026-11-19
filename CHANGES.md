@@ -3,6 +3,19 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.2 (2026-11-18)
+
+Menu's toggle is named (the owner's). No API, format or struct changes.
+
+- **Menu (Session) in the projects view** shows the Back flip's popup for where it lands, a second, full screen:
+  "FX & Mix" into FX setup, "Firmwares" back to a firmware track, "Projects" back to Track 4. FX setup on its
+  Mixer page is "Mixer", for Menu and for the Back flip alike (it said "FX & Mix" there). The first press in the
+  view drops it, as the Back flip's. (`rfmv_fw_view_pop`: one place for both.)
+
+**Tests:** `move_fw` `test_menu_names` (525 checks in all): into FX setup and back, from Track 4, onto the Mixer, the
+first press dropping it; `test_flip_fx` expects "Mixer" on the Mixer. Renders: `fw_menu_to_fx.pbm`,
+`fw_menu_to_firmwares.pbm`, `fw_menu_to_projects.pbm`, `fw_menu_to_mixer.pbm`.
+
 ## 0.5.1 (2026-11-18)
 
 The owner's "8 bars played, 2 bars recorded, notes skipped". No API or format changes; `rfm_move_t` is larger

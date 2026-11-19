@@ -1188,6 +1188,13 @@ static void fw_back(rfm_move_t *m)
     else
         leave(m);
 }
+/* (0.5.2) the view's name as it is now, a second (the Back flip in, Menu's toggle): FX & Mix (Mixer on its page),
+ * Firmwares, Projects (Track 4) */
+void rfmv_fw_view_pop(rfm_move_t *m)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    rfmv_pop(m, POP_MODE, f->fx ? (fx_page(m) == PG_MIX ? 23 : 22) : f->track < 3 ? 21 : 20);
+}
 static void open_fx(rfm_move_t *m)
 {
     rfm_move_fw_state_t *f = F(m);
@@ -1306,7 +1313,7 @@ static void fw_input(rfm_move_t *m, const mr_event_t *ev)
         switch (cc) {
         case MR_CC_MENU:
             if (f->host)
-                open_fx(m);
+                open_fx(m), rfmv_fw_view_pop(m);       /* (0.5.2: named) */
             else
                 leave(m);
             return;
@@ -1539,8 +1546,8 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
             f->fx_del = ev->value != 0;
         if (!ev->value)
             return;
-        if (cc == MR_CC_MENU)                           /* (0.4.5: Menu alone toggles FX setup) */
-            f->fx = 0, f->browse = -1, pop_clear(m);
+        if (cc == MR_CC_MENU)                           /* (0.4.5: Menu alone toggles FX setup; 0.5.2: named) */
+            f->fx = 0, f->browse = -1, pop_clear(m), rfmv_fw_view_pop(m);
         else if (cc == MR_CC_BACK && f->browse >= 0)
             f->browse = -1;                             /* (the module list: closed, nothing loaded) */
         else if (cc == MR_CC_BACK && pages_shown(m))
@@ -1807,7 +1814,7 @@ void rfmv_view_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
         return;
     }
     if (f->host && ev->type == MR_EV_BUTTON && ev->index == MR_CC_MENU && ev->value) {
-        open_fx(m);
+        open_fx(m), rfmv_fw_view_pop(m);               /* (0.5.2: named) */
         return;
     }
     if (ev->type == MR_EV_BUTTON && ev->index == MR_CC_BACK && ev->value)

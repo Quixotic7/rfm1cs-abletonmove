@@ -909,7 +909,7 @@ static void back_click(rfm_move_t *m, uint32_t now)
     else {                                              /* flipped in: the view named (FX & Mix, Firmwares, Projects) */
         rfmv_proj_enter(m);
         if (m->seq.projects)
-            rfmv_pop(m, POP_MODE, m->fw.fx ? 22 : m->fw.track < 3 ? 21 : 20);
+            rfmv_fw_view_pop(m);
     }
 }
 static int back_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)   /* 1: taken */

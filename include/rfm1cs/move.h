@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 5
-#define RFM1CS_VERSION_PATCH 1
-#define RFM1CS_VERSION "0.5.1"
+#define RFM1CS_VERSION_PATCH 2
+#define RFM1CS_VERSION "0.5.2"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14

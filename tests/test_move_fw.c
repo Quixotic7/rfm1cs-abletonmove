@@ -1491,7 +1491,8 @@ static void test_flip_fx(void)
     CHECK(!m->seq.projects && !m->fw.fx && m->s.fw_fx && m->pop == POP_MODE && m->pop_i == mode0);
     rest_pop(m);
     press(m, MR_CC_BACK);
-    CHECK(m->seq.projects && m->fw.fx && m->s.fx_page == 3 && m->pop == POP_MODE && m->pop_i == 22);
+    CHECK(m->seq.projects && m->fw.fx && m->s.fx_page == 3 && m->pop == POP_MODE && m->pop_i == 23);   /* (0.5.2: on
+                                                         * the Mixer: "Mixer") */
     screen(m), write_pbm("flip_in_fx");
     /* .. kept in the settings image */
     CHECK(rfm_move_save(&m->s, blob) == RFM_MOVE_SETTINGS_BYTES && rfm_move_load(&s2, blob, sizeof blob) == 0 &&
@@ -1723,6 +1724,38 @@ static void test_fx_pages(void)
     press(m, MR_CC_MENU);
 }
 
+/* (0.5.2) Menu's toggle in the projects view is named, as the Back flip: FX & Mix (Mixer on its page) one way,
+ * Firmwares (Projects on Track 4) the other */
+static void test_menu_names(void)
+{
+    rfm_move_t *m = &M;
+    fixture(m);
+    rest_pop(m);
+    CHECK(m->seq.projects && !m->fw.fx && m->fw.track == 0);
+    press(m, MR_CC_MENU);
+    CHECK(m->fw.fx && m->pop == POP_MODE && m->pop_i == 22 && rfmv_pop_up(m, POP_MODE));
+    screen(m), write_pbm("menu_to_fx");
+    CHECK(lit_in(30, 20, 98, 40) > 0 && lit_in(0, 50, 128, 64) == 0);   /* (the name alone, full screen) */
+    rest_pop(m);
+    CHECK(!rfmv_pop_up(m, POP_MODE));
+    press(m, MR_CC_MENU);
+    CHECK(!m->fw.fx && m->seq.projects && m->pop == POP_MODE && m->pop_i == 21);
+    screen(m), write_pbm("menu_to_firmwares");
+    tap_track(m, 3);                                    /* (a press there: the name goes) */
+    CHECK(m->pop != POP_MODE || m->pop_i != 21);
+    rest_pop(m);
+    press(m, MR_CC_MENU), tap_track(m, 3);              /* FX setup, its Mixer */
+    CHECK(m->fw.fx && m->s.fx_page == 3);
+    press(m, MR_CC_MENU);                               /* out, on Track 4: Projects */
+    CHECK(!m->fw.fx && m->fw.track == 3 && m->pop == POP_MODE && m->pop_i == 20);
+    screen(m), write_pbm("menu_to_projects");
+    CHECK(lit_in(30, 20, 98, 40) > 0);
+    press(m, MR_CC_MENU);                               /* in again, on the Mixer: Mixer */
+    CHECK(m->fw.fx && m->pop == POP_MODE && m->pop_i == 23);
+    screen(m), write_pbm("menu_to_mixer");
+    press(m, MR_CC_MENU);
+}
+
 int main(void)
 {
     test_nolist();
@@ -1740,6 +1773,7 @@ int main(void)
     test_flip_fx();
     test_fx_touch();
     test_fx_pages();
+    test_menu_names();
     test_states();
     test_midi_track();
     test_old_formats();
