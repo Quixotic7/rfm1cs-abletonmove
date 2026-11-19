@@ -354,7 +354,11 @@ typedef struct {
     /* (0.5.0) FX parameter pages */
     uint8_t fx_pages;                                   /* the focused module's page shown (Right), not the chain */
     uint8_t fx_pg[2][RFM_MOVE_FX_SLOTS];                /* each slot's page (its knobs' page) */
+    uint8_t mix_par;                                    /* the Mixer's knobs 1..3: RFM_MOVE_MIXP_* */
+    uint8_t fx_del;                                     /* Delete held in FX setup (Delete + pad empties a slot) */
 } rfm_move_fw_state_t;
+enum { RFM_MOVE_MIXP_LEVEL, RFM_MOVE_MIXP_PAN, RFM_MOVE_MIXP_SEND1, RFM_MOVE_MIXP_SEND2, RFM_MOVE_MIXP_SEND3,
+       RFM_MOVE_MIXP_N };                               /* (0.5.0) the Mixer's choice (its right-hand pads) */
 
 /* ---- the sequencer (Track 4; README.md, "Sequencer") */
 #define RFM_MOVE_SEQ_TRACKS 16                          /* track n plays MIDI channel n by default */

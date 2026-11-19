@@ -459,7 +459,7 @@ an empty slot faint white, a slot past the host's voices blinking slowly; in FX 
 | Mute | the catalog: step 1 Update ready (on the Move, a newer version) / step 2 Not installed, one at a time (the lit one again: everything), 3..16 the same one category or tag; an update breathes with an up arrow, a firmware not on the Move faint white, dashed under; a jog press downloads or updates (`FW_DOWNLOAD`), and (0.4.2) loads one on the Move and current into this track (`FW_LOAD`). A download or update done while that firmware is still selected: the popup offers "Jog: load on Track n" |
 | Loop | the firmware's states (Move's Set Overview): a stored state loads, an empty pad saves there, Copy + pad saves over, Delete + pad deletes (`STATE_*`); Loop or Back leaves |
 | Track 1..3 held + volume | that slot's level (`FW_LEVEL`; in any mode with the browser on); the volume alone stays MASTER |
-| Session | FX setup: Track 1 MIDI FX, 2 Routing, 3 Audio FX, 4 Mixer; pads 1..3 the page's slots; steps a MIDI FX slot's track (one, or all: the same step again) or a firmware's 16-track filter; the jog the module list and load; knobs the module's parameters, a page of 8 at a time (0.5.0: Right / Left, see [FX parameter pages](#fx-parameter-pages-050); Mixer: 1 level, 2 pan, 3..5 sends): (0.4.5) a touch shows the parameter's popup for as long as the knob is touched, a turn updates it, the release drops it at once (a knob with no parameter there: nothing); Delete empties an FX slot; Session toggles FX setup, Back (0.4.5) leaves the view. A host with no modules has no MIDI FX / Audio FX page |
+| Session | FX setup (0.5.0: one layer, see [FX parameter pages](#fx-parameter-pages-050)): pad columns 1, 3, 5 the MIDI FX, firmware and audio FX slots; Track 1..3 select those columns, Track 4 the Mixer; steps a MIDI FX slot's track (one, or all: the same step again) or a firmware's 16-track filter; a slot's pad held + the jog chooses its module, the jog's click opens its pages; knobs the module's page, or a firmware's level, pan, sends; (0.4.5) a touch shows the parameter's popup while touched; Delete + pad empties an FX slot; Session toggles FX setup, Back (0.4.5) leaves the view. A host with no modules has no MIDI FX / Audio FX column |
 | Back | one level out (Capture, States, the description, the selection, the catalog), then out of the view, back to the mode (0.4.3: a click, as everywhere) |
 
 Decisions where the spec left a gap:
@@ -487,18 +487,44 @@ pages after it, its sub-levels' pages after those. The **host plans** the pages 
 draws them and maps the knobs. Schwung's preset browsers (`list_param` / `items_param`), `menu` lists, `visible_if`
 and the custom JavaScript UIs (`ui_chain.js`) are not part of 0.5.0.
 
-On the Move, in FX setup's MIDI FX or Audio FX page with a module in the focused slot:
+**FX setup is one layer** (the owner's): the pads show the whole chain, rows 1..3 from the top:
+
+| Pads | Are |
+|---|---|
+| column 1, rows 1..3 | the MIDI FX slots 1..3 (the MIDI FX colour; empty dim) |
+| column 3, rows 1..3 | the firmware slots 1..3, for routing and their mix (each firmware's colour; empty dim) |
+| column 5, rows 1..3 | the audio FX slots 1..3 (the audio FX colour; empty dim) |
+
+The selected pad is bright (breathing while its module's pages are open). `settings.fx_page` says which column is
+selected: `RFM_MOVE_FX_PAGE_MIDI` (column 1), `_ROUTE` (column 3), `_AUDIO` (column 5); Track 1..3 select those
+columns too, Track 4 the Mixer (`_MIX`). The screen is the chain, as before.
 
 | Control | Does |
 |---|---|
-| Right (from the chain) | the slot's parameter page: the page name (or the module's) and `n/m` on top, 8 cells in 2 rows of 4 (the knob's short label, its value; a gap: a dash), the pages as a strip at the bottom |
-| Right / Left on a page | the next / previous page; Left on the first page: the chain again. Lit when there is somewhere to go |
-| Back on a page | the chain again (the pages are a layer); Back on the chain leaves the view, as in 0.4.5 |
-| knobs 1..8 | that page's parameters (on the chain too: the slot's page as it was left); a gap: nothing |
-| a knob touched | its parameter's popup (long name, value) while touched (0.4.5) |
-| a pad (the focused slot), Track 1..4, the jog's module list | as before; a module loaded starts on its first page |
+| tap a slot's pad | selects it (a MIDI FX: the steps its one track / All; a firmware: the steps its 16-track filter) |
+| hold an FX slot's pad + turn the jog | its module list (empty, then the modules), the name on screen; **letting the pad go loads the one shown** (FX_LOAD), only if the jog turned and it is another module. Back while held: closed, nothing loaded |
+| Delete + an FX slot's pad | empties it (Delete alone: nothing) |
+| jog click, an FX slot with a module selected | **its own pages**: the page name (or the module's) and `n/m` on top, 8 cells in 2 rows of 4 (short label and value; a gap a dash), the pages as a strip |
+| jog turn in the pages | the next / previous page (stops at the ends) |
+| Back in the pages | the slots again (a layer); Back on the slots leaves the view (0.4.5). Another slot's pad closes the pages too |
+| knobs, an FX slot | its page's parameters (on the slots too: the slot's page as it was left); a gap: nothing |
+| knobs, a firmware | 1 level, 2 pan, 3..5 sends to audio FX 1..3 |
+| a knob touched | its popup while touched (0.4.5) |
 
-Each slot remembers its page. The Mixer and Routing pages are unchanged.
+Each slot remembers its page; a newly loaded module starts on its first page. The jog turned with no pad held, or
+clicked on an empty slot or a firmware, does nothing; Left / Right do nothing in FX setup.
+
+**The Mixer** (Track 4):
+
+| Pads / knobs | Are |
+|---|---|
+| columns 1..3 | each firmware slot's meter: its 4 pads light bottom up with the chosen value (a pad 32 steps; the top one dimmer while partial), in the firmware's colour; an empty slot dark |
+| right 4 x 4 (columns 5..8) | what knobs 1..3 set: row 1 Level, Pan; row 2 Send 1, 2, 3 (Level white, Pan amber, sends pink; the chosen one bright). The other 9 pads are dark |
+| knobs 1..3 | that slot's chosen value (the column above it follows); a touch shows the popup |
+| knobs 4..8 | nothing (no FX return levels yet) |
+
+The screen: "Mixer" and the chosen value's name on top, then each slot's name, its value (big) and a bar (pan from
+the centre). The meters show the set values, not live audio.
 
 **API** (`include/rfm1cs/move.h`; every new field at the end of its struct, zero = the 0.4 behaviour):
 

@@ -17,22 +17,40 @@ pages (0.5.0)". **Rebuild everything**: `rfm_move_fx_module_t`, `rfm_move_fx_par
 - `RFM_MOVE_FX_PARAMS` is 128 (was 8). `FX_PARAM`'s `param`, `rfm_move_fx_set_param`'s `index` and the slot's
   `val[]` are by parameter index, 0..127; `rfm_move_fx_sync` sends all of them. New `RFM_MOVE_FX_KNOBS` (8),
   `RFM_MOVE_FX_PAGES` (16), `RFM_MOVE_FX_UNSET` (255), `RFM_MOVE_FX_PARAMS_V5` (8).
-- **The Move**: in FX setup's MIDI FX / Audio FX page, Right opens the focused module's page (page name and n/m, 2 x 4
-  cells of label and value, gaps as dashes, a page strip); Right / Left page, Left on page 1 or Back returns to the
-  chain. The knobs follow the slot's page (on the chain too); gaps do nothing; a touch shows the popup (0.4.5). The
-  rings light the page's knobs; Left / Right light when they can move. A newly loaded module starts on page 1.
+- **FX setup is one layer** (the owner's): pad column 1 the MIDI FX slots, column 3 the firmwares, column 5 the audio
+  FX slots (rows 1..3 from the top); MIDI FX / Routing / Audio FX are no longer separate pages. `settings.fx_page`
+  and `RFM_MOVE_FX_PAGE_*` keep their numbers and say which column is selected (MIDI 0, ROUTE 1, AUDIO 2); Track
+  1..3 select those columns, Track 4 the Mixer (3). `rfm_move_fx_set_page` is unchanged. The screen is the chain.
+- **Choosing a module**: hold an FX slot's pad and turn the jog (the module list, as before); letting the pad go
+  loads the one shown, only if the jog turned and it differs (one FX_LOAD, not one a detent). Back while held closes
+  the list. **Delete + pad** empties a slot; Delete alone does nothing now. The jog alone and the jog's click no longer
+  open the list or load.
+- **A module's pages**: the jog's click on a selected FX slot with a module opens them (page name and n/m, 2 x 4
+  cells of label and value, gaps as dashes, a page strip); the jog turns the pages; Back (or another slot's pad)
+  returns to the slots, a layer before the 0.4.5 flip. The knobs follow the slot's page (on the slots too); gaps do
+  nothing; a touch shows the popup (0.4.5). The selected pad breathes while the pages are open.
+- **A firmware selected** (column 3): the steps its 16-track filter (Routing's), the knobs 1 level, 2 pan, 3..5 sends.
+- **The Mixer** (the owner's): pad columns 1..3 meter each firmware's chosen value bottom up in its colour (empty
+  dark); the right 4 x 4 picks what knobs 1..3 set (row 1 Level, Pan; row 2 Send 1..3; the rest dark); knobs 1..3
+  set it for slots 1..3, knobs 4..8 nothing. The screen: the chosen value's name, each slot's value and a bar. New
+  `rfm_move_fw_state_t.mix_par` (`RFM_MOVE_MIXP_*`, RAM only) and `.fx_del`.
 - **Projects version 6**: 128 values a slot (`RFM_MOVE_FXSET_BYTES` +720; `RFM_MOVE_PROJECT_MAX` 40136,
   `RFM1CS_FILE_MAX` 1284680; `move-core.js` `PROJECT_MAX` too). Version 5 loads: 8 values as parameters 0..7, the
   rest unset (255) until the module is known, then its defaults. A version 6 value over 127 other than 255 is refused.
 - Not in 0.5.0: Schwung's preset browsers (`list_param` / `items_param`), `menu` lists, `visible_if`, the
   `ui_chain.js` UIs, and the web player's own module glue (`move_web.c` still gives flat lists: pages of 8).
 
-**Tests:** `move_fw` `test_fx_pages` (498 checks in all): a 16-parameter module planned as 4 pages (root with a gap
+**Tests:** `move_fw` `test_fx` (hold + jog choosing, the release loading, a hold without a turn, Delete + pad, a
+firmware's filter and knobs, the Mixer's choice, meters and knobs; renders `fw_fx_hold_jog_choose.pbm`,
+`fw_fx_mixer_level.pbm`, `fw_fx_mixer_send3.pbm`, `fw_fx_mixer_pan.pbm`), `test_flip_fx` (Back closing a held list,
+nothing loaded) and `test_fx_pages` (514 checks in all; the jog's click in, the jog through the pages, Back out,
+`fw_fx_pages_back_to_slots.pbm`): a 16-parameter module planned as 4 pages (root with a gap
 and an overflow page, Advanced, Deep), Right / Left / Back, the gap, the knobs by page, the touch popup, the LEDs,
 `rfm_move_fx_set_param` at 14 (and 16 refused), the no-plan pages of 8, `fx_sync`, a version 6 save and load of all 16,
 a hand-made version 5 project (with the modules given before and after), a bad version 6 value. Renders:
 `fw_fx_pages_root.pbm`, `fw_fx_pages_deep.pbm`, `fw_fx_pages_touch.pbm`, `fw_fx_pages_words.pbm`. `move_seq` and
-`session` size checks follow the new maximum. 33 of 34 mockup screens unchanged.
+`session` size checks follow the new maximum. 31 of 34 mockup screens unchanged: the two Mixer screens are
+redrawn (the owner's Mixer), as is 0.4.2's filter popup.
 
 ## 0.4.5 (2026-11-18)
 
