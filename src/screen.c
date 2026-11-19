@@ -42,7 +42,7 @@ void rfmv_pop(rfm_move_t *m, int kind, int i)
     if (m->pop != kind || m->pop_i != i || !rfmv_pop_up(m, kind))
         m->pop_t0 = rfmv_now_ms(m);                     /* (0.5.6: a new subject: a long label scrolls from its start) */
     m->pop = (uint8_t)kind, m->pop_i = (uint8_t)i, m->pop_ms = rfmv_now_ms(m), m->pop_val = 0;
-    m->pop_delay = 0, m->pop_blank = 0;
+    m->pop_delay = 0, m->pop_blank = 0, m->pop_shown = 0;
 }
 
 void rfmv_pop_let(rfm_move_t *m, int kind, int i)
@@ -125,6 +125,7 @@ static void host_popup(const rfm_move_t *m, mr_canvas_t *cv)
  * mode, MIDI's NOTES) the name and the value only; Title Case words */
 static int g_half;
 static int g_full;                                      /* (a popup over the whole screen: nothing drawn back) */
+static int g_label_drawn;                               /* (0.5.8) a label's words drawn this time */
 
 /* Title Case ("CUTOFF" -> "Cutoff", "UP DN" -> "Up Dn"); words with a digit stay as they are (K1, P12) */
 void rfmv_tcase(const char *s, char *o, int cap)
@@ -247,7 +248,9 @@ static void readout_draw(mr_canvas_t *cv, const rfm_move_readout_t *r)
             v2_vbar(cv, r->frac / 1000.0, r->flags & RFM_MOVE_RD_BIPOLAR, 4, 120, 52);
         return;
     }
-    if (r->kind == RFM_MOVE_RD_MESSAGE || !r->value[0] || !r->title[0]) {
+    if (r->kind == RFM_MOVE_RD_PARAM && !r->value[0])
+        lpop(cv, r->title, "");                         /* (a knob's: the name, no value) */
+    else if (r->kind == RFM_MOVE_RD_MESSAGE || !r->value[0] || !r->title[0]) {
         char t[RFM_MOVE_LABEL_MAX * 2 + 2];
         snprintf(t, sizeof t, "%s%s%s", r->title, r->title[0] && r->value[0] ? " " : "", r->value);
         label_rows(cv, t);
@@ -296,6 +299,21 @@ static const char *enc_label(const rfm_move_t *m, int e)
 }
 
 /* the knob popups' contents, by kind */
+/* (0.5.8) a knob's readout: what it controls (its label when the readout has no title), then the value */
+static void knob_readout(const rfm_move_t *m, mr_canvas_t *cv, const rfm_move_readout_t *rd, int slot)
+{
+    static const int8_t SLOT_ENC[8] = { RFM_MOVE_E_SELECT, RFM_MOVE_E_ALGO, RFM_MOVE_E_PRESETS, RFM_MOVE_E_K1,
+                                        RFM_MOVE_E_K2, RFM_MOVE_E_K3, RFM_MOVE_E_K4, RFM_MOVE_E_MASTER };
+    rfm_move_readout_t r = *rd;
+    if (!r.title[0]) {
+        char l[24];
+        rfmv_tcase(enc_label(m, SLOT_ENC[slot & 7]), l, sizeof l);
+        snprintf(r.title, sizeof r.title, "%s", l);
+    }
+    r.kind = RFM_MOVE_RD_PARAM;
+    readout_draw(cv, &r);
+}
+
 static void value_popup(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_seq_t *q = &m->seq;
@@ -306,8 +324,10 @@ static void value_popup(const rfm_move_t *m, mr_canvas_t *cv)
     case POP_ENC:
     case POP_MASTER: {                                  /* (0.5.7) a readout kept for the knob: it, not the detents */
         const int sl = rfmv_pop_slot(m);
-        if (sl >= 0 && m->rd[sl].on) {
-            readout_draw(cv, &m->rd[sl]);
+        if (sl >= 0 && m->rd[sl].on) {                  /* (0.5.8, the owner's: every knob, PRESETS too, the same: what
+                                                         * it controls (its label when the readout has no title), then
+                                                         * the value, whatever the readout's kind) */
+            knob_readout(m, cv, &m->rd[sl], sl);
             return;
         }
         break;
@@ -769,13 +789,16 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
         else if (m->pop == POP_HOST)
             host_popup(m, cv);
         else if (m->pop == POP_READ) {                  /* (0.5.7) a readout of its own (the left half) */
-            if (g_half)
+            if (g_half && m->pop_i < 8)
+                knob_readout(m, cv, &m->rd_pop, m->pop_i);   /* (0.5.8: a knob's, the same rule) */
+            else if (g_half)
                 readout_draw(cv, &m->rd_pop);
         } else if (m->pop == POP_LABEL) {                 /* (0.5.6) FM-1 mode: a button's or key's label */
             char t[RFM_MOVE_LABEL_MAX + 1], l[RFM_MOVE_LABEL_MAX + 8];
             if (g_half && rfmv_label(m, m->pop_i, t, sizeof t)) {
                 rfmv_tcase(t, l, sizeof l);
                 label_rows(cv, l);
+                g_label_drawn = 1;
             }
         } else
             value_popup(m, cv);
@@ -1123,8 +1146,10 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
             v2_R(&cv, 0, 0, 15, 15, 0);
         v2_ic(&cv, V2I_SHIFT, 2, 2, 1);
     }
-    g_half = rfmv_half(m), g_full = 0;
+    g_half = rfmv_half(m), g_full = 0, g_label_drawn = 0;
     popups(m, &cv);
+    if (g_label_drawn && rfmv_label_held(m, m->pop_i))
+        m->pop_shown = 1;                               /* (0.5.8: shown while held: its second after the release) */
     if (g_half && !g_full) {                                       /* (any wider popup: the FM-1's screen drawn back over it) */
         for (y = 0; y < 64; y++)
             for (x = 0; x < 64; x++)

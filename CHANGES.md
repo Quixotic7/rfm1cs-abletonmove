@@ -3,6 +3,27 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.8 (2026-11-19)
+
+The owner's feedback on 0.5.6 on the Move. `rfm_move_t` has two new last fields: rebuild everything.
+
+- **Knob readouts, one rule**: every knob, PRESETS included, shows what it controls (the readout's title, else the
+  knob's label) and then the value, whatever the readout's kind (a PRESET or MESSAGE readout for a knob too, in its
+  own popup as well). A readout with a title and no value: the title alone, as a knob's name.
+- **The jog wheel touched**: a mapped button pressed shows its label at once (and acts as always). The jog's touch
+  has its own flag (`jog_touch`): a knob touched meanwhile does not undo it.
+- **Otherwise the hold rule** (300 ms), and while a button is held, other controls at once, as 0.5.6.
+- **Fix: words shown while held, never only after the release.** The label popup now comes up on the press whatever
+  the label is then, and draws the label as it is when drawn: a firmware that gives a button its words once it is
+  pressed (Elasticat) shows them while it is held, live as they change. A label that had no words while held shows
+  nothing after the release (0.5.6 showed a second of whatever the label had become). A button pressed again during
+  its own label's last second starts afresh (0.5.6 kept the old popup).
+
+**Tests:** `move` `test_labels_058` (1007 checks): the jog's at-once rule (with a knob touched meanwhile, a tap),
+the hold rule without it, a label named on press and renamed while held, a label named only at the release (nothing
+after), PRESETS's readout with no title (its label, then the name), its own popup, a MESSAGE-kind readout on K2.
+Contact sheet `move_labels058_sheet.pbm`.
+
 ## 0.5.7 (2026-11-19)
 
 Readouts (the labels plan's phase 1, rfm1cs's half; the owner: "the name of what the knob is actively controlling

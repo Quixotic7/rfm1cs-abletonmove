@@ -1702,8 +1702,10 @@ static void test_labels(void)
             ;
         if (cc < 128) {
             button(&m, cc, 1), ms(&m, 500);
-            CHECK(!rfmv_pop_up(&m, POP_LABEL));
+            rfm_move_screen(&m, NULL, out);
+            CHECK(!m.pop_shown && art_diff(out) == 9);  /* (0.5.8: up, no words: the drawing only) */
             button(&m, cc, 0);
+            CHECK(!rfmv_pop_up(&m, POP_LABEL));
         }
     }
 
@@ -1863,6 +1865,116 @@ static void test_readouts(void)
     sheet_write();
 }
 
+/* (0.5.8, the owner's) the jog wheel touched: a button's label at once; a label the firmware gives only once the
+ * button is pressed (Elasticat) shows while held, live; words never only after the release; a knob's readout always
+ * its name then its value (PRESETS too) */
+static void test_labels_058(void)
+{
+    static rfm_move_t m;
+    static uint8_t out[MR_SCREEN_BYTES];
+    const char *lbl[RFM_MOVE_LBL_N] = { NULL };
+    g_sheet_pre = "labels058", g_nsheet = 0;
+    rfm_move_init(&m, NULL, on_act, NULL);
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
+    m.pop = POP_NONE;
+    lbl[RFM_MOVE_LBL_BTN0 + 11] = "Rec arm";            /* REC */
+    lbl[RFM_MOVE_LBL_BTN0 + 10] = "";                   /* PLAY: no words until pressed */
+    rfm_move_set_labels(&m, lbl);
+    /* the jog touched: a press shows the label at once (and acts) */
+    touch(&m, 9, 1);
+    touch(&m, 4, 1), touch(&m, 4, 0);                   /* (a knob touched meanwhile: the jog still is) */
+    CHECK(m.jog_touch);
+    m.pop = POP_NONE;
+    clear();
+    button(&m, MR_CC_REC, 1);
+    CHECK(nact == 1 && acts[0].kind == RFM_MOVE_ACT_BTN && acts[0].down);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop == POP_LABEL && left_lit(out) > 40 && m.pop_shown);
+    sheet_add(out, "jog_rec");
+    button(&m, MR_CC_REC, 0);
+    CHECK(rfmv_pop_up(&m, POP_LABEL));                  /* (a second after the release) */
+    ms(&m, RFM_MOVE_POPUP_MS + 10);
+    /* a tap with the jog touched: shown at once, so it stays its second */
+    button(&m, MR_CC_REC, 1);
+    rfm_move_screen(&m, NULL, out);
+    button(&m, MR_CC_REC, 0);
+    CHECK(rfmv_pop_up(&m, POP_LABEL));
+    ms(&m, RFM_MOVE_POPUP_MS + 10);
+    touch(&m, 9, 0);
+    CHECK(!m.jog_touch);
+    /* the jog not touched: the hold rule */
+    button(&m, MR_CC_REC, 1);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(art_diff(out) == 9);
+    ms(&m, RFM_MOVE_LABEL_HOLD_MS + 5);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(left_lit(out) > 40);
+    button(&m, MR_CC_REC, 0);
+    ms(&m, RFM_MOVE_POPUP_MS + 10);
+
+    /* Elasticat: PLAY gets words only once pressed: shown while held as they come, live */
+    touch(&m, 9, 1);
+    button(&m, MR_CC_PLAY, 1);
+    rfm_move_screen(&m, NULL, out);
+    {                                                   /* (no words yet: the drawing, as with no popup) */
+        static uint8_t ref[MR_SCREEN_BYTES];
+        const uint8_t was = m.pop;
+        m.pop = POP_NONE, rfm_move_screen(&m, NULL, ref), m.pop = was;
+        CHECK(m.pop == POP_LABEL && !m.pop_shown && !memcmp(out, ref, sizeof out));
+    }
+    lbl[RFM_MOVE_LBL_BTN0 + 10] = "Chop";
+    rfm_move_set_labels(&m, lbl);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop_shown && left_lit(out) > 20);
+    sheet_add(out, "pressed_named");
+    lbl[RFM_MOVE_LBL_BTN0 + 10] = "Slice";              /* (renamed while held: live) */
+    rfm_move_set_labels(&m, lbl);
+    {
+        static uint8_t o2[MR_SCREEN_BYTES];
+        rfm_move_screen(&m, NULL, o2);
+        CHECK(memcmp(out, o2, sizeof out) != 0);
+        sheet_add(o2, "pressed_renamed");
+    }
+    button(&m, MR_CC_PLAY, 0);
+    CHECK(rfmv_pop_up(&m, POP_LABEL));
+    ms(&m, RFM_MOVE_POPUP_MS + 10);
+    /* words only at the release (the firmware names it as it lets go): nothing after the release */
+    lbl[RFM_MOVE_LBL_BTN0 + 10] = "";
+    rfm_move_set_labels(&m, lbl);
+    button(&m, MR_CC_PLAY, 1);
+    rfm_move_screen(&m, NULL, out);
+    lbl[RFM_MOVE_LBL_BTN0 + 10] = "Play";
+    rfm_move_set_labels(&m, lbl);
+    button(&m, MR_CC_PLAY, 0);
+    CHECK(m.pop == POP_NONE);
+    touch(&m, 9, 0);
+    rfm_move_screen(&m, NULL, out);
+    CHECK(art_diff(out) == 0);
+
+    /* readouts: every knob the same, the name then the value; PRESETS's preset with no title: its label, the name */
+    lbl[RFM_MOVE_LBL_KNOB0 + 2] = "Sound";
+    rfm_move_set_labels(&m, lbl);
+    rfm_move_readout(&m, 2, RFM_MOVE_RD_PRESET, NULL, "Warm Pad", -1, 0, 0);
+    ms(&m, RFM_MOVE_POPUP_MS + 10);
+    touch(&m, 0, 1);                                    /* knob 1: PRESETS */
+    rfm_move_screen(&m, NULL, out);
+    CHECK(m.pop == POP_ENC && lit_in(out, 0, 3, 64, 19) > 10 && lit_in(out, 0, 23, 64, 60) > 20);
+    sheet_add(out, "presets_name");
+    touch(&m, 0, 0);
+    rfm_move_readout(&m, 2, RFM_MOVE_RD_PRESET, "Preset 12", "Bass", -1, 0, 0);
+    rfm_move_screen(&m, NULL, out);                     /* (its own popup, the popup down: the same rule) */
+    CHECK(m.pop == POP_READ && lit_in(out, 0, 3, 64, 19) > 10 && lit_in(out, 0, 23, 64, 60) > 20);
+    sheet_add(out, "presets_own");
+    ms(&m, RFM_MOVE_POPUP_MS + 10);
+    rfm_move_readout(&m, 4, RFM_MOVE_RD_MESSAGE, "Decay", "87", 870, 0, 0);
+    touch(&m, 5, 1);                                    /* K2: a message kind, still the name then the value */
+    rfm_move_screen(&m, NULL, out);
+    CHECK(lit_in(out, 0, 23, 64, 56) > 40 && lit_in(out, 1, 61, 63, 63) > 0);
+    sheet_add(out, "k2_message_kind");
+    touch(&m, 5, 0);
+    sheet_write();
+}
+
 static void test_host_popup(void)
 {
     static rfm_move_t m;
@@ -1908,6 +2020,7 @@ int main(void)
     test_host_popup();
     test_labels();
     test_readouts();
+    test_labels_058();
     test_drum_settings();
     test_control();
     test_leds();

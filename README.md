@@ -123,8 +123,11 @@ A knob touched shows its name (the firmware's label, else its printed one) in th
 the release drops the popup and its count. MASTER the same, with its level. A label "" (no job): no popup.
 
 **Labels (0.5.6).** The host passes the firmware's 49 live labels (`rfm_move_set_labels`) and its 14 button names
-(`rfm_move_set_button_names`, used when a button's live label is NULL). A mapped button held 300 ms
-(`RFM_MOVE_LABEL_HOLD_MS`) shows its label in the left half (a tap shows nothing); while any FM-1 button is held,
+(`rfm_move_set_button_names`, used when a button's live label is NULL). With the jog wheel touched, a mapped button
+shows its label at once on press (0.5.8, the owner's); otherwise a button held 300 ms (`RFM_MOVE_LABEL_HOLD_MS`)
+shows it in the left half (a tap shows nothing). The label is the one the firmware has while the button is held,
+live (a firmware that names a button only once it is pressed shows the name then); words never show only after the
+release. While any FM-1 button is held,
 every other button, pad or step (its key) and knob pressed shows its label at once, as the firmware has it when
 drawn (Shift-style layers). Pads and steps show nothing otherwise: they stay an instrument. A label shows until a
 second after its control's release. The left half only (the FM-1's screen stays): words at 2x, a button's or key's
@@ -133,7 +136,8 @@ label wrapped at spaces onto up to three rows, a row that does not fit scrolling
 **Readouts (0.5.7).** The host passes the firmware's readouts (`rfm_move_readout`: what a control does now and its
 value, in the firmware's words, from its rd1 record). A knob keeps its last one: touched, the knob shows what it
 controls and the last value; turned, the readout replaces the detents and updates live. Without any readout the knob
-shows its name and detents as before. A readout for no control in use (a preset's name, a message) is a popup of
+shows its name and detents as before. Every knob the same, PRESETS too (0.5.8): what it controls (the readout's
+title, else the knob's label), then the value, whatever the readout's kind. A readout for no control in use (a preset's name, a message) is a popup of
 its own, for the time the firmware gives (else a second). Left half: the title on the first row, the value at 4x or
 3x when it fits (else up to two 2x rows), a 2-pixel bar at the bottom when it has one (bipolar: from the middle). The jog wheel (SELECT) has the same popup
 while it turns (the firmware's SELECT label, its detents), gone and counted from 0 again a second after it stops.

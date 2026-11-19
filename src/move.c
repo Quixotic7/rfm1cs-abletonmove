@@ -301,7 +301,8 @@ static void btn_hold(rfm_move_t *m, int b)
     const int other = any_btn_held(m);
     if (m->btn_count[b]++ == 0) {
         emit(m, RFM_MOVE_ACT_BTN, b, 1, 0, 0);
-        label_pop(m, btn_slot(b), other);               /* (0.5.6) held: its label; another held: at once */
+        label_pop(m, btn_slot(b), other || m->jog_touch);   /* (0.5.6) held: its label; another held, (0.5.8) or the
+                                                         * jog touched: at once */
     }
 }
 static void btn_let(rfm_move_t *m, int b)
@@ -586,8 +587,11 @@ static int any_btn_held(const rfm_move_t *m)
 static void label_pop(rfm_move_t *m, int slot, int at_once)
 {
     char t[RFM_MOVE_LABEL_MAX + 1];
-    if (m->s.mode != RFM_MOVE_MODE_FM1 || m->seq.projects || !rfmv_label(m, slot, t, sizeof t))
+    if (m->s.mode != RFM_MOVE_MODE_FM1 || m->seq.projects)
         return;
+    if (!rfmv_label(m, slot, t, sizeof t) && m->pop == POP_LABEL && m->pop_i != slot && rfmv_pop_up(m, POP_LABEL))
+        return;                                         /* (no words now: the label up stays; 0.5.8: else it comes up
+                                                         * anyway, the firmware may name it once pressed) */
     rfmv_pop(m, POP_LABEL, slot);
     m->pop_delay = at_once ? 0 : RFM_MOVE_LABEL_HOLD_MS;
     if (m->pop_t0 == rfmv_now_ms(m))
@@ -597,8 +601,8 @@ static void label_let(rfm_move_t *m, int slot)          /* its control let go: a
 {
     if (m->pop != POP_LABEL || m->pop_i != slot)
         return;
-    if (rfmv_now_ms(m) - m->pop_ms < m->pop_delay)
-        m->pop = POP_NONE;
+    if (rfmv_now_ms(m) - m->pop_ms < m->pop_delay || !m->pop_shown)
+        m->pop = POP_NONE;                              /* (0.5.8: never words only after the release) */
     else
         rfmv_pop_let(m, POP_LABEL, slot), m->pop_delay = 0;
 }
@@ -1094,6 +1098,8 @@ static void on_jog(rfm_move_t *m, int d, uint32_t now)
 /* a touch: the knob's popup (in FM-1 mode the drawing marks the knob instead, and a turn brings the popup) */
 static void on_touch(rfm_move_t *m, int k, int on)
 {
+    if (k == 9)
+        m->jog_touch = (uint8_t)on;                     /* (0.5.8: its own flag; a knob touched meanwhile is touched) */
     if (!on) {
         if (m->touched == k)
             m->touched = -1;

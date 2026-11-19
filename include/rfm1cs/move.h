@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 5
-#define RFM1CS_VERSION_PATCH 7
-#define RFM1CS_VERSION "0.5.7"
+#define RFM1CS_VERSION_PATCH 8
+#define RFM1CS_VERSION "0.5.8"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -738,6 +738,8 @@ typedef struct {
     /* (0.5.7) readouts: the last one for each knob (FM1P_E_* role), and the one shown on its own */
     rfm_move_readout_t rd[8], rd_pop;
     uint16_t rd_ms;                                     /* rd_pop's time up */
+    uint8_t jog_touch;                                  /* (0.5.8) the jog wheel touched now */
+    uint8_t pop_shown;                                  /* (0.5.8) POP_LABEL: drawn with words while its control was held */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
@@ -771,9 +773,11 @@ void rfm_move_set_label(rfm_move_t *m, int enc, const char *text);
 /* (0.5.6) all of the firmware's live labels at once, DYNAMIC-LABELS order (RFM_MOVE_LBL_*, fw_label(fw, i) as it
  * comes); lbl NULL clears them all. An entry NULL: none given (a knob: its printed name; a button: its static name
  * below; a key: nothing); "" = no job (nothing shown, a knob's popup neither). Copied (16 characters at most).
- * FM-1 mode: a button held RFM_MOVE_LABEL_HOLD_MS shows its label in the left half (a tap shows nothing); while any
- * FM-1 button is held, every other button, pad, step (their keys) and knob pressed shows its label at once (read
- * when drawn: a label the firmware changes meanwhile shows changed). The knobs' entries also set rfm_move_set_label's. */
+ * FM-1 mode: a button held RFM_MOVE_LABEL_HOLD_MS shows its label in the left half (a tap shows nothing); 0.5.8: with
+ * the jog wheel touched, a button pressed shows its label at once; while any FM-1 button is held, every other button,
+ * pad, step (their keys) and knob pressed shows its label at once. Read when drawn: the label as the firmware has it
+ * now, live while held (one that only gets words after the press shows them then); nothing shown while held: nothing
+ * after the release either. The knobs' entries also set rfm_move_set_label's. */
 void rfm_move_set_labels(rfm_move_t *m, const char *const lbl[RFM_MOVE_LBL_N]);
 /* (0.5.6) the firmware's own button names (its descriptor's button_names, FM1P_B_* order; NULL entries or names
  * NULL: none): what a button shows when its live label is NULL */
