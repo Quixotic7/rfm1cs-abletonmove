@@ -51,7 +51,7 @@ static const struct { uint8_t cc, b; } BUTTONS[] = {
     { MR_CC_CAPTURE, RFM_MOVE_B_FX }, { MR_CC_SAMPLE, RFM_MOVE_B_SEL }, { MR_CC_MUTE, RFM_MOVE_B_ENV },
     { MR_CC_DELETE, RFM_MOVE_B_LFO }, { MR_CC_COPY, RFM_MOVE_B_EDIT }, { MR_CC_SHIFT, RFM_MOVE_B_GLO },
     { MR_CC_MENU, RFM_MOVE_B_HOME }, { MR_CC_UNDO, RFM_MOVE_B_SAVE }, { MR_CC_LOOP, RFM_MOVE_B_ARP },
-    { MR_CC_BACK, RFM_MOVE_B_SEQ }, { MR_CC_PLAY, RFM_MOVE_B_PLAY }, { MR_CC_REC, RFM_MOVE_B_REC },
+    { MR_CC_PLAY, RFM_MOVE_B_PLAY },   /* (0.4.3: Back is the view flip, no longer SEQ) */ { MR_CC_REC, RFM_MOVE_B_REC },
     { MR_CC_LEFT, RFM_MOVE_B_OCTDN }, { MR_CC_RIGHT, RFM_MOVE_B_OCTUP },
 };
 #define NBUTTONS ((int)(sizeof BUTTONS / sizeof BUTTONS[0]))
@@ -335,6 +335,7 @@ void rfm_move_release_all(rfm_move_t *m)
     release_holds(m);
     rfmv_seq_stop(m);                                   /* the link is gone: nothing may keep sounding */
     m->track_held = 0;
+    m->back_down = m->back_used = m->back_trk = 0;
     m->touched = -1;
     m->pop = POP_NONE;
 }
@@ -871,8 +872,64 @@ static void on_touch(rfm_move_t *m, int k, int on)
     }
 }
 
+/* (0.4.3) Back, in every mode and the projects view: a click (let go within RFM_MOVE_TAP_MS, nothing else pressed
+ * meanwhile, no Track held) closes the latest layer (a menu, Loop's latch, Shift's lock, the clipboard's marks; in the
+ * view: Capture, states, the description, the selection, the catalog, FX setup), and with nothing to close flips to
+ * the projects view or back to the mode. Held + Track 1..3: that firmware is played, no flip */
+static void back_click(rfm_move_t *m, uint32_t now)
+{
+    if (m->seq.projects) {                              /* (the view's own Back: one level up, then out) */
+        mr_event_t e;
+        memset(&e, 0, sizeof e);
+        e.type = MR_EV_BUTTON, e.index = MR_CC_BACK, e.value = 127;
+        rfmv_view_input(m, &e, now);
+        e.value = 0;
+        if (m->seq.projects)
+            rfmv_view_input(m, &e, now);
+        return;
+    }
+    if (m->mmenu)
+        m->mmenu = 0;
+    else if (rfmv_seq_layer_open(m))
+        rfmv_seq_button(m, MR_CC_BACK, 1, now);
+    else
+        rfmv_proj_enter(m);
+}
+static int back_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)   /* 1: taken */
+{
+    if (ev->type == MR_EV_BUTTON && ev->index == MR_CC_BACK) {
+        if (ev->value) {
+            m->back_down = 1, m->back_used = m->track_held != 0, m->back_ms = now;
+        } else if (m->back_down) {
+            m->back_down = 0;
+            if (!m->back_used && now - m->back_ms < RFM_MOVE_TAP_MS)
+                back_click(m, now);
+        }
+        return 1;
+    }
+    if (ev->type == MR_EV_BUTTON && ev->index >= MR_CC_TRACK4 && ev->index <= MR_CC_TRACK1) {
+        const int t = MR_CC_TRACK1 - ev->index;
+        if (ev->value && m->back_down) {               /* Back held + Track: the firmware (Track 4: nothing) */
+            m->back_used = 1, m->back_trk = (uint8_t)(m->back_trk | 1u << t);
+            if (t < 3)
+                rfmv_fw_switch(m, t);
+            return 1;
+        }
+        if (!ev->value && (m->back_trk >> t & 1)) {    /* (its release: nothing else) */
+            m->back_trk = (uint8_t)(m->back_trk & ~(1u << t));
+            return 1;
+        }
+        return 0;
+    }
+    if (m->back_down && ev->value && ev->type != MR_EV_TOUCH && ev->type != MR_EV_PAD_PRESSURE)
+        m->back_used = 1;                               /* (anything else pressed meanwhile: no click) */
+    return 0;
+}
+
 void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
 {
+    if (back_input(m, ev, now_ms))
+        return;
     if (m->seq.projects) {                              /* the projects view: a mode of its own (Tracks 1..3 the
                                                          * firmware slots, Track 4 the projects, Session FX setup) */
         rfmv_view_input(m, ev, now_ms);

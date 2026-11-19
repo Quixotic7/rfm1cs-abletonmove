@@ -1282,6 +1282,91 @@ static void test_download_load(void)
     catalog_reset();
 }
 
+/* ================================================================ Back (0.4.3) === */
+static void test_back(void)
+{
+    rfm_move_t *m = &M;
+    const act_t *a;
+    uint8_t base[MR_SCREEN_BYTES];
+    const int mode0 = (fixture(m), m->s.mode);
+    /* the view at its root: a click flips back to the mode; another flips to the view */
+    CHECK(m->seq.projects && m->fw.track == 0 && m->fw.sel < 0);
+    press(m, MR_CC_BACK);
+    CHECK(!m->seq.projects && m->s.mode == mode0 && count(RFM_MOVE_ACT_BTN) == 0);
+    press(m, MR_CC_BACK);
+    CHECK(m->seq.projects && m->s.mode == mode0 && count(RFM_MOVE_ACT_BTN) == 0);
+    /* not at its root: one level up first (the description, the selection; FX setup) */
+    select_fw(m, "golf"), jog(m, 1);
+    press(m, MR_CC_BACK);
+    CHECK(m->seq.projects && m->fw.sel >= 0 && m->fw.jog == 0);
+    press(m, MR_CC_BACK);
+    CHECK(m->seq.projects && m->fw.sel < 0);
+    press(m, MR_CC_MENU);
+    CHECK(m->fw.fx);
+    press(m, MR_CC_BACK);
+    CHECK(m->seq.projects && !m->fw.fx);
+    press(m, MR_CC_BACK);
+    CHECK(!m->seq.projects);
+    /* a long hold, alone: nothing; a Track held meanwhile: no click */
+    button(m, MR_CC_BACK, 1), now_ms += RFM_MOVE_TAP_MS + 50, button(m, MR_CC_BACK, 0);
+    CHECK(!m->seq.projects);
+    track(m, 3, 1), press(m, MR_CC_BACK), now_ms += 400, track(m, 3, 0);
+    CHECK(!m->seq.projects && m->s.mode == mode0);
+    /* Back held + Track 2: that slot's firmware played, no flip, no mode change; its popup */
+    rest_pop(m);
+    clear();
+    button(m, MR_CC_BACK, 1), track(m, 1, 1), track(m, 1, 0), button(m, MR_CC_BACK, 0);
+    CHECK(m->fw.active == 1 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && a->a.slot == 1 && !strcmp(a->id, "choralroot") &&
+          !m->seq.projects && m->s.mode == mode0 && m->pop == POP_FW && m->fw.lib_dirty);
+    screen(m), write_pbm("back_track_firmware");
+    CHECK(lit_in(0, 0, 128, 64) > 0);
+    /* .. Track let go after Back: nothing either; Track 3 (empty) and Track 4: nothing */
+    clear();
+    button(m, MR_CC_BACK, 1), track(m, 0, 1), button(m, MR_CC_BACK, 0), track(m, 0, 0);
+    CHECK(m->fw.active == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && !m->seq.projects && m->s.mode == mode0);
+    clear();
+    button(m, MR_CC_BACK, 1), track(m, 2, 1), track(m, 2, 0), track(m, 3, 1), track(m, 3, 0), button(m, MR_CC_BACK, 0);
+    CHECK(nact == 0 && m->fw.active == 0 && !m->seq.projects && m->s.mode == mode0);
+    /* .. in the view: as that Track's press there */
+    press(m, MR_CC_BACK);
+    clear();
+    button(m, MR_CC_BACK, 1), track(m, 1, 1), track(m, 1, 0), button(m, MR_CC_BACK, 0);
+    CHECK(m->seq.projects && m->fw.active == 1 && m->fw.track == 1 && count(RFM_MOVE_ACT_FW_ACTIVE) == 1);
+    press(m, MR_CC_BACK);
+    CHECK(!m->seq.projects);
+    /* the sequencer: Back ends Loop's latch first (not a flip), the sequencer's screen at once; then the view */
+    tap_track(m, 3);
+    CHECK(m->s.mode == RFM_MOVE_MODE_SEQ);
+    rest_pop(m), screen(m), memcpy(base, scr, sizeof base);
+    press(m, MR_CC_LOOP);
+    CHECK(m->seq.loop_latch && rfmv_pop_up(m, POP_LOOP));
+    screen(m);
+    CHECK(memcmp(scr, base, sizeof base) != 0);
+    press(m, MR_CC_BACK);
+    CHECK(!m->seq.loop_latch && !m->seq.projects);
+    screen(m);                                          /* (the frame right after: the sequencer, not the Loop popup) */
+    CHECK(!memcmp(scr, base, sizeof base));
+    press(m, MR_CC_LOOP), press(m, MR_CC_LOOP);         /* Loop's own exit: at once too */
+    screen(m);
+    CHECK(!m->seq.loop_latch && !memcmp(scr, base, sizeof base));
+    button(m, MR_CC_LOOP, 1), jog(m, 1);                /* Loop held (the length), let go: at once */
+    CHECK(rfmv_pop_up(m, POP_LOOP));
+    button(m, MR_CC_LOOP, 0);
+    screen(m);
+    CHECK(!rfmv_pop_up(m, POP_LOOP));
+    jog(m, -1), rest_pop(m), screen(m), memcpy(base, scr, sizeof base);
+    press(m, MR_CC_BACK);
+    CHECK(m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ);
+    press(m, MR_CC_BACK);
+    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ);
+    screen(m);
+    CHECK(!memcmp(scr, base, sizeof base));             /* (the view left: the sequencer's screen at once) */
+    /* Shift + step 1 still opens the view */
+    button(m, MR_CC_SHIFT, 1), tap_step(m, 0), button(m, MR_CC_SHIFT, 0);
+    CHECK(m->seq.projects);
+    press(m, MR_CC_BACK);
+}
+
 int main(void)
 {
     test_nolist();
@@ -1294,6 +1379,7 @@ int main(void)
     test_no_favs();
     test_filter_popup();
     test_download_load();
+    test_back();
     test_states();
     test_midi_track();
     test_old_formats();

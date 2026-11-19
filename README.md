@@ -115,7 +115,7 @@ Move's Shift + step shortcuts on the sequencer (projects, setup, Workflow, Tempo
 Layout, Keys & Scales, the arp, Full Velocity, New Clip, Double Loop, Quantize; the ones with a job lit), and Record,
 Play, Capture, Undo, Loop and Sample their Shift + button (Shift + Record: the record settings). A menu opened this way
 stays open after Track 1 is let go (full width; the jog, the knobs and, where it uses them, the pads and steps are
-the menu's) until Back, which closes it rather than pressing the FM-1's SEQ. While Track 1 is held a small SHIFT badge
+the menu's) until Back, which closes it. While Track 1 is held a small SHIFT badge
 sits top left (the FM-1's screen stays on the right in FM-1 mode), and the icons under the steps light; the pads
 stay what they were (FM-1 keys, MIDI notes), at once. A quick tap on Track 1 switches to FM-1 mode (named).
 A knob's popup comes only with turning (its detents, from 0 each gesture): a touch alone lights the knob on the
@@ -130,7 +130,7 @@ while it turns (the firmware's SELECT label, its detents), gone and counted from
 | pads, row 3, columns 1 2 3 5 6 8 | F# G# A# C# D# F#: keys 13 15 17 20 22 25 (columns 4, 7 off) |
 | steps 1..16 | the 16 white keys in order (key 0 F3 .. key 26 G5), velocity 100 |
 | pad velocity / poly aftertouch | the key's velocity / pressure (0..127; `rfm_move_lean` gives key_lean 0..100) |
-| Capture Sample Mute Delete Copy Shift Menu Undo Loop **Back** Play Rec Left Right | FX SEL ENV LFO EDIT GLO HOME SAVE ARP **SEQ** PLAY REC OCT- OCT+ |
+| Capture Sample Mute Delete Copy Shift Menu Undo Loop Play Rec Left Right | FX SEL ENV LFO EDIT GLO HOME SAVE ARP PLAY REC OCT- OCT+ |
 | knob 1, 2, 5, 6, 7, 8 (3 and 4 unused) | PRESETS, ALGO, K1, K2, K3, K4: an FM-1 detent every 2 of the Move's ticks (`RFM_MOVE_KNOB_TICKS`, the owner's: half as fast; a turn back or the knob let go forgets a half); the same in MIDI mode |
 | jog wheel turn | SELECT (the click does nothing: the FM-1 has no encoder push) |
 | volume knob | MASTER, 16 a detent, 0..1023 |
@@ -187,7 +187,8 @@ and the rest of the TRIG page on top. It takes over the whole surface except the
 everywhere) and the volume knob (MASTER). 16 tracks, each with its own MIDI channel (track n: channel n), rate,
 groove (or the project's), key and scale (or the project's), arp, pad layout and CC numbers; 16 scenes; a clip per
 track and scene; projects. It keeps playing in every mode (in FM-1 mode a small play triangle over the drawing says
-so). Back only closes layers; it never changes the mode (only a quick Track tap does, the owner's).
+so). Back closes layers, and with none flips to the projects view (0.4.3); it never changes the mode (only a quick
+Track tap does, the owner's).
 
 **Tracks: Track 4 held** (the owner's). The 16 steps are the 16 tracks: **a tap selects** one, **a double tap solos**
 it (on / off), **a hold mutes** it (on / off, 300 ms). LEDs: the selected track full, the others dim, muted red,
@@ -332,7 +333,7 @@ the screen's corner while it records. (Tap tempo: Shift + step 5.)
 | Shift (the icons) | while Shift is held or locked (and in FM-1 mode while Track 1 is held), the white icon LEDs under the steps (CC 16..31) light every step with a shortcut: dim, full where it is on (a toggle on, its menu open); off otherwise and in MIDI and Control mode. Written on change only, like every LED; the step pads' own LEDs are separate |
 | Shift | double-tap (a tap, then a press within 300 ms): latched (its LED lit, every Shift combination without holding it); a press unlatches it. Shift + Sample: nothing (the Move has none) |
 | Menu | Track <-> Session view (or out of the project grid) |
-| Back | the universal escape: closes the latest layer still on, one a press (a Shift menu, the project grid, Loop's latch, Shift's lock, the step / clip clipboard's marks, the page clipboard's); with none: nothing (never a mode change) |
+| Back | the universal escape: closes the latest layer still on, one a click (a Shift menu, the project grid, Loop's latch, Shift's lock, the step / clip clipboard's marks, the page clipboard's); with none: (0.4.3) the projects view (never a mode change). Leaving Loop shows the sequencer at once |
 | Track 1..4 | the modes (FM-1, MIDI, Control, Sequencer); Track 4 held in the sequencer: the tracks and the track's settings (above; the screen: layout, scale, what changed at 2x, the channel and the rate as strips) |
 
 **Shift + step** (the Move's printed functions, its manual's numbers; a menu opens on the screen, the same Shift +
@@ -410,6 +411,18 @@ Move's: a bar, Shift a 16th), a hold never clears a step, an empty slot makes a 
 - **Not here**: copying a range of steps, per-step automation shown as red steps, count-in on / off, the
   Move's Repeat for drums (step 11 is the arp).
 
+## Back (0.4.3)
+
+Back works the same in every mode and in the projects view, on its release:
+
+| Back | Does |
+|---|---|
+| a click (let go within 300 ms, nothing else pressed, no Track held) | closes the latest layer still open (a Shift menu, Loop's latch, Shift's lock, the clipboard's marks; in the projects view Capture, States, the description, the selection, the catalog, FX setup); with nothing to close it flips: a mode to the projects view, the projects view back to the mode it came from |
+| held + Track 1..3 | plays that slot's firmware (`FW_ACTIVE`, a popup names it), no flip and no mode change; an empty slot, or no firmware list: nothing. Track 4: nothing. In the projects view: that Track's press there |
+| held long, alone | nothing |
+
+Shift + step 1 and Track 1 held + step 1 still open the projects view.
+
 ## Firmwares (0.4.0): the projects view's Tracks 1..3, FX setup, states
 
 The owner's design (move-firmware-browser-design.md, revision 2) and its mockup's screens (ported pixel for pixel,
@@ -434,7 +447,7 @@ an empty slot faint white, a slot past the host's voices blinking slowly; in FX 
 | Loop | the firmware's states (Move's Set Overview): a stored state loads, an empty pad saves there, Copy + pad saves over, Delete + pad deletes (`STATE_*`); Loop or Back leaves |
 | Track 1..3 held + volume | that slot's level (`FW_LEVEL`; in any mode with the browser on); the volume alone stays MASTER |
 | Session | FX setup: Track 1 MIDI FX, 2 Routing, 3 Audio FX, 4 Mixer; pads 1..3 the page's slots; steps a MIDI FX slot's track (one, or all: the same step again) or a firmware's 16-track filter; the jog the module list and load; knobs the module's parameters (Mixer: 1 level, 2 pan, 3..5 sends); Delete empties an FX slot; Session or Back leaves. A host with no modules has no MIDI FX / Audio FX page |
-| Back | one level out (Capture, States, the description, the selection, the catalog), then out of the view |
+| Back | one level out (Capture, States, the description, the selection, the catalog), then out of the view, back to the mode (0.4.3: a click, as everywhere) |
 
 Decisions where the spec left a gap:
 
@@ -493,7 +506,8 @@ The sequencer's (the design gives labels only):
   link drops: the sequencer stops) end them at once; a mode change does not stop the sequencer, its notes end on
   time. A live pad note and a sequenced note on the same channel and note are not reconciled.
 
-- **Back = SEQ.** The design labels Back "OCT-", a second OCT- beside Left, and maps nothing to SEQ.
+- **Back is the view flip (0.4.3, the owner's).** Until 0.4.2 Back pressed the FM-1's SEQ (the design labels it "OCT-",
+  a second OCT- beside Left, and maps nothing to SEQ). Now no Move button presses SEQ.
 - **MIDI modes keep the FM-1 mapping elsewhere**: only the pads, steps and Up / Down change in mode 2 (and the
   knobs and jog wheel in mode 3); Left / Right, the named buttons and the knobs stay the FM-1's. Mode 4 takes over
   everything but the Track buttons and the volume knob.

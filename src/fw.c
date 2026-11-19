@@ -2497,6 +2497,37 @@ int rfmv_fw_timed(const rfm_move_t *m)
     return pop_up(m, -1) || (m->seq.projects && (f->busy_kind || (f->capture && f->cap_step >= 0) || f->hold_step));
 }
 
+/* (0.4.3) Back held + Track 1..3: that slot's firmware played (FW_ACTIVE, the library), no flip. In the projects view
+ * (not FX setup) it is that Track's press; elsewhere a popup names it. A slot with nothing loaded, or no browser
+ * (no fw_list): nothing */
+int rfmv_fw_switch(rfm_move_t *m, int t)
+{
+    rfm_move_fw_state_t *f = F(m);
+    if (t < 0 || t >= RFM_MOVE_FW_SLOTS || !f->host || !slot_loaded(m, t))
+        return 0;
+    if (m->seq.projects && !f->fx) {
+        show_track(m, t);
+        return 1;
+    }
+    if (t != f->active) {
+        f->active = (uint8_t)t;
+        if (f->track < 3)
+            f->track = (uint8_t)t;
+        act_fw(m, RFM_MOVE_ACT_FW_ACTIVE, t, f->slot_fw[t], 0);
+        lib_changed(m);
+    }
+    if (!m->seq.projects)
+        rfmv_pop(m, POP_FW, t);
+    return 1;
+}
+void rfmv_fw_slot_name(const rfm_move_t *m, int s, char *o, int cap)
+{
+    if (s >= 0 && s < RFM_MOVE_FW_SLOTS)
+        slot_name(m, s, o, cap);
+    else if (cap > 0)
+        o[0] = 0;
+}
+
 /* (for the tests) */
 int rfmv_fw_bank(const rfm_move_t *m, int ids[32]) { return bank_ids(m, ids); }
 int rfmv_fw_list_len(const rfm_move_t *m) { return list_len(m); }

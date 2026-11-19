@@ -112,13 +112,25 @@ static int clip_end_page(const rfm_move_t *m, int clip)
             end = m->seq.notes[k].step / RFM_MOVE_SEQ_PAGE;
     return end;
 }
+int rfmv_seq_layer_open(const rfm_move_t *m)
+{
+    int id;
+    for (id = LY_MENU; id <= LY_PAGE; id++)
+        if (layer_on(&m->seq, id))
+            return 1;
+    return 0;
+}
 static void layer_close(rfm_move_t *m, int id)
 {
     rfm_move_seq_t *q = &m->seq;
     switch (id) {
     case LY_MENU: q->smenu = 0; break;
     case LY_PROJ: q->projects = 0; break;
-    case LY_LOOP: q->loop_latch = 0, q->mods &= (uint8_t)~SEQ_M_LOOP, rfmv_pop_let(m, POP_LOOP, 0); break;
+    case LY_LOOP:                                       /* (0.4.3: the sequencer's screen at once, not a second on) */
+        q->loop_latch = 0, q->mods &= (uint8_t)~SEQ_M_LOOP;
+        if (m->pop == POP_LOOP)
+            m->pop = POP_NONE;
+        break;
     case LY_SHIFT: q->shift_lock = 0, q->mods &= (uint8_t)~SEQ_M_SHIFT; break;
     case LY_CLIP: q->paste = 0, q->cut = 0, q->clip_kind = 0; break;
     case LY_PAGE: q->pg_kind = 0; break;
@@ -1014,8 +1026,8 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
             const int used = q->mods_used & mb;
             if (mb == SEQ_M_SHIFT)
                 q->shift_ms = used ? 0 : (now ? now : 1);   /* (a tap: the first of a double tap) */
-            if (mb == SEQ_M_LOOP)
-                rfmv_pop_let(m, POP_LOOP, 0);
+            if (mb == SEQ_M_LOOP && m->pop == POP_LOOP)
+                m->pop = POP_NONE;                      /* (0.4.3: Loop let go: the page edit ends at once) */
             const int alone = !used && !q->projects && !(q->mods & SEQ_M_SHIFT) && !q->step_held &&
                               !rfmv_seq_trk_held(m);
             q->mods &= (uint8_t)~mb;

@@ -2312,8 +2312,10 @@ static void test_tracks16(void)
     CHECK(rfmv_seq_src_step(m, clip_of(m), 3) == 1);
     press(m, MR_CC_BACK);
     CHECK(rfmv_seq_src_step(m, clip_of(m), 3) == 0 && m->s.mode == RFM_MOVE_MODE_SEQ);
-    press(m, MR_CC_BACK);                               /* nothing on: nothing (only a Track tap changes the mode) */
-    CHECK(m->s.mode == RFM_MOVE_MODE_SEQ);
+    press(m, MR_CC_BACK);                               /* (0.4.3) nothing on: the projects view; again: back */
+    CHECK(m->s.mode == RFM_MOVE_MODE_SEQ && m->seq.projects);
+    press(m, MR_CC_BACK);
+    CHECK(m->s.mode == RFM_MOVE_MODE_SEQ && !m->seq.projects);
     track(m, 3, 1), track(m, 3, 0);
     /* a held step: the jog the length (LENGTH's popup), Left / Right the micro timing (MICRO's), the volume knob the
      * velocity (VELO's; MASTER untouched) */

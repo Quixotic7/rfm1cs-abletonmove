@@ -28,7 +28,7 @@ extern "C" {
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 4
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.4.2"
+#define RFM1CS_VERSION "0.4.3"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -650,6 +650,11 @@ typedef struct {
     rfm_move_seq_t seq;
     /* (0.4.0) the firmware browser, the library, FX setup */
     rfm_move_fw_state_t fw;
+    /* (0.4.3) Back: a click (released within RFM_MOVE_TAP_MS, nothing else pressed) closes the latest layer, or with
+     * none flips to / from the projects view; held + Track 1..3 switches the firmware played */
+    uint8_t back_down, back_used;
+    uint8_t back_trk;                                   /* bit t: Track t + 1 pressed with Back held (its release too) */
+    uint32_t back_ms;
 } rfm_move_t;
 
 /* settings NULL: the defaults. fn gets every action (it may be NULL). */

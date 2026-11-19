@@ -3,6 +3,34 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.4.3 (2026-11-18)
+
+Back becomes the way between the modes and the projects view (the owner's), and leaving Loop shows the sequencer at
+once. No API, format or action changes; `rfm_move_t` has new last fields (`back_down`, `back_used`, `back_trk`,
+`back_ms`: rebuild everything).
+
+- **Back no longer presses the FM-1's SEQ** (until now Back was SEQ, not OCT-; Left is OCT-). No Move button presses
+  SEQ now; SEQ's LED shows nowhere.
+- **A click of Back** (let go within `RFM_MOVE_TAP_MS`, nothing else pressed meanwhile, no Track held) closes the
+  latest layer still open, as before (Shift menus, Loop's latch, Shift's lock, the clipboard's marks; in the
+  projects view Capture, States, the description, the selection, the catalog, FX setup). With nothing to close it
+  flips: from any mode to the projects view, and from the projects view back to the mode. Back now acts on its
+  release (a click), in every mode.
+- **Back held + Track 1..3** plays that slot's firmware (`FW_ACTIVE`, the library saved; a popup names it), with no
+  flip and no mode change; the Track's release does nothing else. An empty slot, Track 4, or a host with no firmware
+  list: nothing. In the projects view it is that Track's press there. A long hold of Back alone does nothing.
+- Shift + step 1 and Track 1 held + step 1 still open the projects view.
+- **Leaving Loop is immediate:** Loop's page edit was its popup, and ending the latch (Loop or Back) or letting a
+  held Loop go only started the popup's 1 s timeout (`RFM_MOVE_POPUP_MS`), so the page edit stayed a second. Both
+  now drop it at once. The other exits (Shift menus, the projects view and its layers, FX setup) already redraw at
+  once; the session's 33 ms pacing is not the cause.
+
+**Tests:** `move_fw` `test_back` (412 checks in all): the flip both ways, one level up first (the description, the
+selection, FX setup, Loop's latch), a long hold, a Track held, Back + Track 2 / 1 / 3 / 4 in and out of the view,
+Shift + step 1, and the frame right after leaving Loop (latch by Back, by Loop, a held Loop) and the view equal to
+the sequencer's own; render `fw_back_track_firmware.pbm`. `move`: the button table without Back (SEQ's LED unmapped),
+Back with nothing open flips; `move_seq`: the same.
+
 ## 0.4.2 (2026-11-18)
 
 The firmware browser's filters, simpler and clearer, and launching a firmware from the catalog (the owner's

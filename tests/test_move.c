@@ -170,7 +170,7 @@ static void test_buttons_knobs(void)
         { MR_CC_CAPTURE, RFM_MOVE_B_FX }, { MR_CC_SAMPLE, RFM_MOVE_B_SEL }, { MR_CC_MUTE, RFM_MOVE_B_ENV },
         { MR_CC_DELETE, RFM_MOVE_B_LFO }, { MR_CC_COPY, RFM_MOVE_B_EDIT }, { MR_CC_SHIFT, RFM_MOVE_B_GLO },
         { MR_CC_MENU, RFM_MOVE_B_HOME }, { MR_CC_UNDO, RFM_MOVE_B_SAVE }, { MR_CC_LOOP, RFM_MOVE_B_ARP },
-        { MR_CC_BACK, RFM_MOVE_B_SEQ }, { MR_CC_PLAY, RFM_MOVE_B_PLAY }, { MR_CC_REC, RFM_MOVE_B_REC },
+        { MR_CC_PLAY, RFM_MOVE_B_PLAY }, { MR_CC_REC, RFM_MOVE_B_REC },   /* (0.4.3: Back is no FM-1 button) */
         { MR_CC_LEFT, RFM_MOVE_B_OCTDN }, { MR_CC_RIGHT, RFM_MOVE_B_OCTUP },
     };
     static const int ENC[8] = { RFM_MOVE_E_PRESETS, RFM_MOVE_E_ALGO, -1, -1,
@@ -182,7 +182,7 @@ static void test_buttons_knobs(void)
      * them over (test_move_seq.c) */
     for (mode = 0; mode < 3; mode++) {
         rfm_move_set_mode(&m, mode);
-        for (i = 0; i < 14; i++) {
+        for (i = 0; i < 13; i++) {
             clear();
             button(&m, B[i].cc, 1);
             CHECKF(nact == 1 && has(RFM_MOVE_ACT_BTN, B[i].b, 1, 0), "mode %d cc %d", mode, B[i].cc);
@@ -194,7 +194,7 @@ static void test_buttons_knobs(void)
                 covered |= 1 << B[i].b;
         }
     }
-    CHECK(covered == (1 << 14) - 1);
+    CHECK(covered == (((1 << 14) - 1) & ~(1 << RFM_MOVE_B_SEQ)) && rfm_move_button_of(MR_CC_BACK) < 0);
     CHECK(rfm_move_button_of(MR_CC_UP) < 0 && rfm_move_button_of(MR_CC_DOWN) < 0 &&
           rfm_move_button_of(MR_CC_TRACK1) < 0);
     rfm_move_set_mode(&m, 0);
@@ -526,11 +526,11 @@ static void test_leds(void)
     rfm_move_panel(&m, lv, 255);
     n = rfm_move_leds(&m, out, RFM_MOVE_NLEDS);
     CHECK(n == 1 && out[0].cc && out[0].number == MR_CC_PLAY && out[0].r == 0 && out[0].g == 255 && out[0].b == 0);
-    /* SEQ's LED (id 11 at row 1 column 1) on Back, a white LED */
+    /* SEQ's LED (id 11 at row 1 column 1): (0.4.3) nowhere, Back is no FM-1 button now */
     lv[1 * 4 + 0] = 255;
     rfm_move_panel(&m, lv, 255);
     n = rfm_move_leds(&m, out, RFM_MOVE_NLEDS);
-    CHECK(n == 1 && !out[0].rgb && out[0].cc && out[0].number == MR_CC_BACK && out[0].r == 127);
+    CHECK(n == 0);
     /* a mode change repaints what changes, once; at most max a call, the rest next time */
     track(&m, 1, 1), track(&m, 1, 0);
     n = rfm_move_leds(&m, out, 5);
@@ -1116,8 +1116,10 @@ static void test_fm1_shift_layer(void)
     clear();
     button(&m, MR_CC_BACK, 1), button(&m, MR_CC_BACK, 0);   /* Back: the menu closes (not the FM-1's SEQ) */
     CHECK(!m.seq.smenu && nact == 0);
-    button(&m, MR_CC_BACK, 1), button(&m, MR_CC_BACK, 0);   /* (nothing open: the FM-1's SEQ again) */
-    CHECK(has(RFM_MOVE_ACT_BTN, RFM_MOVE_B_SEQ, 1, 0));
+    button(&m, MR_CC_BACK, 1), button(&m, MR_CC_BACK, 0);   /* (0.4.3: nothing open: the projects view; again: back) */
+    CHECK(m.seq.projects && count(RFM_MOVE_ACT_BTN) == 0);
+    button(&m, MR_CC_BACK, 1), button(&m, MR_CC_BACK, 0);
+    CHECK(!m.seq.projects && m.s.mode == RFM_MOVE_MODE_FM1 && count(RFM_MOVE_ACT_BTN) == 0);
     track(&m, 0, 1), button(&m, MR_CC_REC, 1), button(&m, MR_CC_REC, 0), track(&m, 0, 0);   /* Shift + Record */
     CHECK(m.seq.smenu == RFM_MOVE_SM_REC);
     clear();
@@ -1306,6 +1308,9 @@ static void test_mode_only_by_tap(void)
             track(&m, 0, 1), button(&m, CC[i], 1), button(&m, CC[i], 0), now_ms += 400, track(&m, 0, 0);
             for (k = 0; k < 4; k++)
                 button(&m, MR_CC_BACK, 1), button(&m, MR_CC_BACK, 0);
+            if (m.seq.projects)                         /* (0.4.3: Back flips to the projects view: out again) */
+                button(&m, MR_CC_BACK, 1), button(&m, MR_CC_BACK, 0);
+            CHECK(!m.seq.projects);
             jog(&m, 1), knob(&m, 0, 2);
             if (m.s.mode != mode) {
                 CHECKF(0, "mode %d changed to %d by CC %d", mode, m.s.mode, CC[i]);
@@ -1320,6 +1325,9 @@ static void test_mode_only_by_tap(void)
                 track(&m, 0, 1), step(&m, i, 1), step(&m, i, 0), now_ms += 400, track(&m, 0, 0);
             for (k = 0; k < 4; k++)
                 button(&m, MR_CC_BACK, 1), button(&m, MR_CC_BACK, 0);
+            if (m.seq.projects)                         /* (0.4.3: Back flips to the projects view: out again) */
+                button(&m, MR_CC_BACK, 1), button(&m, MR_CC_BACK, 0);
+            CHECK(!m.seq.projects);
             if (m.s.mode != mode) {
                 CHECKF(0, "mode %d changed to %d by shortcut %d", mode, m.s.mode, i + 1);
                 ok = 0;

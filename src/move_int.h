@@ -51,7 +51,7 @@ int rfmv_level(const rfm_move_t *m, int id);           /* the FM-1 LED level 0..
 
 /* ---- screen.c: the screen (every mode's picture, the popups, the held Track buttons' menus) */
 enum { POP_NONE = 0, POP_ENC, POP_MASTER, POP_CC, POP_SELECT, POP_DRUM, POP_TEMPO, POP_LOOP, POP_BANK, POP_STEP,
-       POP_PROJ, POP_TRIG, POP_BAR, POP_TRACK, POP_MODE };
+       POP_PROJ, POP_TRIG, POP_BAR, POP_TRACK, POP_MODE, POP_FW };   /* (POP_FW 0.4.3: Back + Track, a firmware) */
 #define RFM_MOVE_TAP_MS 300                             /* a Track button released this soon: a tap (not its menu) */
 enum { MENU_NONE = 0, MENU_LAYOUT, MENU_SCALE, MENU_ROOT, MENU_CHANNEL, MENU_CC, MENU_TRACK, MENU_TCH, MENU_RATE, MENU_SHIFT };
 uint32_t rfmv_now_ms(const rfm_move_t *m);             /* the sequencer clock's ms (what popups time out on) */
@@ -219,6 +219,9 @@ void rfmv_fx_loaded(rfm_move_t *m);                    /* a project loaded: modu
 int rfmv_fw_bank(const rfm_move_t *m, int ids[32]);   /* (tests) the bank shown, its size */
 int rfmv_fw_list_len(const rfm_move_t *m);
 int rfmv_fw_rec(const rfm_move_t *m, int fw);          /* the library record of list index fw, -1 */
+int rfmv_fw_switch(rfm_move_t *m, int slot);           /* (0.4.3) Back held + Track 1..3: that firmware played; 1 done */
+void rfmv_fw_slot_name(const rfm_move_t *m, int slot, char *o, int cap);
+int rfmv_seq_layer_open(const rfm_move_t *m);          /* (0.4.3) a layer Back closes is open (any mode) */
 /* (tests, 0.4.2) the filter popup's words for a step (0: none): its name, its state, what the list shows (lines) */
 int rfmv_fw_filter_text(const rfm_move_t *m, int step, char name[24], const char **state, char rows[3][22]);
 /* move.c, project.c for fw.c */

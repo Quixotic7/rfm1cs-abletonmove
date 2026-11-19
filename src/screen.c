@@ -535,7 +535,15 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             trig_popup(m, cv);
         else if (m->pop == POP_LOOP)
             loop_popup(m, cv);
-        else if (m->pop == POP_TRACK) {                 /* a track change: its name */
+        else if (m->pop == POP_FW) {                    /* (0.4.3) Back + Track: the firmware played now */
+            char nm[24], b[12];
+            rfmv_fw_slot_name(m, m->pop_i, nm, sizeof nm);
+            nm[10] = 0;
+            snprintf(b, sizeof b, "Track %d", m->pop_i + 1);
+            mr_gfx_clear(cv, 0);
+            v2_msg(cv, nm, b);
+            g_full = 1;
+        } else if (m->pop == POP_TRACK) {                 /* a track change: its name */
             char b[12];
             snprintf(b, sizeof b, "Track %d", m->pop_i + 1);
             mr_gfx_clear(cv, 0);
