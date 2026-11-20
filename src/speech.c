@@ -118,7 +118,7 @@ static int in_seq(int s) { return s == S_SEQ_TRACK || s == S_SEQ_SESSION || in_m
 /* the words said for a view entered from the view `from` (-1: the long form always) */
 static int base_said(const rfm_move_t *m, int from, char *o, int cap)
 {
-    char b[RFM_MOVE_SAY_MAX];
+    char b[RFM_MOVE_SAY_MAX - 32];                      /* (room for the prefix in o: no truncation) */
     const int s = base_words(m, b, sizeof b);
     if (in_menu(s) && in_menu(from) && (s & 15) == (from & 15)) {   /* (a Track pressed under a menu: the mode) */
         static const char *const MODE[4] = { "FM-1 mode", "MIDI mode", "Control mode", "Sequencer mode" };
@@ -135,6 +135,16 @@ static int base_said(const rfm_move_t *m, int from, char *o, int cap)
 }
 
 /* ================================================================ popups === */
+/* (0.6.12) a bounded copy between fields of the same struct (snprintf there: GCC's -Wrestrict) */
+static void copy_str(char *o, size_t cap, const char *s)
+{
+    size_t n = 0;
+    while (s && s[n] && n + 1 < cap)
+        n++;
+    if (n)
+        memmove(o, s, n);
+    o[n] = 0;
+}
 static const int8_t SLOT_ENC[8] = { RFM_MOVE_E_SELECT, RFM_MOVE_E_ALGO, RFM_MOVE_E_PRESETS, RFM_MOVE_E_K1,
                                     RFM_MOVE_E_K2, RFM_MOVE_E_K3, RFM_MOVE_E_K4, RFM_MOVE_E_MASTER };
 /* (0.6.7) a knob slot's readout, valid for speech: known, and for the control's label as it is now (a Shift page's
@@ -174,7 +184,7 @@ void rfmv_say_readout(rfm_move_t *m, int slot, int expl)
     int i;
     if (slot < 0 || slot >= 8)
         return;
-    snprintf(m->rd_lbl[slot], sizeof m->rd_lbl[slot], "%s", enc_label(m, SLOT_ENC[slot]));
+    copy_str(m->rd_lbl[slot], sizeof m->rd_lbl[slot], enc_label(m, SLOT_ENC[slot]));
     m->rd_mods[slot] = held_btns(m);
     m->rd_any = 1;
     if (m->rd[slot].title[0]) {                         /* (its title kept for this control, page and label) */
@@ -190,8 +200,8 @@ void rfmv_say_readout(rfm_move_t *m, int slot, int expl)
         }
         m->say_tc[i].slot = (uint8_t)slot, m->say_tc[i].mods = m->rd_mods[slot];
         m->say_tc[i].expl = (uint8_t)(expl != 0);
-        snprintf(m->say_tc[i].lbl, sizeof m->say_tc[i].lbl, "%s", m->rd_lbl[slot]);
-        snprintf(m->say_tc[i].title, sizeof m->say_tc[i].title, "%s", m->rd[slot].title);
+        copy_str(m->say_tc[i].lbl, sizeof m->say_tc[i].lbl, m->rd_lbl[slot]);
+        copy_str(m->say_tc[i].title, sizeof m->say_tc[i].title, m->rd[slot].title);
     }
     if (m->speech && m->say_turn == slot + 1)
         m->say_rdnew = 1;                               /* (the turn's answer: said if its words are new; the same:

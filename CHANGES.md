@@ -22,6 +22,9 @@ settings image is version 6 (88 bytes; versions 1..5 load, the mode then not cho
   On, or Jog with the jog touched); hosts keep `rfm_move_set_speech(m, 1)` on and gate their own words on it.
 - `rfm_move_words` in Global Settings adds the selected row.
 - Web: `core.setSpeechDefault(mode)`, `core.speechMode()`, `core.speechOpen()`, `SPEECH`; `SETTINGS_BYTES` 88.
+- Build: Arm GCC's `-Wrestrict` in speech.c (snprintf between fields of the core: a bounded copy now) and its
+  `-Wformat-truncation` notes (screen.c, seq_ui.c, speech.c: buffers sized to their words) gone; a full `-O2 -Wall
+  -Wextra` compile with Arm GCC 14.2 is clean.
 
 **Tests:** `move_speech` 334 checks: Off says nothing; the default only while nothing is chosen; the Speech row's
 changes said (Off too) and saved (a SETTINGS action); Jog silent until touched, the screen on touch, words while

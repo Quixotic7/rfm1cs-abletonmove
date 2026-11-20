@@ -340,7 +340,7 @@ static void knob_readout(const rfm_move_t *m, mr_canvas_t *cv, const rfm_move_re
                                         RFM_MOVE_E_K2, RFM_MOVE_E_K3, RFM_MOVE_E_K4, RFM_MOVE_E_MASTER };
     rfm_move_readout_t r = *rd;
     if (!r.title[0]) {
-        char l[24];
+        char l[sizeof r.title];                         /* (0.6.12: the title's size: no truncation warning) */
         rfmv_tcase(enc_label(m, SLOT_ENC[slot & 7]), l, sizeof l);
         snprintf(r.title, sizeof r.title, "%s", l);
     }

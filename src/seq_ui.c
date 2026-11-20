@@ -723,7 +723,7 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
                 q->clip_kind = 3, q->copy_pasted = 1;   /* (paste again elsewhere while Copy is held) */
             }
         } else if (q->mods & SEQ_M_DELETE) {
-            char w[24];
+            char w[32];
             q->mods_used |= SEQ_M_DELETE;
             rfmv_seq_group(m);
             rfmv_seq_track_clear(m, s);
@@ -912,7 +912,7 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             q->step_edit |= (uint16_t)(1u << q->step_first);
         }
         {
-            char w[16];                                 /* (0.6.5: speech: just the step) */
+            char w[24];                                 /* (0.6.5: speech: just the step) */
             snprintf(w, sizeof w, "Step %d", s + 1);
             rfmv_say_text(m, w);
         }
@@ -2658,7 +2658,7 @@ void rfmv_seq_loop_edit(const rfm_move_t *m, mr_canvas_t *cv)
     const rfm_move_seq_t *q = &m->seq;
     const int clip = edit_clip(m), pa = rfmv_seq_loop_lo(m, clip) / RFM_MOVE_SEQ_PAGE;
     const int pb = (rfmv_seq_loop_hi(m, clip) - 1) / RFM_MOVE_SEQ_PAGE;
-    char b[24], mk[16];
+    char b[32], mk[16];
     int i;
     v2_ic(cv, V2I_LOOP, 3, 3, 1);
     if (pa == pb)
