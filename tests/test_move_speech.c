@@ -586,14 +586,14 @@ static void test_rows(void)
     button(&M, MR_CC_COPY, 1);
     HAS("V:Copy|");
     tap_step(&M, 0);
-    HAS("Copied");
+    HAS("V:Step 1 copied|");
     tap_step(&M, 3);
-    HAS("Step 4 on");
+    HAS("V:Pasted to step 4|");
     button(&M, MR_CC_COPY, 0), clear();
     button(&M, MR_CC_DELETE, 1);
     HAS("V:Delete|");
     tap_step(&M, 3);
-    HAS("V:Cut step 4|");                               /* (0.6.3: Delete cuts: said so, not "off") */
+    HAS("V:Step 4 cut|");                               /* (0.6.3: Delete cuts: said so, not "off") */
     button(&M, MR_CC_DELETE, 0), clear();
     /* the tracks: Track 4 + a step (select), held (mute), a double tap (solo) */
     track(&M, 3, 1), tap_step(&M, 1);
@@ -886,6 +886,76 @@ static void test_walk(void)
     CHECKF(g_silent == 0, "%d of %d inputs change the screen and say nothing (SPEECH_WALK=1 lists them)", g_silent, n);
 }
 
+/* (0.6.3) Delete and the clipboard, the owner's exact gestures: Delete alone changes nothing; Delete held + steps
+ * cuts them (one, or several in one hold as a group); Copy held + steps copies; Copy or Delete held + an empty step
+ * pastes, again and again; Track 4 held + Delete clears a track */
+static int notes_at(const rfm_move_t *m, int clip, int abs)
+{
+    int lo, hi = rfmv_seq_range(m, clip, abs, &lo);
+    return hi - lo;
+}
+static int all_notes(const rfm_move_t *m) { return m->seq.nnotes; }
+static void seq_three(rfm_move_t *m)                  /* Sequencer mode, a note on steps 1, 2, 5 of track 1 */
+{
+    fresh(m, 1);
+    tap_track(m, 3), tap_pad(m, 0), tap_step(m, 0), tap_step(m, 1), tap_step(m, 4), rest_pop(m), clear();
+}
+static void test_delete(void)
+{
+    const int c0 = SEQ_CLIP(0, 0);
+    int n0;
+    /* Delete tapped, Delete held and let go: nothing changes; a hint */
+    seq_three(&M);
+    n0 = all_notes(&M);
+    press(&M, MR_CC_DELETE);
+    CHECK(all_notes(&M) == n0 && rfmv_seq_clip_has(&M, c0) && !M.seq.cut && !M.seq.clip_kind);
+    HAS("V:Delete: hold and press a step, pad or clip|");
+    button(&M, MR_CC_DELETE, 1), adv_ms(&M, 800), button(&M, MR_CC_DELETE, 0);
+    CHECK(all_notes(&M) == n0 && rfmv_seq_clip_has(&M, c0));
+    press(&M, MR_CC_MENU), clear();                     /* (session too) */
+    press(&M, MR_CC_DELETE), button(&M, MR_CC_DELETE, 1), adv_ms(&M, 800), button(&M, MR_CC_DELETE, 0);
+    CHECK(all_notes(&M) == n0 && rfmv_seq_clip_has(&M, c0));
+    press(&M, MR_CC_MENU), rest_pop(&M), clear();
+    /* cut one step, paste it three times (Delete or Copy held + an empty step) */
+    button(&M, MR_CC_DELETE, 1), tap_step(&M, 4), button(&M, MR_CC_DELETE, 0);
+    SAID("V:Delete|V:Step 5 cut|");
+    CHECK(notes_at(&M, c0, 4) == 0 && M.seq.cut && M.seq.clip_kind == 1);
+    button(&M, MR_CC_COPY, 1), tap_step(&M, 8), tap_step(&M, 9), button(&M, MR_CC_COPY, 0);
+    SAID("V:Copy|V:Pasted to step 9|V:Pasted to step 10|");
+    button(&M, MR_CC_DELETE, 1), tap_step(&M, 10), button(&M, MR_CC_DELETE, 0);
+    SAID("V:Delete|V:Pasted to step 11|");
+    CHECK(notes_at(&M, c0, 8) == 1 && notes_at(&M, c0, 9) == 1 && notes_at(&M, c0, 10) == 1 && M.seq.clip_kind == 1);
+    /* cut several steps in one hold: a group; pasted twice, the gaps kept */
+    seq_three(&M);
+    button(&M, MR_CC_DELETE, 1), tap_step(&M, 0), tap_step(&M, 1), tap_step(&M, 4), button(&M, MR_CC_DELETE, 0);
+    SAID("V:Delete|V:Step 1 cut|V:Step 2 cut|V:Step 5 cut|");
+    CHECK(all_notes(&M) == 0);
+    button(&M, MR_CC_COPY, 1), tap_step(&M, 8), button(&M, MR_CC_COPY, 0);
+    CHECK(notes_at(&M, c0, 8) == 1 && notes_at(&M, c0, 9) == 1 && notes_at(&M, c0, 12) == 1 && all_notes(&M) == 3);
+    button(&M, MR_CC_COPY, 1), tap_step(&M, 2), button(&M, MR_CC_COPY, 0);
+    CHECK(notes_at(&M, c0, 2) == 1 && notes_at(&M, c0, 3) == 1 && notes_at(&M, c0, 6) == 1 && all_notes(&M) == 6);
+    clear();
+    /* copy (not cut): the source stays; pasted twice */
+    seq_three(&M);
+    button(&M, MR_CC_COPY, 1), tap_step(&M, 4), tap_step(&M, 10), tap_step(&M, 11), button(&M, MR_CC_COPY, 0);
+    SAID("V:Copy|V:Step 5 copied|V:Pasted to step 11|V:Pasted to step 12|");
+    CHECK(notes_at(&M, c0, 4) == 1 && notes_at(&M, c0, 10) == 1 && notes_at(&M, c0, 11) == 1);
+    /* the pasted steps undo one by one */
+    press(&M, MR_CC_UNDO);
+    CHECK(notes_at(&M, c0, 11) == 0 && notes_at(&M, c0, 10) == 1);
+    /* Track 4 held + Delete: the selected track cleared; + a step: that track */
+    seq_three(&M);
+    track(&M, 3, 1), button(&M, MR_CC_DELETE, 1), button(&M, MR_CC_DELETE, 0), track(&M, 3, 0);
+    CHECK(all_notes(&M) == 0);
+    HAS("V:Track 1 cleared|");
+    seq_three(&M);
+    track(&M, 3, 1), tap_step(&M, 1), track(&M, 3, 0), tap_pad(&M, 0), tap_step(&M, 0), clear();   /* (track 2: a note) */
+    CHECK(M.seq.sel_track == 1 && all_notes(&M) == 4);
+    track(&M, 3, 1), button(&M, MR_CC_DELETE, 1), tap_step(&M, 0), button(&M, MR_CC_DELETE, 0), track(&M, 3, 0);
+    CHECK(all_notes(&M) == 1 && notes_at(&M, SEQ_CLIP(1, 0), 0) == 1);
+    HAS("V:Track 1 cleared|");
+}
+
 int main(void)
 {
     test_off_on();
@@ -899,6 +969,7 @@ int main(void)
     test_rows();
     test_browser_rows();
     test_global();
+    test_delete();
     test_walk();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");

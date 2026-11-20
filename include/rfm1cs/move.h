@@ -780,6 +780,7 @@ typedef struct {
     uint16_t say_n;                                     /* words said so far (a call that said nothing: 0 more) */
     uint16_t say_bdown;                                 /* .. when Back went down */
     uint32_t say_fwms;                                  /* the projects view's Track / page / catalog popup said last */
+    uint8_t del_src;                                    /* this Delete hold has cut steps (more join the group) */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit

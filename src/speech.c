@@ -23,7 +23,8 @@ static const char *const LAYOUT_LONG[4] = { "Scale", "Chromatic", "Drum", "Octav
 static const char *const MSG_WORDS[] = {
     "", "No empty clip", "Full", "Load failed", "Captured", "Undo", "Redo", "Copied", "Pasted", "", "Quantized",
     "Loop doubled", "External tempo", "Duplicated", "Cleared", "Capture cleared", "Sync: AUTO", "Sync: INT",
-    "Sync: EXT", "Full velocity", "Pad velocity", "Metronome on", "Metronome off", "New clip", "Clip cleared" };
+    "Sync: EXT", "Full velocity", "Pad velocity", "Metronome on", "Metronome off", "New clip", "Clip cleared",
+    "Delete: hold and press a step, pad or clip" };
 static const char *const FN_WORDS[RFM_MOVE_FN_N] = { "None", "Restart", "Reverse", "Forward", "Flip", "Random",
                                                      "Random function", "Leap", "Jump", "Repeat" };
 
@@ -512,11 +513,9 @@ static void item_words(const rfm_move_t *m, int i, char *o, int cap)
     case I_FILL: snprintf(o, (size_t)cap, "%s", q->fill ? "Fill on" : "Fill off"); break;
     case I_SHIFTLOCK: snprintf(o, (size_t)cap, "%s", q->shift_lock ? "Shift locked" : "Shift unlocked"); break;
     case I_CLIPBOARD:                                   /* (0.6.3: a Delete's cut too, and what) */
-        if (q->copy_src || q->cut) {
+        if (q->copy_src || q->cut) {                    /* (steps: their own words, "Step 5 cut") */
             const char *v = q->cut ? "Cut" : "Copied";
-            if (q->clip_kind == 1)
-                snprintf(o, (size_t)cap, "%s step %d", v, q->clip_step % RFM_MOVE_SEQ_PAGE + 1);
-            else if (q->clip_kind == 2)
+            if (q->clip_kind == 2)
                 snprintf(o, (size_t)cap, "%s track %d clip %d", v, q->clip_src / RFM_MOVE_SEQ_SCENES + 1,
                          q->clip_src % RFM_MOVE_SEQ_SCENES + 1);
             else if (q->clip_kind == 3)
@@ -524,7 +523,7 @@ static void item_words(const rfm_move_t *m, int i, char *o, int cap)
         }
         break;
     case I_PASTED:
-        if (q->copy_pasted)
+        if (q->copy_pasted && q->clip_kind != 1)        /* (steps: "Pasted to step 9") */
             snprintf(o, (size_t)cap, "Pasted");
         break;
     default:
@@ -623,7 +622,8 @@ static void watch(rfm_move_t *m, int silent, said_now_t *sn)
             quiet |= SMITEMS;                           /* (the arp's page turned: its knobs' new words) */
     }
     b = page_steps(m, &key);                            /* a step on or off */
-    if (!silent && key && key == m->say_skey && b != m->say_steps && popcount16((unsigned)(b ^ m->say_steps)) <= 2)
+    if (!silent && !m->say_now[0] && key && key == m->say_skey && b != m->say_steps &&
+        popcount16((unsigned)(b ^ m->say_steps)) <= 2)  /* (a cut, a paste: their own words) */
         for (i = 0; i < RFM_MOVE_SEQ_PAGE; i++)
             if ((b ^ m->say_steps) >> i & 1) {
                 if (q->cut && q->clip_kind == 1 && q->clip_step % RFM_MOVE_SEQ_PAGE == i && !(b >> i & 1) &&

@@ -432,19 +432,48 @@ void rfmv_seq_copy_clip(rfm_move_t *m, int clip)
     for (i = lo; i < hi && q->clip_nl < RFM_MOVE_SEQ_LOCKS; i++)
         q->clip_locks[q->clip_nl++] = q->locks[i];
 }
+/* (0.6.3) one more step into a step clipboard (a group cut or copied in one hold): its first step the lowest */
+void rfmv_seq_copy_step_add(rfm_move_t *m, int clip, int step)
+{
+    rfm_move_seq_t *q = &m->seq;
+    int lo, hi = rfmv_seq_range(m, clip, step, &lo), i;
+    for (i = lo; i < hi && q->clip_nn < RFM_MOVE_SEQ_POLY * RFM_MOVE_SEQ_MAXLEN; i++)
+        q->clip_notes[q->clip_nn++] = q->notes[i];
+    hi = rfmv_seq_lock_range(m, clip, step, &lo);
+    for (i = lo; i < hi && q->clip_nl < RFM_MOVE_SEQ_LOCKS; i++)
+        q->clip_locks[q->clip_nl++] = q->locks[i];
+    if (step < q->clip_step)
+        q->clip_step = (uint8_t)step;
+}
+/* the step clipboard pasted with its first step at step (a group keeps its gaps; past the clip's 256 steps: dropped).
+ * The clipboard stays: it pastes again until something else is cut or copied */
 void rfmv_seq_paste_step(rfm_move_t *m, int clip, int step)
 {
     rfm_move_seq_t *q = &m->seq;
+    uint8_t done[RFM_MOVE_SEQ_MAXLEN / 8];
     int i;
     if (q->clip_kind != 1)
         return;
-    rfmv_seq_step_clear(m, clip, step);
-    for (i = 0; i < q->clip_nn; i++) {
-        const rfm_move_note_t *n = &q->clip_notes[i];
-        rfmv_seq_note_put(m, clip, step, n->note, n->vel, n->len, n->micro);
+    memset(done, 0, sizeof done);
+    for (i = 0; i < q->clip_nn + q->clip_nl; i++) {     /* the steps it lands on: emptied first */
+        const int d = step + (i < q->clip_nn ? q->clip_notes[i].step : q->clip_locks[i - q->clip_nn].step) - q->clip_step;
+        if (d >= 0 && d < RFM_MOVE_SEQ_MAXLEN && !(done[d >> 3] >> (d & 7) & 1)) {
+            done[d >> 3] = (uint8_t)(done[d >> 3] | 1u << (d & 7));
+            rfmv_seq_step_clear(m, clip, d);
+        }
     }
-    for (i = 0; i < q->clip_nl; i++)
-        rfmv_seq_lock_set(m, clip, step, q->clip_locks[i].cc, q->clip_locks[i].val);
+    for (i = 0; i < q->clip_nn; i++) {
+        const rfm_move_note_t n = q->clip_notes[i];
+        const int d = step + n.step - q->clip_step;
+        if (d >= 0 && d < RFM_MOVE_SEQ_MAXLEN)
+            rfmv_seq_note_put(m, clip, d, n.note, n.vel, n.len, n.micro);
+    }
+    for (i = 0; i < q->clip_nl; i++) {
+        const rfm_move_lock_t l = q->clip_locks[i];
+        const int d = step + l.step - q->clip_step;
+        if (d >= 0 && d < RFM_MOVE_SEQ_MAXLEN)
+            rfmv_seq_lock_set(m, clip, d, l.cc, l.val);
+    }
 }
 void rfmv_seq_paste_clip(rfm_move_t *m, int clip)
 {

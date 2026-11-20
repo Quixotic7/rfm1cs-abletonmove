@@ -321,14 +321,27 @@ below.
 **Copy and cut** (the owner's; no popups: the source is marked, dashed when copied, an X when cut, on the steps row,
 the session grid and the LEDs). One clipboard for both:
 
+The exact gestures (0.6.3, the owner's; Delete is a modifier only, as on the Move):
+
+| Gesture | Does | Says |
+|---|---|---|
+| Delete held, a step with notes tapped | cut: gone, into the clipboard, an X on it | "Step 5 cut" |
+| Delete held, several steps tapped (one hold) | cut as one group (the gaps kept) | "Step 1 cut", "Step 2 cut" .. |
+| Copy held, a step with notes tapped (several: a group) | copied (dashed) | "Step 5 copied" |
+| Copy or Delete held, an empty step tapped | the clipboard pasted there (a group: its first step there); again and again: the clipboard stays until something else is cut or copied | "Pasted to step 9" |
+| Copy released after copying, then a plain step | pasted there once (Move's way) | "Pasted to step 9" |
+| Delete or Copy held + a clip / an empty slot (Session) | the clip cut / copied; pasted into an empty slot | "Cut track 1 clip 2", "Pasted" |
+| Delete tapped, or held and let go alone | nothing changes; a hint ("Hold Delete + a step") | "Delete: hold and press a step, pad or clip" |
+| Copy tapped alone | a waiting copy dropped, else the clip duplicated into the track's next empty slot | "Duplicated" |
+| Delete held + a pad (track view) | that note out of the clip | "Deleted C3" |
+| Track 4 held + Delete (let go) | the selected track cleared (no clipboard) | "Track 1 cleared" |
+| Track 4 held + Delete held + a step | that track cleared | "Track 3 cleared" |
+| Track 4 held + Copy held + a step, then another step | a track copied onto another | "Copied track 2" |
+
 - **Copy held**: a step (or clip) with content is copied; an empty step (or slot) gets the clipboard pasted (a copy
-  or a cut). Copy never overwrites a full step: pressing one copies it again.
+  or a cut). Copy never overwrites a full step: pressing one copies it again (a group in the same hold).
 - **Delete held**: a step (or clip) with content is cut (gone, kept in the clipboard, an X on it); an empty one gets
-  the clipboard pasted. So step, cut, press it again: pasted back, again: cut. A pasted cut empties the clipboard.
-- Copy released after copying: the next plain press pastes there (Move's way). Copy alone: a waiting copy is
-  dropped, else the clip is duplicated into the track's next empty slot. Delete alone: the selected clip cut (0.6.3;
-  before, deleted).
-  Delete + pad (track view): that note out of the clip. Track 4 held + Copy / Delete + step: a track copied / cleared.
+  the clipboard pasted. (0.6.3: a paste keeps the clipboard; before, a pasted cut emptied it, so a cut pasted once.)
 
 **Recording** (the record settings, Shift + Record: the jog the mode, knob 2 the style; saved with the project):
 
@@ -832,8 +845,9 @@ modifier, the projects view, FX setup); any input that changes the screen and sa
 | step tap / hold / second step | Sequencer, track view | "Step 5 on" / "Step 5 off"; held "Step 5: C3, velocity 100, length 1 step"; another step: the new length |
 | Delete + pad | Sequencer, track view | "Deleted C3" (that note out of the clip) |
 | Copy / Delete / Mute / Shift held | Sequencer | "Copy", "Delete", "Mute", "Shift" |
-| Copy + step / clip; Delete + step / clip; + an empty one | Sequencer | "Copied step 5", "Cut step 5", "Cut track 1 clip 2"; "Pasted" (and "Step 4 on") |
-| Delete alone, Copy alone | Sequencer | "Cut track 1 clip 2" (0.6.3: cut, not deleted); "Duplicated" |
+| Copy + step / clip; Delete + step / clip; + an empty one | Sequencer | "Step 5 copied", "Step 5 cut", "Cut track 1 clip 2"; "Pasted to step 9", "Pasted" |
+| Delete alone, Copy alone | Sequencer | "Delete: hold and press a step, pad or clip" (nothing changes); "Duplicated" |
+| Track 4 held + Delete; + a step | Sequencer | "Track 1 cleared"; "Track 3 cleared" |
 | Undo, Shift + Undo | Sequencer | "Undo", "Redo", and the steps that changed |
 | Play, Record, Sample, Capture | Sequencer | "Playing", "Stopped", "Record on", "Audio loop armed", "Recording audio loop", "Captured", "No empty clip" |
 | Loop held, tapped | Sequencer | "Loop: 2 bars"; "Loop edit on" / "off" |

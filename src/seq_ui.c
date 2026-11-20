@@ -245,17 +245,11 @@ static void copy_alone(rfm_move_t *m)
     rfmv_seq_msg(m, SEQ_MSG_DUP);
 }
 /* Delete released with nothing pressed (Move): the selected track's clip is deleted */
-static void delete_alone(rfm_move_t *m)                 /* (0.6.3) the selected clip cut: Delete is cut everywhere */
+static void delete_alone(rfm_move_t *m)                 /* (0.6.3, the owner's) Delete is a modifier only, as on the
+                                                         * Move: alone (a tap, or a hold let go) it changes nothing;
+                                                         * a hint how it is used (before: the selected clip deleted) */
 {
-    rfm_move_seq_t *q = Q(m);
-    const int clip = edit_clip(m);
-    if (!rfmv_seq_clip_has(m, clip))
-        return;
-    rfmv_seq_group(m);
-    rfmv_seq_copy_clip(m, clip);
-    q->cut = 1, q->paste = 0, q->clip_src = (uint8_t)clip, layer(q, LY_CLIP);
-    clip_delete(m, clip);
-    rfmv_seq_msg(m, SEQ_MSG_CUT);
+    rfmv_seq_msg(m, SEQ_MSG_DELHINT);
 }
 
 /* a clip deleted: its notes and locks, and the clip itself (the slot empty again) */
@@ -595,7 +589,16 @@ static int src_shown(const rfm_move_seq_t *q, int kind)
 int rfmv_seq_src_step(const rfm_move_t *m, int clip, int abs)   /* 1 copied, 2 cut, 0 */
 {
     const rfm_move_seq_t *q = &m->seq;
-    return src_shown(q, 1) && q->clip_src == clip && q->clip_step == abs ? 1 + q->cut : 0;
+    int i;
+    if (!src_shown(q, 1) || q->clip_src != clip)
+        return 0;
+    for (i = 0; i < q->clip_nn; i++)                    /* (0.6.3: a group: each of its steps) */
+        if (q->clip_notes[i].step == abs)
+            return 1 + q->cut;
+    for (i = 0; i < q->clip_nl; i++)
+        if (q->clip_locks[i].step == abs)
+            return 1 + q->cut;
+    return 0;
 }
 int rfmv_seq_src_clip(const rfm_move_t *m, int clip)
 {
@@ -608,12 +611,32 @@ static void paste_step_at(rfm_move_t *m, int clip, int abs)
 {
     rfm_move_seq_t *q = Q(m);
     const int was = rfmv_seq_clip_used(m, clip);
+    char w[32];
     rfmv_seq_group(m);
     rfmv_seq_paste_step(m, clip, abs);
-    if (q->cut)
-        q->cut = 0, q->clip_kind = 0;
+    q->cut = 0;                                         /* (0.6.3: the cut's marks go; the clipboard stays: it pastes
+                                                         * again, until something else is cut or copied) */
     grow_to(m, clip, abs);
     entered(m, was);
+    snprintf(w, sizeof w, "Pasted to step %d", abs % RFM_MOVE_SEQ_PAGE + 1);
+    rfmv_say_text(m, w);
+}
+/* (0.6.3) a step into the clipboard (cut: Delete held; copied: Copy held): a new clipboard, or, in the same hold on
+ * the same clip, one more step of its group */
+static void clip_take(rfm_move_t *m, int clip, int abs, int cut, int more)
+{
+    rfm_move_seq_t *q = Q(m);
+    char w[32];
+    if (more && q->clip_kind == 1 && q->clip_src == clip && !q->cut == !cut)
+        rfmv_seq_copy_step_add(m, clip, abs);
+    else {
+        rfmv_seq_copy_step(m, clip, abs);
+        q->clip_src = (uint8_t)clip, q->clip_step = (uint8_t)abs;
+    }
+    q->cut = (uint8_t)(cut != 0), q->paste = 0;
+    layer(q, LY_CLIP);
+    snprintf(w, sizeof w, "Step %d %s", abs % RFM_MOVE_SEQ_PAGE + 1, cut ? "cut" : "copied");
+    rfmv_say_text(m, w);
 }
 
 /* ================================================================ steps === */
@@ -694,9 +717,12 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
                 q->clip_kind = 3, q->copy_pasted = 1;   /* (paste again elsewhere while Copy is held) */
             }
         } else if (q->mods & SEQ_M_DELETE) {
+            char w[24];
             q->mods_used |= SEQ_M_DELETE;
             rfmv_seq_group(m);
             rfmv_seq_track_clear(m, s);
+            snprintf(w, sizeof w, "Track %d cleared", s + 1);
+            rfmv_say_text(m, w);
         } else if (q->mods & SEQ_M_MUTE) {
             q->mods_used |= SEQ_M_MUTE;
             rfmv_seq_mute(m, s, !q->tr[s].mute);
@@ -723,8 +749,8 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         int lo, llo;
         q->mods_used |= SEQ_M_COPY;
         if (rfmv_seq_range(m, clip, abs, &lo) > lo || rfmv_seq_lock_range(m, clip, abs, &llo) > llo) {
-            rfmv_seq_copy_step(m, clip, abs);
-            q->clip_src = (uint8_t)clip, q->clip_step = (uint8_t)abs, q->copy_src = 1, q->paste = 0, layer(q, LY_CLIP);
+            clip_take(m, clip, abs, 0, q->copy_src);    /* (0.6.3: more in the same hold: a group) */
+            q->copy_src = 1;
         } else if (q->clip_kind == 1) {
             paste_step_at(m, clip, abs);
             q->copy_pasted = 1, q->paste = 0;
@@ -851,8 +877,8 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         q->mods_used |= SEQ_M_DELETE;
         if (full) {
             rfmv_seq_group(m);
-            rfmv_seq_copy_step(m, clip, abs);
-            q->cut = 1, q->paste = 0, q->clip_src = (uint8_t)clip, q->clip_step = (uint8_t)abs, layer(q, LY_CLIP);
+            clip_take(m, clip, abs, 1, m->del_src);     /* (0.6.3: more in the same hold: a group) */
+            m->del_src = 1;
             rfmv_seq_step_clear(m, clip, abs);
         } else if (q->clip_kind == 1)
             paste_step_at(m, clip, abs);
@@ -1021,6 +1047,8 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
                 rfmv_pop(m, POP_LOOP, 0);               /* Loop held: the clip's length */
             if (mb == SEQ_M_COPY)
                 q->copy_src = 0, q->copy_pasted = 0;
+            if (mb == SEQ_M_DELETE)
+                m->del_src = 0;
         } else if (mb == SEQ_M_SHIFT && q->shift_lock) {
             ;                                           /* (latched: it stays down) */
         } else if (mb == SEQ_M_LOOP && q->loop_end) {
@@ -1049,6 +1077,14 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
             }
             if (mb == SEQ_M_DELETE && alone)
                 delete_alone(m);
+            else if (mb == SEQ_M_DELETE && !used && !q->projects && rfmv_seq_trk_held(m)) {
+                char w[24];                             /* (0.6.3) Track 4 held + Delete: the selected track cleared */
+                rfmv_seq_group(m);
+                rfmv_seq_track_clear(m, q->sel_track);
+                rfmv_menu(m, MENU_SHIFT, 0);            /* (Track 4 used: its release is no tap) */
+                snprintf(w, sizeof w, "Track %d cleared", q->sel_track + 1);
+                rfmv_say_text(m, w);
+            }
         }
         return 1;
     }
@@ -1984,6 +2020,7 @@ static const struct { const char *a, *b; int8_t icon; } MSG[] = {
     { "Cleared", "", -1 }, { "Capture", "Cleared", -1 }, { "Clock Auto", "", -1 }, { "Clock Int", "", -1 },
     { "Clock Ext", "", -1 }, { "Full Vel", "", V2I_VEL }, { "Pad Vel", "", V2I_VEL }, { "Click On", "", V2I_METRO },
     { "Click Off", "", V2I_METRO }, { "New Clip", "", V2I_CLIP }, { "Clip", "Cleared", -1 },
+    { "Hold Delete", "+ a step", -1 },
 };
 const char *rfmv_seq_msg_text(const rfm_move_t *m)
 {

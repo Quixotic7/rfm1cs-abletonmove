@@ -9,12 +9,18 @@ Speech everywhere, and Delete is cut everywhere on the sequencer (the owner: "ma
 selecting steps, pressing back, sampling. Also since when does the delete button clear the steps?"). New fields at
 the end of `rfm_move_t`: rebuild everything.
 
-- **Delete:** Delete held + a step or clip has cut since 0.1.0 (f79e90c; unchanged through 0.6.2: no regression),
-  but since 0.6.1 speech said a cut step as "Step 5 off", and **Delete tapped alone deleted the selected clip** (since
-  0.1.0, after Move's own Delete). Now Delete alone cuts it too (into the clipboard, undoable, pasted by Delete or Copy
-  + an empty slot; the screen "Cut"), and speech says "Cut step 5" / "Cut track 1 clip 2". By design and unchanged:
-  Delete + pad takes that note out of the clip ("Deleted C3"); Track 4 + Delete + step clears a track; Delete + a
-  held step's knob removes its lock.
+- **Delete is a modifier only** (the owner: "If I quick click delete or hold the delete key and release it deletes
+  every step on the track"). Since 0.1.0 (f79e90c), after Move's own Delete, **Delete alone deleted the selected
+  clip**: a tap, or a hold let go with nothing else pressed. Now it changes nothing and shows / says a hint ("Hold
+  Delete + a step"; "Delete: hold and press a step, pad or clip"). Delete held + a step or clip has cut since 0.1.0,
+  unchanged (no regression); since 0.6.1 speech said a cut step as "Step 5 off", now "Step 5 cut".
+- **Cut and paste repeat** (the owner: "I can only ever paste once"): since 0.1.0 a pasted cut emptied the clipboard.
+  Now a paste keeps it (the cut's X marks go), so Copy or Delete held + empty steps paste it again and again until
+  something else is cut or copied. Several steps cut or copied in one hold are one group, pasted with its gaps (its
+  first step at the target). Words: "Step 5 cut", "Step 5 copied", "Pasted to step 9".
+- **Track 4 held + Delete** (let go, no step) clears the selected track (the owner: "the right shortcut"); Track 4
+  held + Delete + a step clears that track (as before). Both said: "Track 1 cleared". The only Delete gesture that
+  clears without the clipboard.
 - **Speech:** an input walk (every button, step, pad, knob, jog, jog click, touch in 34 contexts) found 59 inputs
   that changed the screen silently; all speak now: a Track pressed under a Shift menu ("FM-1 mode, Tempo"), the
   projects view's or FX setup's Track pressed again (the view named), Back clearing a selection (the view named),
@@ -23,8 +29,10 @@ the end of `rfm_move_t`: rebuild everything.
   menu's knob touched (its item).
 - README: a table of every input and its words.
 
-**Tests:** `move_speech` 202 checks with the input walk (2002 inputs, none silent when the screen changes); `move_seq`
-Delete alone cuts and pastes back.
+**Tests:** `move_speech` 223 checks: the input walk (2002 inputs, none silent when the screen changes); Delete tapped
+and held-then-let-go leave every step and clip as they were (track view and Session); one step cut, pasted three
+times; three steps cut in one hold, the group pasted twice with its gaps; a copy pasted twice and undone one by one;
+Track 4 + Delete and Track 4 + Delete + a step; every word. `move_seq`: Delete alone changes nothing.
 
 ## 0.6.2 (2026-11-19)
 
