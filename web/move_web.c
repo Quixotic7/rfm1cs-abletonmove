@@ -225,6 +225,41 @@ EMSCRIPTEN_KEEPALIVE int mw_set_battery(mw_t *w, int battery, int power) { retur
 EMSCRIPTEN_KEEPALIVE int mw_battery(const mw_t *w) { return w->s.core.battery; }
 EMSCRIPTEN_KEEPALIVE int mw_sample_levels(mw_t *w, const uint8_t *peaks, int n) { return rfm_move_sample_levels(&w->s.core, peaks, n); }
 EMSCRIPTEN_KEEPALIVE void mw_set_label(mw_t *w, int enc, const char *text) { rfm_move_set_label(&w->s.core, enc, text); }
+/* (0.5.11) labels and button names packed: n entries of MW_LBL_ENTRY bytes each, [0] 1 given (0: NULL), [1..17] the
+ * text NUL-terminated; buf NULL: clear (labels) / none (button names) */
+#define MW_LBL_ENTRY 18
+static int unpack(const uint8_t *buf, int n, const char *out[], char txt[][MW_LBL_ENTRY - 1])
+{
+    int i;
+    if (!buf)
+        return 0;
+    for (i = 0; i < n; i++) {
+        const uint8_t *e = buf + i * MW_LBL_ENTRY;
+        memcpy(txt[i], e + 1, MW_LBL_ENTRY - 1), txt[i][MW_LBL_ENTRY - 2] = 0;
+        out[i] = e[0] ? txt[i] : NULL;
+    }
+    return 1;
+}
+EMSCRIPTEN_KEEPALIVE int mw_lbl_entry(void) { return MW_LBL_ENTRY; }
+EMSCRIPTEN_KEEPALIVE void mw_set_labels(mw_t *w, const uint8_t *buf)
+{
+    static const char *l[RFM_MOVE_LBL_N];
+    static char t[RFM_MOVE_LBL_N][MW_LBL_ENTRY - 1];
+    rfm_move_set_labels(&w->s.core, unpack(buf, RFM_MOVE_LBL_N, l, t) ? l : NULL);
+}
+EMSCRIPTEN_KEEPALIVE void mw_set_button_names(mw_t *w, const uint8_t *buf)
+{
+    static const char *l[RFM_MOVE_NBTN];
+    static char t[RFM_MOVE_NBTN][MW_LBL_ENTRY - 1];
+    rfm_move_set_button_names(&w->s.core, unpack(buf, RFM_MOVE_NBTN, l, t) ? l : NULL);
+}
+EMSCRIPTEN_KEEPALIVE void mw_readout(mw_t *w, int control, int kind, const char *title, const char *value, int frac,
+                                     int flags, int ms)
+{
+    rfm_move_readout(&w->s.core, control, kind, title, value, frac, flags, ms);
+}
+EMSCRIPTEN_KEEPALIVE void mw_readouts_clear(mw_t *w) { rfm_move_readouts_clear(&w->s.core); }
+EMSCRIPTEN_KEEPALIVE void mw_popup(mw_t *w, const char *text) { rfm_move_popup(&w->s.core, text); }
 /* keymap: 66 int8 (6 rows x 11), or NULL for the FM-1's */
 EMSCRIPTEN_KEEPALIVE void mw_set_keymap(mw_t *w, const int8_t *km)
 {
@@ -517,7 +552,7 @@ EMSCRIPTEN_KEEPALIVE int mw_fw_begin(mw_t *w, int n)
 }
 /* entry i: strings (installed / desc may be NULL), thumb 512 bytes or NULL, the category bits, the main one 0..4 */
 EMSCRIPTEN_KEEPALIVE int mw_fw_entry(int i, const char *id, const char *name, const char *version, const char *installed,
-                                     const char *desc, const uint8_t *thumb, int cats, int cat)
+                                     const char *desc, const uint8_t *thumb, int cats, int cat, int virt)
 {
     rfm_move_fw_t *e;
     if (!g_fw_new || i < 0 || i >= g_fw_new->count)
@@ -532,7 +567,7 @@ EMSCRIPTEN_KEEPALIVE int mw_fw_entry(int i, const char *id, const char *name, co
             memcpy(t, thumb, RFM_MOVE_FW_THUMB_BYTES);
         e->thumb = own_keep(g_fw_new, t);
     }
-    e->cats = (uint8_t)cats, e->cat = (uint8_t)cat;
+    e->cats = (uint8_t)cats, e->cat = (uint8_t)cat, e->virt = (uint8_t)(virt != 0);   /* (0.5.11: virt) */
     return 0;
 }
 EMSCRIPTEN_KEEPALIVE int mw_fw_commit(mw_t *w)
@@ -580,6 +615,14 @@ EMSCRIPTEN_KEEPALIVE int mw_fw_flush(mw_t *w)
     return w->nacts;
 }
 EMSCRIPTEN_KEEPALIVE void mw_fw_voices(mw_t *w, int n) { rfm_move_fw_voices(&w->s.core, n); }
+/* (0.5.11) a slot's level from the page (FW_LEVEL, the library): -1 refused, else the actions */
+EMSCRIPTEN_KEEPALIVE int mw_fw_set_level(mw_t *w, int slot, int level)
+{
+    int r;
+    BEGIN(w);
+    r = rfm_move_fw_set_level(&w->s.core, slot, level);
+    return r < 0 ? r : w->nacts;
+}
 EMSCRIPTEN_KEEPALIVE void mw_fw_caps(mw_t *w, int caps) { rfm_move_fw_caps(&w->s.core, caps); }   /* (0.5.10) */
 EMSCRIPTEN_KEEPALIVE int mw_fw_caps_get(const mw_t *w) { return rfm_move_fw_caps_get(&w->s.core); }
 EMSCRIPTEN_KEEPALIVE int mw_fw_sounding(const mw_t *w) { return rfm_move_fw_sounding(&w->s.core); }

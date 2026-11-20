@@ -3,6 +3,21 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.11 (2026-11-19)
+
+The web wrapper catches up (gaps found by remotefm1.com on 0.5.10). The core is unchanged.
+
+- `fwList` entries take `virt` (`mw_fw_entry`'s new last argument): Fantasy CFWs get their badge and step 16's filter
+  on the web.
+- Labels and readouts on the web: `setLabels(49 | null)`, `setButtonNames(14 | null)` (packed through
+  `mw_set_labels` / `mw_set_button_names`, 18 bytes an entry), `readout(control, kind, title, value, frac, flags,
+  ms)`, `readoutsClear()`, `popup(text)`; constants `LBL_N`, `NBTN`, `READOUT`.
+- `fwSetLevel(slot, level)` (`mw_fw_set_level`): the page's volume sets the slot's level as the Move does
+  (`fwLevel`, the library); null when refused.
+
+**Tests:** `web_smoke` (30 checks): `fwSetLevel`, `virt` drawing the badge, a readout's popup and its time, a host
+popup, clearing; its FX setup check now picks a module the 0.5.0 way (slot pad held + jog, let go) and passes.
+
 ## 0.5.10 (2026-11-19)
 
 One firmware, no FX, for the hosts that are not the Move (remotefm1.com, the iOS and Android apps). `rfm_move_fw_state_t`

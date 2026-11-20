@@ -3,7 +3,7 @@
 //   node tests/web_smoke.mjs [path/to/rfm_move.mjs]      (default build/web/rfm_move.mjs)
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
-import { MoveCore, packet, PROJECT_MAX, FILE_MAX, SETTINGS_BYTES, FX } from "../web/move-core.js";
+import { MoveCore, packet, PROJECT_MAX, FILE_MAX, SETTINGS_BYTES, FX, MODE, READOUT, LBL_N, NBTN } from "../web/move-core.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const mod = resolve(process.argv[2] || `${root}/build/web/rfm_move.mjs`);
@@ -73,11 +73,43 @@ core.sessStop(5000);
      sync.some((a) => a.kind === "route" && a.fw[0] === 0xFFFF), "fxSync: fxLoad x6, mix x3, route");
   io(0xB0, 50, 127); io(0xB0, 50, 0);                                       // Session: FX setup
   io(0xB0, 41, 127); io(0xB0, 41, 0);                                       // Track 3: Audio FX
-  io(0xB0, 14, 1);                                                          // the jog: the module list
-  const fxl = [...io(0xB0, 3, 127), ...io(0xB0, 3, 0)].find((a) => a.kind === "fxLoad");
+  io(0x90, 96, 100); io(0xB0, 14, 1);                                       // (0.5.0) slot 1's pad held + the jog: the module list
+  const fxl = io(0x80, 96, 0).find((a) => a.kind === "fxLoad");             // .. let go: loaded
   ok(fxl && fxl.fx === FX.AUDIO && fxl.slot === 0 && fxl.module === 0, "Audio FX: a module loaded");
   ok(core.screen(null).length === 1024, "FX setup's screen");
   io(0xB0, 50, 127); io(0xB0, 51, 127);                                     // Session, Back: out
+  // (0.5.11) fwSetLevel; virt reaches the core (the Fantasy badge changes the grid)
+  const lv = core.fwSetLevel(0, 77);
+  ok(lv && lv.some((a) => a.kind === "fwLevel" && a.slot === 0 && a.level === 77) && core.fwLevel(0) === 77 && core.fwSetLevel(5, 1) === null,
+     "(0.5.11) fwSetLevel: fwLevel; a slot out of range refused");
+  const hashScreen = () => core.screen(null).reduce((h, x) => ((h ^ x) * 16777619) >>> 0, 2166136261);
+  const two = (v) => [{ id: "alpha", name: "Alpha", version: "1.0", installed: "1.0", cats: 1, cat: 0, virt: v },
+                      { id: "beta", name: "Beta", version: "2.0", installed: "2.0", cats: 4, cat: 2 }];
+  io(0xB0, 51, 127); io(0xB0, 51, 0);                                       // (Back released)
+  io(0xB0, 43, 127); io(0x90, 16, 127); io(0x80, 16, 0); io(0xB0, 43, 0);   // the projects view again
+  io(0x90, 17, 127); io(0x80, 17, 0);                                       // All
+  core.fwList(two(0)); core.seqAdvance(48000 * 2, 48000);
+  const plain = hashScreen();
+  core.fwList(two(1)); core.seqAdvance(48000 * 2, 48000);
+  ok(hashScreen() !== plain, "(0.5.11) fwList's virt: the Fantasy badge drawn");
+  io(0xB0, 51, 127); io(0xB0, 51, 0);                                       // Back: out
+}
+// (0.5.11) labels, button names, readouts, a host popup
+{
+  core.setMode(MODE.FM1); core.seqAdvance(48000 * 2, 48000);
+  const hashScreen = () => core.screen(null).reduce((h, x) => ((h ^ x) * 16777619) >>> 0, 2166136261);
+  const lbl = new Array(LBL_N).fill(null); lbl[3] = "Cutoff"; lbl[8] = "Shift it";
+  core.setLabels(lbl); core.setButtonNames(new Array(NBTN).fill("Btn"));
+  const rest = hashScreen();
+  core.readout(3, READOUT.PARAM, "Cutoff", "64", 500, 0, 0);
+  const rd = hashScreen();
+  ok(rd !== rest, "(0.5.11) readout: its popup drawn");
+  core.seqAdvance(48000 * 3, 48000);
+  ok(hashScreen() === rest, "(0.5.11) the readout's popup gone after its time");
+  core.popup("FM-1 linked");
+  ok(hashScreen() !== rest && core.screenTimed(), "(0.5.11) popup: drawn, timed");
+  core.seqAdvance(48000 * 3, 48000); core.readoutsClear(); core.setLabels(null); core.setButtonNames(null);
+  ok(hashScreen() === rest, "(0.5.11) cleared: the screen as before");
 }
 core.free();
 console.log(`web_smoke: ${checks} checks, ${fails} failed`);

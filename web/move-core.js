@@ -40,7 +40,9 @@
 //   core.setStoreHost({ read(slot) -> STORE_PENDING | 0, write(slot, bytes) -> 0, remove(slot) -> 0 }); core.storeInit(used)
 //   core.storeAction(now, action) (a project action: kinds projectSave .. projectColor); core.storeAnswer(now, slot, bytes | null)
 // (0.4.0) the firmware browser, the library, FX setup (move.h; the host guide's v0.4.0 section):
-//   core.fwList([{ id, name, version, installed, desc, thumb (Uint8Array(512) | null), cats, cat }]) -> actions
+//   core.fwList([{ id, name, version, installed, desc, thumb (Uint8Array(512) | null), cats, cat, virt }]) -> actions
+//   (0.5.11) core.fwSetLevel(slot, level) -> actions | null; core.setLabels(49 | null); core.setButtonNames(14 | null);
+//   core.readout(control, kind, title, value, frac, flags, ms); core.readoutsClear(); core.popup(text)
 //   core.fwInstalled(i, version | null); core.fwSlots([id | null, x3]) -> actions; core.fwProgress(id, pct) -> actions
 //   core.fwLibrary(bytes | null) -> 0 / -1; core.fwLibrarySave() -> bytes; core.fwFlush() -> actions
 //   core.fwCaps(0) (0.5.10: one firmware, no FX; before fwList); core.fwVoices(n); core.fwSounding() -> bits; core.fwActive(); core.fwLevel(slot); core.fwStates(slot, usedBits)
@@ -56,6 +58,8 @@ export const ACT = { KEY: 1, PRESS: 2, BTN: 3, TURN: 4, MASTER: 5, MIDI: 6, SETT
   FW_LOAD: 17, FW_UNLOAD: 18, FW_ACTIVE: 19, FW_DOWNLOAD: 20, FW_LIBRARY: 21, FW_LEVEL: 22, FX_LOAD: 23, FX_PARAM: 24,
   MIX: 25, ROUTE: 26, STATE_SAVE: 27, STATE_LOAD: 28, STATE_DELETE: 29 };
 export const FX = { MIDI: 0, AUDIO: 1 };
+export const LBL_N = 49, NBTN = 14;                     // (0.5.11: RFM_MOVE_LBL_N, RFM_MOVE_NBTN)
+export const READOUT = { PARAM: 1, PRESET: 2, MESSAGE: 3, BIPOLAR: 1 };   // (RFM_MOVE_RD_*; BIPOLAR is a flag)
 export const CAT = { SYNTH: 1, GROOVEBOX: 2, CHORDS: 4, DRUMS: 8, OTHER: 16 };
 export const FW_FAILED = -1, FW_BUSY = -2;
 export const CLOCK = { AUTO: 0, INT: 1, EXT: 2 };
@@ -236,6 +240,36 @@ export class MoveCore {
     M._mw_set_label(this.w, enc | 0, p);
     M._free(p);
   }
+  // (0.5.11) labels (0.5.6..0.5.9): the firmware's 49 live labels in DYNAMIC-LABELS order (null / undefined entry: none
+  // given; "" no job), or null to clear; its 14 button names (FM1P_B_* order); readouts (kind READOUT.*, frac 0..1000
+  // or -1, flags READOUT.BIPOLAR, ms 0 the default); a host popup ("FM-1 linked")
+  _packLabels(list, n) {
+    const M = this.M, E = M._mw_lbl_entry(), p = M._malloc(n * E);
+    M.HEAPU8.fill(0, p, p + n * E);
+    for (let i = 0; i < n; i++) {
+      const v = list[i];
+      if (v === null || v === undefined) continue;
+      M.HEAPU8[p + i * E] = 1;
+      const s = String(v).replace(/[^\x20-\x7e]/g, "").slice(0, 16);
+      for (let k = 0; k < s.length; k++) M.HEAPU8[p + i * E + 1 + k] = s.charCodeAt(k);
+    }
+    return p;
+  }
+  setLabels(list) {
+    if (!list) { this.M._mw_set_labels(this.w, 0); return; }
+    const p = this._packLabels(list, LBL_N);
+    try { this.M._mw_set_labels(this.w, p); } finally { this.M._free(p); }
+  }
+  setButtonNames(list) {
+    if (!list) { this.M._mw_set_button_names(this.w, 0); return; }
+    const p = this._packLabels(list, NBTN);
+    try { this.M._mw_set_button_names(this.w, p); } finally { this.M._free(p); }
+  }
+  readout(control, kind, title, value, frac = -1, flags = 0, ms = 0) {
+    this._withStrs([title || "", value || ""], (t, v) => this.M._mw_readout(this.w, control | 0, kind | 0, t, v, frac | 0, flags | 0, ms | 0));
+  }
+  readoutsClear() { this.M._mw_readouts_clear(this.w); }
+  popup(text) { this._withStrs([text || ""], (t) => this.M._mw_popup(this.w, t)); }
   // km: the panel's wiring (6 rows x 11, id or -1: engine info().keymap), or null for the FM-1's
   setKeymap(km) {
     if (!Array.isArray(km) || km.length !== 6) { this.M._mw_set_keymap(this.w, 0); return; }
@@ -414,7 +448,7 @@ export class MoveCore {
     list.forEach((e, i) => {
       const t = e.thumb && e.thumb.length >= 512 ? M._malloc(512) : 0;
       if (t) M.HEAPU8.set(e.thumb.subarray ? e.thumb.subarray(0, 512) : e.thumb.slice(0, 512), t);
-      try { this._withStrs([e.id, e.name, e.version, e.installed || null, e.desc || null], (a, b, c, d, f) => M._mw_fw_entry(i, a, b, c, d, f, t, e.cats | 0, e.cat === undefined ? 255 : e.cat | 0)); }
+      try { this._withStrs([e.id, e.name, e.version, e.installed || null, e.desc || null], (a, b, c, d, f) => M._mw_fw_entry(i, a, b, c, d, f, t, e.cats | 0, e.cat === undefined ? 255 : e.cat | 0, e.virt ? 1 : 0)); }
       finally { if (t) M._free(t); }
     });
     return this._acts(M._mw_fw_commit(this.w));
@@ -428,6 +462,8 @@ export class MoveCore {
   fwVoices(n) { this.M._mw_fw_voices(this.w, n | 0); }
   // (0.5.10) the host's capabilities: 0 one firmware, no FX (the web page); 3 (the default) three slots and FX
   fwCaps(caps) { this.M._mw_fw_caps(this.w, caps | 0); }
+  // (0.5.11) a slot's level 0..127 from the page: the actions (fwLevel, fwLibrary later), or null refused
+  fwSetLevel(slot, level) { const r = this.M._mw_fw_set_level(this.w, slot | 0, level | 0); return r < 0 ? null : this._acts(r); }
   fwCapsGet() { return this.M._mw_fw_caps_get(this.w); }
   fwSounding() { return this.M._mw_fw_sounding(this.w); }
   fwActive() { return this.M._mw_fw_active(this.w); }
