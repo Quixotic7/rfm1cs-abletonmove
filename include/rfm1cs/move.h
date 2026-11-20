@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 6
-#define RFM1CS_VERSION_PATCH 2
-#define RFM1CS_VERSION "0.6.2"
+#define RFM1CS_VERSION_PATCH 3
+#define RFM1CS_VERSION "0.6.3"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -775,6 +775,11 @@ typedef struct {
     /* (0.6.2) Global settings (Shift + step 2): a list on the jog wheel */
     uint8_t gl_row;                                     /* the row selected */
     uint8_t gl_edit;                                    /* its value being edited (the jog changes it) */
+    /* (0.6.3) */
+    uint8_t say_back;                                   /* Back let go this call: say where it left you if nothing else */
+    uint16_t say_n;                                     /* words said so far (a call that said nothing: 0 more) */
+    uint16_t say_bdown;                                 /* .. when Back went down */
+    uint32_t say_fwms;                                  /* the projects view's Track / page / catalog popup said last */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit

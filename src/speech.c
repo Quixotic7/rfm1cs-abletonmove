@@ -21,7 +21,7 @@ static const char *const SCALE_LONG[RFM_MOVE_NSCALES] = {
 static const char *const LAYOUT_LONG[4] = { "Scale", "Chromatic", "Drum", "Octave" };
 /* the sequencer's messages (seq_ui.c MSG, SEQ_MSG_* order), as words */
 static const char *const MSG_WORDS[] = {
-    "", "No empty clip", "Full", "Load failed", "Captured", "Undo", "Redo", "Copied", "Pasted", "Cut", "Quantized",
+    "", "No empty clip", "Full", "Load failed", "Captured", "Undo", "Redo", "Copied", "Pasted", "", "Quantized",
     "Loop doubled", "External tempo", "Duplicated", "Cleared", "Capture cleared", "Sync: AUTO", "Sync: INT",
     "Sync: EXT", "Full velocity", "Pad velocity", "Metronome on", "Metronome off", "New clip", "Clip cleared" };
 static const char *const FN_WORDS[RFM_MOVE_FN_N] = { "None", "Restart", "Reverse", "Forward", "Flip", "Random",
@@ -75,7 +75,8 @@ static void track_words(const rfm_move_t *m, int t, char *o, int cap)
 /* ================================================================ the base view === */
 /* its subject and its words (lng: the long form a view entered from another has: "Firmwares, ..", "FX setup, ..",
  * "Sequencer mode") */
-enum { S_FW_TRACK0 = 0x11, S_FW_LAST = 0x23, S_FX0 = 0x100, S_FX_LAST = 0x3FF, S_SEQ_TRACK = 4, S_SEQ_SESSION = 5 };
+enum { S_FW_TRACK0 = 0x11, S_FW_LAST = 0x23, S_FX0 = 0x100, S_FX_LAST = 0x3FF, S_SEQ_TRACK = 4, S_SEQ_SESSION = 5,
+       S_MENU0 = 0x400, S_MENU_LAST = 0x43F };
 static int base_words(const rfm_move_t *m, char *o, int cap)
 {
     int s = rfmv_fw_say_base(m, o, cap);
@@ -88,7 +89,7 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
             snprintf(o, (size_t)cap, "%s, %s", rfmv_seq_smenu_name(m->seq.smenu), r);
         } else
             snprintf(o, (size_t)cap, "%s", rfmv_seq_smenu_name(m->seq.smenu));
-        return 0x40 + m->seq.smenu;
+        return S_MENU0 + (m->s.mode & 3) * 16 + (m->seq.smenu & 15);   /* (0.6.3: the mode under it too) */
     }
     switch (m->s.mode) {
     case RFM_MOVE_MODE_MIDI:
@@ -111,14 +112,18 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
 }
 static int in_fw(int s) { return s >= S_FW_TRACK0 && s <= S_FW_LAST; }
 static int in_fx(int s) { return s >= S_FX0 && s <= S_FX_LAST; }
-static int in_seq(int s) { return s == S_SEQ_TRACK || s == S_SEQ_SESSION || (s > 0x40 && s < 0x50); }   /* (a Shift
+static int in_menu(int s) { return s >= S_MENU0 && s <= S_MENU_LAST; }
+static int in_seq(int s) { return s == S_SEQ_TRACK || s == S_SEQ_SESSION || in_menu(s); }   /* (a Shift
                                                          * menu closed: back to the view, by its name) */
 /* the words said for a view entered from the view `from` (-1: the long form always) */
 static int base_said(const rfm_move_t *m, int from, char *o, int cap)
 {
     char b[RFM_MOVE_SAY_MAX];
     const int s = base_words(m, b, sizeof b);
-    if (s >= S_FW_TRACK0 && s < S_FW_TRACK0 + 3 && !in_fw(from))
+    if (in_menu(s) && in_menu(from) && (s & 15) == (from & 15)) {   /* (a Track pressed under a menu: the mode) */
+        static const char *const MODE[4] = { "FM-1 mode", "MIDI mode", "Control mode", "Sequencer mode" };
+        snprintf(o, (size_t)cap, "%s, %s", MODE[(s >> 4) & 3], b);
+    } else if (s >= S_FW_TRACK0 && s < S_FW_TRACK0 + 3 && !in_fw(from))
         snprintf(o, (size_t)cap, "Firmwares, %s", b);
     else if (in_fx(s) && !in_fx(from) && s < 0x200)
         snprintf(o, (size_t)cap, "FX setup, %s", b);
@@ -206,6 +211,11 @@ static void step_words(const rfm_move_t *m, char *o, int cap)
     n = snprintf(o, (size_t)cap, "Step %d: %s", s + 1, hi > lo ? "" : "empty");
     for (i = lo; i < hi && n < cap - 1; i++)
         n += snprintf(o + n, (size_t)(cap - n), "%s%s", i > lo ? ", " : "", rfmv_note_name(q->notes[i].note, nb, sizeof nb));
+    if (hi > lo && n < cap - 1) {                       /* (0.6.3) as the popup: the first note's velocity, length */
+        char l[24];
+        len_words(q->notes[lo].len, l, sizeof l);
+        snprintf(o + n, (size_t)(cap - n), ", velocity %d, length %s", q->notes[lo].vel, l);
+    }
 }
 static void menu_words(const rfm_move_t *m, char *o, int cap)
 {
@@ -373,6 +383,7 @@ static void say(rfm_move_t *m, int kind, const char *w)
     memset(&a, 0, sizeof a);
     a.kind = RFM_MOVE_ACT_SAY, a.index = (uint8_t)kind, a.frame = 0;
     a.data = (const uint8_t *)w, a.len = (uint32_t)strlen(w);
+    m->say_n++;
     m->fn(m->ctx, &a);
 }
 static int transport(const rfm_move_t *m)
@@ -500,10 +511,17 @@ static void item_words(const rfm_move_t *m, int i, char *o, int cap)
     case I_LOOPED: snprintf(o, (size_t)cap, "%s", q->loop_latch ? "Loop edit on" : "Loop edit off"); break;
     case I_FILL: snprintf(o, (size_t)cap, "%s", q->fill ? "Fill on" : "Fill off"); break;
     case I_SHIFTLOCK: snprintf(o, (size_t)cap, "%s", q->shift_lock ? "Shift locked" : "Shift unlocked"); break;
-    case I_CLIPBOARD:
-        if (q->copy_src)
-            snprintf(o, (size_t)cap, "%s %s", q->cut ? "Cut" : "Copied",
-                     q->clip_kind == 1 ? "step" : q->clip_kind == 2 ? "clip" : q->clip_kind == 3 ? "track" : "");
+    case I_CLIPBOARD:                                   /* (0.6.3: a Delete's cut too, and what) */
+        if (q->copy_src || q->cut) {
+            const char *v = q->cut ? "Cut" : "Copied";
+            if (q->clip_kind == 1)
+                snprintf(o, (size_t)cap, "%s step %d", v, q->clip_step % RFM_MOVE_SEQ_PAGE + 1);
+            else if (q->clip_kind == 2)
+                snprintf(o, (size_t)cap, "%s track %d clip %d", v, q->clip_src / RFM_MOVE_SEQ_SCENES + 1,
+                         q->clip_src % RFM_MOVE_SEQ_SCENES + 1);
+            else if (q->clip_kind == 3)
+                snprintf(o, (size_t)cap, "%s track %d", v, q->clip_src + 1);
+        }
         break;
     case I_PASTED:
         if (q->copy_pasted)
@@ -608,6 +626,9 @@ static void watch(rfm_move_t *m, int silent, said_now_t *sn)
     if (!silent && key && key == m->say_skey && b != m->say_steps && popcount16((unsigned)(b ^ m->say_steps)) <= 2)
         for (i = 0; i < RFM_MOVE_SEQ_PAGE; i++)
             if ((b ^ m->say_steps) >> i & 1) {
+                if (q->cut && q->clip_kind == 1 && q->clip_step % RFM_MOVE_SEQ_PAGE == i && !(b >> i & 1) &&
+                    q->clip_step / RFM_MOVE_SEQ_PAGE == q->page)
+                    continue;                           /* (a Delete's cut: "Cut step n" says it) */
                 snprintf(w, sizeof w, "Step %d %s", i + 1, b >> i & 1 ? "on" : "off");
                 say_v(m, sn, w);
             }
@@ -698,15 +719,25 @@ void rfmv_say_check(rfm_move_t *m)
     uint16_t ps;
     uint32_t st;
     int s, up, fresh = 0;
+    uint16_t said0;
     if (!m->speech)
         return;
-    sn.n = 0;
+    sn.n = 0, said0 = m->say_n;
     s = base_said(m, m->view_subj, w, sizeof w);        /* 1. the view, when it changes */
     if (s != m->view_subj) {
         tidy(w);
         say(m, RFM_MOVE_SAY_EVENT, w);
         m->view_subj = (uint16_t)s, m->focus_h = 0;     /* (the new view's selection follows it) */
         fresh = 1;
+    }
+    if (m->seq.projects && (m->fw.pop == FP_TRACK || m->fw.pop == FP_RPAGE || m->fw.pop == FP_CATALOG) &&
+        m->fw.pop_ms != m->say_fwms) {                  /* (0.6.3) the view's Track / page pressed again: named */
+        m->say_fwms = m->fw.pop_ms;
+        if (!fresh) {
+            base_words(m, w, sizeof w);
+            tidy(w);
+            say(m, RFM_MOVE_SAY_VALUE, w);
+        }
     }
     say_transport(m);
     if (m->say_now[0]) {                                /* 2. a button pressed */
@@ -734,12 +765,23 @@ void rfmv_say_check(rfm_move_t *m)
             const uint32_t h = w[0] ? hash(w) : 0;
             if (h != m->focus_h && strcmp(w, m->said))  /* (the popup just gone said the same: not again) */
                 say(m, RFM_MOVE_SAY_VALUE, w);
+            else if (!h && m->focus_h && !fresh) {      /* (0.6.3) the selection gone (Back): the view named */
+                base_words(m, w, sizeof w);
+                tidy(w);
+                say(m, RFM_MOVE_SAY_VALUE, w);
+            }
             m->focus_h = h;
         }
         m->said[0] = 0, m->said_subj = 0, m->said_t0 = 0;
     }
     watch(m, fresh, &sn);                               /* 5. the values a button or a menu changed */
     m->say_now[0] = 0;
+    if (m->say_back && m->say_n == said0) {             /* (0.6.3) Back that changed nothing said: where you are */
+        base_said(m, -1, w, sizeof w);
+        tidy(w);
+        say(m, RFM_MOVE_SAY_VALUE, w);
+    }
+    m->say_back = 0;
 }
 
 void rfm_move_set_speech(rfm_move_t *m, int on)

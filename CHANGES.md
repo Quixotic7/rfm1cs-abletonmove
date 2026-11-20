@@ -3,6 +3,29 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.3 (2026-11-19)
+
+Speech everywhere, and Delete is cut everywhere on the sequencer (the owner: "many commands with no speech, like
+selecting steps, pressing back, sampling. Also since when does the delete button clear the steps?"). New fields at
+the end of `rfm_move_t`: rebuild everything.
+
+- **Delete:** Delete held + a step or clip has cut since 0.1.0 (f79e90c; unchanged through 0.6.2: no regression),
+  but since 0.6.1 speech said a cut step as "Step 5 off", and **Delete tapped alone deleted the selected clip** (since
+  0.1.0, after Move's own Delete). Now Delete alone cuts it too (into the clipboard, undoable, pasted by Delete or Copy
+  + an empty slot; the screen "Cut"), and speech says "Cut step 5" / "Cut track 1 clip 2". By design and unchanged:
+  Delete + pad takes that note out of the clip ("Deleted C3"); Track 4 + Delete + step clears a track; Delete + a
+  held step's knob removes its lock.
+- **Speech:** an input walk (every button, step, pad, knob, jog, jog click, touch in 34 contexts) found 59 inputs
+  that changed the screen silently; all speak now: a Track pressed under a Shift menu ("FM-1 mode, Tempo"), the
+  projects view's or FX setup's Track pressed again (the view named), Back clearing a selection (the view named),
+  Back that changed nothing (where you are), Delete + pad, a second step while one is held (the step's words now
+  carry its velocity and length), the states' pads ("State 1 saved", the core's now: hosts drop their own), a Shift
+  menu's knob touched (its item).
+- README: a table of every input and its words.
+
+**Tests:** `move_speech` 202 checks with the input walk (2002 inputs, none silent when the screen changes); `move_seq`
+Delete alone cuts and pastes back.
+
 ## 0.6.2 (2026-11-19)
 
 Global Settings (Shift + step 2; Track 1 held + step 2 outside Sequencer mode) as a list on the jog wheel, and it

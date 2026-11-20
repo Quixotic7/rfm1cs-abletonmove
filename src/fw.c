@@ -3132,8 +3132,11 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap)
             asc(f->pop_text, o, cap);
         return 1;
     }
-    if (pop_up(m, FP_STATE))
-        return 1;                                       /* (the host says states saved, loaded, deleted) */
+    if (pop_up(m, FP_STATE)) {                          /* (0.6.3: said here; the host drops its own) */
+        static const char *const WH[3] = { "saved", "loaded", "deleted" };
+        snprintf(o, (size_t)cap, "State %d %s", f->pop_a + 1, WH[f->pop_b % 3]);
+        return 1;
+    }
     if (f->states)
         return 0;
     if (pop_up(m, FP_FILTER) || held_peek(m)) {

@@ -245,14 +245,17 @@ static void copy_alone(rfm_move_t *m)
     rfmv_seq_msg(m, SEQ_MSG_DUP);
 }
 /* Delete released with nothing pressed (Move): the selected track's clip is deleted */
-static void delete_alone(rfm_move_t *m)
+static void delete_alone(rfm_move_t *m)                 /* (0.6.3) the selected clip cut: Delete is cut everywhere */
 {
+    rfm_move_seq_t *q = Q(m);
     const int clip = edit_clip(m);
     if (!rfmv_seq_clip_has(m, clip))
         return;
     rfmv_seq_group(m);
+    rfmv_seq_copy_clip(m, clip);
+    q->cut = 1, q->paste = 0, q->clip_src = (uint8_t)clip, layer(q, LY_CLIP);
     clip_delete(m, clip);
-    rfmv_seq_msg(m, SEQ_MSG_CLEARED);
+    rfmv_seq_msg(m, SEQ_MSG_CUT);
 }
 
 /* a clip deleted: its notes and locks, and the clip itself (the slot empty again) */
@@ -459,9 +462,12 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
         if (note < 0)
             return;
         if (q->mods & SEQ_M_DELETE) {
+            char nb[8], w[24];
             q->mods_used |= SEQ_M_DELETE;
             rfmv_seq_group(m);
             rfmv_seq_note_remove_all(m, clip, note);
+            snprintf(w, sizeof w, "Deleted %s", rfmv_note_name(note, nb, sizeof nb));
+            rfmv_say_text(m, w);                        /* (0.6.3: speech) */
             return;
         }
         vel = vel_of(m, vel);

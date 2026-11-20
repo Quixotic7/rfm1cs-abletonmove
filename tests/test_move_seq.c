@@ -993,13 +993,20 @@ static void test_edits(void)
     CHECK(m->seq.paste && m->seq.clip_kind == 2);
     pad(m, 26, 100), pad(m, 26, 0);
     CHECK(nnotes_clip(m, SEQ_CLIP(2, 0)) == 4 && !m->seq.paste && m->seq.tr[2].queued == SEQ_NONE);
-    /* Delete alone (Move): the selected track's clip deleted (undoable) */
+    /* Delete alone: (0.6.3, the owner's: Delete is cut) the selected track's clip cut: gone, in the clipboard
+     * (undoable; Delete or Copy + an empty slot pastes it) */
     press(m, MR_CC_MENU);
     CHECK(m->seq.sel_track == 0 && m->seq.tr[0].sel == 1);
     press(m, MR_CC_DELETE);
-    CHECK(!rfmv_seq_clip_has(m, SEQ_CLIP(0, 1)) && m->seq.msg == SEQ_MSG_CLEARED);
+    CHECK(!rfmv_seq_clip_has(m, SEQ_CLIP(0, 1)) && m->seq.msg == SEQ_MSG_CUT && m->seq.cut && m->seq.clip_kind == 2);
+    press(m, MR_CC_MENU);                               /* (session: Delete + the empty slot: pasted back) */
+    button(m, MR_CC_DELETE, 1), pad(m, 16, 100), pad(m, 16, 0), button(m, MR_CC_DELETE, 0);
+    CHECK(nnotes_clip(m, SEQ_CLIP(0, 1)) == 4);
+    press(m, MR_CC_UNDO);
+    CHECK(nnotes_clip(m, SEQ_CLIP(0, 1)) == 0);
     press(m, MR_CC_UNDO);
     CHECK(nnotes_clip(m, SEQ_CLIP(0, 1)) == 4);
+    press(m, MR_CC_MENU);
     step(m, 3, 1), press(m, MR_CC_DELETE), step(m, 3, 0);   /* (with a step held: nothing) */
     CHECK(nnotes_clip(m, SEQ_CLIP(0, 1)) == 4 + 1);
     CHECK(stuck() == 0);

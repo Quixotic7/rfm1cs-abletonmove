@@ -326,7 +326,8 @@ the session grid and the LEDs). One clipboard for both:
 - **Delete held**: a step (or clip) with content is cut (gone, kept in the clipboard, an X on it); an empty one gets
   the clipboard pasted. So step, cut, press it again: pasted back, again: cut. A pasted cut empties the clipboard.
 - Copy released after copying: the next plain press pastes there (Move's way). Copy alone: a waiting copy is
-  dropped, else the clip is duplicated into the track's next empty slot. Delete alone: the selected clip deleted.
+  dropped, else the clip is duplicated into the track's next empty slot. Delete alone: the selected clip cut (0.6.3;
+  before, deleted).
   Delete + pad (track view): that note out of the clip. Track 4 held + Copy / Delete + step: a track copied / cleared.
 
 **Recording** (the record settings, Shift + Record: the jog the mode, knob 2 the style; saved with the project):
@@ -810,6 +811,42 @@ down"). Values with no popup are said when they change: the track selected, mute
 bar shown, scenes, clips queued / playing / stopped (at the bar), the octave, bank, layout, key, scale, channel,
 velocity, tempo, latch, Step record, sampling, Loop's page edit, Fill, the clipboard, the modifiers pressed; the
 Shift menus are views ("Tempo", "Arp") that say their knobs ("Pattern: Down").
+
+**Every input and its words (0.6.3).** `move_speech`'s input walk presses every button, step and pad, turns every
+knob and the jog, clicks the jog and touches knobs in 34 contexts (each mode and view, each Shift menu, each held
+modifier, the projects view, FX setup); any input that changes the screen and says nothing fails it.
+
+| Input | Where | Words |
+|---|---|---|
+| an FM-1 button (Move button mapped to it) | FM-1, MIDI, Control mode | every press: its label, else its name, else the panel's word: "Play", "Select", "Octave down" |
+| knob touch / turn | FM-1 mode | "K1", "K1: +3"; a readout "Cutoff: 64" |
+| volume | anywhere | "Volume 75%"; Track 1..3 held: "Slot 1 Level: 100" |
+| Track 1..4 tap | anywhere | the mode: "MIDI mode", again "MIDI mode, Notes"; under a Shift menu "FM-1 mode, Tempo" |
+| Track 2 held + knob 1 / 2, pad, step | MIDI, Control | "Root: Db", "Scale: Minor", "Layout: Drum", "Channel: 3"; pad 8 "Latch on" |
+| Track 3 held + knob | any | "Knob 1: CC 17" |
+| Track 4 held + step (tap, hold, double), Up / Down, jog | any | "Track 3", "Track 3, muted", "Track 5, solo", "Rate: 1/16", "Channel: 2"; + Copy / Delete "Copied track 2" |
+| Up / Down; Down | MIDI, Control; FM-1 | "Octave 1"; "Playing, Slot 2, Melodee" (the next firmware) |
+| jog | Control | "Bank 2" |
+| knob | Control, Sequencer | "CC 16: 65"; a held step's lock; the TRIG page "Chance: 50%", "Ratchet: 3" |
+| Back | anywhere | what it changed: the view ("Firmwares, Slot 1, Felucca", "FM-1 mode"), a layer ("Loop edit off", "Done"), a selection gone (the view named); nothing changed: where you are |
+| step tap / hold / second step | Sequencer, track view | "Step 5 on" / "Step 5 off"; held "Step 5: C3, velocity 100, length 1 step"; another step: the new length |
+| Delete + pad | Sequencer, track view | "Deleted C3" (that note out of the clip) |
+| Copy / Delete / Mute / Shift held | Sequencer | "Copy", "Delete", "Mute", "Shift" |
+| Copy + step / clip; Delete + step / clip; + an empty one | Sequencer | "Copied step 5", "Cut step 5", "Cut track 1 clip 2"; "Pasted" (and "Step 4 on") |
+| Delete alone, Copy alone | Sequencer | "Cut track 1 clip 2" (0.6.3: cut, not deleted); "Duplicated" |
+| Undo, Shift + Undo | Sequencer | "Undo", "Redo", and the steps that changed |
+| Play, Record, Sample, Capture | Sequencer | "Playing", "Stopped", "Record on", "Audio loop armed", "Recording audio loop", "Captured", "No empty clip" |
+| Loop held, tapped | Sequencer | "Loop: 2 bars"; "Loop edit on" / "off" |
+| Left / Right; Up / Down | track view; Session | "Bar 2"; "Tracks 9 to 16", "Scenes 2 to 5" |
+| Menu | Sequencer | "Session" / "Track 1" |
+| a clip pad | Session | "Track 1, clip 2 queued" then "Track 1, clip 2 playing"; a double tap "Track 1, stop queued", "Track 1 stopped" |
+| Shift + step | Sequencer (Track 1 held elsewhere) | menus "Tempo", "Arp", "Groove", "Workflow", "Keys and Scales", "Velocity", "Record mode", "Global settings, Clock: Internal"; "Metronome on", "Quantized", "New clip", "Loop doubled", "Clip cleared", "Firmwares, ..." (step 1) |
+| a menu's knob (turn or touch), jog | Shift menus | "Pattern: Down", "Arp: On", "Mod lane", "Groove: 5%", "Tempo 121", "Record style: Replace" |
+| jog, jog click, Back | Global settings | "Velocity: Dynamic", "Editing Velocity: Dynamic", "Velocity: Fixed", "Done" |
+| a project pad | the project grid | "Project 3, 120 BPM, 4 clips" |
+| steps 1..16, pads, jog, jog click | the projects view | "Favorites", "All firmwares", "Filter Synth", "No filter"; "Felucca" (the catalog: ", not installed"); its description; "Loading Felucca", "Downloading Felucca 25%", "Felucca installed", "Felucca failed" |
+| Sample, Capture + step, Left / Right, Mute, Loop, a state pad, Delete, a Track again | the projects view | "Felucca added to Favorites", "Tagged Synth", "Bank 2", "Catalog", "States, Felucca", "State 1 saved", "Felucca unloaded", "Slot 1, Felucca" |
+| Menu, Track 1..4, a slot pad (+ jog, let go), jog click, knobs, steps | FX setup | "FX setup, MIDI FX", "Routing", "Mixer"; "MIDI FX 1: empty", "Arp", "MIDI FX 1: Arp"; "Arp, Page 1"; "Rate: 1/8", "Slot 1 Level: 100"; "MIDI FX 1: track 3" |
 
 The selection (the firmware picked, its description, the FX slot focused, the module list, the Mixer's choice) is
 said when it changes and not again when a popup over it closes. The host debounces (Schwung: 300 ms, a VALUE

@@ -1115,6 +1115,12 @@ static void on_jog(rfm_move_t *m, int d, uint32_t now)
 /* a touch: the knob's popup (in FM-1 mode the drawing marks the knob instead, and a turn brings the popup) */
 static void on_touch(rfm_move_t *m, int k, int on)
 {
+    if (on && m->speech && m->seq.smenu && k < RFM_MOVE_NKNOBS) {   /* (0.6.3) a Shift menu's knob touched: its item */
+        char w[64];
+        rfmv_seq_smenu_words(m, k, w, sizeof w);
+        if (w[0])
+            rfmv_say_text(m, w);
+    }
     if (k == 9)
         m->jog_touch = (uint8_t)on;                     /* (0.5.8: its own flag; a knob touched meanwhile is touched) */
     if (!on) {
@@ -1260,6 +1266,10 @@ static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
 }
 void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
 {
+    if (ev->type == MR_EV_BUTTON && ev->index == MR_CC_BACK && ev->value)
+        m->say_bdown = m->say_n;                        /* (0.6.3) Back: nothing said from its press to its release: */
+    m->say_back = m->speech && ev->type == MR_EV_BUTTON && ev->index == MR_CC_BACK && !ev->value &&
+                  m->say_n == m->say_bdown;             /* .. where it left you is said */
     input(m, ev, now_ms);
     rfmv_say_check(m);                                  /* (0.6.0: speech, when on) */
 }

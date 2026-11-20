@@ -593,7 +593,7 @@ static void test_rows(void)
     button(&M, MR_CC_DELETE, 1);
     HAS("V:Delete|");
     tap_step(&M, 3);
-    HAS("V:Step 4 off|");
+    HAS("V:Cut step 4|");                               /* (0.6.3: Delete cuts: said so, not "off") */
     button(&M, MR_CC_DELETE, 0), clear();
     /* the tracks: Track 4 + a step (select), held (mute), a double tap (solo) */
     track(&M, 3, 1), tap_step(&M, 1);
@@ -763,6 +763,129 @@ static void test_global(void)
     SAID("E:FM-1 mode|");
 }
 
+/* (0.6.3) the input walk: every input in every context; any that changes the screen must say something */
+typedef struct { const char *name; void (*set)(rfm_move_t *m); void (*unset)(rfm_move_t *m); } ctx_t;
+static void c_fm1(rfm_move_t *m) { (void)m; }
+static void c_midi(rfm_move_t *m) { tap_track(m, 1); }
+static void c_notes(rfm_move_t *m) { tap_track(m, 1), tap_track(m, 1); }
+static void c_drum(rfm_move_t *m) { tap_track(m, 1), track(m, 1, 1), tap_pad(m, 26), track(m, 1, 0); }
+static void c_ctl(rfm_move_t *m) { tap_track(m, 2); }
+static void seq_notes(rfm_move_t *m) { tap_pad(m, 0), tap_step(m, 0), tap_step(m, 4), tap_step(m, 8); }
+static void c_seq(rfm_move_t *m) { tap_track(m, 3), seq_notes(m); }
+static void c_session(rfm_move_t *m) { c_seq(m), press(m, MR_CC_MENU); }
+static void c_shift(rfm_move_t *m) { c_seq(m), button(m, MR_CC_SHIFT, 1); }
+static void u_shift(rfm_move_t *m) { button(m, MR_CC_SHIFT, 0); }
+static void c_copy(rfm_move_t *m) { c_seq(m), button(m, MR_CC_COPY, 1); }
+static void u_copy(rfm_move_t *m) { button(m, MR_CC_COPY, 0); }
+static void c_delete(rfm_move_t *m) { c_seq(m), button(m, MR_CC_DELETE, 1); }
+static void u_delete(rfm_move_t *m) { button(m, MR_CC_DELETE, 0); }
+static void c_mute(rfm_move_t *m) { c_seq(m), button(m, MR_CC_MUTE, 1); }
+static void u_mute(rfm_move_t *m) { button(m, MR_CC_MUTE, 0); }
+static void c_loop(rfm_move_t *m) { c_seq(m), button(m, MR_CC_LOOP, 1); }
+static void u_loop(rfm_move_t *m) { button(m, MR_CC_LOOP, 0); }
+static void c_step(rfm_move_t *m) { c_seq(m), step(m, 4, 1), adv_ms(m, RFM_MOVE_SEQ_HOLD_MS + 20); }
+static void u_step(rfm_move_t *m) { step(m, 4, 0); }
+static void c_t4(rfm_move_t *m) { c_seq(m), track(m, 3, 1); }
+static void u_t4(rfm_move_t *m) { track(m, 3, 0); }
+static void c_t2(rfm_move_t *m) { c_midi(m), track(m, 1, 1); }
+static void u_t2(rfm_move_t *m) { track(m, 1, 0); }
+static void c_t3(rfm_move_t *m) { c_ctl(m), track(m, 2, 1); }
+static void u_t3(rfm_move_t *m) { track(m, 2, 0); }
+static void c_t1(rfm_move_t *m) { track(m, 0, 1); }
+static void u_t1(rfm_move_t *m) { track(m, 0, 0); }
+static void sm(rfm_move_t *m, int s) { c_seq(m), button(m, MR_CC_SHIFT, 1), tap_step(m, s), button(m, MR_CC_SHIFT, 0); }
+static void c_workflow(rfm_move_t *m) { sm(m, 2); }
+static void c_tempo(rfm_move_t *m) { sm(m, 4); }
+static void c_groove(rfm_move_t *m) { sm(m, 6); }
+static void c_layout(rfm_move_t *m) { sm(m, 7); }
+static void c_keys(rfm_move_t *m) { sm(m, 8); }
+static void c_vel(rfm_move_t *m) { sm(m, 9); }
+static void c_arp(rfm_move_t *m) { sm(m, 10); }
+static void c_global(rfm_move_t *m) { sm(m, 1); }
+static void c_grid(rfm_move_t *m) { sm(m, 0), tap_track(m, 3); }
+static void c_fw(rfm_move_t *m) { press(m, MR_CC_BACK); }
+static void c_fwsel(rfm_move_t *m) { press(m, MR_CC_BACK), tap_step(m, 1), tap_pad(m, 24); }
+static void c_catalog(rfm_move_t *m) { press(m, MR_CC_BACK), press(m, MR_CC_MUTE); }
+static void c_states(rfm_move_t *m) { press(m, MR_CC_BACK), press(m, MR_CC_LOOP); }
+static void c_capture(rfm_move_t *m) { c_fwsel(m), button(m, MR_CC_CAPTURE, 1); }
+static void u_capture(rfm_move_t *m) { button(m, MR_CC_CAPTURE, 0); }
+static void c_fx(rfm_move_t *m) { press(m, MR_CC_BACK), press(m, MR_CC_MENU); }
+static void c_mixer(rfm_move_t *m) { c_fx(m), tap_track(m, 3); }
+static void c_routing(rfm_move_t *m) { c_fx(m), tap_track(m, 1); }
+static const ctx_t CTX[] = {
+    { "FM-1", c_fm1, NULL }, { "MIDI", c_midi, NULL }, { "MIDI notes", c_notes, NULL }, { "MIDI drum", c_drum, NULL },
+    { "Control", c_ctl, NULL }, { "Seq track", c_seq, NULL }, { "Seq session", c_session, NULL },
+    { "Seq Shift held", c_shift, u_shift }, { "Seq Copy held", c_copy, u_copy }, { "Seq Delete held", c_delete, u_delete },
+    { "Seq Mute held", c_mute, u_mute }, { "Seq Loop held", c_loop, u_loop }, { "Seq step held", c_step, u_step },
+    { "Track 4 held", c_t4, u_t4 }, { "Track 2 held", c_t2, u_t2 }, { "Track 3 held", c_t3, u_t3 },
+    { "Track 1 held", c_t1, u_t1 }, { "Workflow", c_workflow, NULL }, { "Tempo", c_tempo, NULL },
+    { "Groove", c_groove, NULL }, { "Layout", c_layout, NULL }, { "Keys", c_keys, NULL }, { "Velocity", c_vel, NULL },
+    { "Arp", c_arp, NULL }, { "Global", c_global, NULL }, { "Projects grid", c_grid, NULL },
+    { "Firmwares", c_fw, NULL }, { "Firmware selected", c_fwsel, NULL }, { "Catalog", c_catalog, NULL },
+    { "States", c_states, NULL }, { "Capture held", c_capture, u_capture }, { "FX setup", c_fx, NULL },
+    { "Mixer", c_mixer, NULL }, { "Routing", c_routing, NULL },
+};
+typedef struct { const char *name; int kind, a, b; } in_t;   /* kind 0 button, 1 step, 2 pad, 3 knob, 4 jog, 5 click, 6 touch */
+static const in_t INS[] = {
+    { "Shift", 0, MR_CC_SHIFT, 0 }, { "Menu", 0, MR_CC_MENU, 0 }, { "Back", 0, MR_CC_BACK, 0 },
+    { "Capture", 0, MR_CC_CAPTURE, 0 }, { "Down", 0, MR_CC_DOWN, 0 }, { "Up", 0, MR_CC_UP, 0 },
+    { "Undo", 0, MR_CC_UNDO, 0 }, { "Loop", 0, MR_CC_LOOP, 0 }, { "Copy", 0, MR_CC_COPY, 0 },
+    { "Left", 0, MR_CC_LEFT, 0 }, { "Right", 0, MR_CC_RIGHT, 0 }, { "Play", 0, MR_CC_PLAY, 0 },
+    { "Rec", 0, MR_CC_REC, 0 }, { "Mute", 0, MR_CC_MUTE, 0 }, { "Sample", 0, MR_CC_SAMPLE, 0 },
+    { "Delete", 0, MR_CC_DELETE, 0 }, { "Track 1", 0, MR_CC_TRACK1, 0 }, { "Track 2", 0, MR_CC_TRACK1 - 1, 0 },
+    { "Track 3", 0, MR_CC_TRACK1 - 2, 0 }, { "Track 4", 0, MR_CC_TRACK4, 0 },
+    { "step 1", 1, 0, 0 }, { "step 2", 1, 1, 0 }, { "step 3", 1, 2, 0 }, { "step 4", 1, 3, 0 }, { "step 5", 1, 4, 0 },
+    { "step 6", 1, 5, 0 }, { "step 7", 1, 6, 0 }, { "step 8", 1, 7, 0 }, { "step 9", 1, 8, 0 }, { "step 10", 1, 9, 0 },
+    { "step 11", 1, 10, 0 }, { "step 12", 1, 11, 0 }, { "step 13", 1, 12, 0 }, { "step 14", 1, 13, 0 },
+    { "step 15", 1, 14, 0 }, { "step 16", 1, 15, 0 },
+    { "pad 1", 2, 0, 0 }, { "pad 5", 2, 4, 0 }, { "pad 9", 2, 8, 0 }, { "pad 17", 2, 16, 0 }, { "pad 24", 2, 23, 0 },
+    { "pad 25", 2, 24, 0 }, { "pad 26", 2, 25, 0 }, { "pad 28", 2, 27, 0 }, { "pad 32", 2, 31, 0 },
+    { "knob 1 +", 3, 0, 6 }, { "knob 2 +", 3, 1, 6 }, { "knob 3 +", 3, 2, 6 }, { "knob 4 +", 3, 3, 6 },
+    { "knob 5 +", 3, 4, 6 }, { "knob 6 -", 3, 5, -6 }, { "knob 7 +", 3, 6, 6 }, { "knob 8 +", 3, 7, 6 },
+    { "volume -", 3, 8, -2 }, { "jog +", 4, 1, 0 }, { "jog -", 4, -1, 0 }, { "jog click", 5, 0, 0 },
+    { "touch knob 3", 6, 2, 0 }, { "touch volume", 6, 8, 0 },
+};
+static void apply(rfm_move_t *m, const in_t *in)
+{
+    switch (in->kind) {
+    case 0: press(m, in->a); break;
+    case 1: tap_step(m, in->a); break;
+    case 2: tap_pad(m, in->a); break;
+    case 3: knob(m, in->a, in->b); break;
+    case 4: jog(m, in->a); break;
+    case 5: jog_press(m); break;
+    default: touch(m, in->a, 1); break;
+    }
+}
+static int g_silent;
+static void test_walk(void)
+{
+    static uint8_t a[MR_SCREEN_BYTES], b[MR_SCREEN_BYTES];
+    const int nc = (int)(sizeof CTX / sizeof CTX[0]), ni = (int)(sizeof INS / sizeof INS[0]);
+    int c, i, n = 0;
+    for (c = 0; c < nc; c++)
+        for (i = 0; i < ni; i++) {
+            if (CTX[c].name[0] == 'T' && !strncmp(CTX[c].name, "Track ", 6) && !strncmp(INS[i].name, CTX[c].name, 7))
+                continue;                               /* (the held Track pressed again: its release, no input) */
+            if (CTX[c].set == c_step && !strcmp(INS[i].name, "step 5"))
+                continue;                               /* (the held step again: its release) */
+            fresh(&M, 1);
+            CTX[c].set(&M);
+            rest_pop(&M), rfm_move_screen(&M, NULL, a), clear();
+            apply(&M, &INS[i]);
+            rfm_move_screen(&M, NULL, b);
+            n++;
+            if (memcmp(a, b, sizeof a) && !said[0]) {
+                g_silent++;
+                if (getenv("SPEECH_WALK"))
+                    fprintf(stderr, "silent: %-18s %s\n", CTX[c].name, INS[i].name);
+            }
+            if (CTX[c].unset)
+                CTX[c].unset(&M);
+        }
+    CHECKF(g_silent == 0, "%d of %d inputs change the screen and say nothing (SPEECH_WALK=1 lists them)", g_silent, n);
+}
+
 int main(void)
 {
     test_off_on();
@@ -776,6 +899,7 @@ int main(void)
     test_rows();
     test_browser_rows();
     test_global();
+    test_walk();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");
 }
