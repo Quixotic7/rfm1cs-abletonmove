@@ -233,6 +233,16 @@ int rfmv_fw_loaded(const rfm_move_t *m);                /* loaded slots (0 with 
 int rfmv_seq_layer_open(const rfm_move_t *m);          /* (0.4.3) a layer Back closes is open (any mode) */
 /* (tests, 0.4.2) the filter popup's words for a step (0: none): its name, its state, what the list shows (lines) */
 int rfmv_fw_filter_text(const rfm_move_t *m, int step, char name[24], const char **state, char rows[3][22]);
+/* (0.6.0) the projects view's words (speech.c): the base (its subject, 0 not the view), the selection, a popup (1 up) */
+int rfmv_fw_say_base(const rfm_move_t *m, char *o, int cap);
+void rfmv_fw_say_focus(const rfm_move_t *m, char *o, int cap);
+int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap);
+
+/* ---- speech.c (0.6.0): the words said when the screen changes (called last by the calls that change it) */
+void rfmv_say_check(rfm_move_t *m);
+void rfmv_say_tick(rfm_move_t *m);                     /* (rfm_move_seq_advance: the transport's start and stop, a
+                                                         * held button's label once it shows; nothing else) */
+
 /* move.c, project.c for fw.c */
 void rfmv_master_turn(rfm_move_t *m, int d);           /* the volume knob as MASTER */
 void rfmv_proj_back(rfm_move_t *m);                    /* Back in the projects view: out */

@@ -3,6 +3,40 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.0 (2026-11-19)
+
+Words for a screen reader (asked by remoteFM14Move for Schwung's screen reader). New fields at the end of
+`rfm_move_t`: rebuild everything. Off by default: a host that never turns it on gets no new action and nothing else
+changes (a test runs one script with speech off and on: the same other actions, the same screen).
+
+- **`rfm_move_set_speech(m, on)`**, `rfm_move_speech(m)`, `RFM_MOVE_HAS_SPEECH` (hosts `#ifdef` it). On, the core
+  emits **`RFM_MOVE_ACT_SAY`** (30, a `#define`): `index` `RFM_MOVE_SAY_EVENT` (the base view changed: "MIDI mode",
+  "Firmwares, Slot 1, Felucca", "FX setup, MIDI FX", "Sequencer mode", "Session") or `RFM_MOVE_SAY_VALUE` (a popup's
+  or the selection's words changed: "Volume 75%", "Scale: Dorian", "CC 16: 65", "Felucca, not installed",
+  "Downloading Felucca 25%"), `data` / `len` the words (printable ASCII, NUL-terminated, shorter than
+  `RFM_MOVE_SAY_MAX` = 256, valid during the callback). A popup closing over a view says nothing; the same words are
+  not said twice while they are up; a new message (Undo twice) is said again.
+- Words are made at the end of `rfm_move_input`, `_popup`, `_readout`, `_fw_progress`, `_fw_slots`, `_fw_states`,
+  `_set_latch`, `_fw_set_active`, `_set_mode`, `_seq_play`; `rfm_move_seq_advance` only checks the transport (an
+  external clock's start and stop) and a popup the clock brings up (a held step's, a held button's label after
+  `RFM_MOVE_LABEL_HOLD_MS`, the external tempo's message), once each. Turning speech on takes the screen as said (the
+  host names the first view).
+- **`rfm_move_words(m, out, cap)`**: the screen now in words (the view, then its popup or selection), for a "say it
+  again" and the tests; works with speech off.
+- The core says its own load and download progress ("Loading Felucca", "Downloading Felucca 25%" a quarter at a time,
+  "Felucca installed", "Felucca loaded", "Felucca failed", "Too busy"); states saved / loaded / deleted stay the
+  host's.
+- The web wrapper: `core.setSpeech(on)`, `core.speech()`, `core.words()`; actions `{ kind: "say", event, text }`
+  (`mw_say(i)` holds a call's words); `readout`, `popup` and `fwStates` now return their actions.
+
+**Tests:** `move_speech` (a ninth suite, 100 checks): speech off says nothing and on changes nothing else; the modes;
+a knob's popup closing; a readout (and the same again); a held button's label (and a tap); a host popup; the volume;
+Control mode's knob and Track 3's CC number; MIDI's held menu (scale, root, channel) and latch; the browser (Back,
+Tracks, All, a pad, a 40-character name said whole, the catalog, the description, a download's quarters, installed,
+failed); Back + Track; FX setup (slots, the module list, a parameter, the routing, the Mixer); the sequencer (Play,
+Stop, a held step, Undo twice, Redo, Track 4 + step, Session); `rfm_move_words` along the way; every SAY's words
+printable, trimmed and short enough. `web_smoke`: 35 checks (speech off and on, popup and readout words).
+
 ## 0.5.11 (2026-11-19)
 
 The web wrapper catches up (gaps found by remotefm1.com on 0.5.10). The core is unchanged.

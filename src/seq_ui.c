@@ -143,6 +143,7 @@ void rfmv_seq_msg(rfm_move_t *m, int msg)
 {
     m->seq.msg = (uint8_t)msg;
     m->seq.msg_ms = (uint32_t)(m->seq.now_us / 1000u);
+    m->msg_n++;                                         /* (0.6.0: speech: each message its own, even the same) */
 }
 
 void rfmv_seq_ui_release(rfm_move_t *m)

@@ -90,6 +90,7 @@ void rfm_move_popup(rfm_move_t *m, const char *text)
     m->pop_text[k] = 0;
     if (k)
         rfmv_pop(m, POP_HOST, 0);
+    rfmv_say_check(m);
 }
 static void fit_row(char *r, int k)                     /* cut r until it fits 124 px at k x */
 {

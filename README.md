@@ -793,6 +793,24 @@ then the tracks again.
 to mean charging); the play triangle in FM-1 mode stays; the FM-1
 drawing's touch marks follow our drawing's cells (the mockup's examples sit one pixel off).
 
+## Speech (0.6.0)
+
+For a screen reader (Schwung's on the Move; VoiceOver, TalkBack or aria-live on the other hosts later). Off by
+default; `rfm_move_set_speech(m, 1)` turns it on and the core then emits `RFM_MOVE_ACT_SAY` with words for what its
+screen shows (move.h has the contract). Two kinds, after Schwung's conventions ("label: value", views by their name,
+short, digits for numbers, note names as the screen has them):
+
+| kind | when | examples |
+|---|---|---|
+| EVENT | the base view changes (not when a popup over it closes) | "FM-1 mode", "MIDI mode, Notes", "Control mode", "Sequencer mode", "Session", "Track 3", "Firmwares, Slot 1, Felucca", "Slot 2, empty", "Catalog", "States, Felucca", "Projects", "FX setup, MIDI FX", "Routing", "Mixer", "Arp, Page 1" |
+| VALUE | a popup's words change, or the selection's | knobs "K1", "K1: +3", "Volume 75%", "CC 16: 65", readouts "Voicing: Wide"; held Track menus "Scale: Dorian", "Root: Db", "Layout: Drum", "Channel: 3", "Knob 1: CC 17", "Track 3, muted", "Rate: 1/16"; "Latch on"; a held label "SEL/KEYS"; host popups "FM-1 linked"; the sequencer "Playing", "Stopped", "Record on", "Step 5: C3, E3", "Chance: 50%", "Loop: 2 bars", "Tempo 120", "Bar 2", "Undo", "Metronome on", "Sync: EXT"; projects "Project 3, 120 BPM, 4 clips"; Back + Track "Playing, Slot 2, Melodee"; the browser "All firmwares", "Filter Synth", "Bank 2", the firmware selected ("Felucca"; in the catalog "Felucca, not installed"), its description (the jog's first detent, 250 characters at most), "Downloading Felucca 25%", "Felucca installed", "Felucca added to Favorites", "Tagged Synth"; FX setup "MIDI FX 1: Arp", the module list "Arp", "Rate: 1/8", "Slot 1 Level: 100", "MIDI FX 1: track 3" |
+
+The selection (the firmware picked, its description, the FX slot focused, the module list, the Mixer's choice) is
+said when it changes and not again when a popup over it closes. The host debounces (Schwung: 300 ms, a VALUE
+replaces the pending VALUE); the core says every change. `rfm_move_words` gives the screen in words at any time.
+What the core never draws stays the host's: entering (the host names the first view; turning speech on takes the
+screen as said), states saved / loaded / deleted, leaving.
+
 ## Tests
 
 ctest runs `move` (the mapping against the design's labels, every button and knob, MASTER's
@@ -818,6 +836,9 @@ blob round trip and a fuzzed loader (every truncation, 3000 random blobs, 20000 
 the project info for the grid (from blobs, a broken one refused), the popups' life (a held step, Loop, tempo, CCs,
 a lock, messages over popups), and eight golden screens (track view, the step popup, session, project grid, the
 project popup, the Track 4 menu, the count-in, a message: `move_seq_*.pbm` in the build directory).
+
+`move_speech` (test_move_speech.c, 0.6.0): the words a screen reader gets, case by case (the SAY actions logged as
+`E:` / `V:` and compared whole), and one script run with speech off and on (the same other actions, the same screen).
 
 `move_fw` (test_move_fw.c, 0.4.0): a host with no firmware list, the lists and filters (OR / AND), banks, load /
 unload / active, levels and voices (the slow blink), the library's edits and its blob (a round trip, every damaged

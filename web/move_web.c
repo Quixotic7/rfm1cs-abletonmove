@@ -9,7 +9,7 @@
  *   PROJECT_SAVE (or FW_LIBRARY) action's blob is copied out: value = its index for mw_blob() / mw_blob_len(); and
  *   (0.4.0) each action's new fields, MW_ACT_EXT bytes at mw_act_ext(): track, slot, fx, param, mix[5], then filt[6]
  *   (uint16 LE). FW_* actions name their firmware by value (its index in the list given), FX_LOAD its module by value;
- *   STATE_* by slot (the firmware there);
+ *   STATE_* by slot (the firmware there); (0.6.0) a SAY action's words are copied out: value = its index for mw_say();
  *   the session's events (mw_sess_* calls), at mw_evs(): 4 int32 each: type (RFM1CS_EV_*, or MW_EV_LOADED), a, b, c:
  *   ACTION a = the action's index; SEND a = the offset in mw_tx(), b = the length; OPEN a = the attempt; LOST a = the
  *   reason, b = was it live; BYE a = the reason, b = was it live; STATUS a = the changed bits; MW_EV_LOADED a = the
@@ -31,6 +31,7 @@
 #define MW_ACT_BYTES 10
 #define MW_ACT_EXT 21
 #define MW_MAX_BLOBS 4                                  /* PROJECT_SAVEs in one call (a project switch makes 2) */
+#define MW_MAX_SAYS 16                                  /* (0.6.0) SAY actions' words in one call */
 #define MW_MAX_EVS 1024
 #define MW_TX_MAX 65536
 #define MW_EV_LOADED 100
@@ -48,6 +49,9 @@ typedef struct {
     int nblobs;
     uint32_t blob_len[MW_MAX_BLOBS];
     uint8_t blob[MW_MAX_BLOBS][RFM_MOVE_PROJECT_MAX];
+    int nsays;
+    char say[MW_MAX_SAYS][RFM_MOVE_SAY_MAX];
+    char words[RFM_MOVE_SAY_MAX];
     int nevs;
     int32_t evs[MW_MAX_EVS][4];
     uint32_t ntx, tx_over;
@@ -80,6 +84,12 @@ static int add_act(mw_t *w, const rfm_move_act_t *a)
         memcpy(w->blob[w->nblobs], a->data, a->len);
         w->blob_len[w->nblobs] = a->len;
         value = (int16_t)w->nblobs++;
+    }
+    if (a->kind == RFM_MOVE_ACT_SAY) {                  /* (0.6.0) the words, copied out */
+        if (w->nsays >= MW_MAX_SAYS || !a->data || a->len >= RFM_MOVE_SAY_MAX)
+            return -1;
+        memcpy(w->say[w->nsays], a->data, a->len), w->say[w->nsays][a->len] = 0;
+        value = (int16_t)w->nsays++;
     }
     w->frames[w->nacts] = a->frame;
     o = w->acts + w->nacts * MW_ACT_BYTES;
@@ -149,7 +159,7 @@ static void io_loaded(void *ctx, int slot, const uint8_t *b, uint32_t n)
     add_ev(w, MW_EV_LOADED, slot, rfm1cs_session_project_answer(&w->s, w->now, slot, b, n), 0);
 }
 
-#define BEGIN(w) ((w)->nacts = 0, (w)->nblobs = 0, (w)->nevs = 0, (w)->ntx = 0)
+#define BEGIN(w) ((w)->nacts = 0, (w)->nblobs = 0, (w)->nsays = 0, (w)->nevs = 0, (w)->ntx = 0)
 
 /* a new core (in its session): settings (n bytes, an rfm_move_save image) or NULL / not an image: the defaults */
 EMSCRIPTEN_KEEPALIVE mw_t *mw_new(const uint8_t *settings, uint32_t n)
@@ -253,13 +263,29 @@ EMSCRIPTEN_KEEPALIVE void mw_set_button_names(mw_t *w, const uint8_t *buf)
     static char t[RFM_MOVE_NBTN][MW_LBL_ENTRY - 1];
     rfm_move_set_button_names(&w->s.core, unpack(buf, RFM_MOVE_NBTN, l, t) ? l : NULL);
 }
-EMSCRIPTEN_KEEPALIVE void mw_readout(mw_t *w, int control, int kind, const char *title, const char *value, int frac,
-                                     int flags, int ms)
+EMSCRIPTEN_KEEPALIVE int mw_readout(mw_t *w, int control, int kind, const char *title, const char *value, int frac,
+                                    int flags, int ms)
 {
+    BEGIN(w);                                           /* (0.6.0: speech's actions) */
     rfm_move_readout(&w->s.core, control, kind, title, value, frac, flags, ms);
+    return w->nacts;
 }
 EMSCRIPTEN_KEEPALIVE void mw_readouts_clear(mw_t *w) { rfm_move_readouts_clear(&w->s.core); }
-EMSCRIPTEN_KEEPALIVE void mw_popup(mw_t *w, const char *text) { rfm_move_popup(&w->s.core, text); }
+EMSCRIPTEN_KEEPALIVE int mw_popup(mw_t *w, const char *text)
+{
+    BEGIN(w);
+    rfm_move_popup(&w->s.core, text);
+    return w->nacts;
+}
+/* (0.6.0) speech: on / off, a SAY action's words (mw_say(i): the action's value), the screen in words now */
+EMSCRIPTEN_KEEPALIVE void mw_set_speech(mw_t *w, int on) { rfm_move_set_speech(&w->s.core, on); }
+EMSCRIPTEN_KEEPALIVE int mw_speech(const mw_t *w) { return rfm_move_speech(&w->s.core); }
+EMSCRIPTEN_KEEPALIVE const char *mw_say(const mw_t *w, int i) { return i >= 0 && i < w->nsays ? w->say[i] : ""; }
+EMSCRIPTEN_KEEPALIVE const char *mw_words(mw_t *w)
+{
+    rfm_move_words(&w->s.core, w->words, sizeof w->words);
+    return w->words;
+}
 /* keymap: 66 int8 (6 rows x 11), or NULL for the FM-1's */
 EMSCRIPTEN_KEEPALIVE void mw_set_keymap(mw_t *w, const int8_t *km)
 {
@@ -628,7 +654,12 @@ EMSCRIPTEN_KEEPALIVE int mw_fw_caps_get(const mw_t *w) { return rfm_move_fw_caps
 EMSCRIPTEN_KEEPALIVE int mw_fw_sounding(const mw_t *w) { return rfm_move_fw_sounding(&w->s.core); }
 EMSCRIPTEN_KEEPALIVE int mw_fw_active(const mw_t *w) { return rfm_move_fw_active(&w->s.core); }
 EMSCRIPTEN_KEEPALIVE int mw_fw_level(const mw_t *w, int slot) { return rfm_move_fw_level(&w->s.core, slot); }
-EMSCRIPTEN_KEEPALIVE void mw_fw_states(mw_t *w, int slot, uint32_t used) { rfm_move_fw_states(&w->s.core, slot, used); }
+EMSCRIPTEN_KEEPALIVE int mw_fw_states(mw_t *w, int slot, uint32_t used)
+{
+    BEGIN(w);
+    rfm_move_fw_states(&w->s.core, slot, used);
+    return w->nacts;
+}
 EMSCRIPTEN_KEEPALIVE int mw_fw_lib_bytes(void) { return RFM_MOVE_FW_LIB_BYTES; }
 
 /* the FX modules of a kind: mw_fx_begin(kind, n), mw_fx_module, mw_fx_param (and mw_fx_word), mw_fx_commit */

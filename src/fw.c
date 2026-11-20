@@ -673,8 +673,9 @@ void rfm_move_fw_slots(rfm_move_t *m, const char *const ids[RFM_MOVE_FW_SLOTS])
     }
     if (any)
         lib_changed(m);
+    rfmv_say_check(m);
 }
-void rfm_move_fw_progress(rfm_move_t *m, const char *id, int pct)
+static void fw_progress(rfm_move_t *m, const char *id, int pct)
 {
     rfm_move_fw_state_t *f = F(m);
     const int fw = f->busy_fw;
@@ -700,6 +701,11 @@ void rfm_move_fw_progress(rfm_move_t *m, const char *id, int pct)
     } else
         pop(m, FP_LOADED, fw, f->busy_kind == BUSY_UPDATE ? 10 : 11);
     f->busy_kind = BUSY_NONE, f->busy_fw = -1;
+}
+void rfm_move_fw_progress(rfm_move_t *m, const char *id, int pct)
+{
+    fw_progress(m, id, pct);
+    rfmv_say_check(m);
 }
 void rfm_move_fw_voices(rfm_move_t *m, int n) { m->fw.voices = (uint8_t)clampi(n, 1, nslots(m)); }
 void rfm_move_fw_caps(rfm_move_t *m, int caps)
@@ -735,6 +741,7 @@ void rfm_move_fw_states(rfm_move_t *m, int slot, uint32_t used)
 {
     if (slot >= 0 && slot < RFM_MOVE_FW_SLOTS)
         m->fw.st_used[slot] = used;
+    rfmv_say_check(m);
 }
 void rfm_move_fx_modules(rfm_move_t *m, int kind, const rfm_move_fx_module_t *list, int n)
 {
@@ -1703,7 +1710,7 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
 typedef char rfmv_pg_check[PG_MIDI == RFM_MOVE_FX_PAGE_MIDI && PG_ROUTE == RFM_MOVE_FX_PAGE_ROUTE &&
                            PG_AUDIO == RFM_MOVE_FX_PAGE_AUDIO && PG_MIX == RFM_MOVE_FX_PAGE_MIX ? 1 : -1];
 static int fx_shown(const rfm_move_t *m) { return m->seq.projects && m->fw.fx; }
-int rfm_move_fw_set_active(rfm_move_t *m, int slot)
+static int set_active(rfm_move_t *m, int slot)
 {
     rfm_move_fw_state_t *f = F(m);
     if (slot < 0 || slot >= nslots(m))
@@ -1720,6 +1727,12 @@ int rfm_move_fw_set_active(rfm_move_t *m, int slot)
     act_fw(m, RFM_MOVE_ACT_FW_ACTIVE, slot, f->slot_fw[slot], 0);
     lib_changed(m);
     return m->seq.projects;
+}
+int rfm_move_fw_set_active(rfm_move_t *m, int slot)
+{
+    const int r = set_active(m, slot);
+    rfmv_say_check(m);
+    return r;
 }
 static int level_to(rfm_move_t *m, int slot, int level)
 {
@@ -2887,4 +2900,278 @@ int rfmv_fw_rec(const rfm_move_t *m, int fw) { return rec_of(m, fw); }
 int rfmv_fw_filter_text(const rfm_move_t *m, int step, char name[24], const char **state, char rows[3][22])
 {
     return filter_words(m, step, name, state, rows);
+}
+
+/* ================================================================ (0.6.0) words for a screen reader === */
+/* (speech.c says them: the base view as an event when it changes, the popups and the selection as values) */
+static void slot_words(const rfm_move_t *m, int s, char *o, int cap)
+{
+    char nm[64];
+    if (slot_loaded(m, s))
+        slot_name(m, s, nm, sizeof nm);
+    else
+        snprintf(nm, sizeof nm, "empty");
+    snprintf(o, (size_t)cap, "Slot %d, %s", s + 1, nm);
+}
+static void fx_slot_words(const rfm_move_t *m, int kind, int i, char *o, int cap)
+{
+    const char *n = slot_mod_name(m, kind, i);
+    char nm[32];
+    asc(n ? n : "empty", nm, sizeof nm);
+    snprintf(o, (size_t)cap, "%s %d: %s", kind == RFM_MOVE_FX_MIDI ? "MIDI FX" : "Audio FX", i + 1, nm);
+}
+/* the projects view's base: its subject (0: not the projects view) and its words */
+int rfmv_fw_say_base(const rfm_move_t *m, char *o, int cap)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    o[0] = 0;
+    if (!m->seq.projects)
+        return 0;
+    if (f->fx) {
+        const int pg = fx_page(m), kind = pg == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO, i = f->fx_focus;
+        if (pages_shown(m) && f->browse < 0) {          /* a module's parameter page */
+            const rfm_move_fxslot_t *sl = kind == RFM_MOVE_FX_MIDI ? &m->seq.fx.mfx[i] : &m->seq.fx.afx[i];
+            const rfm_move_fx_module_t *md = module(m, kind, sl->mod);
+            const int cur = slot_page(m, kind, i);
+            char nm[32], pn[32];
+            asc(sl->name, nm, sizeof nm);
+            if (host_pages(md) && md->pages[cur].name && md->pages[cur].name[0])
+                asc(md->pages[cur].name, pn, sizeof pn);
+            else
+                snprintf(pn, sizeof pn, "Page %d", cur + 1);
+            snprintf(o, (size_t)cap, "%s, %s", nm, pn);
+            return 0x200 | kind << 7 | (i & 7) << 4 | (cur & 15);
+        }
+        snprintf(o, (size_t)cap, "%s", FXPAGE[pg]);
+        return 0x100 | pg;
+    }
+    if (f->track == 3 || !f->host) {
+        snprintf(o, (size_t)cap, "Projects");
+        return 0x10;
+    }
+    if (f->states) {
+        char t[80];
+        slot_words(m, f->track, t, sizeof t);
+        snprintf(o, (size_t)cap, "States, %s", t + 8);  /* (past "Slot n, ") */
+        return 0x20 | f->track;
+    }
+    if (f->catalog) {
+        const int c = m->s.fw_cat_scope & 3;
+        snprintf(o, (size_t)cap, "Catalog%s", c == 3 ? ", Update ready, Not installed" : c == 1 ? ", Update ready"
+                                              : c == 2 ? ", Not installed" : "");
+        return 0x18 | c;
+    }
+    slot_words(m, f->track, o, cap);
+    return 0x11 + f->track;
+}
+/* the selection (said when it changes, not again after a popup over it): the firmware selected, its description, a
+ * focused FX slot, the module list, the Mixer's choice */
+void rfmv_fw_say_focus(const rfm_move_t *m, char *o, int cap)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    o[0] = 0;
+    if (!m->seq.projects)
+        return;
+    if (f->fx) {
+        const int pg = fx_page(m), kind = pg == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO, i = f->fx_focus;
+        if ((pg == PG_MIDI || pg == PG_AUDIO) && f->browse >= 0) {
+            if (f->browse == 0 || f->browse > f->nmods[kind])
+                snprintf(o, (size_t)cap, "empty");
+            else
+                asc(f->mods[kind][f->browse - 1].name, o, cap);
+        } else if (pages_shown(m))
+            ;                                           /* (the base names the page) */
+        else if (pg == PG_MIX) {
+            char t[48], v[16];
+            mix_words(m, 0, f->mix_par, t, sizeof t, v, sizeof v, 1);
+            snprintf(o, (size_t)cap, "%s", t);
+        } else if (pg == PG_ROUTE)
+            slot_words(m, i, o, cap);
+        else
+            fx_slot_words(m, kind, i, o, cap);
+        return;
+    }
+    if (f->track == 3 || !f->host || f->states || f->sel < 0)
+        return;
+    if (f->capture) {                                   /* tagging: the firmware's tags */
+        char all[200], t[24];
+        int s, n = 0;
+        all[0] = 0;
+        for (s = CAT0; s <= 16; s++)
+            if (has_tag(m, f->sel, s)) {
+                tag_name(m, s, t, sizeof t);
+                n += snprintf(all + n, sizeof all - (size_t)n, "%s%s", n ? ", " : "", t);
+                if (n >= (int)sizeof all)
+                    n = (int)sizeof all - 1;
+            }
+        snprintf(o, (size_t)cap, "Tags: %s", n ? all : "none");
+        return;
+    }
+    if (f->jog > 0) {                                   /* the description (the jog: its rows; said once) */
+        const rfm_move_fw_t *e = ent(m, f->sel);
+        const char *t = e && e->desc ? e->desc : "";
+        int n = 0;
+        for (; *t && n < cap - 1 && n < 250; t++)
+            if (*t == '\n' || *t == '\t')
+                o[n++] = ' ';
+            else if ((unsigned char)*t >= 32 && (unsigned char)*t < 127)
+                o[n++] = *t;
+        o[n] = 0;
+        if (!n)
+            snprintf(o, (size_t)cap, "No description");
+        return;
+    }
+    {
+        char nm[64];
+        asc(ename(m, f->sel), nm, sizeof nm);
+        if (f->catalog) {
+            const int st = status(m, f->sel);
+            snprintf(o, (size_t)cap, "%s, %s", nm, st == ST_NEW ? "not installed" : st == ST_UPDATE ? "update ready"
+                                                                                                  : "installed");
+        } else
+            snprintf(o, (size_t)cap, "%s", nm);
+    }
+}
+/* a popup's words (1: one is up, the words may be "" when the base says it) */
+int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    char nm[64], t[64], v[32];
+    o[0] = 0;
+    if (pop_up(m, FP_LEVEL)) {
+        if (nslots(m) < 2)
+            snprintf(o, (size_t)cap, "Level: %d", f->level[f->pop_a]);
+        else
+            snprintf(o, (size_t)cap, "Slot %d Level: %d", f->pop_a + 1, f->level[f->pop_a]);
+        return 1;
+    }
+    if (!m->seq.projects)
+        return 0;
+    if (f->fx) {
+        const int pg = fx_page(m), kind = pg == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO, i = f->fx_focus;
+        const int slotpg = pg == PG_MIDI || pg == PG_AUDIO;
+        if (slotpg && f->browse >= 0)
+            return 0;
+        if (pop_up(m, FP_PARAM)) {
+            const int k = f->pop_a;
+            if (pg == PG_ROUTE || pg == PG_MIX) {
+                const int sl = pg == PG_MIX ? k : i;
+                mix_words(m, sl, pg == PG_MIX ? f->mix_par : k, t, sizeof t, v, sizeof v, 0);
+                snprintf(o, (size_t)cap, "Slot %d %s: %s", sl + 1, t, v);
+            } else {
+                const rfm_move_fxslot_t *sl = kind == RFM_MOVE_FX_MIDI ? &m->seq.fx.mfx[i] : &m->seq.fx.afx[i];
+                const rfm_move_fx_module_t *md = module(m, kind, sl->mod);
+                const int p = knob_param(m, kind, i, k);
+                if (md && p >= 0) {
+                    asc(md->params[p].name ? md->params[p].name : "", t, sizeof t);
+                    param_text(&md->params[p], sl->val[p], v, sizeof v);
+                    snprintf(o, (size_t)cap, "%s: %s", t, v);
+                }
+            }
+            return 1;
+        }
+        if (pop_up(m, FP_RFILTER) && (pg == PG_MIDI || pg == PG_ROUTE)) {
+            const uint16_t filt = pg == PG_MIDI ? m->seq.fx.mfx[i].filt : m->seq.fx.ffilt[i];
+            char r[48];
+            range_text(filt, r, sizeof r);
+            if (pg == PG_MIDI)
+                fx_slot_words(m, kind, i, t, sizeof t), *strchr(t, ':') = 0;
+            else
+                snprintf(t, sizeof t, "Slot %d", i + 1);
+            if (filt == 0xFFFF)
+                snprintf(o, (size_t)cap, "%s: tracks 1-16", t);
+            else if (!filt)
+                snprintf(o, (size_t)cap, "%s: no tracks", t);
+            else
+                snprintf(o, (size_t)cap, "%s: %s %s", t, strpbrk(r, ",-") ? "tracks" : "track", r);
+            return 1;
+        }
+        if (pop_up(m, FP_RLOADED) && slotpg) {
+            if (f->pop_text[0]) {
+                fx_slot_words(m, kind, i, t, sizeof t), *strchr(t, ':') = 0;
+                snprintf(o, (size_t)cap, "%s: %s", t, f->pop_text);
+            } else
+                fx_slot_words(m, kind, i, o, cap);
+            return 1;
+        }
+        return 0;
+    }
+    if (pop_up(m, FP_UNLOAD)) {
+        asc(f->pop_text, nm, sizeof nm);
+        snprintf(o, (size_t)cap, "%s unloaded", nm);
+        return 1;
+    }
+    if (f->track == 3 || !f->host)
+        return 0;
+    if (f->busy_kind) {
+        asc(ename(m, f->busy_fw), nm, sizeof nm);
+        if (f->busy_kind == BUSY_LOAD)
+            snprintf(o, (size_t)cap, "Loading %s", nm);
+        else                                            /* (a quarter at a time) */
+            snprintf(o, (size_t)cap, "%s %s %d%%", f->busy_kind == BUSY_UPDATE ? "Updating" : "Downloading", nm,
+                     f->busy_pct / 25 * 25);
+        return 1;
+    }
+    if (pop_up(m, FP_LOADED)) {
+        asc(ename(m, f->pop_a), nm, sizeof nm);
+        if (f->pop_b == 10) {
+            const rfm_move_fw_t *e = ent(m, f->pop_a);
+            asc(e && e->version ? e->version : "", v, sizeof v);
+            snprintf(o, (size_t)cap, "%s updated to %s", nm, v);
+        } else
+            snprintf(o, (size_t)cap, "%s %s", nm, f->pop_b == 11 ? "installed" : "loaded");
+        return 1;
+    }
+    if (pop_up(m, FP_MSG)) {
+        if (f->pop_a >= 0 && f->pop_b == RFM_MOVE_FW_BUSY)
+            snprintf(o, (size_t)cap, "Too busy");
+        else if (f->pop_a >= 0) {
+            asc(ename(m, f->pop_a), nm, sizeof nm);
+            snprintf(o, (size_t)cap, "%s failed", nm);
+        } else
+            asc(f->pop_text, o, cap);
+        return 1;
+    }
+    if (pop_up(m, FP_STATE))
+        return 1;                                       /* (the host says states saved, loaded, deleted) */
+    if (f->states)
+        return 0;
+    if (pop_up(m, FP_FILTER) || held_peek(m)) {
+        const int step = held_peek(m) ? f->hold_step : f->pop_a;
+        if (step == 1 || step == 2) {
+            step_name(m, step, nm, sizeof nm);
+            if (!f->catalog)
+                snprintf(o, (size_t)cap, "%s", step == 1 ? "Favorites" : "All firmwares");
+            else
+                snprintf(o, (size_t)cap, "%s%s", nm, step_on(m, step) ? "" : " off");
+        } else if (step >= CAT0 && step <= 16) {
+            tag_name(m, step, nm, sizeof nm);
+            if (step_on(m, step))
+                snprintf(o, (size_t)cap, "Filter %s", nm);
+            else if (!(m->s.fw_filter >> (CAT0 - 1)))
+                snprintf(o, (size_t)cap, "No filter");
+            else
+                snprintf(o, (size_t)cap, "Filter %s off", nm);
+        }
+        return 1;
+    }
+    if (pop_up(m, FP_BANK)) {
+        snprintf(o, (size_t)cap, "Bank %d", cur_bank(m) + 1);
+        return 1;
+    }
+    if (pop_up(m, FP_FAV)) {
+        asc(ename(m, f->pop_a), nm, sizeof nm);
+        snprintf(o, (size_t)cap, "%s %s", nm, f->pop_b ? "added to Favorites" : "removed from Favorites");
+        return 1;
+    }
+    if (pop_up(m, FP_COLOR) && f->sel >= 0) {
+        snprintf(o, (size_t)cap, "Colour: %s", PALNAME[color(m, f->sel)]);
+        return 1;
+    }
+    if (f->capture && f->sel >= 0 && f->cap_step >= CAT0 && rfmv_now_ms(m) - f->cap_ms < CAP_MS) {
+        tag_name(m, f->cap_step, nm, sizeof nm);
+        snprintf(o, (size_t)cap, "%s %s", has_tag(m, f->sel, f->cap_step) ? "Tagged" : "Untagged", nm);
+        return 1;
+    }
+    return 0;
 }

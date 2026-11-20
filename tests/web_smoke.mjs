@@ -111,6 +111,22 @@ core.sessStop(5000);
   core.seqAdvance(48000 * 3, 48000); core.readoutsClear(); core.setLabels(null); core.setButtonNames(null);
   ok(hashScreen() === rest, "(0.5.11) cleared: the screen as before");
 }
+// (0.6.0) speech: off by default (no say actions); on, the words as actions; words() the screen now
+{
+  ok(!core.speech() && !core.setMode(MODE.MIDI).some((a) => a.kind === "say"), "(0.6.0) speech off: no say action");
+  core.setMode(MODE.FM1);
+  core.setSpeech(true);
+  ok(core.speech() && core.words() === "FM-1 mode", `(0.6.0) words(): ${core.words()}`);
+  const m = core.setMode(MODE.CONTROL).filter((a) => a.kind === "say");
+  ok(m.length === 1 && m[0].event && m[0].text === "Control mode", "(0.6.0) a mode change: an event, its name");
+  const p = core.popup("FM-1 linked").filter((a) => a.kind === "say");
+  ok(p.length === 1 && !p[0].event && p[0].text === "FM-1 linked", "(0.6.0) popup: a value, its words");
+  core.seqAdvance(48000 * 3, 48000);
+  core.setMode(MODE.FM1);
+  const r = core.readout(-1, READOUT.PARAM, "Voicing", "Wide").filter((a) => a.kind === "say");
+  ok(r.length === 1 && r[0].text === "Voicing: Wide", "(0.6.0) readout: title: value");
+  core.setSpeech(false);
+}
 core.free();
 console.log(`web_smoke: ${checks} checks, ${fails} failed`);
 process.exit(fails ? 1 : 0);

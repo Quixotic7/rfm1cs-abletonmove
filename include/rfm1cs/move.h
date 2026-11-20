@@ -26,9 +26,9 @@ extern "C" {
 
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
-#define RFM1CS_VERSION_MINOR 5
-#define RFM1CS_VERSION_PATCH 11
-#define RFM1CS_VERSION "0.5.11"
+#define RFM1CS_VERSION_MINOR 6
+#define RFM1CS_VERSION_PATCH 0
+#define RFM1CS_VERSION "0.6.0"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -47,6 +47,7 @@ extern "C" {
 #define RFM_MOVE_LBL_WHITE0 22
 #define RFM_MOVE_LBL_BLACK0 38
 #define RFM_MOVE_LBL_N 49
+#define RFM_MOVE_SAY_MAX 256                            /* (0.6.0) a SAY action's words with their NUL */
 #define RFM_MOVE_LABEL_HOLD_MS 300                      /* FM-1 mode: a button held this long shows its label */
 /* (0.5.7) readouts: what a control does now and its value, in the firmware's words (the labels plan's rd1) */
 enum { RFM_MOVE_RD_PARAM = 1, RFM_MOVE_RD_PRESET = 2, RFM_MOVE_RD_MESSAGE = 3 };
@@ -135,6 +136,10 @@ enum {
     RFM_MOVE_ACT_STATE_LOAD = 28,                       /* .. load that state into the firmware */
     RFM_MOVE_ACT_STATE_DELETE = 29,                     /* .. forget it */
 };
+/* (0.6.0) words for a screen reader (rfm_move_set_speech): index RFM_MOVE_SAY_*, data / len the words (printable ASCII,
+ * NUL-terminated, len < RFM_MOVE_SAY_MAX; valid during the callback only), param 0. Only while speech is on. A
+ * #define (not an enum value) so a host can #ifdef it */
+#define RFM_MOVE_ACT_SAY 30
 typedef struct {
     uint8_t kind;                                       /* RFM_MOVE_ACT_* */
     uint8_t index, down, vel;
@@ -748,6 +753,17 @@ typedef struct {
     uint16_t rd_ms;                                     /* rd_pop's time up */
     uint8_t jog_touch;                                  /* (0.5.8) the jog wheel touched now */
     uint8_t pop_shown;                                  /* (0.5.8) POP_LABEL: drawn with words while its control was held */
+    /* (0.6.0) speech (rfm_move_set_speech): what was said last; not saved, rfm_move_init zeroes it */
+    uint8_t speech;                                     /* on */
+    char said[RFM_MOVE_SAY_MAX];                        /* the popup's words said last ("": none up) */
+    uint16_t said_subj;                                 /* .. its subject */
+    uint16_t view_subj;                                 /* the base view said last */
+    uint32_t said_t0;                                   /* .. the popup's stamp (a new message, a popup up again) */
+    uint32_t focus_h;                                   /* the selection's words said last (a hash) */
+    uint8_t say_tr;                                     /* the transport said last: bit 0 playing, 1 recording */
+    uint8_t tick_pop;                                   /* the popup rfm_move_seq_advance looked at last (one the */
+    uint32_t tick_t0, tick_msg;                         /* .. clock brings up: a held step's), the message's stamp */
+    uint32_t msg_n;                                     /* the sequencer's messages so far (each one's stamp) */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
@@ -944,6 +960,23 @@ int rfm_move_fx_set_param(rfm_move_t *m, int kind, int slot, int index, int valu
 /* FX setup's page (RFM_MOVE_FX_PAGE_*; settings.fx_page), as Track 1..4 pressed in FX setup: SETTINGS. -1: a page
  * the host has no modules for (MIDI FX, Audio FX). 1 when FX setup is on screen (its module list closed) */
 int rfm_move_fx_set_page(rfm_move_t *m, int page);
+
+/* ---- (0.6.0) words for a screen reader: what the Move's screen shows, as text, when it changes (README "Speech").
+ * Off by default: no words are made and nothing else changes. On, the core says (RFM_MOVE_ACT_SAY) at the end of each
+ * call that can change the screen (rfm_move_input, _popup, _readout, _fw_progress, _fw_slots, _fw_states,
+ * _set_latch, _fw_set_active, _set_mode, _seq_play; rfm_move_seq_advance only for the transport's start and stop):
+ *  - RFM_MOVE_SAY_EVENT: the base view, only when it changes ("MIDI mode", "Firmwares, Slot 1, Felucca", "FX setup,
+ *    MIDI FX", "Sequencer mode", "Session"); a popup closing over it says nothing;
+ *  - RFM_MOVE_SAY_VALUE: a popup's or the selection's words whenever they change ("Volume 75%", "Scale: Dorian",
+ *    "Felucca, not installed"). The host debounces (a VALUE replaces a pending VALUE); the core has no rate limit.
+ * Turning it on takes the screen as said (the host names the first view itself) */
+#define RFM_MOVE_HAS_SPEECH 1                           /* (hosts test this to compile their wiring) */
+enum { RFM_MOVE_SAY_VALUE = 0, RFM_MOVE_SAY_EVENT = 1 };
+void rfm_move_set_speech(rfm_move_t *m, int on);
+int rfm_move_speech(const rfm_move_t *m);              /* 1 on */
+/* what the screen shows now, in words: its base view, then ", " and its popup or selection if any (a host's "say it
+ * again", the tests). Works with speech off too. Returns the length written (out NUL-terminated; cut to cap - 1) */
+int rfm_move_words(const rfm_move_t *m, char *out, int cap);
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */

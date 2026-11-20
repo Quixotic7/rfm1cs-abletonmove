@@ -400,6 +400,7 @@ void rfm_move_set_latch(rfm_move_t *m, int on)
     m->latch = on != 0;
     if (!m->latch)
         rfmv_latch_drop_all(m);
+    rfmv_say_check(m);
 }
 int rfm_move_latch(const rfm_move_t *m) { return m->latch; }
 
@@ -444,6 +445,7 @@ void rfm_move_set_mode(rfm_move_t *m, int mode)
         rfmv_seq_enter(m);
     m->pop = POP_NONE;
     changed(m);
+    rfmv_say_check(m);
 }
 
 void rfm_move_set_scale(rfm_move_t *m, int scale, int root)
@@ -553,8 +555,8 @@ void rfm_move_readouts_clear(rfm_move_t *m)
     if (m->pop == POP_READ)
         m->pop = POP_NONE;
 }
-void rfm_move_readout(rfm_move_t *m, int control, int kind, const char *title, const char *value, int frac, int flags,
-                      int ms)
+static void readout(rfm_move_t *m, int control, int kind, const char *title, const char *value, int frac, int flags,
+                    int ms)
 {
     rfm_move_readout_t r;
     const int up = m->pop && rfmv_pop_up(m, m->pop), knob_up = up ? rfmv_pop_slot(m) : -1;
@@ -577,6 +579,12 @@ void rfm_move_readout(rfm_move_t *m, int control, int kind, const char *title, c
     m->rd_pop = r;
     rfmv_pop(m, POP_READ, control < 0 ? 255 : control);
     m->rd_ms = (uint16_t)(ms > 0 ? clampi(ms, 1, 60000) : RFM_MOVE_POPUP_MS);
+}
+void rfm_move_readout(rfm_move_t *m, int control, int kind, const char *title, const char *value, int frac, int flags,
+                      int ms)
+{
+    readout(m, control, kind, title, value, frac, flags, ms);
+    rfmv_say_check(m);
 }
 
 static int any_btn_held(const rfm_move_t *m)
@@ -1207,7 +1215,7 @@ static int back_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)   /* 1:
     return 0;
 }
 
-void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
+static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
 {
     if (back_input(m, ev, now_ms))
         return;
@@ -1242,6 +1250,11 @@ void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
         break;
     default: break;                                     /* jog click (the FM-1 has no encoder push), jacks, MIDI .. */
     }
+}
+void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
+{
+    input(m, ev, now_ms);
+    rfmv_say_check(m);                                  /* (0.6.0: speech, when on) */
 }
 
 /* ================================================================ LEDs === */

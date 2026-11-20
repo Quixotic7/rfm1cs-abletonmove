@@ -1435,6 +1435,7 @@ void rfm_move_seq_play(rfm_move_t *m, int on)
         rfmv_seq_start(m);
     else
         rfmv_seq_stop(m);
+    rfmv_say_check(m);
 }
 
 /* the clock jumps (start, song position): what sounds ends, the capture's times are void */
@@ -1603,6 +1604,7 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
     rfmv_seq_ui_poll(m);
     rfmv_proj_poll(m);
     rfmv_fw_poll(m);                                    /* (0.4.0: the library's FW_LIBRARY, debounced) */
+    rfmv_say_tick(m);                                   /* (0.6.0: speech: the transport, popups the clock brings up) */
 }
 
 /* ================================================================ recording, capture, tap === */

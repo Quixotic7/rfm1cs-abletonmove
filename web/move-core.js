@@ -42,7 +42,9 @@
 // (0.4.0) the firmware browser, the library, FX setup (move.h; the host guide's v0.4.0 section):
 //   core.fwList([{ id, name, version, installed, desc, thumb (Uint8Array(512) | null), cats, cat, virt }]) -> actions
 //   (0.5.11) core.fwSetLevel(slot, level) -> actions | null; core.setLabels(49 | null); core.setButtonNames(14 | null);
-//   core.readout(control, kind, title, value, frac, flags, ms); core.readoutsClear(); core.popup(text)
+//   core.readout(control, kind, title, value, frac, flags, ms) -> actions; core.readoutsClear(); core.popup(text) -> actions
+// (0.6.0) speech for a screen reader (off by default): core.setSpeech(on); core.speech(); core.words() -> the screen
+//   in words; actions then include { kind: "say", event: true (the view changed) | false (a value), text }
 //   core.fwInstalled(i, version | null); core.fwSlots([id | null, x3]) -> actions; core.fwProgress(id, pct) -> actions
 //   core.fwLibrary(bytes | null) -> 0 / -1; core.fwLibrarySave() -> bytes; core.fwFlush() -> actions
 //   core.fwCaps(0) (0.5.10: one firmware, no FX; before fwList); core.fwVoices(n); core.fwSounding() -> bits; core.fwActive(); core.fwLevel(slot); core.fwStates(slot, usedBits)
@@ -56,7 +58,7 @@
 export const ACT = { KEY: 1, PRESS: 2, BTN: 3, TURN: 4, MASTER: 5, MIDI: 6, SETTINGS: 7, PROJECT_SAVE: 8, PROJECT_LOAD: 9, PROJECT_DELETE: 10,
   CLICK: 11, AUDIO_REC: 12, PROJECT_CUT: 13, PROJECT_COPY: 14, PROJECT_PASTE: 15, PROJECT_COLOR: 16,
   FW_LOAD: 17, FW_UNLOAD: 18, FW_ACTIVE: 19, FW_DOWNLOAD: 20, FW_LIBRARY: 21, FW_LEVEL: 22, FX_LOAD: 23, FX_PARAM: 24,
-  MIX: 25, ROUTE: 26, STATE_SAVE: 27, STATE_LOAD: 28, STATE_DELETE: 29 };
+  MIX: 25, ROUTE: 26, STATE_SAVE: 27, STATE_LOAD: 28, STATE_DELETE: 29, SAY: 30 };
 export const FX = { MIDI: 0, AUDIO: 1 };
 export const LBL_N = 49, NBTN = 14;                     // (0.5.11: RFM_MOVE_LBL_N, RFM_MOVE_NBTN)
 export const READOUT = { PARAM: 1, PRESET: 2, MESSAGE: 3, BIPOLAR: 1 };   // (RFM_MOVE_RD_*; BIPOLAR is a flag)
@@ -159,7 +161,7 @@ export class MoveCore {
       else if (kind === ACT.MIX) a = { kind: "mix", slot, level: b[x + 4], pan: b[x + 5], sends: [b[x + 6], b[x + 7], b[x + 8]] };
       else if (kind === ACT.ROUTE) a = { kind: "route", fw: [f16(0), f16(1), f16(2)], midiFx: [f16(3), f16(4), f16(5)] };
       else a = { kind: ["stateSave", "stateLoad", "stateDelete"][kind - ACT.STATE_SAVE], slot, state: index };
-    }
+    } else if (kind === ACT.SAY) a = { kind: "say", event: index === 1, text: this._str(M._mw_say(this.w, value)) };
     if (a) a.frame = (b[fr + 4 * i] | (b[fr + 4 * i + 1] << 8) | (b[fr + 4 * i + 2] << 16) | (b[fr + 4 * i + 3] << 24)) >>> 0;
     return a;
   }
@@ -266,10 +268,14 @@ export class MoveCore {
     try { this.M._mw_set_button_names(this.w, p); } finally { this.M._free(p); }
   }
   readout(control, kind, title, value, frac = -1, flags = 0, ms = 0) {
-    this._withStrs([title || "", value || ""], (t, v) => this.M._mw_readout(this.w, control | 0, kind | 0, t, v, frac | 0, flags | 0, ms | 0));
+    return this._acts(this._withStrs([title || "", value || ""], (t, v) => this.M._mw_readout(this.w, control | 0, kind | 0, t, v, frac | 0, flags | 0, ms | 0)));
   }
   readoutsClear() { this.M._mw_readouts_clear(this.w); }
-  popup(text) { this._withStrs([text || ""], (t) => this.M._mw_popup(this.w, t)); }
+  popup(text) { return this._acts(this._withStrs([text || ""], (t) => this.M._mw_popup(this.w, t))); }
+  // (0.6.0) words for a screen reader: off by default; on, the calls' actions include { kind: "say", event, text }
+  setSpeech(on) { this.M._mw_set_speech(this.w, on ? 1 : 0); }
+  speech() { return !!this.M._mw_speech(this.w); }
+  words() { return this._str(this.M._mw_words(this.w)); }
   // km: the panel's wiring (6 rows x 11, id or -1: engine info().keymap), or null for the FM-1's
   setKeymap(km) {
     if (!Array.isArray(km) || km.length !== 6) { this.M._mw_set_keymap(this.w, 0); return; }
@@ -468,7 +474,7 @@ export class MoveCore {
   fwSounding() { return this.M._mw_fw_sounding(this.w); }
   fwActive() { return this.M._mw_fw_active(this.w); }
   fwLevel(slot) { return this.M._mw_fw_level(this.w, slot | 0); }
-  fwStates(slot, used) { this.M._mw_fw_states(this.w, slot | 0, used >>> 0); }
+  fwStates(slot, used) { return this._acts(this.M._mw_fw_states(this.w, slot | 0, used >>> 0)); }
   fxModules(kind, mods) {
     const M = this.M, list = mods || [];
     if (M._mw_fx_begin(kind | 0, list.length) < 0) throw new Error("rfm_move: out of memory");
