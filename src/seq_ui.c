@@ -2503,3 +2503,98 @@ void rfmv_seq_track_menu(const rfm_move_t *m, mr_canvas_t *cv)
     snprintf(b, sizeof b, "Track %d", q->sel_track + 1);
     tracks_row(m, cv, b);
 }
+
+/* ================================================================ (0.6.1) words for a screen reader === */
+/* an open Shift menu's name, and item k's words (k -1: the jog's own when it has one; "" none, or one another word
+ * says: the tempo, the layout, the key and scale, the clock's message) */
+const char *rfmv_seq_smenu_name(int sm)
+{
+    static const char *const N[] = { "", "Workflow", "Tempo", "Groove", "Layout", "Keys and Scales", "Arp",
+                                     "Record mode", "Velocity", "Global settings" };
+    return sm >= 0 && sm < (int)(sizeof N / sizeof N[0]) ? N[sm] : "";
+}
+void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap)
+{
+    static const char *const AM[RFM_MOVE_AM_N] = { "Off", "On", "First", "Once", "Hold" };
+    static const char *const AR[RFM_MOVE_AR_N] = { "Normal", "Note", "Mod pattern", "Transpose pattern" };
+    static const char *const AL[RFM_MOVE_AL_N1] = { "Play", "Rest", "Tie", "Repeat", "Lowest down", "Highest up",
+                                                    "Power chord", "Chord" };
+    static const char *const RM[3] = { "Capture", "Record", "Step" };
+    const rfm_move_seq_t *q = &m->seq;
+    const rfm_move_track_t *t = &q->tr[q->sel_track];
+    const rfm_move_arp_t *a = &t->arp;
+    char b[24];
+    o[0] = 0;
+    switch (q->smenu) {
+    case RFM_MOVE_SM_WORKFLOW:
+        if (k == 1)
+            snprintf(o, (size_t)cap, "Rate: %s", rfm_move_seq_rate_name(t->rate));
+        else if (k == 2)
+            snprintf(o, (size_t)cap, "Quantize: %d%%", q->qstrength);
+        else if (k == 0)
+            snprintf(o, (size_t)cap, "Track channel: %d", t->ch + 1);
+        break;
+    case RFM_MOVE_SM_GROOVE:
+        if (k == 0)
+            snprintf(o, (size_t)cap, "Groove: %d%%", rfmv_seq_groove_of(m, q->sel_track));
+        else if (k == 1)
+            snprintf(o, (size_t)cap, "Groove for: %s", t->own & 1 ? "Track" : "Global");
+        break;
+    case RFM_MOVE_SM_KEYS:
+        if (k == 2)
+            snprintf(o, (size_t)cap, "Key for: %s", t->own & 2 ? "Track" : "Global");
+        break;
+    case RFM_MOVE_SM_ARP:
+        if (k < 0)
+            snprintf(o, (size_t)cap, "%s", q->arp_page == 0 ? "Arp" : q->arp_page == 1 ? "Mod lane" : "Transpose lane");
+        else if (q->arp_page) {
+            const int L = q->arp_page - 1, s = q->arp_sel & 15, v = a->lane[L][s];
+            if (k == 0 || k == 2) {
+                if (L)
+                    snprintf(o, (size_t)cap, "Step %d: %+d", s + 1, v);
+                else if (v >= RFM_MOVE_AL_N1)
+                    snprintf(o, (size_t)cap, "Step %d: Note %d", s + 1, v - RFM_MOVE_AL_N1 + 1);
+                else
+                    snprintf(o, (size_t)cap, "Step %d: %s", s + 1, AL[clampi(v, 0, RFM_MOVE_AL_N1 - 1)]);
+            } else if (k == 1)
+                snprintf(o, (size_t)cap, "Reset: %s", AR[a->reset % RFM_MOVE_AR_N]);
+            else if (k == 3)
+                snprintf(o, (size_t)cap, "Length: %d", L ? a->tlen : a->mlen);
+        } else
+            switch (k) {
+            case 0: snprintf(o, (size_t)cap, "Pattern: %s", AP_NAMES[a->pat % RFM_MOVE_AP_N]); break;
+            case 1: arp_rate_name(rfmv_seq_arp_rate_of(a->rate), b, sizeof b), snprintf(o, (size_t)cap, "Rate: %s", b); break;
+            case 2: snprintf(o, (size_t)cap, "Range: %d %s", a->range, a->range == 1 ? "octave" : "octaves"); break;
+            case 3: snprintf(o, (size_t)cap, "Chance: %d%%", a->chance); break;
+            case 4: snprintf(o, (size_t)cap, "Arp: %s", AM[a->mode % RFM_MOVE_AM_N]); break;
+            case 5: snprintf(o, (size_t)cap, "Gate: %d%%", a->gate); break;
+            case 6: snprintf(o, (size_t)cap, "Octave step: %+d", a->odist); break;
+            case 7:
+                if (a->quant)
+                    arp_rate_name(rfmv_seq_arp_rate_of(a->quant - 1), b, sizeof b), snprintf(o, (size_t)cap, "Start on: %s", b);
+                else
+                    snprintf(o, (size_t)cap, "Start on: any");
+                break;
+            default: break;
+            }
+        break;
+    case RFM_MOVE_SM_REC:
+        if (k == 0)
+            snprintf(o, (size_t)cap, "Record mode: %s", RM[q->rec_mode % 3]);
+        else if (k == 1)
+            snprintf(o, (size_t)cap, "Record style: %s", q->rec_style == RFM_MOVE_RS_REPLACE ? "Replace" : "Overdub");
+        break;
+    case RFM_MOVE_SM_VEL:
+    case RFM_MOVE_SM_GLOBAL:
+        if (k == 0 && q->smenu == RFM_MOVE_SM_VEL)
+            snprintf(o, (size_t)cap, "Velocity level: %d", m->s.vel_level);
+        else if (k == 1 && q->smenu == RFM_MOVE_SM_GLOBAL)
+            ;                                           /* (the velocity option: speech.c's own item) */
+        else if (k == 2 && q->smenu == RFM_MOVE_SM_GLOBAL)
+            snprintf(o, (size_t)cap, "Velocity level: %d", m->s.vel_level);
+        else if (k == 3 && q->smenu == RFM_MOVE_SM_GLOBAL)
+            snprintf(o, (size_t)cap, "Popups: %s", m->s.pop_half ? "Half" : "Full");
+        break;
+    default: break;
+    }
+}

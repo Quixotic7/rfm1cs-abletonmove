@@ -3,6 +3,33 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.1 (2026-11-19)
+
+Speech for the buttons and the sequencer (the owner's first try on the Move: "Knobs work, but there's no speech for
+the buttons or the sequencer"). New fields at the end of `rfm_move_t`: rebuild everything. Speech off: unchanged.
+
+- **Every FM-1 button press is said at once**, in every mode that plays the FM-1: its live label, else its static
+  name (`rfm_move_set_button_names`), else the panel's word ("Play", "Record", "Select", "Octave down"). The label's
+  popup after 300 ms is not said again.
+- **Values said when they change** (a button, a menu, the clock): the selected track ("Track 3", ", muted", ",
+  solo"), the bar shown, Session's scenes and tracks, the octave, Control mode's bank, layout, root, scale, channel,
+  velocity ("Velocity: Fixed 100"), the TRIG page, latch, tempo, Step record, Sample's take and audio loop, Loop's
+  page edit, Fill, Shift's lock, the clipboard ("Copied step", "Cut clip", "Pasted").
+- **The sequencer:** a step on or off ("Step 5 on", also from Undo or a paste), mutes and solos ("Track 3 muted",
+  not twice with the held Track's menu), clips ("Track 1, clip 2 queued", "Track 1, clip 2 playing", "Track 1, stop
+  queued", "Track 1 stopped", "Scene 3 playing"; at the bar, from `rfm_move_seq_advance`), the modifiers pressed
+  ("Shift", "Copy", "Delete", "Mute"). The Shift menus are views ("Tempo", "Arp", "Groove", "Workflow", "Keys and
+  Scales", "Velocity", "Record mode", "Global settings"; closing one names the view again) and say their knobs
+  ("Pattern: Down", "Arp: On", "Mod lane", "Groove: 5%", "Quantize: 50%", "Record style: Replace").
+- `rfm_move_set_latch` from inside the core no longer says latch twice. The projects view says only its own words
+  (a project loaded there changes many values at once).
+
+**Tests:** `move_speech` 165 checks: a test per row of the remoteFM14Move spec and per button family (the FM-1's
+buttons, the arrows' octave, the jog's bank, the drum pad's note, the Shift menus, steps, a held step, Loop, pages,
+Copy, Delete, Track 4's select / mute / solo, Play, Record, Sample, Session's launches and stops at the bar, scenes,
+the project grid, the browser's filters, bank, favourite and tags, FX module pages), each failing if it says
+nothing.
+
 ## 0.6.0 (2026-11-19)
 
 Words for a screen reader (asked by remoteFM14Move for Schwung's screen reader). New fields at the end of

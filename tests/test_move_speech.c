@@ -237,17 +237,18 @@ static void test_popups(void)
     rfm_move_readout(&M, -1, RFM_MOVE_RD_PARAM, "", "64", 500, 0, 0);
     SAID("V:K1: 64|");
     touch(&M, 4, 0), rest_pop(&M), clear();
-    /* 5: SEL held with a live label: its words once it shows (time alone brings it); a tap says nothing */
+    /* 5: SEL with a live label: (0.6.1) every press says it at once; held, its popup is not said again */
     lbl[RFM_MOVE_LBL_BTN0 + 1] = "SEL/KEYS";
     rfm_move_set_labels(&M, lbl);
     button(&M, MR_CC_SAMPLE, 1);
     adv_ms(&M, 100);
     button(&M, MR_CC_SAMPLE, 0);
     rest_pop(&M);
-    CHECK(said[0] == 0);
-    button(&M, MR_CC_SAMPLE, 1);
-    adv_ms(&M, RFM_MOVE_LABEL_HOLD_MS + 20);
     SAID("V:SEL/KEYS|");                                /* (as the screen: words with no lower case stay) */
+    button(&M, MR_CC_SAMPLE, 1);
+    SAID("V:SEL/KEYS|");
+    adv_ms(&M, RFM_MOVE_LABEL_HOLD_MS + 20);
+    SAID("");
     adv_ms(&M, 500);
     CHECK(said[0] == 0);
     button(&M, MR_CC_SAMPLE, 0);
@@ -447,17 +448,19 @@ static void test_seq(void)
     tap_pad(&M, 0);                                     /* a note, then a step: it is entered */
     clear();
     tap_step(&M, 4);
-    CHECK(said[0] == 0);
+    SAID("V:Step 5 on|");                               /* (0.6.1) */
     step(&M, 4, 1);
     adv_ms(&M, RFM_MOVE_SEQ_HOLD_MS + 20);
     CHECKF(!strncmp(said, "V:Step 5: ", 10) && strstr(said, "empty") == NULL, "%s", said);
-    step(&M, 4, 0), tap_step(&M, 6), rest_pop(&M), clear();
+    step(&M, 4, 0), clear(), tap_step(&M, 6);
+    SAID("V:Step 7 on|");
+    rest_pop(&M), clear();
     press(&M, MR_CC_UNDO);
-    SAID("V:Undo|");
+    SAID("V:Undo|V:Step 7 off|");
     press(&M, MR_CC_UNDO);
-    SAID("V:Undo|");                                    /* (another one, its message still up: said again) */
+    SAID("V:Undo|V:Step 5 off|");                       /* (another one, its message still up: said again) */
     button(&M, MR_CC_SHIFT, 1), press(&M, MR_CC_UNDO), button(&M, MR_CC_SHIFT, 0);
-    SAID("V:Redo|");
+    SAID("V:Shift|V:Redo|V:Step 5 on|");
     rest_pop(&M);
     track(&M, 3, 1), step(&M, 2, 1);
     SAID("V:Track 3|");
@@ -473,6 +476,202 @@ static void test_seq(void)
     SAID("V:Stopped|");
 }
 
+/* (0.6.1) every row of the spec, and the buttons: each must say something (HAS: the log holds the words) */
+#define HAS(want)                                                                                                   \
+    do {                                                                                                            \
+        CHECKF(strstr(said, want) != NULL, "said \"%s\", want \"%s\" in it", said, want);                           \
+        if (getenv("SPEECH_LOG"))                                                                                   \
+            fprintf(stderr, "%-28s %s\n", want, said);                                                              \
+        clear();                                                                                                    \
+    } while (0)
+static void test_buttons(void)
+{
+    const char *names[RFM_MOVE_NBTN] = { NULL };
+    fresh(&M, 1);
+    press(&M, MR_CC_PLAY);                              /* FM-1 mode: the FM-1's buttons, every press */
+    HAS("V:Play|");
+    press(&M, MR_CC_PLAY);
+    HAS("V:Play|");
+    press(&M, MR_CC_LEFT);
+    HAS("V:Octave down|");
+    press(&M, MR_CC_UP);
+    HAS("V:Sequencer|");
+    names[1] = "Select";
+    rfm_move_set_button_names(&M, names);
+    press(&M, MR_CC_SAMPLE);
+    HAS("V:Select|");
+    button(&M, MR_CC_CAPTURE, 1), button(&M, MR_CC_REC, 1);   /* (a second held: its label popup at once, once) */
+    SAID("V:FX|V:Record|");
+    button(&M, MR_CC_REC, 0), button(&M, MR_CC_CAPTURE, 0), rest_pop(&M), clear();
+    tap_track(&M, 1);                                   /* the MIDI modes: the arrows' octave */
+    clear();
+    press(&M, MR_CC_UP);
+    SAID("V:Octave 1|");
+    press(&M, MR_CC_DOWN);
+    SAID("V:Octave 0|");
+    tap_track(&M, 2), clear();                          /* Control mode: the jog's bank */
+    jog(&M, 1);
+    SAID("V:Bank 2|");
+}
+static void test_rows(void)
+{
+    int i;
+    fresh(&M, 1);
+    /* MIDI mode: the drum pad's note (pad held + jog), the held menus' layout, velocity */
+    tap_track(&M, 1), clear();
+    track(&M, 1, 1), tap_pad(&M, 26), track(&M, 1, 0), rest_pop(&M);
+    HAS("Layout: Drum");
+    pad(&M, 0, 100), jog(&M, 1);
+    HAS("V:Pad 1: ");
+    pad(&M, 0, 0), rest_pop(&M), clear();
+    /* Sequencer mode */
+    tap_track(&M, 3);
+    HAS("E:Sequencer mode|");
+    button(&M, MR_CC_SHIFT, 1), tap_step(&M, 4), button(&M, MR_CC_SHIFT, 0);   /* Shift + step 5: Tempo */
+    HAS("E:Tempo|");
+    knob(&M, 0, 1);
+    HAS("V:Tempo 121|");
+    press(&M, MR_CC_BACK);
+    HAS("E:Track 1|");                                  /* (the menu closed: the view again) */
+    button(&M, MR_CC_SHIFT, 1), tap_step(&M, 10), button(&M, MR_CC_SHIFT, 0);  /* Shift + step 11: Arp */
+    HAS("E:Arp|");
+    knob(&M, 0, RFM_MOVE_LIST_TICKS);
+    HAS("V:Pattern: Down|");
+    knob(&M, 4, RFM_MOVE_LIST_TICKS);
+    HAS("V:Arp: On|");
+    jog(&M, 1);
+    HAS("V:Mod lane|");
+    press(&M, MR_CC_BACK), clear();
+    button(&M, MR_CC_SHIFT, 1), tap_step(&M, 6), button(&M, MR_CC_SHIFT, 0);   /* Groove */
+    HAS("E:Groove|");
+    jog(&M, 1);
+    HAS("V:Groove: 5%|");
+    press(&M, MR_CC_BACK), clear();
+    button(&M, MR_CC_SHIFT, 1), tap_step(&M, 9), button(&M, MR_CC_SHIFT, 0);   /* Velocity */
+    HAS("E:Velocity|");
+    jog(&M, 1);
+    HAS("V:Velocity: ");
+    press(&M, MR_CC_BACK), clear();
+    button(&M, MR_CC_SHIFT, 1), tap_step(&M, 5), button(&M, MR_CC_SHIFT, 0);   /* the metronome */
+    HAS("V:Metronome on|");
+    /* steps, a held step's trig values, the loop, pages */
+    tap_pad(&M, 0), clear();
+    tap_step(&M, 0);
+    HAS("V:Step 1 on|");
+    step(&M, 0, 1), adv_ms(&M, RFM_MOVE_SEQ_HOLD_MS + 20);
+    HAS("V:Step 1: ");
+    knob(&M, 7, 3);
+    HAS("V:");
+    step(&M, 0, 0), rest_pop(&M), clear();
+    press(&M, MR_CC_LEFT - 999 + 999);                  /* (Left on page 1: nothing to say) */
+    clear();
+    button(&M, MR_CC_LOOP, 1);
+    HAS("V:Loop: ");
+    button(&M, MR_CC_LOOP, 0), rest_pop(&M);
+    HAS("V:Loop edit on|");                             /* (a tap: latched) */
+    press(&M, MR_CC_BACK);
+    HAS("V:Loop edit off|");
+    press(&M, MR_CC_RIGHT);
+    HAS("Bar 2");
+    press(&M, MR_CC_LEFT);
+    HAS("V:Bar 1|");
+    /* modifiers, copy, delete */
+    button(&M, MR_CC_COPY, 1);
+    HAS("V:Copy|");
+    tap_step(&M, 0);
+    HAS("Copied");
+    tap_step(&M, 3);
+    HAS("Step 4 on");
+    button(&M, MR_CC_COPY, 0), clear();
+    button(&M, MR_CC_DELETE, 1);
+    HAS("V:Delete|");
+    tap_step(&M, 3);
+    HAS("V:Step 4 off|");
+    button(&M, MR_CC_DELETE, 0), clear();
+    /* the tracks: Track 4 + a step (select), held (mute), a double tap (solo) */
+    track(&M, 3, 1), tap_step(&M, 1);
+    HAS("V:Track 2|");
+    step(&M, 2, 1), adv_ms(&M, RFM_MOVE_SEQ_HOLD_MS + 50), step(&M, 2, 0);
+    SAID("V:Track 3|V:Track 3, muted|");               /* (the press picks it; the hold mutes it) */
+    tap_step(&M, 4), tap_step(&M, 4);
+    SAID("V:Track 5|V:Track 5, solo|");
+    track(&M, 3, 0), rest_pop(&M), clear();
+    /* the transport, recording, sampling */
+    press(&M, MR_CC_PLAY);
+    HAS("V:Playing|");
+    press(&M, MR_CC_REC);
+    HAS("V:Record on|");
+    press(&M, MR_CC_REC);
+    HAS("V:Record off|");
+    press(&M, MR_CC_PLAY);
+    HAS("V:Stopped|");
+    press(&M, MR_CC_SAMPLE);
+    HAS("V:Audio loop");
+    press(&M, MR_CC_SAMPLE), adv_ms(&M, 2000), clear();
+    /* session: a clip launched (queued, then playing at the bar), the scenes */
+    press(&M, MR_CC_MENU);
+    HAS("E:Session|");
+    press(&M, MR_CC_PLAY);
+    HAS("V:Playing|");
+    adv_ms(&M, 100);
+    tap_pad(&M, 24), tap_pad(&M, 24);                   /* (the playing clip, a double tap: it stops at the bar) */
+    HAS("V:Track 1, stop queued|");
+    for (i = 0; i < 30 && !strstr(said, "stopped"); i++)
+        adv_ms(&M, 100);
+    HAS("V:Track 1 stopped|");
+    tap_pad(&M, 24);                                    /* (launched again: at the bar) */
+    HAS("V:Track 1, clip 1 queued|");
+    for (i = 0; i < 30 && !strstr(said, "playing"); i++)
+        adv_ms(&M, 100);
+    HAS("V:Track 1, clip 1 playing|");
+    press(&M, MR_CC_PLAY), clear();
+    press(&M, MR_CC_DOWN);
+    HAS("V:Scenes 2 to 5|");
+    press(&M, MR_CC_MENU), clear();
+    /* the project grid: a project pad */
+    button(&M, MR_CC_SHIFT, 1), tap_step(&M, 0), button(&M, MR_CC_SHIFT, 0);
+    HAS("E:Firmwares, Slot 1, Felucca|");
+    tap_track(&M, 3);
+    HAS("E:Projects|");
+    pad(&M, 31, 100);
+    SAID("V:Project 8, 120 BPM, 0 clips|");
+    pad(&M, 31, 0), rest_pop(&M), clear();
+}
+/* the browser's filters, banks, favourites, tags; FX setup's module pages */
+static void test_browser_rows(void)
+{
+    char want[96];
+    int ids[32];
+    fresh(&M, 1);
+    press(&M, MR_CC_BACK), clear();
+    tap_step(&M, 1), rest_pop(&M), clear();
+    tap_step(&M, 2);                                    /* step 3: Synth */
+    HAS("V:Filter Synth|");
+    tap_step(&M, 2);
+    HAS("V:No filter|");
+    rest_pop(&M), clear();
+    press(&M, MR_CC_RIGHT);
+    HAS("V:Bank 2|");
+    press(&M, MR_CC_LEFT), rest_pop(&M), clear();
+    rfmv_fw_bank(&M, ids);
+    tap_pad(&M, pad_of(0)), clear();
+    press(&M, MR_CC_SAMPLE);                            /* (Sampling: a favourite) */
+    snprintf(want, sizeof want, "V:%s added to Favorites|", E[ids[0]].name);
+    HAS(want);
+    rest_pop(&M), clear();
+    button(&M, MR_CC_CAPTURE, 1);
+    HAS("V:Tags: ");
+    tap_step(&M, 4);                                    /* (step 5: Chords) */
+    HAS("Chords");
+    button(&M, MR_CC_CAPTURE, 0), rest_pop(&M), clear();
+    press(&M, MR_CC_MENU);
+    HAS("E:FX setup, ");
+    tap_track(&M, 0), clear();
+    pad(&M, fxpad(0, 0), 100), jog(&M, 1), pad(&M, fxpad(0, 0), 0), rest_pop(&M), clear();
+    jog_press(&M);                                      /* the module's own pages */
+    HAS("E:Arp, Page 1|");
+}
+
 int main(void)
 {
     test_off_on();
@@ -482,6 +681,9 @@ int main(void)
     test_browser();
     test_fx();
     test_seq();
+    test_buttons();
+    test_rows();
+    test_browser_rows();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");
 }

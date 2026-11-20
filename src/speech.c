@@ -81,6 +81,10 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
     int s = rfmv_fw_say_base(m, o, cap);
     if (s)
         return s;
+    if (m->seq.smenu && !m->seq.projects) {             /* (0.6.1) a Shift menu open: its name */
+        snprintf(o, (size_t)cap, "%s", rfmv_seq_smenu_name(m->seq.smenu));
+        return 0x40 + m->seq.smenu;
+    }
     switch (m->s.mode) {
     case RFM_MOVE_MODE_MIDI:
         if (m->mmenu) {
@@ -102,7 +106,8 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
 }
 static int in_fw(int s) { return s >= S_FW_TRACK0 && s <= S_FW_LAST; }
 static int in_fx(int s) { return s >= S_FX0 && s <= S_FX_LAST; }
-static int in_seq(int s) { return s == S_SEQ_TRACK || s == S_SEQ_SESSION; }
+static int in_seq(int s) { return s == S_SEQ_TRACK || s == S_SEQ_SESSION || (s > 0x40 && s < 0x50); }   /* (a Shift
+                                                         * menu closed: back to the view, by its name) */
 /* the words said for a view entered from the view `from` (-1: the long form always) */
 static int base_said(const rfm_move_t *m, int from, char *o, int cap)
 {
@@ -380,13 +385,280 @@ static void say_transport(rfm_move_t *m)
         say(m, RFM_MOVE_SAY_VALUE, tr & 2 ? "Record on" : "Record off");
     m->say_tr = (uint8_t)tr;
 }
-/* rfm_move_seq_advance (every call: a few compares): the transport started or stopped (an external clock), and a
- * popup or a message the clock brought up (a held step's popup, a held button's label once RFM_MOVE_LABEL_HOLD_MS
- * has passed, the external tempo's message): the words checked once for each */
+/* ================================================================ (0.6.1) presses, watched values === */
+/* an FM-1 button pressed (any mode that plays the FM-1): its words at once, every press (its label, else the button's
+ * static name, else the printed name); the label's popup later is not said again */
+void rfmv_say_press(rfm_move_t *m, int slot)
+{
+    static const char *const PRINTED[RFM_MOVE_NBTN] = { "FX", "Select", "Envelope", "LFO", "Edit", "Global", "Home",
+                                                        "Save", "Arp", "Sequencer", "Play", "Record", "Octave down",
+                                                        "Octave up" };   /* (the panel's words, as said) */
+    char t[RFM_MOVE_LABEL_MAX + 1];
+    if (!m->speech || slot < RFM_MOVE_LBL_BTN0 || slot >= RFM_MOVE_LBL_BTN0 + RFM_MOVE_NBTN)
+        return;
+    if (rfmv_label(m, slot, t, sizeof t))
+        rfmv_tcase(t, m->say_now, sizeof m->say_now);   /* (as its popup shows it) */
+    else
+        snprintf(m->say_now, sizeof m->say_now, "%s", PRINTED[slot - RFM_MOVE_LBL_BTN0]);
+    m->say_lbl_t0 = m->pop == POP_LABEL && m->pop_i == slot ? m->pop_t0 : 0;
+}
+
+/* values the screen shows without a popup (or that a button changes): their words, said when they change */
+enum { I_TRACK, I_PAGE, I_SCENES, I_TRACKS, I_OCTAVE, I_BANK, I_LAYOUT, I_ROOT, I_SCALE, I_CHANNEL, I_VEL, I_TRIG,
+       I_LATCH, I_TEMPO, I_STEPREC, I_SAMPLE, I_AUDIO, I_LOOPED, I_FILL, I_SHIFTLOCK, I_CLIPBOARD, I_PASTED,
+       I_SMJOG, I_SM0, I_N = I_SM0 + 8 };
+#define TRACKSET ((1u << I_OCTAVE) | (1u << I_BANK) | (1u << I_LAYOUT) | (1u << I_ROOT) | (1u << I_SCALE) | \
+                  (1u << I_CHANNEL) | (1u << I_TRIG))
+#define SMITEMS (0xFFu << I_SM0)
+typedef char say_items_fit[I_N <= 32 ? 1 : -1];
+static void item_words(const rfm_move_t *m, int i, char *o, int cap)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const int seq = m->s.mode == RFM_MOVE_MODE_SEQ, midi = m->s.mode == RFM_MOVE_MODE_MIDI || seq;
+    o[0] = 0;
+    if (q->projects && i != I_TEMPO)
+        return;                                         /* (the projects view: its own words) */
+    switch (i) {
+    case I_TRACK:
+        if (seq)
+            track_words(m, q->sel_track, o, cap);
+        break;
+    case I_PAGE:
+        if (seq && !q->view)
+            snprintf(o, (size_t)cap, "Bar %d", q->page + 1);
+        break;
+    case I_SCENES:
+        if (seq && q->view)
+            snprintf(o, (size_t)cap, "Scenes %d to %d", q->scene_off + 1, q->scene_off + 4);
+        break;
+    case I_TRACKS:
+        if (seq && q->view)
+            snprintf(o, (size_t)cap, "Tracks %d to %d", q->track_page + 1, q->track_page + 8);
+        break;
+    case I_OCTAVE:
+        if (midi)
+            snprintf(o, (size_t)cap, "Octave %d", m->s.octave);
+        break;
+    case I_BANK:
+        if (m->s.mode == RFM_MOVE_MODE_CONTROL || seq)
+            snprintf(o, (size_t)cap, "Bank %d", m->s.bank + 1);
+        break;
+    case I_LAYOUT:
+        if (midi)
+            snprintf(o, (size_t)cap, "Layout: %s", LAYOUT_LONG[m->s.layout & 3]);
+        break;
+    case I_ROOT:
+        if (midi)
+            snprintf(o, (size_t)cap, "Root: %s", rfmv_note_names[m->s.root % 12]);
+        break;
+    case I_SCALE:
+        if (midi)
+            snprintf(o, (size_t)cap, "Scale: %s", SCALE_LONG[m->s.scale % RFM_MOVE_NSCALES]);
+        break;
+    case I_CHANNEL:
+        if (m->s.mode == RFM_MOVE_MODE_MIDI || m->s.mode == RFM_MOVE_MODE_CONTROL)
+            snprintf(o, (size_t)cap, "Channel: %d", m->s.channel + 1);
+        break;
+    case I_VEL: {
+        char v[16];
+        rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), v, sizeof v);
+        if (m->s.vel_mode == RFM_MOVE_VEL_FIXED)
+            snprintf(o, (size_t)cap, "Velocity: %s %d", v, m->s.vel_level);
+        else
+            snprintf(o, (size_t)cap, "Velocity: %s", v);
+        break;
+    }
+    case I_TRIG:
+        if (seq && !q->view)
+            snprintf(o, (size_t)cap, "%s", q->trig ? "Trig knobs" : "");
+        break;
+    case I_LATCH: snprintf(o, (size_t)cap, "%s", m->latch ? "Latch on" : "Latch off"); break;
+    case I_TEMPO: {
+        const int b10 = rfm_move_seq_bpm10(m);
+        snprintf(o, (size_t)cap, b10 % 10 ? "Tempo %d.%d" : "Tempo %d", b10 / 10, b10 % 10);
+        break;
+    }
+    case I_STEPREC: snprintf(o, (size_t)cap, "%s", q->steprec ? "Step record on" : "Step record off"); break;
+    case I_SAMPLE: snprintf(o, (size_t)cap, "%s", q->srec == 2 ? "Sampling" : q->srec ? "Sample armed" : "Sample off"); break;
+    case I_AUDIO:
+        snprintf(o, (size_t)cap, "%s", q->arec == 1 ? "Audio loop armed" : q->arec == 2 ? "Recording audio loop"
+                                        : q->arec == 3 ? "Audio loop ending" : "Audio loop off");
+        break;
+    case I_LOOPED: snprintf(o, (size_t)cap, "%s", q->loop_latch ? "Loop edit on" : "Loop edit off"); break;
+    case I_FILL: snprintf(o, (size_t)cap, "%s", q->fill ? "Fill on" : "Fill off"); break;
+    case I_SHIFTLOCK: snprintf(o, (size_t)cap, "%s", q->shift_lock ? "Shift locked" : "Shift unlocked"); break;
+    case I_CLIPBOARD:
+        if (q->copy_src)
+            snprintf(o, (size_t)cap, "%s %s", q->cut ? "Cut" : "Copied",
+                     q->clip_kind == 1 ? "step" : q->clip_kind == 2 ? "clip" : q->clip_kind == 3 ? "track" : "");
+        break;
+    case I_PASTED:
+        if (q->copy_pasted)
+            snprintf(o, (size_t)cap, "Pasted");
+        break;
+    default:
+        if (i >= I_SMJOG && i < I_N && q->smenu)
+            rfmv_seq_smenu_words(m, i - I_SM0, o, cap);
+        break;
+    }
+}
+/* the shown page's steps with notes (Sequencer mode's track view), and which page of which clip */
+static uint16_t page_steps(const rfm_move_t *m, uint32_t *key)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const int clip = SEQ_CLIP(q->sel_track, q->tr[q->sel_track].sel);
+    uint16_t b = 0;
+    int s, lo;
+    if (m->s.mode != RFM_MOVE_MODE_SEQ || q->view || q->projects) {
+        *key = 0;
+        return 0;
+    }
+    *key = 1u << 31 | (uint32_t)clip << 8 | q->page;
+    for (s = 0; s < RFM_MOVE_SEQ_PAGE; s++)
+        if (rfmv_seq_range(m, clip, q->page * RFM_MOVE_SEQ_PAGE + s, &lo) > lo)
+            b = (uint16_t)(b | 1u << s);
+    return b;
+}
+static uint16_t bits_of(const rfm_move_t *m, int solo)
+{
+    uint16_t b = 0;
+    int t;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++)
+        if (solo ? m->seq.tr[t].solo : m->seq.tr[t].mute)
+            b = (uint16_t)(b | 1u << t);
+    return b;
+}
+static int popcount16(unsigned v)
+{
+    int n = 0;
+    for (; v; v &= v - 1)
+        n++;
+    return n;
+}
+/* said this call already (a popup, a press): an item with the same words is not said again */
+typedef struct { const char *w[4]; int n; } said_now_t;
+static int said_now(const said_now_t *sn, const char *w)
+{
+    int i;
+    for (i = 0; i < sn->n; i++)
+        if (!strcmp(sn->w[i], w))
+            return 1;
+    return 0;
+}
+static int said_track(const said_now_t *sn, int t)     /* "Track n, .." said this call (a held Track's menu) */
+{
+    char p[16];
+    int i;
+    snprintf(p, sizeof p, "Track %d,", t + 1);
+    for (i = 0; i < sn->n; i++)
+        if (!strncmp(sn->w[i], p, strlen(p)))
+            return 1;
+    return 0;
+}
+static void say_v(rfm_move_t *m, said_now_t *sn, const char *w)
+{
+    if (!w[0] || said_now(sn, w))
+        return;
+    say(m, RFM_MOVE_SAY_VALUE, w);
+}
+/* the watched values; silent: take them as said (a new view, speech turned on) */
+static void watch(rfm_move_t *m, int silent, said_now_t *sn)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    char w[RFM_MOVE_SAY_MAX];
+    uint32_t quiet, key;
+    uint16_t b;
+    int i, t;
+    if (q->projects)
+        silent = 1;                                     /* (the projects view: its own words; a project loaded there
+                                                         * changes everything at once) */
+    quiet = silent ? 0xFFFFFFFFu : 0;
+    for (i = 0; i < I_N; i++) {
+        uint32_t h;
+        item_words(m, i, w, sizeof w);
+        tidy(w);
+        h = w[0] ? hash(w) : 0;
+        if (h == m->say_h[i])
+            continue;
+        m->say_h[i] = h;
+        if (quiet >> i & 1)
+            continue;
+        say_v(m, sn, w);
+        if (i == I_TRACK)
+            quiet |= TRACKSET;                          /* (another track: its own layout, key, CCs follow it) */
+        if (i == I_SMJOG)
+            quiet |= SMITEMS;                           /* (the arp's page turned: its knobs' new words) */
+    }
+    b = page_steps(m, &key);                            /* a step on or off */
+    if (!silent && key && key == m->say_skey && b != m->say_steps && popcount16((unsigned)(b ^ m->say_steps)) <= 2)
+        for (i = 0; i < RFM_MOVE_SEQ_PAGE; i++)
+            if ((b ^ m->say_steps) >> i & 1) {
+                snprintf(w, sizeof w, "Step %d %s", i + 1, b >> i & 1 ? "on" : "off");
+                say_v(m, sn, w);
+            }
+    m->say_steps = b, m->say_skey = key;
+    {                                                   /* mutes, solos */
+        const uint16_t mu = bits_of(m, 0), so = bits_of(m, 1);
+        if (!silent && popcount16((unsigned)((mu ^ m->say_mute) | (so ^ m->say_solo))) <= 3)
+            for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++) {
+                if (said_track(sn, t))
+                    continue;                           /* (the held Track's menu said it: "Track 3, muted") */
+                if ((mu ^ m->say_mute) >> t & 1)
+                    snprintf(w, sizeof w, "Track %d %s", t + 1, mu >> t & 1 ? "muted" : "unmuted"), say_v(m, sn, w);
+                if ((so ^ m->say_solo) >> t & 1)
+                    snprintf(w, sizeof w, "Track %d %s", t + 1, so >> t & 1 ? "solo" : "solo off"), say_v(m, sn, w);
+            }
+        m->say_mute = mu, m->say_solo = so;
+    }
+    {                                                   /* clips launched, queued, stopped */
+        int n = 0, last = -1, same = 1;
+        for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++)
+            if (q->tr[t].active != m->say_act[t] || q->tr[t].queued != m->say_q[t]) {
+                if (n && (q->tr[t].active != q->tr[last].active || q->tr[t].queued != q->tr[last].queued))
+                    same = 0;
+                n++, last = t;
+            }
+        if (!silent && n > 2 && same && q->tr[last].queued >= 0) {
+            snprintf(w, sizeof w, "Scene %d queued", q->tr[last].queued + 1), say_v(m, sn, w);
+        } else if (!silent && n > 2 && same && q->tr[last].active >= 0 && q->tr[last].queued < -1) {
+            snprintf(w, sizeof w, "Scene %d playing", q->tr[last].active + 1), say_v(m, sn, w);
+        } else if (!silent && n && n <= 2)
+            for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++) {
+                const rfm_move_track_t *tr = &q->tr[t];
+                if (tr->queued != m->say_q[t] && tr->queued >= -1) {
+                    if (tr->queued >= 0)
+                        snprintf(w, sizeof w, "Track %d, clip %d queued", t + 1, tr->queued + 1);
+                    else
+                        snprintf(w, sizeof w, "Track %d, stop queued", t + 1);
+                    say_v(m, sn, w);
+                } else if (tr->active != m->say_act[t]) {
+                    if (tr->active >= 0)
+                        snprintf(w, sizeof w, "Track %d, clip %d playing", t + 1, tr->active + 1);
+                    else
+                        snprintf(w, sizeof w, "Track %d stopped", t + 1);
+                    say_v(m, sn, w);
+                }
+            }
+        for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++)
+            m->say_act[t] = q->tr[t].active, m->say_q[t] = q->tr[t].queued;
+    }
+    if (m->s.mode == RFM_MOVE_MODE_SEQ && !silent) {    /* the sequencer's modifiers, pressed */
+        static const char *const MOD[4] = { "Shift", "Copy", "Delete", "Mute" };
+        const unsigned nw = (unsigned)(q->mods & ~m->say_mods);
+        for (i = 0; i < 4; i++)
+            if (nw >> i & 1)
+                say_v(m, sn, MOD[i]);
+    }
+    m->say_mods = q->mods;
+}
+
+/* rfm_move_seq_advance (every call: a few compares): the transport started or stopped (an external clock), a clip
+ * launched or stopped at its bar, and a popup or a message the clock brought up (a held step's popup, a held button's
+ * label once RFM_MOVE_LABEL_HOLD_MS has passed, the external tempo's message): the words checked once for each */
 void rfmv_say_tick(rfm_move_t *m)
 {
     const rfm_move_seq_t *q = &m->seq;
-    int due = 0;
+    int due = 0, t;
     if (!m->speech)
         return;
     say_transport(m);
@@ -399,58 +671,72 @@ void rfmv_say_tick(rfm_move_t *m)
         m->tick_msg = m->msg_n;
         due = 1;
     }
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS && !due; t++)
+        due = q->tr[t].active != m->say_act[t] || q->tr[t].queued != m->say_q[t];
     if (due)
         rfmv_say_check(m);
 }
 void rfmv_say_check(rfm_move_t *m)
 {
-    char w[RFM_MOVE_SAY_MAX];
+    char w[RFM_MOVE_SAY_MAX], pw[RFM_MOVE_SAY_MAX];
+    said_now_t sn;
     uint16_t ps;
     uint32_t st;
-    int s, up;
+    int s, up, fresh = 0;
     if (!m->speech)
         return;
+    sn.n = 0;
     s = base_said(m, m->view_subj, w, sizeof w);        /* 1. the view, when it changes */
     if (s != m->view_subj) {
         tidy(w);
         say(m, RFM_MOVE_SAY_EVENT, w);
         m->view_subj = (uint16_t)s, m->focus_h = 0;     /* (the new view's selection follows it) */
+        fresh = 1;
     }
     say_transport(m);
-    up = pop_words(m, w, sizeof w, &ps, &st);           /* 2. a popup: its words when they change */
-    tidy(w);
+    if (m->say_now[0]) {                                /* 2. a button pressed */
+        say(m, RFM_MOVE_SAY_VALUE, m->say_now);
+        sn.w[sn.n++] = m->say_now;
+    }
+    up = pop_words(m, pw, sizeof pw, &ps, &st);         /* 3. a popup: its words when they change */
+    tidy(pw);
     if (up) {
-        if (w[0] && (strcmp(w, m->said) || (ps == m->said_subj && st != m->said_t0))) {
-            char f[RFM_MOVE_SAY_MAX];
-            say(m, RFM_MOVE_SAY_VALUE, w);
-            rfmv_fw_say_focus(m, f, sizeof f);          /* (the popup said the selection's words: taken as said) */
-            tidy(f);
-            if (f[0] && !strcmp(f, w))
-                m->focus_h = hash(f);
+        const int pressed = ps == (0x100 | POP_LABEL) && m->say_lbl_t0 && st == m->say_lbl_t0;
+        if (pw[0] && !pressed && (strcmp(pw, m->said) || (ps == m->said_subj && st != m->said_t0))) {
+            say(m, RFM_MOVE_SAY_VALUE, pw);
+            rfmv_fw_say_focus(m, w, sizeof w);          /* (the popup said the selection's words: taken as said) */
+            tidy(w);
+            if (w[0] && !strcmp(w, pw))
+                m->focus_h = hash(w);
         }
-        snprintf(m->said, sizeof m->said, "%s", w);
+        snprintf(m->said, sizeof m->said, "%s", pw);
         m->said_subj = ps, m->said_t0 = st;
-        return;                                         /* (the selection under it: unchanged, not said again) */
+        sn.w[sn.n++] = m->said;
+    } else {
+        rfmv_fw_say_focus(m, w, sizeof w);              /* 4. the selection: when it changes */
+        tidy(w);
+        {
+            const uint32_t h = w[0] ? hash(w) : 0;
+            if (h != m->focus_h && strcmp(w, m->said))  /* (the popup just gone said the same: not again) */
+                say(m, RFM_MOVE_SAY_VALUE, w);
+            m->focus_h = h;
+        }
+        m->said[0] = 0, m->said_subj = 0, m->said_t0 = 0;
     }
-    rfmv_fw_say_focus(m, w, sizeof w);                  /* 3. the selection: when it changes */
-    tidy(w);
-    {
-        const uint32_t h = w[0] ? hash(w) : 0;
-        if (h != m->focus_h && strcmp(w, m->said))      /* (the popup just gone said the same: not again) */
-            say(m, RFM_MOVE_SAY_VALUE, w);
-        m->focus_h = h;
-    }
-    m->said[0] = 0, m->said_subj = 0, m->said_t0 = 0;
+    watch(m, fresh, &sn);                               /* 5. the values a button or a menu changed */
+    m->say_now[0] = 0;
 }
 
 void rfm_move_set_speech(rfm_move_t *m, int on)
 {
     char w[RFM_MOVE_SAY_MAX];
+    said_now_t sn;
     uint16_t ps;
     uint32_t st;
     if ((on != 0) == m->speech)
         return;
     m->speech = on != 0;
+    m->say_now[0] = 0;
     if (!m->speech)
         return;
     m->view_subj = (uint16_t)base_words(m, w, sizeof w);   /* (the screen now taken as said: the host names it) */
@@ -466,6 +752,8 @@ void rfm_move_set_speech(rfm_move_t *m, int on)
         tidy(w);
         m->focus_h = w[0] ? hash(w) : 0;
     }
+    sn.n = 0;
+    watch(m, 1, &sn);
 }
 int rfm_move_speech(const rfm_move_t *m) { return m->speech; }
 

@@ -805,6 +805,12 @@ short, digits for numbers, note names as the screen has them):
 | EVENT | the base view changes (not when a popup over it closes) | "FM-1 mode", "MIDI mode, Notes", "Control mode", "Sequencer mode", "Session", "Track 3", "Firmwares, Slot 1, Felucca", "Slot 2, empty", "Catalog", "States, Felucca", "Projects", "FX setup, MIDI FX", "Routing", "Mixer", "Arp, Page 1" |
 | VALUE | a popup's words change, or the selection's | knobs "K1", "K1: +3", "Volume 75%", "CC 16: 65", readouts "Voicing: Wide"; held Track menus "Scale: Dorian", "Root: Db", "Layout: Drum", "Channel: 3", "Knob 1: CC 17", "Track 3, muted", "Rate: 1/16"; "Latch on"; a held label "SEL/KEYS"; host popups "FM-1 linked"; the sequencer "Playing", "Stopped", "Record on", "Step 5: C3, E3", "Chance: 50%", "Loop: 2 bars", "Tempo 120", "Bar 2", "Undo", "Metronome on", "Sync: EXT"; projects "Project 3, 120 BPM, 4 clips"; Back + Track "Playing, Slot 2, Melodee"; the browser "All firmwares", "Filter Synth", "Bank 2", the firmware selected ("Felucca"; in the catalog "Felucca, not installed"), its description (the jog's first detent, 250 characters at most), "Downloading Felucca 25%", "Felucca installed", "Felucca added to Favorites", "Tagged Synth"; FX setup "MIDI FX 1: Arp", the module list "Arp", "Rate: 1/8", "Slot 1 Level: 100", "MIDI FX 1: track 3" |
 
+(0.6.1) Every FM-1 button press is said at once (its label, else its name, else the panel's word: "Play", "Octave
+down"). Values with no popup are said when they change: the track selected, mutes and solos, a step on or off, the
+bar shown, scenes, clips queued / playing / stopped (at the bar), the octave, bank, layout, key, scale, channel,
+velocity, tempo, latch, Step record, sampling, Loop's page edit, Fill, the clipboard, the modifiers pressed; the
+Shift menus are views ("Tempo", "Arp") that say their knobs ("Pattern: Down").
+
 The selection (the firmware picked, its description, the FX slot focused, the module list, the Mixer's choice) is
 said when it changes and not again when a popup over it closes. The host debounces (Schwung: 300 ms, a VALUE
 replaces the pending VALUE); the core says every change. `rfm_move_words` gives the screen in words at any time.

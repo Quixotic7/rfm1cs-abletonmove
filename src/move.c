@@ -307,6 +307,7 @@ static void btn_hold(rfm_move_t *m, int b)
         emit(m, RFM_MOVE_ACT_BTN, b, 1, 0, 0);
         label_pop(m, btn_slot(b), other || m->jog_touch);   /* (0.5.6) held: its label; another held, (0.5.8) or the
                                                          * jog touched: at once */
+        rfmv_say_press(m, btn_slot(b));                 /* (0.6.1: speech: every press says its name at once) */
     }
 }
 static void btn_let(rfm_move_t *m, int b)
@@ -395,11 +396,15 @@ void rfmv_latch_drop_all(rfm_move_t *m)
     while (m->nlat)
         latch_drop(m, m->nlat - 1);
 }
-void rfm_move_set_latch(rfm_move_t *m, int on)
+static void latch_set(rfm_move_t *m, int on)
 {
     m->latch = on != 0;
     if (!m->latch)
         rfmv_latch_drop_all(m);
+}
+void rfm_move_set_latch(rfm_move_t *m, int on)
+{
+    latch_set(m, on);
     rfmv_say_check(m);
 }
 int rfm_move_latch(const rfm_move_t *m) { return m->latch; }
@@ -773,7 +778,7 @@ static void on_pad(rfm_move_t *m, int p, int vel, uint32_t now)
                                                          * Scales: the layout, the scale */
         h->kind = H_MENU;
         if (p == 31 && track_held(m, 1)) {              /* (0.5.3) the top row's pad 8: latch, named */
-            rfm_move_set_latch(m, !m->latch);
+            latch_set(m, !m->latch);
             rfmv_menu(m, MENU_LAYOUT, m->s.layout);     /* (used: Track 2's release changes no mode) */
             rfmv_pop(m, POP_MODE, m->latch ? 31 : 30);
             return;

@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 6
-#define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.6.0"
+#define RFM1CS_VERSION_PATCH 1
+#define RFM1CS_VERSION "0.6.1"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -764,6 +764,14 @@ typedef struct {
     uint8_t tick_pop;                                   /* the popup rfm_move_seq_advance looked at last (one the */
     uint32_t tick_t0, tick_msg;                         /* .. clock brings up: a held step's), the message's stamp */
     uint32_t msg_n;                                     /* the sequencer's messages so far (each one's stamp) */
+    /* (0.6.1) */
+    char say_now[48];                                   /* a pressed FM-1 button's words, said at the call's end */
+    uint32_t say_lbl_t0;                                /* .. the label popup they stand for (not said again) */
+    uint32_t say_h[32];                                 /* the watched values' words said last (hashes) */
+    uint16_t say_mute, say_solo, say_steps;             /* the tracks muted, soloed; the shown page's steps with notes */
+    uint32_t say_skey;                                  /* .. which page of which clip those steps are */
+    int8_t say_act[RFM_MOVE_SEQ_TRACKS], say_q[RFM_MOVE_SEQ_TRACKS];   /* each track's clip playing, queued */
+    uint8_t say_mods;                                   /* the sequencer's modifiers held */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
