@@ -110,7 +110,14 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
     default:
         if (rfmv_tk_mode(m)) {                          /* (0.7.0) a takeover: its name ("Chords, takeover") */
             char t[RFM_MOVE_TK_NAME + 8];
-            rfmv_tcase(rfmv_tk_name(m), t, sizeof t);
+            const char *nm = rfmv_tk_name(m);
+            int mixed = 0, i;
+            for (i = 0; nm[i]; i++)
+                mixed |= nm[i] >= 'a' && nm[i] <= 'z';
+            if (mixed)                                  /* a name in its own case ("ChoralRoot") said as written */
+                snprintf(t, sizeof t, "%s", nm);
+            else                                        /* all capitals ("CHORDS"): "Chords" */
+                rfmv_tcase(nm, t, sizeof t);
             snprintf(o, (size_t)cap, "%s%stakeover", t, t[0] ? ", " : "");
             return 0x40 + m->fw.active % RFM_MOVE_FW_SLOTS;
         }

@@ -155,6 +155,10 @@ static void test_entry(void)
         char w[RFM_MOVE_SAY_MAX];
         rfm_move_words(&M, w, sizeof w);
         CHECK(!strcmp(w, "Chords, takeover"));
+        rfm_move_set_takeover(&M, 0, NOTRK, "ChoralRoot");    /* a name in its own case: said as written */
+        rfm_move_words(&M, w, sizeof w);
+        CHECK(!strcmp(w, "ChoralRoot, takeover"));
+        rfm_move_set_takeover(&M, 0, NOTRK, "CHORDS");
     }
     rest_pop();
     CHECK(screen_is_fw());
