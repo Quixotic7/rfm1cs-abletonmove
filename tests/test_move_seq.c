@@ -114,6 +114,7 @@ static int lit(const uint8_t *packed)                   /* the pixels on */
 static void press(rfm_move_t *m, int cc) { button(m, cc, 1), button(m, cc, 0); }
 static void knob(rfm_move_t *m, int k, int d) { raw(m, 0xB0, (uint8_t)(MR_CC_KNOB1 + k), (uint8_t)(d & 127)); }
 static void jog(rfm_move_t *m, int d) { raw(m, 0xB0, MR_CC_JOG, (uint8_t)(d & 127)); }
+static void jog_click(rfm_move_t *m) { raw(m, 0xB0, MR_CC_JOG_CLICK, 127), raw(m, 0xB0, MR_CC_JOG_CLICK, 0); }
 static void track(rfm_move_t *m, int t, int down) { button(m, MR_CC_TRACK1 - t, down); }
 
 #define OFF_TEST_NOTE0 602                              /* the first note in a blob */
@@ -514,28 +515,37 @@ static void test_external(void)
         adv(m, RATE);
         CHECK(m->seq.tl <= tl + 3 && rfm_move_seq_following(m));   /* no clock: no ticks, no timeout */
     }
-    /* Shift + step 2 (Move's Setup): the Global Settings menu, sticky: the jog the clock source, knob 2 the velocity
-     * option, knob 3 its level; the Move's battery on top ("--" until its first STATUS) */
+    /* Shift + step 2 (Move's Setup): the Global Settings menu, sticky; (0.6.2) a list on the jog: turn to a row,
+     * click to edit (the jog then changes it), click again to leave; the knobs do nothing; the battery a row */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 1), button(m, MR_CC_SHIFT, 0);
-    CHECK(m->seq.smenu == RFM_MOVE_SM_GLOBAL && m->seq.clock_mode == RFM_MOVE_CLOCK_EXTERNAL);
+    CHECK(m->seq.smenu == RFM_MOVE_SM_GLOBAL && m->seq.clock_mode == RFM_MOVE_CLOCK_EXTERNAL && m->gl_row == 0);
     jog(m, -2);
-    CHECK(m->seq.clock_mode == RFM_MOVE_CLOCK_AUTO);
+    CHECK(m->seq.clock_mode == RFM_MOVE_CLOCK_EXTERNAL && m->gl_row == 0);   /* (selecting: the row, clamped) */
+    jog_click(m), jog(m, -2), jog_click(m);
+    CHECK(m->seq.clock_mode == RFM_MOVE_CLOCK_AUTO && !m->gl_edit);
     knob(m, 1, RFM_MOVE_LIST_TICKS), knob(m, 2, -7);
-    CHECK(m->s.vel_mode == RFM_MOVE_VEL_FIXED && m->s.vel_level == 120);
+    CHECK(m->s.vel_mode == RFM_MOVE_VEL_DYNAMIC && m->s.vel_level == 127);   /* (the knobs: nothing) */
+    jog(m, 1), jog_click(m), jog(m, 1), jog_click(m);
+    jog(m, 1), jog_click(m), jog(m, -7), jog_click(m);
+    CHECK(m->s.vel_mode == RFM_MOVE_VEL_FIXED && m->s.vel_level == 120 && m->gl_row == 2);
     {
-        uint8_t out[MR_SCREEN_BYTES];
+        uint8_t out[MR_SCREEN_BYTES], out2[MR_SCREEN_BYTES];
         m->seq.msg = 0;
+        jog(m, 9);                                      /* (the last row: the battery, "--" until its first STATUS) */
         rfm_move_screen(m, NULL, out);
-        CHECK(m->battery == -1 && px_at(out, 62, 1) && !px_at(out, 66, 6));   /* ("--": the battery empty) */
+        CHECK(m->battery == -1 && m->gl_row == rfmv_global_rows() - 1);
         CHECK(rfm_move_set_battery(m, 63, 0) == 1 && rfm_move_set_battery(m, 63, 0) == 0);
         CHECK(rfm_move_set_battery(m, 120, 0) == 1 && m->battery == 100);   /* (clamped) */
         rfm_move_set_battery(m, 63, 0);
-        rfm_move_screen(m, NULL, out);
-        write_pbm("move_seq_global.pbm", out);
-        CHECK(px_at(out, 62, 1) && px_at(out, 66, 6) && px_at(out, 74, 6) && !px_at(out, 76, 6));   /* (63 % filled) */
+        rfm_move_screen(m, NULL, out2);
+        write_pbm("move_seq_global.pbm", out2);
+        CHECK(memcmp(out, out2, sizeof out) != 0);      /* (63 %) */
+        jog_click(m);
+        CHECK(!m->gl_edit);                             /* (the battery: no edit) */
+        jog(m, -9);
     }
     m->s.vel_mode = RFM_MOVE_VEL_DYNAMIC, m->s.vel_level = 127;
-    tap_step(m, 1);                                     /* (a plain step: the mode's, the menu stays) */
+    tap_step(m, 1);                                     /* (a plain step: (0.6.2) the menu's, it stays) */
     CHECK(m->seq.smenu == RFM_MOVE_SM_GLOBAL);
     press(m, MR_CC_BACK);
     CHECK(!m->seq.smenu);

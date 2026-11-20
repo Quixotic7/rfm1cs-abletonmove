@@ -19,7 +19,12 @@
 static char said[16384];
 static int nsaid, bad_words;
 static uint32_t digest = 2166136261u;
-static int nother;
+static int nother, kinds[64];
+static int panel_acts(void)                             /* actions that reach the FM-1 or the firmware */
+{
+    return kinds[RFM_MOVE_ACT_KEY] + kinds[RFM_MOVE_ACT_PRESS] + kinds[RFM_MOVE_ACT_BTN] + kinds[RFM_MOVE_ACT_TURN] +
+           kinds[RFM_MOVE_ACT_MASTER] + kinds[RFM_MOVE_ACT_MIDI];
+}
 static void mix(const void *p, size_t n)
 {
     const uint8_t *b = p;
@@ -44,6 +49,8 @@ static void on_act(void *ctx, const rfm_move_act_t *a)
         return;
     }
     nother++;
+    if (a->kind < 64)
+        kinds[a->kind]++;
     mix(&a->kind, 1), mix(&a->index, 1), mix(&a->down, 1), mix(&a->vel, 1), mix(&a->value, 2), mix(&a->n, 1);
     mix(a->bytes, 3), mix(&a->frame, 4), mix(&a->track, 1), mix(&a->slot, 1), mix(&a->fx, 1), mix(&a->param, 1);
     mix(a->mix, 5), mix(a->filt, sizeof a->filt), mix(&a->dest, 1);
@@ -672,6 +679,90 @@ static void test_browser_rows(void)
     HAS("E:Arp, Page 1|");
 }
 
+/* (0.6.2) Global settings: it owns the controls while open (nothing reaches the FM-1 or the firmware; releases pass);
+ * a list on the jog; its words; a contact sheet of its screens (global_*.pbm) */
+static void write_pbm(const char *name, const uint8_t *packed)
+{
+    FILE *f = fopen(name, "wb");
+    int y, x;
+    if (!f)
+        return;
+    fprintf(f, "P1\n128 64\n");
+    for (y = 0; y < 64; y++) {
+        for (x = 0; x < 128; x++)
+            fputc(packed[(y >> 3) * 128 + x] >> (y & 7) & 1 ? '1' : '0', f);
+        fputc('\n', f);
+    }
+    fclose(f);
+}
+static void open_global(rfm_move_t *m) { track(m, 0, 1), tap_step(m, 1), track(m, 0, 0); }
+static void test_global(void)
+{
+    static uint8_t out[MR_SCREEN_BYTES];
+    int mode, k;
+    for (mode = RFM_MOVE_MODE_FM1; mode <= RFM_MOVE_MODE_CONTROL; mode++) {
+        fresh(&M, 1);
+        rfm_move_set_mode(&M, mode);
+        pad(&M, 5, 100);                                /* (held before it opens: its release must pass) */
+        open_global(&M);
+        CHECK(M.seq.smenu == RFM_MOVE_SM_GLOBAL);
+        memset(kinds, 0, sizeof kinds);
+        for (k = 0; k <= 8; k++)
+            touch(&M, k, 1), knob(&M, k, 7), knob(&M, k, -3), touch(&M, k, 0);
+        tap_pad(&M, 20), tap_step(&M, 4), tap_step(&M, 9);
+        press(&M, MR_CC_PLAY), press(&M, MR_CC_REC), press(&M, MR_CC_SHIFT), press(&M, MR_CC_LEFT);
+        press(&M, MR_CC_RIGHT), press(&M, MR_CC_UP), press(&M, MR_CC_DOWN), press(&M, MR_CC_CAPTURE);
+        press(&M, MR_CC_SAMPLE), press(&M, MR_CC_COPY), press(&M, MR_CC_DELETE), press(&M, MR_CC_MUTE);
+        press(&M, MR_CC_UNDO), press(&M, MR_CC_LOOP);
+        CHECKF(panel_acts() == 0, "mode %d: %d actions reached the panel", mode, panel_acts());
+        CHECK(M.seq.smenu == RFM_MOVE_SM_GLOBAL && M.s.mode == mode && !M.pop);
+        pad(&M, 5, 0);                                  /* (the held pad's release passes) */
+        CHECKF(mode == RFM_MOVE_MODE_CONTROL || panel_acts() == 1, "mode %d: %d", mode, panel_acts());
+        press(&M, MR_CC_BACK);
+        CHECK(!M.seq.smenu);
+        memset(kinds, 0, sizeof kinds);
+        knob(&M, 4, 4);                                 /* (closed: the knobs are the mode's again) */
+        CHECK(mode != RFM_MOVE_MODE_FM1 || kinds[RFM_MOVE_ACT_TURN] == 1);
+    }
+    /* the list: turn, click to edit, turn, click; Back leaves the edit, then closes; the words */
+    fresh(&M, 1);
+    open_global(&M);
+    SAID("E:Global settings, Clock: Internal|");
+    rfm_move_screen(&M, NULL, out), write_pbm("global_select.pbm", out);
+    jog(&M, 1);
+    SAID("V:Velocity: Dynamic|");
+    jog_press(&M);
+    SAID("V:Editing Velocity: Dynamic|");
+    jog(&M, 1);
+    SAID("V:Velocity: Fixed|");
+    CHECK(M.s.vel_mode == RFM_MOVE_VEL_FIXED && M.gl_edit);
+    rfm_move_screen(&M, NULL, out), write_pbm("global_edit.pbm", out);
+    jog_press(&M);
+    SAID("V:Done|");
+    jog(&M, 2);
+    SAID("V:Popup size: Half|");
+    jog_press(&M), jog(&M, -1);
+    SAID("V:Editing Popup size: Half|V:Popup size: Full|");
+    CHECK(M.s.pop_half == 0);
+    press(&M, MR_CC_BACK);
+    SAID("V:Done|");
+    CHECK(M.seq.smenu == RFM_MOVE_SM_GLOBAL && !M.gl_edit);
+    jog(&M, 5);
+    SAID("V:Battery: unknown|");
+    rfm_move_set_battery(&M, 63, 0);
+    rfm_move_screen(&M, NULL, out), write_pbm("global_battery.pbm", out);
+    jog_press(&M);
+    SAID("V:Battery: 63%|");                            /* (no edit: said again) */
+    CHECK(!M.gl_edit);
+    press(&M, MR_CC_BACK);
+    SAID("E:FM-1 mode|");
+    CHECK(!M.seq.smenu);
+    open_global(&M);                                    /* (again: the row kept, no edit) */
+    SAID("E:Global settings, Battery: 63%|");
+    open_global(&M);                                    /* (its own toggle closes it) */
+    SAID("E:FM-1 mode|");
+}
+
 int main(void)
 {
     test_off_on();
@@ -684,6 +775,7 @@ int main(void)
     test_buttons();
     test_rows();
     test_browser_rows();
+    test_global();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");
 }

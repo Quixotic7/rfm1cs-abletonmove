@@ -388,12 +388,12 @@ the knobs it uses are lit, in the menu colour (deep orange, 255 72 0, which no m
 the others off; the knobs' own colours come back when it ends. Each menu declares its knobs (`rfmv_menu_knobs`,
 `rfmv_seq_menu_knobs`): Track 2 knobs 1-2, Track 3 and Track 4 all 8, Track 1's Shift layer none, projects knob 1,
 Workflow 1-3, Tempo 1-2 (none while following), Groove 1-2, Layout 1, Keys & Scales 1-4, the arp all 8 (its lanes
-1-4), Record 1-2, Velocity 1, Global Settings 1-3.
+1-4), Record 1-2, Velocity 1, Global Settings none (0.6.2: the jog's list).
 
 | Step | Function |
 |---|---|
 | 1 Set Overview | the project grid |
-| 2 Global Settings | menu, sticky (Back, Session or Shift + step 2 closes it): on top the Move's battery (an icon filled, the %; "--" until its first STATUS; "PWR" while the power button is held), then the jog or knob 1 the clock source (AUTO, INT, EXT; * following. INT is the default (0.5.5); AUTO follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), knob 2 the velocity option, knob 3 its level (as the Velocity menu), knob 4 the FM-1 popups' width (0.5.9: Popup Full, the default, or Popup Half). The battery is Move Remote's STATUS byte 4, as the surface reports it (taken as 0..100 %, clamped); the host passes it with `rfm_move_set_battery` (the web page on every STATUS). No power bit is known to mean charging, so none is shown |
+| 2 Global Settings | (0.6.2) a list on the jog wheel, sticky (Shift + step 2 again, or Back when not editing, or Session closes it). Rows: Clock (Auto, Int, Ext; Int is the default (0.5.5); Auto follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), Velocity (the option, as the Velocity menu), Fixed level, Popup size (FM-1 mode's popups: Full, the default, or Half, 0.5.9), Battery (read only: Move Remote's STATUS byte 4 as the surface reports it, taken as 0..100 %, clamped, "--" until the first; the host passes it with `rfm_move_set_battery`). Turn the jog: the selected row (inverted) moves, the list scrolls when longer than the screen; click: edit its value (the value inverted, the row framed), the jog changes it; click again or Back: done. While it is open it owns the controls: no knob, pad, step or button reaches the FM-1, the firmware or the sequencer (the knobs do nothing; their touches show nothing); releases pass, so a pad held before it opened lets go; the Track buttons and Shift + step 2 pass |
 | 3 Workflow Settings | menu: the jog the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent) |
 | 5 Tempo | each press is a tap (tap tempo: the average of up to 4 taps) and opens the menu: the tempo at 4x; the jog 1 BPM (Shift, or knob 2: 0.1); following the firmware's clock: locked (a padlock, EXT; taps ignored) |
 | 6 Metronome | on / off (off at first): a click a beat, the bar's first higher (`RFM_MOVE_ACT_CLICK`, frame-stamped; the web player plays it after the volume, never into a recording); also in the count-in |
@@ -778,8 +778,8 @@ key / scale screen, kept as the owner asked (the layouts as tabs on top, "D DOR"
 the 16 channels below, or Global / Track with its icon). Velocity: the curve as a graph, the option and the level
 with a bar. Arp: the pattern's walk (outlined while off), its name, rate and octaves, the page on the strip; the lanes:
 the 16 steps as bars from a line, the edited one underlined. Record: the three modes as icons (the chosen underlined
-and named), the style with its icon. Global Settings: the Move's battery (outline, fill, nub) and its %, centred on top
-("--" until the first STATUS), "Clock Int", "Vel Fixed"; knob 3 touched: the "Level" popup.
+and named), the style with its icon. Global Settings (0.6.2): "Global Settings" over a rule, then a row a setting (name left, value right), the selected
+row inverted; editing, the row framed and its value inverted.
 
 **Held Track buttons**: Track 2 the key / scale screen with the channels (midi.hold2, midi.scale); Track 3 the knob
 legend (the turned one filled), "CC" and the number it sends at 4x, which knob (ctl.hold3); Track 4 (and Mute held)

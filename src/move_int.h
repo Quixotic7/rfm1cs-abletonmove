@@ -241,6 +241,11 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap);
 /* ---- speech.c (0.6.0): the words said when the screen changes (called last by the calls that change it) */
 void rfmv_say_check(rfm_move_t *m);
 void rfmv_say_press(rfm_move_t *m, int slot);          /* (0.6.1) an FM-1 button pressed: its words (label slot) */
+void rfmv_say_text(rfm_move_t *m, const char *text);   /* (0.6.2) words said at the call's end (speech on) */
+int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev);   /* (0.6.2) Global settings open: it takes the input
+                                                         * (1 taken; releases pass, so nothing stays held) */
+int rfmv_global_rows(void);                             /* (tests) its rows */
+void rfmv_global_words(const rfm_move_t *m, char *o, int cap);   /* its row selected, in words */
 const char *rfmv_seq_smenu_name(int sm);               /* (0.6.1, seq_ui.c) a Shift menu's name, its knobs' words */
 void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap);
 void rfmv_say_tick(rfm_move_t *m);                     /* (rfm_move_seq_advance: the transport's start and stop, a

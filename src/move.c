@@ -1222,6 +1222,8 @@ static int back_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)   /* 1:
 
 static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
 {
+    if (rfmv_global_input(m, ev))                       /* (0.6.2) Global settings owns the controls while open */
+        return;
     if (back_input(m, ev, now_ms))
         return;
     if (m->seq.projects && m->pop == POP_MODE && ev->value && ev->type != MR_EV_TOUCH && ev->type != MR_EV_PAD_PRESSURE)

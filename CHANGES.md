@@ -3,6 +3,29 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.2 (2026-11-19)
+
+Global Settings (Shift + step 2; Track 1 held + step 2 outside Sequencer mode) as a list on the jog wheel, and it
+owns the controls while open (the owner: "the knob functions are passing through ... it should be a scrollable list
+you interact with using the Jogwheel"). New fields at the end of `rfm_move_t`: rebuild everything.
+
+- **Nothing passes through:** while it is open no knob turn or touch, pad, step, volume or Move button reaches the
+  FM-1, the firmware or the sequencer (before, pads, steps, buttons and the volume knob did, and a knob's touch showed
+  its FM-1 popup over the menu). Releases pass, so a pad held before it opened lets go; the Track buttons and Shift
+  + step 2 (its own toggle) pass.
+- **The list:** Clock, Velocity, Fixed level, Popup size, Battery (read only); name left, value right; the jog moves
+  the selection (inverted; it scrolls past five rows); a click edits the value (inverted, the row framed), the jog
+  changes it; a click or Back leaves the edit; Back closes the menu when not editing. The knobs are dropped as
+  shortcuts (they do nothing here, their rings are off).
+- **Speech:** opening says "Global settings, Clock: Internal"; each move the row ("Popup size: Full"); a click
+  "Editing Velocity: Dynamic"; each value turned the new value ("Velocity: Fixed"); leaving the edit "Done".
+- Fix: closing a Shift menu opened outside Sequencer mode no longer says "Sequencer mode" when it opens (0.6.1).
+
+**Tests:** `move_speech` 201 checks: in FM-1, MIDI and Control mode every knob (touch and turn), pad, step and Move
+button with the menu open reaches nothing (a pad held before it lets go), the knobs work again once it closes; the
+list's moves, edits, Back, the battery row, its toggle, and every word said; `global_*.pbm` for the contact sheet.
+`move` and `move_seq`'s Global Settings checks use the list.
+
 ## 0.6.1 (2026-11-19)
 
 Speech for the buttons and the sequencer (the owner's first try on the Move: "Knobs work, but there's no speech for

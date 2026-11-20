@@ -736,7 +736,7 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         }
         if (sh_menu(s)) {                               /* a menu: open (again: closed) */
             q->smenu = (uint8_t)(q->smenu == sh_menu(s) ? 0 : sh_menu(s));
-            q->arp_page = 0;
+            q->arp_page = 0, m->gl_edit = 0;
             if (q->smenu)
                 layer(q, LY_MENU);
             rfmv_menu(m, MENU_NONE, 0);
@@ -1446,7 +1446,7 @@ int rfmv_seq_menu_knobs(const rfm_move_t *m)
     case RFM_MOVE_SM_ARP: return q->arp_page ? 0x0F : 0xFF;
     case RFM_MOVE_SM_REC: return 0x03;
     case RFM_MOVE_SM_VEL: return 0x01;
-    case RFM_MOVE_SM_GLOBAL: return 0x0F;
+    case RFM_MOVE_SM_GLOBAL: return 0;                  /* (0.6.2: the jog's list; the knobs do nothing) */
     default: return 0;
     }
 }
@@ -2270,6 +2270,142 @@ static void fit2(mr_canvas_t *cv, int x, int y, const char *s, int w)   /* 2x wh
     else
         v2_T(cv, x, y + 4, s, 1, 1);
 }
+/* ---- (0.6.2) Global settings: a list. The jog turns through the rows (the selected one inverted); a click edits
+ * its value (the value inverted, the jog changes it), a click again (or Back) leaves the edit; Back closes the menu.
+ * While it is open it takes the Move's controls (nothing reaches the FM-1, the firmware or the sequencer); releases
+ * pass, so nothing pressed before stays held; Track buttons and Shift + step 2 (its own toggle) pass too */
+enum { GL_CLOCK, GL_VEL, GL_LEVEL, GL_POPUP, GL_BATTERY, GL_N };
+static const char *const GL_NAME[GL_N] = { "Clock", "Velocity", "Fixed level", "Popup size", "Battery" };
+#define GL_ROWS 5                                       /* rows on screen (more scroll) */
+int rfmv_global_rows(void) { return GL_N; }
+static void gl_words(const rfm_move_t *m, int r, const char *pre, char *o, int cap);
+void rfmv_global_words(const rfm_move_t *m, char *o, int cap) { gl_words(m, clampi(m->gl_row, 0, GL_N - 1), "", o, cap); }
+static void gl_value(const rfm_move_t *m, int r, char *o, int cap, int spoken)
+{
+    static const char *const CK[3] = { "Auto", "Int", "Ext" }, *const CKS[3] = { "Auto", "Internal", "External" };
+    switch (r) {
+    case GL_CLOCK: snprintf(o, (size_t)cap, "%s", (spoken ? CKS : CK)[m->seq.clock_mode % 3]); break;
+    case GL_VEL: rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), o, cap); break;
+    case GL_LEVEL: snprintf(o, (size_t)cap, "%d", m->s.vel_level); break;
+    case GL_POPUP: snprintf(o, (size_t)cap, "%s", m->s.pop_half ? "Half" : "Full"); break;
+    default:
+        if (m->battery >= 0)
+            snprintf(o, (size_t)cap, "%d%%", m->battery);
+        else
+            snprintf(o, (size_t)cap, "%s", spoken ? "unknown" : "--");
+        break;
+    }
+}
+static void gl_words(const rfm_move_t *m, int r, const char *pre, char *o, int cap)
+{
+    char v[24];
+    gl_value(m, r, v, sizeof v, 1);
+    snprintf(o, (size_t)cap, "%s%s: %s", pre, GL_NAME[r % GL_N], v);
+}
+static void gl_change(rfm_move_t *m, int r, int d)
+{
+    switch (r) {
+    case GL_CLOCK: rfm_move_seq_set_clock(m, clampi(m->seq.clock_mode + d, 0, 2)); break;
+    case GL_VEL: rfmv_vel_step(m, d), rfmv_changed(m); break;
+    case GL_LEVEL: m->s.vel_level = (uint8_t)clampi(m->s.vel_level + d, 1, 127), rfmv_changed(m); break;
+    case GL_POPUP: {
+        const int h = clampi(m->s.pop_half + d, 0, 1);
+        if (h != m->s.pop_half)
+            m->s.pop_half = (uint8_t)h, rfmv_changed(m);
+        break;
+    }
+    default: break;
+    }
+    rfmv_seq_dirty(m);
+}
+int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
+{
+    rfm_move_seq_t *q = Q(m);
+    char w[48];
+    if (q->smenu != RFM_MOVE_SM_GLOBAL || q->projects)
+        return 0;
+    switch (ev->type) {
+    case MR_EV_JOG: {
+        const int d = ev->value;
+        if (!d)
+            return 1;
+        if (m->gl_edit) {
+            gl_change(m, m->gl_row, d);
+            gl_words(m, m->gl_row, "", w, sizeof w);
+        } else {
+            m->gl_row = (uint8_t)clampi(m->gl_row + d, 0, GL_N - 1);
+            gl_words(m, m->gl_row, "", w, sizeof w);
+        }
+        rfmv_say_text(m, w);
+        return 1;
+    }
+    case MR_EV_JOG_CLICK:
+        if (!ev->value)
+            return 1;
+        if (m->gl_edit)
+            m->gl_edit = 0, rfmv_say_text(m, "Done");
+        else if (m->gl_row != GL_BATTERY) {
+            m->gl_edit = 1;
+            gl_words(m, m->gl_row, "Editing ", w, sizeof w);
+            rfmv_say_text(m, w);
+        } else {
+            gl_words(m, m->gl_row, "", w, sizeof w);
+            rfmv_say_text(m, w);
+        }
+        return 1;
+    case MR_EV_BUTTON:
+        if (ev->index >= MR_CC_TRACK4 && ev->index <= MR_CC_TRACK1)
+            return 0;                                   /* (the modes, Track 1's Shift layer: its own toggle) */
+        if (!ev->value)
+            return ev->index == MR_CC_BACK || ev->index == MR_CC_MENU;   /* (their press was ours) */
+        if (ev->index == MR_CC_SHIFT && m->s.mode == RFM_MOVE_MODE_SEQ)
+            return 0;                                   /* (Shift + step 2 closes it in Sequencer mode) */
+        if (ev->index == MR_CC_BACK || ev->index == MR_CC_MENU) {
+            if (m->gl_edit)
+                m->gl_edit = 0, rfmv_say_text(m, "Done");
+            else
+                layer_close(m, LY_MENU);
+        }
+        return 1;
+    case MR_EV_STEP:
+        if (!ev->value || rfmv_track_held(m, 0) || (q->mods & SEQ_M_SHIFT))
+            return 0;                                   /* (releases; Shift + step: the menus, this one's toggle) */
+        return 1;
+    case MR_EV_PAD:
+    case MR_EV_TOUCH: return ev->value != 0;            /* (releases pass: a pad or knob let go) */
+    case MR_EV_PAD_PRESSURE:
+    case MR_EV_KNOB: return 1;
+    default: return 0;
+    }
+}
+static void global_screen(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    const int n = GL_N, sel = clampi(m->gl_row, 0, GL_N - 1);
+    const int top = n <= GL_ROWS ? 0 : clampi(sel - GL_ROWS / 2, 0, n - GL_ROWS);
+    char v[24];
+    int i;
+    v2_T(cv, 1, 0, "Global Settings", 1, 1);
+    v2_R(cv, 0, 8, 128, 1, 1);
+    for (i = 0; i < GL_ROWS && top + i < n; i++) {
+        const int r = top + i, y = 10 + i * 10, inv = r == sel && !m->gl_edit;
+        gl_value(m, r, v, sizeof v, 0);
+        if (inv)
+            v2_R(cv, 0, y, 125, 10, 1);
+        v2_T(cv, 3, y + 2, GL_NAME[r], 1, !inv);
+        if (r == sel && m->gl_edit) {                   /* editing: the value inverted, the row framed */
+            const int w = v2_tw(v, 1) + 4;
+            v2_O(cv, 0, y, 125, 10, 1);
+            v2_R(cv, 121 - w, y + 1, w, 8, 1);
+            v2_T(cv, 123 - w, y + 2, v, 1, 0);
+        } else
+            v2_T(cv, 122 - v2_tw(v, 1), y + 2, v, 1, !inv);
+    }
+    if (n > GL_ROWS) {                                  /* a scroll bar */
+        const int h = 50 * GL_ROWS / n;
+        v2_R(cv, 126, 10 + (50 - h) * top / (n - GL_ROWS), 2, h, 1);
+    }
+}
+
 static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_seq_t *q = &m->seq;
@@ -2409,29 +2545,9 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
         v2_vbar(cv, m->s.vel_level / 127.0, 0, 50, 76, 48);
         break;
     }
-    case RFM_MOVE_SM_GLOBAL: {                          /* the Move's battery (as Move draws it) and the settings;
-                                                         * the velocity level only in its popup (knob 3 touched) */
-        static const char *const CK[3] = { "Auto", "Int", "Ext" };
-        const int bt = m->battery;
-        if (tk == 2) {
-            snprintf(b, sizeof b, "%d", m->s.vel_level);
-            v2_titleBox(cv, "Level", b, 64, 124);
-            v2_vbar(cv, m->s.vel_level / 127.0, 0, 4, 120, 52);
-            break;
-        }
-        v2_knobs(cv, 15, tk);
-        v2_battery(cv, 62, 1, bt > 0 ? bt : 0, 0);   /* (0.5.9: past knob 4's ring) */
-        if (bt >= 0)
-            snprintf(b, sizeof b, "%d%%", bt);
-        else
-            snprintf(b, sizeof b, "--");
-        v2_T(cv, 90, 0, b, 2, 1);
-        snprintf(b, sizeof b, "Clock %s", CK[q->clock_mode % 3]), v2_T(cv, 0, 16, b, 2, 1);
-        rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), c, sizeof c);
-        snprintf(b, sizeof b, "Vel %s", c), v2_T(cv, 0, 32, b, 2, 1);
-        v2_T(cv, 0, 48, m->s.pop_half ? "Popup Half" : "Popup Full", 2, 1);   /* (0.5.9) knob 4 */
+    case RFM_MOVE_SM_GLOBAL:                            /* (0.6.2) a list on the jog wheel */
+        global_screen(m, cv);
         break;
-    }
     default: break;
     }
 }
@@ -2588,13 +2704,7 @@ void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap)
     case RFM_MOVE_SM_GLOBAL:
         if (k == 0 && q->smenu == RFM_MOVE_SM_VEL)
             snprintf(o, (size_t)cap, "Velocity level: %d", m->s.vel_level);
-        else if (k == 1 && q->smenu == RFM_MOVE_SM_GLOBAL)
-            ;                                           /* (the velocity option: speech.c's own item) */
-        else if (k == 2 && q->smenu == RFM_MOVE_SM_GLOBAL)
-            snprintf(o, (size_t)cap, "Velocity level: %d", m->s.vel_level);
-        else if (k == 3 && q->smenu == RFM_MOVE_SM_GLOBAL)
-            snprintf(o, (size_t)cap, "Popups: %s", m->s.pop_half ? "Half" : "Full");
-        break;
+        break;                                          /* (0.6.2: Global settings' list says its own rows) */
     default: break;
     }
 }

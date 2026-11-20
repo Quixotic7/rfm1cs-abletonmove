@@ -2059,7 +2059,7 @@ static void test_popup_width(void)
     CHECK(rfm_move_load(&st, img, sizeof img) == 0 && st.pop_half == 1);
     img[3] = 4, img[4] = (uint8_t)(RFM_MOVE_SETTINGS_BYTES - 1);   /* (a version 4 image: 86 bytes) */
     CHECK(rfm_move_load(&st, img, RFM_MOVE_SETTINGS_BYTES - 1) == 0 && st.pop_half == 0);
-    /* Global Settings (Shift + step 2 in Sequencer mode): knob 4 the width */
+    /* Global Settings (Shift + step 2 in Sequencer mode): (0.6.2) its Popup size row (the jog, a click to edit) */
     rfm_move_init(&m, NULL, on_act, NULL);
     rfm_move_set_mode(&m, RFM_MOVE_MODE_SEQ);
     button(&m, MR_CC_SHIFT, 1), step(&m, 1, 1), step(&m, 1, 0), button(&m, MR_CC_SHIFT, 0);
@@ -2067,14 +2067,18 @@ static void test_popup_width(void)
     rfm_move_screen(&m, NULL, out);
     write_pbm("move_global_popup_full.pbm", out);
     clear();
-    knob(&m, 3, RFM_MOVE_LIST_TICKS);
+    jog(&m, 3), raw(&m, 0xB0, MR_CC_JOG_CLICK, 127), raw(&m, 0xB0, MR_CC_JOG_CLICK, 0);
+    CHECK(m.gl_row == 3 && m.gl_edit);
+    jog(&m, 1);
     CHECK(m.s.pop_half == 1 && nact >= 1 && acts[nact - 1].kind == RFM_MOVE_ACT_SETTINGS);
     rfm_move_screen(&m, NULL, out);
     write_pbm("move_global_popup_half.pbm", out);
-    knob(&m, 3, RFM_MOVE_LIST_TICKS);
+    jog(&m, 1);
     CHECK(m.s.pop_half == 1);                           /* (the end) */
-    knob(&m, 3, -RFM_MOVE_LIST_TICKS);
+    jog(&m, -1);
     CHECK(m.s.pop_half == 0);
+    button(&m, MR_CC_BACK, 1), button(&m, MR_CC_BACK, 0);
+    CHECK(!m.gl_edit && m.seq.smenu == RFM_MOVE_SM_GLOBAL);   /* (Back: out of the edit, the menu stays) */
     /* both widths, the same popups */
     rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
     m.seq.smenu = 0;

@@ -82,7 +82,12 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
     if (s)
         return s;
     if (m->seq.smenu && !m->seq.projects) {             /* (0.6.1) a Shift menu open: its name */
-        snprintf(o, (size_t)cap, "%s", rfmv_seq_smenu_name(m->seq.smenu));
+        if (m->seq.smenu == RFM_MOVE_SM_GLOBAL) {       /* (0.6.2: the list, its row) */
+            char r[64];
+            rfmv_global_words(m, r, sizeof r);
+            snprintf(o, (size_t)cap, "%s, %s", rfmv_seq_smenu_name(m->seq.smenu), r);
+        } else
+            snprintf(o, (size_t)cap, "%s", rfmv_seq_smenu_name(m->seq.smenu));
         return 0x40 + m->seq.smenu;
     }
     switch (m->s.mode) {
@@ -117,7 +122,7 @@ static int base_said(const rfm_move_t *m, int from, char *o, int cap)
         snprintf(o, (size_t)cap, "Firmwares, %s", b);
     else if (in_fx(s) && !in_fx(from) && s < 0x200)
         snprintf(o, (size_t)cap, "FX setup, %s", b);
-    else if (in_seq(s) && !in_seq(from))
+    else if ((s == S_SEQ_TRACK || s == S_SEQ_SESSION) && !in_seq(from))
         snprintf(o, (size_t)cap, "Sequencer mode%s", s == S_SEQ_SESSION ? ", Session" : "");
     else
         snprintf(o, (size_t)cap, "%s", b);
@@ -403,6 +408,14 @@ void rfmv_say_press(rfm_move_t *m, int slot)
     m->say_lbl_t0 = m->pop == POP_LABEL && m->pop_i == slot ? m->pop_t0 : 0;
 }
 
+void rfmv_say_text(rfm_move_t *m, const char *text)
+{
+    if (!m->speech)
+        return;
+    snprintf(m->say_now, sizeof m->say_now, "%s", text ? text : "");
+    m->say_lbl_t0 = 0;
+}
+
 /* values the screen shows without a popup (or that a button changes): their words, said when they change */
 enum { I_TRACK, I_PAGE, I_SCENES, I_TRACKS, I_OCTAVE, I_BANK, I_LAYOUT, I_ROOT, I_SCALE, I_CHANNEL, I_VEL, I_TRIG,
        I_LATCH, I_TEMPO, I_STEPREC, I_SAMPLE, I_AUDIO, I_LOOPED, I_FILL, I_SHIFTLOCK, I_CLIPBOARD, I_PASTED,
@@ -573,6 +586,8 @@ static void watch(rfm_move_t *m, int silent, said_now_t *sn)
         silent = 1;                                     /* (the projects view: its own words; a project loaded there
                                                          * changes everything at once) */
     quiet = silent ? 0xFFFFFFFFu : 0;
+    if (q->smenu == RFM_MOVE_SM_GLOBAL)
+        quiet |= 1u << I_VEL;                           /* (0.6.2: the list says its own rows) */
     for (i = 0; i < I_N; i++) {
         uint32_t h;
         item_words(m, i, w, sizeof w);
