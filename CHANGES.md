@@ -11,7 +11,7 @@ a new source (web/build.sh lists it).
 
 - **Host API:** `rfm_move_set_takeover(m, slot, claims, name)` (claims `RFM_MOVE_TK_*`; 0: none, an open one
   closes), `rfm_move_tk_screen(m, slot, packed)`, `rfm_move_tk_leds(m, slot, rgb[92][3])` (only the claimed ones;
-  whites r 0..127), `rfm_move_tk_say(m, slot, words, interrupt)`, `rfm_move_tk_shown(m)`, `rfm_move_mode(m)`;
+  whites r 0..255, scaled to the Move's 0..127), `rfm_move_tk_say(m, slot, words, interrupt)`, `rfm_move_tk_shown(m)`, `rfm_move_mode(m)`;
   `RFM_MOVE_MODE_TAKEOVER` (4: never in the settings), `RFM_MOVE_L_*` (the LED list's order).
 - **Actions:** `RFM_MOVE_ACT_TK_INPUT` (31: slot, `pkt[4]` the raw packet of a claimed control, or a release the
   core makes up) and `RFM_MOVE_ACT_TK_STATE` (32: slot, down on / off, `tk_claims`, `tk_flags` bit 0 speech on).

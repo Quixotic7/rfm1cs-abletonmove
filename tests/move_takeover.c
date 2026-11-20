@@ -361,7 +361,7 @@ static void test_leds(void)
         const int claimed = i < 32 || (i >= 48 && i <= 50) || (i >= 55 && i <= 75);
         if (claimed) {
             const int white = i >= RFM_MOVE_L_WHITE0;
-            if (white ? !(on[i][0] == 127 && !on[i][1] && !on[i][2]) : memcmp(on[i], FWLED[i], 3) != 0)
+            if (white ? !(on[i][0] == 100 && !on[i][1] && !on[i][2]) : memcmp(on[i], FWLED[i], 3) != 0)
                 bad_c++;
         } else if (memcmp(on[i], off[i], 3))
             bad_u++;
@@ -372,7 +372,7 @@ static void test_leds(void)
     rfm_move_set_mode(&M, RFM_MOVE_MODE_TAKEOVER);
     leds(on);
     CHECK(!memcmp(on[RFM_MOVE_L_STEP0 + 3], FWLED[RFM_MOVE_L_STEP0 + 3], 3));
-    CHECK(on[RFM_MOVE_L_ICON0 + 15][0] == 127 && !memcmp(on[RFM_MOVE_L_TRACK0 + 2], FWLED[RFM_MOVE_L_TRACK0 + 2], 3));
+    CHECK(on[RFM_MOVE_L_ICON0 + 15][0] == 100 && !memcmp(on[RFM_MOVE_L_TRACK0 + 2], FWLED[RFM_MOVE_L_TRACK0 + 2], 3));
     CHECK(!memcmp(on[RFM_MOVE_L_PAD0 + 3], off[RFM_MOVE_L_PAD0 + 3], 3) && !memcmp(on[RFM_MOVE_L_RING0], off[RFM_MOVE_L_RING0], 3));
     rfm_move_tk_leds(&M, 1, (const uint8_t(*)[3])off);  /* (slot 1's: not this one's) */
     leds(off);

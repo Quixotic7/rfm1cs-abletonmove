@@ -335,7 +335,7 @@ void rfmv_tk_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         if (!(cl & led_claim(i)))
             continue;
         if (i >= RFM_MOVE_L_WHITE0)
-            w[i][0] = t->led[i][0] > 127 ? 127 : t->led[i][0], w[i][1] = 0, w[i][2] = 0;
+            w[i][0] = (uint8_t)((t->led[i][0] * 127 + 127) / 255), w[i][1] = 0, w[i][2] = 0;   /* tk1's 0..255 -> the Move's 0..127 */
         else
             memcpy(w[i], t->led[i], 3);
     }

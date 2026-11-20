@@ -517,7 +517,7 @@ core sends the firmware `RFM_MOVE_ACT_TK_INPUT` (the raw packet, for `rfm1_tk_in
 | Back with BUTTONS but not TRACKS | held back: press and release together at its release, if no Track was pressed meanwhile (Back + Track still switches slots) |
 | closing (any way), a claim dropped, `rfm_move_release_all` | a release for everything the firmware holds (pads, steps, buttons, touches), then `TK_STATE` off (or on with the new claims) |
 | the screen | the firmware's with SCREEN, under the name popup and the host's messages only; else FM-1 mode's |
-| the LEDs | each claimed one the firmware's (the whites: r, at most 127), the rest FM-1 mode's |
+| the LEDs | each claimed one the firmware's (the whites: r 0..255, scaled to 0..127), the rest FM-1 mode's |
 | words | the mode's name on entering, "FM-1 mode" on leaving, the firmware's own (`rfm_move_tk_say`, a SAY with its slot) while shown and words are open; `TK_STATE`'s flag says whether speech is on (sent again when it changes) |
 | claims 0 | no takeover: Track 1 does not offer it, an open one closes |
 
