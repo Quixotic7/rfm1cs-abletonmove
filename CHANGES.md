@@ -5,7 +5,8 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## 0.6.6 (2026-11-19)
 
-MIDI from one firmware routed to other firmwares and to USB out, set on the Routing page (the owner: "hold down a
+MIDI from one firmware routed to other firmwares and to "Out" (the host's MIDI out; on the Move USB-A and network
+MIDI), set on the Routing page (the owner: "hold down a
 firmware pad and then click the other firmware pads to enable midi routing to them ... Use the 4th slot at the bottom
 of the column ... to route the midi to the main output"). New fields at the end of `rfm_move_fxset_t` and
 `rfm_move_act_t`; the project record is version 7 (3 bytes more: `RFM_MOVE_PROJECT_MAX` 40139, was 40136): rebuild
@@ -18,7 +19,7 @@ everything; hosts that wrote the number down (the web's `PROJECT_MAX`) update it
 - **No cycles:** a route closing a loop (A to B while B reaches A, directly or through the third) is refused: the
   popup "Loop: not set", the words "Loop", nothing changed.
 - **The state:** `rfm_move_fxset_t.mroute[3]`: bits 0..2 the firmware slots (never its own), `RFM_MOVE_MROUTE_OUT`
-  (8) the USB out. Saved with the project (version 7; versions 1..6 load with no routes; a blob with an own bit or a
+  (8) Out, the host's MIDI out. Saved with the project (version 7; versions 1..6 load with no routes; a blob with an own bit or a
   cycle is refused). Every `RFM_MOVE_ACT_ROUTE` carries all three masks in the new `act.mroute[3]` (the Move's
   toggle, `rfm_move_route_set`, `rfm_move_midi_route_set`, `rfm_move_fx_sync`, a project load).
 - **API:** `rfm_move_midi_route(m, slot)` (the mask, -1 no slot); `rfm_move_midi_route_set(m, slot, mask)` (-1

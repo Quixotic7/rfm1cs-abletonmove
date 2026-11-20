@@ -165,7 +165,7 @@ typedef struct {
                                                          * note off: the slot it was played on) */
     /* (0.6.6) */
     uint8_t mroute[3];                                  /* ROUTE: each firmware slot's MIDI routes (rfm_move_fxset_t
-                                                         * mroute: bits 0..2 the slots, RFM_MOVE_MROUTE_OUT USB out) */
+                                                         * mroute: bits 0..2 the slots, RFM_MOVE_MROUTE_OUT Out) */
 } rfm_move_act_t;
 typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
@@ -315,7 +315,7 @@ typedef struct {                                        /* (saved with the proje
     uint8_t pan[RFM_MOVE_FW_SLOTS];                     /* 0..127, 64 centre */
     uint8_t send[RFM_MOVE_FW_SLOTS][RFM_MOVE_FX_SLOTS];  /* firmware -> audio FX bus, 0..127 */
     /* (0.6.6, saved with the project, version 7; not in RFM_MOVE_FXSET_BYTES) each firmware slot's MIDI routes: bit s
-     * (0..2) to firmware slot s (never its own), RFM_MOVE_MROUTE_OUT to the host's USB MIDI out; no cycles */
+     * (0..2) to firmware slot s (never its own), RFM_MOVE_MROUTE_OUT to "Out", the host's MIDI out; no cycles */
     uint8_t mroute[RFM_MOVE_FW_SLOTS];
 } rfm_move_fxset_t;
 #define RFM_MOVE_FXSET_BYTES_N(nv) (RFM_MOVE_FX_SLOTS * (RFM_MOVE_FX_NAME + (nv) + 2) + \
@@ -1006,8 +1006,9 @@ int rfm_move_words(const rfm_move_t *m, char *out, int cap);
 
 /* ---- (0.6.6) MIDI from a firmware routed to other firmwares and out (the Routing page: hold a firmware's pad, tap
  * another firmware's pad or the Out pad under them). A slot's mask: bit s (0..2) its MIDI goes to firmware slot s
- * too (never its own), RFM_MOVE_MROUTE_OUT to the host's USB MIDI out; no cycle (A to B to A) is ever set. The host
- * forwards each slot's MIDI out (its channel messages) to its targets and, with OUT, to USB. The masks travel in
+ * too (never its own), RFM_MOVE_MROUTE_OUT to "Out", the host's MIDI out (on the Move: USB-A and network MIDI); no
+ * cycle (A to B to A) is ever set. The host forwards each slot's MIDI out (its channel messages) to its targets and,
+ * with OUT, to its MIDI out. The masks travel in
  * every RFM_MOVE_ACT_ROUTE (act.mroute[3]) and are saved with the project (version 7; older ones load with none) */
 #define RFM_MOVE_MROUTE_OUT 8
 int rfm_move_midi_route(const rfm_move_t *m, int slot);   /* a slot's mask (0..15), -1 no such slot */

@@ -566,7 +566,7 @@ and the custom JavaScript UIs (`ui_chain.js`) are not part of 0.5.0.
 |---|---|
 | column 1, rows 1..3 | the MIDI FX slots 1..3 (the MIDI FX colour; empty dim) |
 | column 3, rows 1..3 | the firmware slots 1..3, for routing and their mix (each firmware's colour; empty dim) |
-| column 3, row 4 | (0.6.6) Out: the host's USB MIDI out, a MIDI route's target (dark; faint cyan when the selected firmware routes there) |
+| column 3, row 4 | (0.6.6) Out: the host's MIDI out (on the Move: USB-A and network MIDI), a MIDI route's target (dark; faint cyan when the selected firmware routes there) |
 | column 5, rows 1..3 | the audio FX slots 1..3 (the audio FX colour; empty dim) |
 
 The selected pad is bright (breathing while its module's pages are open). `settings.fx_page` says which column is

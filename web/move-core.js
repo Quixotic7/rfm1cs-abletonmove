@@ -54,7 +54,7 @@
 //   { kind: "fwLibrary", bytes } { kind: "fwLevel", slot, level } { kind: "fxLoad", fx, slot, module } (-1 empty)
 //   { kind: "fxParam", fx, slot, param, value } { kind: "mix", slot, level, pan, sends: [3] }
 //   { kind: "route", fw: [3 filters], midiFx: [3 filters], midiRoute: [3 masks] } (bit t: track t + 1; midiRoute (0.6.6):
-//   bit s firmware slot s, 8 USB out) { kind: "stateSave" / "stateLoad" /
+//   bit s firmware slot s, 8 Out: the host's MIDI out) { kind: "stateSave" / "stateLoad" /
 //   "stateDelete", slot, state }; fw is the index in fwList's array; "midi" has `track` (1..16 the sequencer's, 0 live)
 export const ACT = { KEY: 1, PRESS: 2, BTN: 3, TURN: 4, MASTER: 5, MIDI: 6, SETTINGS: 7, PROJECT_SAVE: 8, PROJECT_LOAD: 9, PROJECT_DELETE: 10,
   CLICK: 11, AUDIO_REC: 12, PROJECT_CUT: 13, PROJECT_COPY: 14, PROJECT_PASTE: 15, PROJECT_COLOR: 16,
