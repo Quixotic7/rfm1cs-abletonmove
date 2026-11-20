@@ -842,7 +842,7 @@ play notes (0.6.5: heard, never said).
 | Input | Where | Words |
 |---|---|---|
 | an FM-1 button (Move button mapped to it) | FM-1, MIDI, Control mode | every press: its label, else its name, else the panel's word: "Play", "Select", "Octave down" |
-| knob touch / turn | FM-1 mode | "K1", "K1: +3"; a readout "Cutoff: 64" |
+| knob touch / turn | FM-1 mode | (0.6.7) touched: "Name: value" when its readout is known (the readout's full title), else its label ("Bass Regis"); turned: the readout's "Name: value" once it comes, never the Move's count when the firmware gives readouts ("K1: +3" only for one that gives none, after 250 ms); a readout of the other (Shift) page never; a turn with no readout (its range's end): its words again once |
 | volume | anywhere | "Volume 75%"; Track 1..3 held: "Slot 1 Level: 100" |
 | Track 1..4 tap | anywhere | the mode: "MIDI mode", again "MIDI mode, Notes"; under a Shift menu "FM-1 mode, Tempo" |
 | Track 2 held + knob 1 / 2, pad, step | MIDI, Control | "Root: Db", "Scale: Minor", "Layout: Drum", "Channel: 3"; pad 8 "Latch on" |

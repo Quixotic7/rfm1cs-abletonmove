@@ -135,10 +135,32 @@ static int base_said(const rfm_move_t *m, int from, char *o, int cap)
 }
 
 /* ================================================================ popups === */
+static const int8_t SLOT_ENC[8] = { RFM_MOVE_E_SELECT, RFM_MOVE_E_ALGO, RFM_MOVE_E_PRESETS, RFM_MOVE_E_K1,
+                                    RFM_MOVE_E_K2, RFM_MOVE_E_K3, RFM_MOVE_E_K4, RFM_MOVE_E_MASTER };
+/* (0.6.7) a knob slot's readout, valid for speech: known, and for the control's label as it is now (a Shift page's
+ * other label: the old page's readout is stale) */
+static int rd_valid(const rfm_move_t *m, int sl)
+{
+    return sl >= 0 && sl < 8 && m->rd[sl].on && !strcmp(m->rd_lbl[sl], enc_label(m, SLOT_ENC[sl]));
+}
+void rfmv_say_readout(rfm_move_t *m, int slot)
+{
+    if (slot < 0 || slot >= 8)
+        return;
+    snprintf(m->rd_lbl[slot], sizeof m->rd_lbl[slot], "%s", enc_label(m, SLOT_ENC[slot]));
+    m->rd_any = 1;
+    if (m->speech && m->say_turn == slot + 1)
+        m->say_force = 1, m->say_turn = 0;              /* (the turn's answer: said even if the same words) */
+}
+void rfmv_say_turned(rfm_move_t *m)
+{
+    const int sl = rfmv_pop_slot(m);
+    if (!m->speech || sl < 0)
+        return;
+    m->say_turn = (uint8_t)(sl + 1), m->say_turn_ms = rfmv_now_ms(m);
+}
 static void readout_words(const rfm_move_t *m, const rfm_move_readout_t *r, int slot, char *o, int cap)
 {
-    static const int8_t SLOT_ENC[8] = { RFM_MOVE_E_SELECT, RFM_MOVE_E_ALGO, RFM_MOVE_E_PRESETS, RFM_MOVE_E_K1,
-                                        RFM_MOVE_E_K2, RFM_MOVE_E_K3, RFM_MOVE_E_K4, RFM_MOVE_E_MASTER };
     char t[RFM_MOVE_LABEL_MAX + 8];
     snprintf(t, sizeof t, "%s", r->title);
     if (!t[0] && slot >= 0 && slot < 8)
@@ -237,7 +259,8 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
     case POP_ENC:
     case POP_MASTER: {
         const int sl = rfmv_pop_slot(m);
-        if (sl >= 0 && m->rd[sl].on) {
+        if (rd_valid(m, sl)) {                          /* (0.6.7) touched or turned: "Name: value" (the readout's
+                                                         * full title) */
             readout_words(m, &m->rd[sl], sl, o, cap);
             return;
         }
@@ -246,10 +269,13 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
             return;
         }
         rfmv_tcase(enc_label(m, m->pop == POP_SELECT ? RFM_MOVE_E_SELECT : rfm_move_knob_enc(i)), l, sizeof l);
-        if (m->pop_blank)
-            snprintf(o, (size_t)cap, "%s", l);
+        if (m->pop_blank || !m->pop_val)
+            snprintf(o, (size_t)cap, "%s", l);          /* (0.6.7: never the Move's placeholder "0") */
+        else if (m->rd_any && !m->say_late)
+            o[0] = 0;                                   /* (0.6.7) a firmware with readouts: its value comes as one;
+                                                         * the Move's detent count is never said (nothing yet) */
         else
-            snprintf(o, (size_t)cap, m->pop_val ? "%s: %+d" : "%s: 0", l, m->pop_val);
+            snprintf(o, (size_t)cap, "%s: %+d", l, m->pop_val);
         return;
     }
     case POP_CC: {
@@ -699,6 +725,12 @@ void rfmv_say_tick(rfm_move_t *m)
     }
     for (t = 0; t < RFM_MOVE_SEQ_TRACKS && !due; t++)
         due = q->tr[t].active != m->say_act[t] || q->tr[t].queued != m->say_q[t];
+    if (m->say_turn && rfmv_now_ms(m) - m->say_turn_ms >= RFM_MOVE_SAY_TURN_MS) {
+        m->say_turn = 0;                                /* (0.6.7) a knob turned, no readout (its range's end): its
+                                                         * "Name: value" again, once; no readout known: the detents */
+        if (m->pop && rfmv_pop_up(m, m->pop))
+            m->say_force = 1, m->say_late = 1, due = 1;
+    }
     if (due)
         rfmv_say_check(m);
 }
@@ -738,7 +770,7 @@ void rfmv_say_check(rfm_move_t *m)
     tidy(pw);
     if (up) {
         const int pressed = ps == (0x100 | POP_LABEL) && m->say_lbl_t0 && st == m->say_lbl_t0;
-        if (pw[0] && !pressed && (strcmp(pw, m->said) || (ps == m->said_subj && st != m->said_t0))) {
+        if (pw[0] && !pressed && (strcmp(pw, m->said) || (ps == m->said_subj && st != m->said_t0) || m->say_force)) {
             say(m, RFM_MOVE_SAY_VALUE, pw);
             rfmv_fw_say_focus(m, w, sizeof w);          /* (the popup said the selection's words: taken as said) */
             tidy(w);
@@ -764,6 +796,7 @@ void rfmv_say_check(rfm_move_t *m)
         }
         m->said[0] = 0, m->said_subj = 0, m->said_t0 = 0;
     }
+    m->say_force = 0, m->say_late = 0;
     watch(m, fresh, &sn);                               /* 5. the values a button or a menu changed */
     m->say_now[0] = 0;
     if (m->say_back && m->say_n == said0) {             /* (0.6.3) Back that changed nothing said: where you are */

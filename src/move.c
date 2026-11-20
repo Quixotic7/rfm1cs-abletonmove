@@ -556,6 +556,7 @@ static void rd_copy(char *o, const char *t)             /* printable ASCII, 16 k
 void rfm_move_readouts_clear(rfm_move_t *m)
 {
     memset(m->rd, 0, sizeof m->rd);
+    memset(m->rd_lbl, 0, sizeof m->rd_lbl);
     memset(&m->rd_pop, 0, sizeof m->rd_pop);
     if (m->pop == POP_READ)
         m->pop = POP_NONE;
@@ -576,6 +577,7 @@ static void readout(rfm_move_t *m, int control, int kind, const char *title, con
         control = knob_up;
     if (control >= RFM_MOVE_LBL_KNOB0 && control < RFM_MOVE_LBL_BTN0) {
         m->rd[control] = r;                             /* (kept: the knob's touch shows it) */
+        rfmv_say_readout(m, control);                   /* (0.6.7: its label then, for speech) */
         if (knob_up == control)
             return;                                     /* (its popup is up: drawn in place) */
     }
@@ -1049,6 +1051,7 @@ static void on_knob(rfm_move_t *m, int k, int d, uint32_t now)
             return;
         rfmv_pop(m, POP_ENC, k);
         m->pop_val = (int16_t)clampi(acc + t, -9999, 9999);
+        rfmv_say_turned(m);                             /* (0.6.7: speech: its readout awaited) */
     }
 }
 
@@ -1109,6 +1112,7 @@ static void on_jog(rfm_move_t *m, int d, uint32_t now)
         const int acc = rfmv_pop_up(m, POP_SELECT) ? m->pop_val : 0;
         rfmv_pop(m, POP_SELECT, 9);
         m->pop_val = (int16_t)clampi(acc + d, -9999, 9999);
+        rfmv_say_turned(m);
     }
 }
 

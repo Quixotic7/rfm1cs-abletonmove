@@ -245,6 +245,8 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap);
 void rfmv_say_check(rfm_move_t *m);
 void rfmv_say_press(rfm_move_t *m, int slot);          /* (0.6.1) an FM-1 button pressed: its words (label slot) */
 void rfmv_say_text(rfm_move_t *m, const char *text);   /* (0.6.2) words said at the call's end (speech on) */
+void rfmv_say_readout(rfm_move_t *m, int slot);        /* (0.6.7) a knob readout stored: its label kept (always) */
+void rfmv_say_turned(rfm_move_t *m);                   /* (0.6.7) an FM-1 knob turned: its readout awaited */
 int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev);   /* (0.6.2) Global settings open: it takes the input
                                                          * (1 taken; releases pass, so nothing stays held) */
 int rfmv_global_rows(void);                             /* (tests) its rows */

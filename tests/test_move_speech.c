@@ -898,6 +898,76 @@ static void test_mroute(void)
     SAID("V:Loop|");
     pad(&M, fxpad(1, 1), 0);
 }
+/* (0.6.7) knob words with firmware readouts (ChoralRoot's rd1): the readout's full title and value, never the Move's
+ * placeholder or a stale readout of the other (Shift) page; a touch says "Name: value" when known; a turn with no
+ * readout (its range's end) says it again once */
+static void rd(const char *t, const char *v) { rfm_move_readout(&M, -1, RFM_MOVE_RD_PARAM, t, v, 500, 0, 0); }
+static void test_knob_readouts(void)
+{
+    const char *lbl[RFM_MOVE_LBL_N] = { NULL };
+    fresh(&M, 1);
+    lbl[RFM_MOVE_LBL_KNOB0 + 3] = "Bass Regis", lbl[RFM_MOVE_LBL_KNOB0 + 4] = "Voicing";   /* (K1, K2: 10 kept) */
+    rfm_move_set_labels(&M, lbl);
+    clear();
+    /* the first touch: the label; a turn short of a detent: no "0"; the readout: its full title and value */
+    touch(&M, 4, 1);
+    SAID("V:Bass Regis|");
+    knob(&M, 4, 1);
+    SAID("");
+    knob(&M, 4, 1);                                     /* (a detent: before any readout, the count) */
+    SAID("V:Bass Regis: +1|");
+    rd("Bass Register", "+1 oct");
+    SAID("V:Bass Register: +1 oct|");
+    /* 1. readouts known: a turn says nothing until its readout, then that once */
+    knob(&M, 4, 2);
+    SAID("");
+    rd("Bass Register", "+2 oct");
+    SAID("V:Bass Register: +2 oct|");
+    /* 4. the same value back (a readout for the turn): said again */
+    knob(&M, 4, 2), rd("Bass Register", "+2 oct");
+    SAID("V:Bass Register: +2 oct|");
+    /* 4. the range's end: no readout; its words again once, a moment later */
+    knob(&M, 4, 2);
+    SAID("");
+    adv_ms(&M, RFM_MOVE_SAY_TURN_MS + 20);
+    SAID("V:Bass Register: +2 oct|");
+    adv_ms(&M, 500);
+    SAID("");
+    touch(&M, 4, 0), rest_pop(&M), clear();
+    /* 3, 4. touched again: "Name: value" at once (the full name) */
+    touch(&M, 4, 1);
+    SAID("V:Bass Register: +2 oct|");
+    touch(&M, 4, 0), rest_pop(&M), clear();
+    /* 2. the Shift page: the firmware relabels; the old page's readout is never said */
+    lbl[RFM_MOVE_LBL_KNOB0 + 3] = "Opt";
+    rfm_move_set_labels(&M, lbl);
+    touch(&M, 4, 1);
+    SAID("V:Opt|");
+    knob(&M, 4, 2);
+    SAID("");
+    rd("split point", "F# split off");
+    SAID("V:split point: F# split off|");
+    touch(&M, 4, 0), rest_pop(&M), clear();
+    /* another knob, no readout of its own yet: its label; its turn waits for its readout */
+    touch(&M, 5, 1);
+    SAID("V:Voicing|");
+    knob(&M, 5, 2);
+    SAID("");
+    rd("Voicing", "+1");
+    SAID("V:Voicing: +1|");
+    touch(&M, 5, 0), rest_pop(&M), clear();
+    /* back on the plain page: the label again, its old readout (from the other page's knob) not said */
+    lbl[RFM_MOVE_LBL_KNOB0 + 3] = "Bass Regis";
+    rfm_move_set_labels(&M, lbl);
+    touch(&M, 4, 1);
+    SAID("V:Bass Regis|");
+    touch(&M, 4, 0), rest_pop(&M), clear();
+    /* a readout cleared (another firmware): the labels and counts again */
+    rfm_move_readouts_clear(&M);
+    touch(&M, 5, 1);
+    SAID("V:Voicing|");
+    touch(&M, 5, 0), rest_pop(&M), clear();
+}
 static int g_silent;
 static void test_walk(void)
 {
@@ -1067,6 +1137,7 @@ int main(void)
     test_delete();
     test_playing();
     test_mroute();
+    test_knob_readouts();
     test_walk();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");

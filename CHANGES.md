@@ -3,6 +3,27 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.7 (2026-11-19)
+
+Knob speech with firmware readouts (ChoralRoot 0.42's rd1; the owner: "the screen reader is not saying the parameter
+name or value"). New fields at the end of `rfm_move_t`: rebuild everything. The screen is unchanged.
+
+- Never the Move's placeholder: a turn short of a detent says nothing (was "Voicing: 0"); once the firmware has sent
+  any knob readout, a turn says nothing until its readout comes, then "Bass Register: +1 oct" once (was "Bass Regis:
+  +1" too).
+- Never a stale readout: each knob readout keeps its control's label as it came; when the label is another (the
+  firmware's Shift page, "Opt") the old page's readout is not said (was "Voicing: +1" before "split point: F# split
+  off").
+- A touch says "Name: value" when the control's readout is known (its full title, not the 10-character label), else
+  the label.
+- Every turn is heard: a readout answering a turn is said even with the same words; a turn with no readout within
+  `RFM_MOVE_SAY_TURN_MS` (250 ms; the range's end) says its "Name: value" again once (a control with no readouts at
+  all: its count then).
+
+**Tests:** `move_speech` 269 checks: the first touch and turn, a turn waiting for its readout, the same value said
+again, the range's end once, a touch with the value, the Shift page's relabel (no stale readout), another knob, back
+on the plain page, readouts cleared.
+
 ## 0.6.6 (2026-11-19)
 
 MIDI from one firmware routed to other firmwares and to "Out" (the host's MIDI out; on the Move USB-A and network

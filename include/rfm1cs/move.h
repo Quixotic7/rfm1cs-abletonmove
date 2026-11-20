@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 6
-#define RFM1CS_VERSION_PATCH 6
-#define RFM1CS_VERSION "0.6.6"
+#define RFM1CS_VERSION_PATCH 7
+#define RFM1CS_VERSION "0.6.7"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -788,6 +788,13 @@ typedef struct {
     uint16_t say_bdown;                                 /* .. when Back went down */
     uint32_t say_fwms;                                  /* the projects view's Track / page / catalog popup said last */
     uint8_t say_stepev;                                 /* (0.6.5) this call is a step press or release */
+    /* (0.6.7) knob readouts for speech: each one's control label when it came (a new label, the Shift page: stale),
+     * any readout seen (the firmware has them: the Move's detents are never said), a turn waiting for its readout */
+    char rd_lbl[8][RFM_MOVE_LABEL_MAX + 1];
+    uint8_t rd_any;
+    uint8_t say_turn, say_force, say_late;              /* the knob slot + 1 turned, its readout to say even if the
+                                                         * same, the turn's words due with no readout */
+    uint32_t say_turn_ms;
     uint8_t del_src;                                    /* this Delete hold's last step action: 0 none, 1 cut, 2 paste
                                                          * (back to none when Delete is let go; the clipboard stays) */
 } rfm_move_t;
@@ -997,6 +1004,8 @@ int rfm_move_fx_set_page(rfm_move_t *m, int page);
  *    "Felucca, not installed"). The host debounces (a VALUE replaces a pending VALUE); the core has no rate limit.
  * Turning it on takes the screen as said (the host names the first view itself) */
 #define RFM_MOVE_HAS_SPEECH 1                           /* (hosts test this to compile their wiring) */
+#define RFM_MOVE_SAY_TURN_MS 250                        /* (0.6.7) a knob turned and no readout this long after: its
+                                                         * words again (the end of its range) */
 enum { RFM_MOVE_SAY_VALUE = 0, RFM_MOVE_SAY_EVENT = 1 };
 void rfm_move_set_speech(rfm_move_t *m, int on);
 int rfm_move_speech(const rfm_move_t *m);              /* 1 on */
