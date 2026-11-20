@@ -580,6 +580,8 @@ EMSCRIPTEN_KEEPALIVE int mw_fw_flush(mw_t *w)
     return w->nacts;
 }
 EMSCRIPTEN_KEEPALIVE void mw_fw_voices(mw_t *w, int n) { rfm_move_fw_voices(&w->s.core, n); }
+EMSCRIPTEN_KEEPALIVE void mw_fw_caps(mw_t *w, int caps) { rfm_move_fw_caps(&w->s.core, caps); }   /* (0.5.10) */
+EMSCRIPTEN_KEEPALIVE int mw_fw_caps_get(const mw_t *w) { return rfm_move_fw_caps_get(&w->s.core); }
 EMSCRIPTEN_KEEPALIVE int mw_fw_sounding(const mw_t *w) { return rfm_move_fw_sounding(&w->s.core); }
 EMSCRIPTEN_KEEPALIVE int mw_fw_active(const mw_t *w) { return rfm_move_fw_active(&w->s.core); }
 EMSCRIPTEN_KEEPALIVE int mw_fw_level(const mw_t *w, int slot) { return rfm_move_fw_level(&w->s.core, slot); }

@@ -613,6 +613,9 @@ static int pop_up(const rfm_move_t *m, int kind)
                                                          * parameter's knob touched: up while it is) */
 }
 static void pop_clear(rfm_move_t *m) { m->fw.pop = FP_NONE; }
+/* (0.5.10) the host's capabilities: firmware slots (1 or 3), FX setup */
+static int nslots(const rfm_move_t *m) { return m->fw.caps & RFM_MOVE_CAP_SLOTS ? RFM_MOVE_FW_SLOTS : 1; }
+static int has_fx(const rfm_move_t *m) { return (m->fw.caps & RFM_MOVE_CAP_FX) != 0; }
 
 /* ================================================================ the host's calls === */
 void rfmv_fw_init(rfm_move_t *m)
@@ -620,7 +623,7 @@ void rfmv_fw_init(rfm_move_t *m)
     rfm_move_fw_state_t *f = F(m);
     int s;
     memset(f, 0, sizeof *f);
-    f->voices = 1;
+    f->voices = 1, f->caps = RFM_MOVE_CAPS_ALL;
     f->sel = -1, f->cap_step = -1, f->browse = -1, f->busy_fw = -1, f->busy_slot = -1;
     for (s = 0; s < RFM_MOVE_FW_SLOTS; s++)
         f->slot_fw[s] = -1, f->level[s] = 100, f->st_cur[s] = -1;
@@ -657,7 +660,7 @@ void rfm_move_fw_slots(rfm_move_t *m, const char *const ids[RFM_MOVE_FW_SLOTS])
     int s, any = 0;
     for (s = 0; s < RFM_MOVE_FW_SLOTS; s++) {
         char id[RFM_MOVE_FW_ID_MAX];
-        snprintf(id, sizeof id, "%s", ids && ids[s] && strlen(ids[s]) < RFM_MOVE_FW_ID_MAX ? ids[s] : "");
+        snprintf(id, sizeof id, "%s", s < nslots(m) && ids && ids[s] && strlen(ids[s]) < RFM_MOVE_FW_ID_MAX ? ids[s] : "");
         if (strcmp(id, f->slot_id[s])) {
             strcpy(f->slot_id[s], id), any = 1;
             f->st_used[s] = 0, f->st_cur[s] = -1;       /* (another firmware: the host tells its states) */
@@ -698,7 +701,23 @@ void rfm_move_fw_progress(rfm_move_t *m, const char *id, int pct)
         pop(m, FP_LOADED, fw, f->busy_kind == BUSY_UPDATE ? 10 : 11);
     f->busy_kind = BUSY_NONE, f->busy_fw = -1;
 }
-void rfm_move_fw_voices(rfm_move_t *m, int n) { m->fw.voices = (uint8_t)clampi(n, 1, RFM_MOVE_FW_SLOTS); }
+void rfm_move_fw_voices(rfm_move_t *m, int n) { m->fw.voices = (uint8_t)clampi(n, 1, nslots(m)); }
+void rfm_move_fw_caps(rfm_move_t *m, int caps)
+{
+    rfm_move_fw_state_t *f = F(m);
+    int s;
+    f->caps = (uint8_t)(caps & RFM_MOVE_CAPS_ALL);
+    if (!(f->caps & RFM_MOVE_CAP_SLOTS)) {             /* one slot: the others emptied, slot 0 played */
+        for (s = 1; s < RFM_MOVE_FW_SLOTS; s++)
+            f->slot_id[s][0] = 0, f->slot_fw[s] = -1, f->st_used[s] = 0, f->st_cur[s] = -1;
+        f->active = 0, f->voices = 1;
+        if (f->track > 0 && f->track < 3)
+            f->track = 0;
+    }
+    if (!(f->caps & RFM_MOVE_CAP_FX))
+        f->fx = 0, f->browse = -1, f->fx_pages = 0;
+}
+int rfm_move_fw_caps_get(const rfm_move_t *m) { return m->fw.caps; }
 int rfm_move_fw_active(const rfm_move_t *m) { return m->fw.active; }
 int rfm_move_fw_level(const rfm_move_t *m, int slot) { return slot >= 0 && slot < 3 ? m->fw.level[slot] : 0; }
 int rfm_move_fw_sounding(const rfm_move_t *m)
@@ -758,6 +777,8 @@ void rfm_move_fx_refused(rfm_move_t *m, int kind, int slot)
 void rfm_move_fx_sync(rfm_move_t *m)
 {
     int kind, s, k;
+    if (!has_fx(m))
+        return;                                         /* (0.5.10: a host with no FX hears none of it) */
     for (kind = 0; kind < 2; kind++)
         for (s = 0; s < RFM_MOVE_FX_SLOTS; s++) {
             const rfm_move_fxslot_t *x = fxslot(m, kind, s);
@@ -893,6 +914,10 @@ int rfm_move_fw_library(rfm_move_t *m, const uint8_t *b, uint32_t n)
     f->active = b[5], f->level[0] = b[6], f->level[1] = b[7], f->level[2] = b[8];
     for (k = 0; k < RFM_MOVE_FW_SLOTS; k++)
         memcpy(f->slot_id[k], b + 16 + k * RFM_MOVE_FW_ID_MAX, RFM_MOVE_FW_ID_MAX);
+    if (f->active >= nslots(m))                         /* (0.5.10: one slot: slot 0, the others empty) */
+        f->active = 0;
+    for (k = nslots(m); k < RFM_MOVE_FW_SLOTS; k++)
+        f->slot_id[k][0] = 0;
     for (k = 0; k < RFM_MOVE_FW_TAGS; k++)
         memcpy(f->tag[k], b + 112 + k * RFM_MOVE_FW_TAG_NAME, RFM_MOVE_FW_TAG_NAME);
     for (k = 0, p = b + LIB_HDR; k < nr; k++, p += LIB_REC) {
@@ -1064,7 +1089,7 @@ void rfmv_fw_enter(rfm_move_t *m)
     rfm_move_fw_state_t *f = F(m);
     f->track = (uint8_t)(f->host ? (m->s.fw_track == 3 ? 3 : f->active) : 3);
     f->catalog = 0, f->sel = -1, f->jog = 0, f->capture = 0, f->cap_step = -1, f->states = 0, f->smods = 0;
-    f->fx = f->host && m->s.fw_fx, f->browse = -1;     /* (0.4.5: FX setup again if it was left showing) */
+    f->fx = f->host && has_fx(m) && m->s.fw_fx, f->browse = -1;     /* (0.4.5: FX setup again if it was left showing) */
     f->all_auto = !f->nfav;                             /* (no favourites: All) */
     f->hold_step = 0;
     pop_clear(m);
@@ -1082,6 +1107,8 @@ static void leave(rfm_move_t *m)
 static void show_track(rfm_move_t *m, int t)
 {
     rfm_move_fw_state_t *f = F(m);
+    if (t < 3 && t >= nslots(m))
+        return;                                         /* (0.5.10: one slot: Tracks 2, 3 do nothing) */
     f->track = (uint8_t)t;
     if (t < 3 && t != f->active) {                      /* (the firmware the controls play now) */
         f->active = (uint8_t)t;
@@ -1113,7 +1140,7 @@ int rfmv_fw_volume(rfm_move_t *m, int d)
     int t;
     if (!m->fw.host)
         return 0;
-    for (t = 0; t < 3; t++)
+    for (t = 0; t < nslots(m); t++)
         if (rfmv_track_held(m, t) && slot_loaded(m, t)) {
             set_level(m, t, d);
             return 1;
@@ -1338,7 +1365,7 @@ static void fw_input(rfm_move_t *m, const mr_event_t *ev)
             return;
         switch (cc) {
         case MR_CC_MENU:
-            if (f->host)
+            if (f->host && has_fx(m))
                 open_fx(m), rfmv_fw_view_pop(m);       /* (0.5.2: named) */
             else
                 leave(m);
@@ -1679,7 +1706,7 @@ static int fx_shown(const rfm_move_t *m) { return m->seq.projects && m->fw.fx; }
 int rfm_move_fw_set_active(rfm_move_t *m, int slot)
 {
     rfm_move_fw_state_t *f = F(m);
-    if (slot < 0 || slot >= RFM_MOVE_FW_SLOTS)
+    if (slot < 0 || slot >= nslots(m))
         return -1;
     if (m->seq.projects && !f->fx) {                    /* the projects view: a Track press (the track shown, its popup) */
         show_track(m, slot);
@@ -1707,7 +1734,7 @@ static int level_to(rfm_move_t *m, int slot, int level)
 }
 int rfm_move_fw_set_level(rfm_move_t *m, int slot, int level)
 {
-    if (slot < 0 || slot >= RFM_MOVE_FW_SLOTS || level < 0 || level > 127)
+    if (slot < 0 || slot >= nslots(m) || level < 0 || level > 127)
         return -1;
     return level_to(m, slot, level) && m->seq.projects;
 }
@@ -1715,10 +1742,10 @@ int rfm_move_mix_set(rfm_move_t *m, int slot, int level, int pan, const int send
 {
     rfm_move_fxset_t *x = &m->seq.fx;
     int k, lv, mix = 0;
-    if (slot < 0 || slot >= RFM_MOVE_FW_SLOTS || level < -1 || level > 127 || pan < -1 || pan > 127)
+    if (slot < 0 || slot >= nslots(m) || level < -1 || level > 127 || pan < -1 || pan > 127 || (!has_fx(m) && pan >= 0))
         return -1;
     for (k = 0; sends && k < RFM_MOVE_FX_SLOTS; k++)
-        if (sends[k] < -1 || sends[k] > 127)
+        if (sends[k] < -1 || sends[k] > 127 || (!has_fx(m) && sends[k] >= 0))
             return -1;
     lv = level >= 0 && level_to(m, slot, level);        /* (FW_LEVEL and the library, as the Mixer's knob 1) */
     if (pan >= 0 && pan != x->pan[slot])
@@ -1736,6 +1763,8 @@ int rfm_move_route_set(rfm_move_t *m, const int fw_filt[RFM_MOVE_FW_SLOTS], cons
 {
     rfm_move_fxset_t *x = &m->seq.fx;
     int k, any = 0;
+    if (!has_fx(m))
+        return -1;
     for (k = 0; k < 3; k++)
         if ((fw_filt && (fw_filt[k] < -1 || fw_filt[k] > 0xFFFF)) || (mfx_filt && (mfx_filt[k] < -1 || mfx_filt[k] > 0xFFFF)))
             return -1;
@@ -1757,7 +1786,7 @@ int rfm_move_route_set(rfm_move_t *m, const int fw_filt[RFM_MOVE_FW_SLOTS], cons
 }
 int rfm_move_fx_set_module(rfm_move_t *m, int kind, int slot, int module_index)
 {
-    if ((kind != RFM_MOVE_FX_MIDI && kind != RFM_MOVE_FX_AUDIO) || slot < 0 || slot >= RFM_MOVE_FX_SLOTS ||
+    if (!has_fx(m) || (kind != RFM_MOVE_FX_MIDI && kind != RFM_MOVE_FX_AUDIO) || slot < 0 || slot >= RFM_MOVE_FX_SLOTS ||
         module_index < -1 || module_index >= m->fw.nmods[kind])
         return -1;
     fx_load(m, kind, slot, module_index);               /* (the defaults, FX_LOAD, the project; as the jog's press) */
@@ -1768,7 +1797,7 @@ int rfm_move_fx_set_param(rfm_move_t *m, int kind, int slot, int index, int valu
     rfm_move_fxslot_t *sl;
     const rfm_move_fx_module_t *md;
     int v;
-    if ((kind != RFM_MOVE_FX_MIDI && kind != RFM_MOVE_FX_AUDIO) || slot < 0 || slot >= RFM_MOVE_FX_SLOTS)
+    if (!has_fx(m) || (kind != RFM_MOVE_FX_MIDI && kind != RFM_MOVE_FX_AUDIO) || slot < 0 || slot >= RFM_MOVE_FX_SLOTS)
         return -1;
     sl = fxslot(m, kind, slot);
     md = module(m, kind, sl->mod);
@@ -1784,7 +1813,7 @@ int rfm_move_fx_set_param(rfm_move_t *m, int kind, int slot, int index, int valu
 }
 int rfm_move_fx_set_page(rfm_move_t *m, int page)
 {
-    if (page < 0 || page > PG_MIX || !fx_page_ok(m, page))
+    if (!has_fx(m) || page < 0 || page > PG_MIX || !fx_page_ok(m, page))
         return -1;
     if (m->s.fx_page == page)
         return 0;
@@ -1821,7 +1850,7 @@ void rfmv_view_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
     }
     if (ev->type == MR_EV_KNOB && ev->index == 8) {    /* volume: a held Track's level, else MASTER */
         int t;
-        for (t = 0; t < 3; t++)
+        for (t = 0; t < nslots(m); t++)
             if (rfmv_track_held(m, t)) {
                 if (slot_loaded(m, t))
                     set_level(m, t, ev->value);
@@ -1839,7 +1868,7 @@ void rfmv_view_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
         fw_input(m, ev);
         return;
     }
-    if (f->host && ev->type == MR_EV_BUTTON && ev->index == MR_CC_MENU && ev->value) {
+    if (f->host && has_fx(m) && ev->type == MR_EV_BUTTON && ev->index == MR_CC_MENU && ev->value) {
         open_fx(m), rfmv_fw_view_pop(m);               /* (0.5.2: named) */
         return;
     }
@@ -1873,6 +1902,8 @@ static void track_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
             v = fx_page_ok(m, t) ? lit(FXCOL[t], on || fx_page(m) == t ? 256 : A(0.3)) : OFF;
         else if (t == 3)
             v = lit(TRACK4, on ? 256 : A(0.3));
+        else if (t >= nslots(m))
+            v = OFF;                                    /* (0.5.10: one slot) */
         else if (slot_loaded(m, t)) {
             v = lit(PAL[color(m, f->slot_fw[t])], on ? 256 : A(0.35));
             if (!(snd >> t & 1) && !slow)               /* (loaded past the host's voices: silent, blinking slowly) */
@@ -2612,7 +2643,10 @@ static int cover_popup(B *g, const rfm_move_t *m)
     int k;
     if (pop_up(m, FP_LEVEL)) {
         const int tr = f->pop_a;
-        snprintf(t, sizeof t, "Track %d level", tr + 1);
+        if (nslots(m) < 2)
+            snprintf(t, sizeof t, "Level");             /* (0.5.10: one slot) */
+        else
+            snprintf(t, sizeof t, "Track %d level", tr + 1);
         ctext(g, 2, t, 1);
         snprintf(t, sizeof t, "%d", f->level[tr]);
         ctext(g, 16, t, 3);
@@ -2621,8 +2655,8 @@ static int cover_popup(B *g, const rfm_move_t *m)
         else
             snprintf(nm, sizeof nm, "empty");
         ctext(g, 42, nm, 1);
-        for (k = 0; k < 3; k++) {
-            const int w = rnd(40.0 * f->level[k] / 127);
+        for (k = 0; k < nslots(m); k++) {
+            const int w = nslots(m) < 2 ? rnd(128.0 * f->level[k] / 127) : rnd(40.0 * f->level[k] / 127);
             if (k == tr)
                 fill(g, k * 43, 59, w, 5, 1);
             else
@@ -2660,7 +2694,10 @@ static int cover_popup(B *g, const rfm_move_t *m)
         snprintf(nm, sizeof nm, "%s", f->pop_text);
         cut(nm, 10);
         ctext(g, 12, nm, 2);
-        snprintf(t, sizeof t, "unloaded from Track %d", f->pop_b + 1);
+        if (nslots(m) < 2)
+            snprintf(t, sizeof t, "unloaded");
+        else
+            snprintf(t, sizeof t, "unloaded from Track %d", f->pop_b + 1);
         ctext(g, 38, t, 1);
         return 1;
     }
@@ -2692,11 +2729,16 @@ static void fw_screen(B *g, const rfm_move_t *m)
             snprintf(t, sizeof t, "updated to %s", v);
         } else if (f->pop_b == 11)
             snprintf(t, sizeof t, "on the Move");
+        else if (nslots(m) < 2)
+            snprintf(t, sizeof t, "loaded");
         else
             snprintf(t, sizeof t, "loaded on Track %d", f->pop_b + 1);
         if (f->pop_b >= 10 && f->catalog && f->sel == f->pop_a && f->track < 3 && status(m, f->pop_a) == ST_OK) {
             ctext(g, 32, t, 1);                         /* (0.4.2: still selected: the jog loads it) */
-            snprintf(t, sizeof t, "Jog: load on Track %d", f->track + 1);
+            if (nslots(m) < 2)
+                snprintf(t, sizeof t, "Jog: load it");
+            else
+                snprintf(t, sizeof t, "Jog: load on Track %d", f->track + 1);
             ctext(g, 46, t, 1);
         } else
             ctext(g, 36, t, 1);
@@ -2789,7 +2831,7 @@ int rfmv_fw_timed(const rfm_move_t *m)
 int rfmv_fw_switch(rfm_move_t *m, int t)
 {
     rfm_move_fw_state_t *f = F(m);
-    if (t < 0 || t >= RFM_MOVE_FW_SLOTS || !f->host || !slot_loaded(m, t))
+    if (t < 0 || t >= nslots(m) || !f->host || !slot_loaded(m, t))
         return 0;
     if (m->seq.projects && !f->fx) {
         show_track(m, t);
@@ -2812,8 +2854,8 @@ int rfmv_fw_cycle(rfm_move_t *m)
 {
     const rfm_move_fw_state_t *f = F(m);
     int i;
-    if (!f->host)
-        return 0;
+    if (!f->host || nslots(m) < 2)
+        return 0;                                       /* (0.5.10: one slot: Down switches nothing) */
     for (i = 1; i <= RFM_MOVE_FW_SLOTS; i++) {
         const int s = (f->active + i) % RFM_MOVE_FW_SLOTS;
         if (slot_loaded(m, s))

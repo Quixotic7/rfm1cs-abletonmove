@@ -1815,6 +1815,107 @@ static void test_fantasy(void)
     catalog_reset();
 }
 
+/* (0.5.10) a host with one firmware and no FX (rfm_move_fw_caps(m, 0): the web page, the phone apps): the browser as
+ * ever, loading into slot 0; no other slot reachable, no FX setup, nothing of FX emitted */
+static void test_single(void)
+{
+    rfm_move_t *m = &M;
+    static uint8_t blob[RFM_MOVE_FW_LIB_BYTES];
+    static const int lv[3] = { 90, 80, 70 };
+    static const char *const sl[3] = { "sloop", "choralroot", "felucca" };
+    const act_t *a;
+    uint8_t rgb[3];
+    int ids[32], k, felucca = idx("felucca");
+    catalog_reset();
+    rfm_move_init(m, NULL, on_act, NULL);
+    CHECK(rfm_move_fw_caps_get(m) == RFM_MOVE_CAPS_ALL);   /* (the default: the Move's three slots and FX) */
+    rfm_move_fw_caps(m, 0);
+    CHECK(rfm_move_fw_caps_get(m) == 0);
+    /* a library from a three-slot host (slot 3 played): slot 0, the others gone */
+    CHECK(rfm_move_fw_library(m, blob, lib_write(blob, 2, lv, sl, (const char *const[9]){ 0 }, NULL, 0, NULL, 0)) == 0);
+    CHECK(m->fw.active == 0 && !m->fw.slot_id[1][0] && !m->fw.slot_id[2][0]);
+    rfm_move_fw_list(m, E, NFW);
+    rfm_move_fw_slots(m, sl);
+    rfm_move_fw_voices(m, 3);
+    rfm_move_fx_modules(m, RFM_MOVE_FX_MIDI, MFX, 5), rfm_move_fx_modules(m, RFM_MOVE_FX_AUDIO, AFX, 5);
+    CHECK(!strcmp(m->fw.slot_id[0], "sloop") && !m->fw.slot_id[1][0] && !m->fw.slot_id[2][0] && m->fw.voices == 1 &&
+          rfm_move_fw_sounding(m) == 1 && rfmv_fw_loaded(m) == 1);
+    m->s.fw_fx = 1;                                     /* (FX setup left showing on the Move: not here) */
+    clear();
+    projects(m), rest_pop(m);
+    CHECK(m->seq.projects && m->fw.track == 0 && !m->fw.fx);
+    screen(m), write_pbm("single_at_rest");
+    CHECK(led_of(m, 1, MR_CC_TRACK1, rgb) && (rgb[0] | rgb[1] | rgb[2]));
+    CHECK(led_of(m, 1, MR_CC_TRACK1 - 1, rgb) && !(rgb[0] | rgb[1] | rgb[2]));
+    CHECK(led_of(m, 1, MR_CC_TRACK1 - 2, rgb) && !(rgb[0] | rgb[1] | rgb[2]));
+    CHECK(led_of(m, 1, MR_CC_TRACK1 - 3, rgb) && (rgb[0] | rgb[1] | rgb[2]));   /* (Track 4: the projects) */
+    /* Tracks 2, 3: nothing */
+    tap_track(m, 1), tap_track(m, 2);
+    CHECK(m->fw.track == 0 && m->fw.active == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && !m->fw.pop);
+    track(m, 1, 1), knob(m, 8, 10), track(m, 1, 0);    /* (Track 2 held + volume: no level) */
+    CHECK(count(RFM_MOVE_ACT_FW_LEVEL) == 0);
+    track(m, 0, 1), knob(m, 8, -8);                     /* Track 1 held + volume: slot 0's level */
+    CHECK((a = last(RFM_MOVE_ACT_FW_LEVEL)) && a->a.slot == 0 && a->a.value == 82);
+    screen(m), write_pbm("single_level");
+    CHECK(lit_in(0, 59, 128, 64) > 0 && lit_in(110, 59, 128, 64) == 0);   /* (one bar, the screen's width at most) */
+    track(m, 0, 0), rest_pop(m);
+    /* the browser as ever: All, Felucca, the jog's press loads it into slot 0 */
+    tap_step(m, 1);
+    rfmv_fw_bank(m, ids);
+    for (k = 0; k < 32 && ids[k] != felucca; k++) {}
+    CHECK(k < 32);
+    tap_pad(m, pad_of(k));
+    clear();
+    jog_press(m);
+    CHECK((a = last(RFM_MOVE_ACT_FW_LOAD)) && a->a.slot == 0 && !strcmp(a->id, "felucca"));
+    rfm_move_fw_progress(m, "felucca", 100);
+    CHECK(!strcmp(m->fw.slot_id[0], "felucca") && m->fw.slot_fw[0] == felucca);
+    screen(m), write_pbm("single_loaded");
+    rest_pop(m);
+    press(m, MR_CC_MUTE), rest_pop(m);                  /* (the catalog) */
+    CHECK(m->fw.catalog);
+    screen(m), write_pbm("single_catalog");
+    press(m, MR_CC_MUTE);
+    /* Menu (Session): no FX setup; out of the view, as Back */
+    clear();
+    press(m, MR_CC_MENU);
+    CHECK(!m->fw.fx && !m->seq.projects);
+    screen(m), write_pbm("single_menu_out");
+    rest_pop(m), projects(m), rest_pop(m);
+    CHECK(m->seq.projects && !m->fw.fx && m->fw.track == 0);
+    tap_track(m, 3), rest_pop(m), press(m, MR_CC_MENU);   /* (Track 4: out as before the browser) */
+    CHECK(!m->fw.fx && !m->seq.projects);
+    CHECK(count(RFM_MOVE_ACT_FX_LOAD) == 0 && count(RFM_MOVE_ACT_FX_PARAM) == 0 && count(RFM_MOVE_ACT_MIX) == 0 &&
+          count(RFM_MOVE_ACT_ROUTE) == 0);
+    /* FM-1 mode: Back + Track 2 and Down switch nothing */
+    rfm_move_set_mode(m, RFM_MOVE_MODE_FM1), rest_pop(m), clear();
+    button(m, MR_CC_BACK, 1), tap_track(m, 1), button(m, MR_CC_BACK, 0);
+    press(m, MR_CC_DOWN), press(m, MR_CC_DOWN);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.active == 0 && m->s.octave == 0);
+    /* the host's edits: other slots and FX refused, slot 0's level taken */
+    clear();
+    CHECK(rfm_move_fw_set_active(m, 1) == -1 && rfm_move_fw_set_active(m, 2) == -1 && rfm_move_fw_set_active(m, 0) == 0);
+    CHECK(rfm_move_fw_set_level(m, 1, 50) == -1 && rfm_move_fw_set_level(m, 0, 50) >= 0 && m->fw.level[0] == 50);
+    CHECK(rfm_move_mix_set(m, 0, -1, 30, NULL) == -1 && rfm_move_mix_set(m, 0, -1, -1, (const int[3]){ 9, -1, -1 }) == -1 &&
+          rfm_move_mix_set(m, 1, 60, -1, NULL) == -1 && rfm_move_mix_set(m, 0, 60, -1, NULL) >= 0 && m->fw.level[0] == 60);
+    CHECK(rfm_move_route_set(m, (const int[3]){ 1, 1, 1 }, NULL) == -1);
+    CHECK(rfm_move_fx_set_module(m, RFM_MOVE_FX_MIDI, 0, 1) == -1 && rfm_move_fx_set_param(m, RFM_MOVE_FX_AUDIO, 0, 0, 5) == -1 &&
+          rfm_move_fx_set_page(m, RFM_MOVE_FX_PAGE_MIX) == -1);
+    rfm_move_fx_sync(m);
+    CHECK(rfm_move_project_load(m, 1, NULL, 0) == 0);
+    CHECK(count(RFM_MOVE_ACT_FW_LEVEL) == 2 && count(RFM_MOVE_ACT_FX_LOAD) == 0 && count(RFM_MOVE_ACT_FX_PARAM) == 0 &&
+          count(RFM_MOVE_ACT_MIX) == 0 && count(RFM_MOVE_ACT_ROUTE) == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0);
+    /* turned off at any time: the open FX setup and slots 2, 3 go */
+    fixture(m), three(m), press(m, MR_CC_MENU);
+    CHECK(m->fw.fx);
+    rfm_move_fw_caps(m, RFM_MOVE_CAP_FX);              /* (FX kept, one slot) */
+    CHECK(m->fw.fx && !m->fw.slot_id[1][0] && rfm_move_fw_sounding(m) == 1);
+    rfm_move_fw_caps(m, 0);
+    CHECK(!m->fw.fx && m->seq.projects && m->fw.track == 0);
+    press(m, MR_CC_MENU);
+    CHECK(!m->fw.fx);
+}
+
 int main(void)
 {
     test_nolist();
@@ -1834,6 +1935,7 @@ int main(void)
     test_fx_pages();
     test_menu_names();
     test_fantasy();
+    test_single();
     test_states();
     test_midi_track();
     test_old_formats();

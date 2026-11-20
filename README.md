@@ -519,6 +519,19 @@ Decisions where the spec left a gap:
   `rfm_move_mix_set`, `_route_set`, `rfm_move_fx_set_module`, `_fx_set_param`, `_fx_set_page`: the Move's own edit
   (its action, the project's or the library's save), never a write to `rfm_move_t`'s fields.
 
+### One firmware, no FX (0.5.10)
+
+`rfm_move_fw_caps(m, caps)` says what the host offers: `RFM_MOVE_CAPS_ALL` (the default, the Move's RemoteFM14Move)
+three slots and FX setup; 0 one firmware and no FX (remotefm1.com, the phone apps). The browser is the same (the
+banks, Favorites / All, categories and tags, colours, the description, the catalog, States, the jog's load), loading
+into slot 0. Without `RFM_MOVE_CAP_SLOTS`: Tracks 2 and 3 are dark and do nothing in the projects view, Back + Track
+and Down (FM-1 mode) switch nothing, Track 2 / 3 held + volume sets nothing, the host's slot ids past 0 and a library's
+other slots are dropped, voices are 1, and the popups say "Level" and "loaded" without a track. Without
+`RFM_MOVE_CAP_FX`: Session never opens FX setup (on a firmware track it leaves the view, as Back; on Track 4 as before
+the browser), and no `FX_LOAD`, `FX_PARAM`, `MIX` or `ROUTE` is emitted (`rfm_move_fx_sync` and project loads send
+none); the host-edit calls for FX, pan, sends and routing refuse (-1). A project keeps its FX setup untouched, so one
+made on the Move loads back there as it was.
+
 ## FX parameter pages (0.5.0)
 
 A module's own parameter pages, as Schwung's `ui_hierarchy` lays them out: each level's 8 knobs a page, its overflow

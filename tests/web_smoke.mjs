@@ -16,6 +16,10 @@ ok(core.M._mw_project_max() === PROJECT_MAX && core.M._mw_file_max() === FILE_MA
 const acts = core.input(packet(0x90, 68, 100), 0, 0);        // the first pad (note 68) down
 ok(acts.some((a) => a.kind === "key" && a.down), "a pad gives a key down");
 ok(core.screen(null).length === 1024, "the screen is 1024 bytes");
+ok(core.fwCapsGet() === 3, "(0.5.10) caps: three slots and FX by default");
+core.fwCaps(0);
+ok(core.fwCapsGet() === 0, "(0.5.10) caps 0: one firmware, no FX");
+core.fwCaps(3);
 // the session: start asks for the transport, opened says HELLO
 const a = core.sessStart(1000), open = a.evs.find((e) => e.type === "open");
 ok(open && open.attempt > 0 && open.attempt === core.sessAttempt() && core.sessStatus().state === 1, "the session: start -> open (an attempt), CONNECTING");

@@ -3,6 +3,27 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.5.10 (2026-11-19)
+
+One firmware, no FX, for the hosts that are not the Move (remotefm1.com, the iOS and Android apps). `rfm_move_fw_state_t`
+has a new last field (`caps`): rebuild everything. Nothing changes for a host that does not call the new function.
+
+- **`rfm_move_fw_caps(m, caps)`** (and `rfm_move_fw_caps_get`): `RFM_MOVE_CAP_SLOTS` (three firmware slots) and
+  `RFM_MOVE_CAP_FX` (FX setup: MIDI FX, audio FX, routing, the Mixer); `RFM_MOVE_CAPS_ALL` the default. With 0 the
+  firmware browser is as ever and loads into slot 0; Tracks 2 and 3 are dark and inert in the projects view; Back +
+  Track, Down (FM-1 mode) and Track 2 / 3 held + volume switch or set nothing; slot ids past 0 (the host's, the
+  library's) are dropped and voices are 1; Session never opens FX setup (a firmware track: out, as Back); no
+  `FX_LOAD` / `FX_PARAM` / `MIX` / `ROUTE` is emitted; `rfm_move_fw_set_active` / `_fw_set_level` refuse a slot past
+  0, `rfm_move_fx_set_*`, `rfm_move_route_set` and a pan or send in `rfm_move_mix_set` refuse. The level and load
+  popups drop "Track 1". Safe at any time (an open FX setup closes, slots 2 and 3 empty).
+- **Web**: `mw_fw_caps` / `mw_fw_caps_get`, `MoveCore.fwCaps(caps)` / `fwCapsGet()`.
+
+**Tests:** `move_fw` `test_single`: the default, a three-slot library (slot 3 played) loaded into one slot, the Track
+LEDs, Tracks 2 / 3 and their volume, a browser load into slot 0, the catalog, Session out, Back + Track and Down in
+FM-1 mode, every host-edit call, `fx_sync` and a project load emitting nothing of FX, turning it off with FX setup
+open. Screens `fw_single_*.pbm`. `web_smoke` checks `fwCaps`. (`web_smoke`'s "Audio FX: a module loaded" check fails
+as in 0.5.9: it picks a module the pre-0.5.0 way; not changed here.)
+
 ## 0.5.9 (2026-11-19)
 
 The FM-1 popups over the whole screen (the owner's, with a setting). `rfm_move_settings_t` has a new last field and

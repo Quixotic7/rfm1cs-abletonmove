@@ -28,7 +28,7 @@ extern "C" {
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 5
 #define RFM1CS_VERSION_PATCH 9
-#define RFM1CS_VERSION "0.5.9"
+#define RFM1CS_VERSION "0.5.10"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -386,6 +386,8 @@ typedef struct {
     uint8_t fx_pg[2][RFM_MOVE_FX_SLOTS];                /* each slot's page (its knobs' page) */
     uint8_t mix_par;                                    /* the Mixer's knobs 1..3: RFM_MOVE_MIXP_* */
     uint8_t fx_del;                                     /* Delete held in FX setup (Delete + pad empties a slot) */
+    /* (0.5.10) */
+    uint8_t caps;                                       /* the host's RFM_MOVE_CAP_* (rfm_move_fw_caps) */
 } rfm_move_fw_state_t;
 enum { RFM_MOVE_MIXP_LEVEL, RFM_MOVE_MIXP_PAN, RFM_MOVE_MIXP_SEND1, RFM_MOVE_MIXP_SEND2, RFM_MOVE_MIXP_SEND3,
        RFM_MOVE_MIXP_N };                               /* (0.5.0) the Mixer's choice (its right-hand pads) */
@@ -892,6 +894,22 @@ void rfm_move_fx_refused(rfm_move_t *m, int kind, int slot);
 /* the whole FX setup as actions now (FX_LOAD and FX_PARAM for every slot, MIX for every firmware, ROUTE): after the
  * modules are given at start. A project load does it too (when the browser is on) */
 void rfm_move_fx_sync(rfm_move_t *m);
+
+/* (0.5.10) what the host offers. RFM_MOVE_CAPS_ALL (the default): three firmware slots and FX setup (the Move's
+ * RemoteFM14Move). A host with one firmware and no FX (the web page, the phone apps) passes 0: the browser is the same
+ * (favourites, All, categories, colours, info, states, the jog's load) and loads into slot 0, and
+ *  - RFM_MOVE_CAP_SLOTS off: one slot. Tracks 2 and 3 are dark and do nothing in the projects view; Back + Track and
+ *    Down (FM-1 mode) switch nothing; Track 2 / 3 held + volume sets nothing; the host's slot ids past 0 are ignored;
+ *    voices are 1; rfm_move_fw_set_active / _fw_set_level refuse a slot past 0;
+ *  - RFM_MOVE_CAP_FX off: no FX setup, no Mixer. Menu (Session) never opens it (a firmware track: out of the view, as
+ *    Back; Track 4: as before the browser); no FX_LOAD / FX_PARAM / MIX / ROUTE is emitted (rfm_move_fx_sync and a
+ *    project load send none); rfm_move_fx_set_module / _param / _page and rfm_move_route_set refuse (-1), and
+ *    rfm_move_mix_set refuses a pan or a send (a level alone is rfm_move_fw_set_level's).
+ * Call it after rfm_move_init, before rfm_move_fw_list (any time is safe: the view closes what it no longer has).
+ * The project keeps its FX setup untouched, so a project made on the Move loads back there unchanged. */
+enum { RFM_MOVE_CAP_SLOTS = 1, RFM_MOVE_CAP_FX = 2, RFM_MOVE_CAPS_ALL = 3 };
+void rfm_move_fw_caps(rfm_move_t *m, int caps);
+int rfm_move_fw_caps_get(const rfm_move_t *m);
 
 /* ---- (0.4.1) the host's edits: FX setup, the mix, the routing and the firmware slots changed outside the Move (a web
  * page), applied as the Move's own edit applies them. Call them on the core's thread (where rfm_move_input is

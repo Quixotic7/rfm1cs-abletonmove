@@ -43,7 +43,7 @@
 //   core.fwList([{ id, name, version, installed, desc, thumb (Uint8Array(512) | null), cats, cat }]) -> actions
 //   core.fwInstalled(i, version | null); core.fwSlots([id | null, x3]) -> actions; core.fwProgress(id, pct) -> actions
 //   core.fwLibrary(bytes | null) -> 0 / -1; core.fwLibrarySave() -> bytes; core.fwFlush() -> actions
-//   core.fwVoices(n); core.fwSounding() -> bits; core.fwActive(); core.fwLevel(slot); core.fwStates(slot, usedBits)
+//   core.fwCaps(0) (0.5.10: one firmware, no FX; before fwList); core.fwVoices(n); core.fwSounding() -> bits; core.fwActive(); core.fwLevel(slot); core.fwStates(slot, usedBits)
 //   core.fxModules(kind, [{ name, params: [{ name, words?: [..], def, dryWet }] }]); core.fxRefused(kind, slot) -> actions
 //   core.fxSync() -> actions
 //   actions: { kind: "fwLoad", slot, fw } { kind: "fwUnload", slot } { kind: "fwActive", slot } { kind: "fwDownload", fw }
@@ -426,6 +426,9 @@ export class MoveCore {
   fwLibrarySave() { const n = this.M._mw_fw_library_save(this.w), p = this.M._mw_blob(this.w, 0); return n ? this.M.HEAPU8.slice(p, p + n) : null; }
   fwFlush() { return this._acts(this.M._mw_fw_flush(this.w)); }
   fwVoices(n) { this.M._mw_fw_voices(this.w, n | 0); }
+  // (0.5.10) the host's capabilities: 0 one firmware, no FX (the web page); 3 (the default) three slots and FX
+  fwCaps(caps) { this.M._mw_fw_caps(this.w, caps | 0); }
+  fwCapsGet() { return this.M._mw_fw_caps_get(this.w); }
   fwSounding() { return this.M._mw_fw_sounding(this.w); }
   fwActive() { return this.M._mw_fw_active(this.w); }
   fwLevel(slot) { return this.M._mw_fw_level(this.w, slot | 0); }
