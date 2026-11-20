@@ -904,12 +904,31 @@ static void test_delete(void)
 {
     const int c0 = SEQ_CLIP(0, 0);
     int n0;
-    /* Delete tapped, Delete held and let go: nothing changes; a hint */
+    /* Delete tapped, Delete held and let go: nothing changes, (0.6.4) the screen neither; a hint, spoken only */
     seq_three(&M);
     n0 = all_notes(&M);
-    press(&M, MR_CC_DELETE);
-    CHECK(all_notes(&M) == n0 && rfmv_seq_clip_has(&M, c0) && !M.seq.cut && !M.seq.clip_kind);
-    HAS("V:Delete: hold and press a step, pad or clip|");
+    {
+        static uint8_t a[MR_SCREEN_BYTES], b[MR_SCREEN_BYTES];
+        rfm_move_screen(&M, NULL, a);
+        press(&M, MR_CC_DELETE);
+        rfm_move_screen(&M, NULL, b);
+        CHECK(!memcmp(a, b, sizeof a) && !M.seq.msg);
+        HAS("V:Delete: hold and press a step, pad or clip|");
+        button(&M, MR_CC_DELETE, 1);                    /* (held: the track view as ever, the canvas's seq.clip) */
+        rfm_move_screen(&M, NULL, b);
+        write_pbm("delete_held.pbm", b);
+        CHECK(!memcmp(a, b, sizeof a));
+        tap_step(&M, 4);
+        rfm_move_screen(&M, NULL, b);
+        write_pbm("delete_cut.pbm", b);                 /* (step 5 crossed) */
+        CHECK(memcmp(a, b, sizeof a) != 0);
+        tap_step(&M, 8);
+        rfm_move_screen(&M, NULL, b);
+        write_pbm("delete_pasted.pbm", b);
+        button(&M, MR_CC_DELETE, 0);
+        press(&M, MR_CC_UNDO), press(&M, MR_CC_UNDO), rest_pop(&M), clear();
+    }
+    CHECK(all_notes(&M) == n0 && rfmv_seq_clip_has(&M, c0) && !M.seq.cut && M.seq.clip_kind == 1);   /* (undone; the clipboard stays) */
     button(&M, MR_CC_DELETE, 1), adv_ms(&M, 800), button(&M, MR_CC_DELETE, 0);
     CHECK(all_notes(&M) == n0 && rfmv_seq_clip_has(&M, c0));
     press(&M, MR_CC_MENU), clear();                     /* (session too) */

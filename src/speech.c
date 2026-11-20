@@ -23,8 +23,7 @@ static const char *const LAYOUT_LONG[4] = { "Scale", "Chromatic", "Drum", "Octav
 static const char *const MSG_WORDS[] = {
     "", "No empty clip", "Full", "Load failed", "Captured", "Undo", "Redo", "Copied", "Pasted", "", "Quantized",
     "Loop doubled", "External tempo", "Duplicated", "Cleared", "Capture cleared", "Sync: AUTO", "Sync: INT",
-    "Sync: EXT", "Full velocity", "Pad velocity", "Metronome on", "Metronome off", "New clip", "Clip cleared",
-    "Delete: hold and press a step, pad or clip" };
+    "Sync: EXT", "Full velocity", "Pad velocity", "Metronome on", "Metronome off", "New clip", "Clip cleared" };
 static const char *const FN_WORDS[RFM_MOVE_FN_N] = { "None", "Restart", "Reverse", "Forward", "Flip", "Random",
                                                      "Random function", "Leap", "Jump", "Repeat" };
 

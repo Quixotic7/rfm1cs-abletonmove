@@ -336,7 +336,8 @@ pasted over ("Step 9 replaced"); press C again: cut.
 | Copy held, an empty step tapped | the clipboard pasted there (a group: its first step there) | "Pasted to step 9" |
 | Copy released after copying, then a plain step | pasted there once (Move's way) | "Pasted to step 9" |
 | Delete or Copy held + a clip / an empty slot (Session) | the clip cut / copied; pasted into an empty slot | "Cut track 1 clip 2", "Pasted" |
-| Delete tapped, or held and let go alone | nothing changes; a hint ("Hold Delete + a step") | "Delete: hold and press a step, pad or clip" |
+| Delete tapped, or held and let go alone | nothing changes, on the screen neither (0.6.4) | "Delete: hold and press a step, pad or clip" (spoken only) |
+| Delete or Copy held (track view) | the screen as ever: the canvas's seq.clip, the roll over the 16 step cells (copied dashed, cut crossed; a group: each of its steps) | |
 | Copy tapped alone | a waiting copy dropped, else the clip duplicated into the track's next empty slot | "Duplicated" |
 | Delete held + a pad (track view) | that note out of the clip | "Deleted C3" |
 | Track 4 held + Delete (let go) | the selected track cleared (no clipboard) | "Track 1 cleared" |

@@ -996,8 +996,9 @@ static void test_edits(void)
     /* Delete alone (0.6.3, the owner's: Delete is a modifier only): a tap, or a hold let go, changes nothing; a hint */
     press(m, MR_CC_MENU);
     CHECK(m->seq.sel_track == 0 && m->seq.tr[0].sel == 1);
+    m->seq.msg = 0;
     press(m, MR_CC_DELETE);
-    CHECK(nnotes_clip(m, SEQ_CLIP(0, 1)) == 4 && m->seq.msg == SEQ_MSG_DELHINT && !m->seq.cut);
+    CHECK(nnotes_clip(m, SEQ_CLIP(0, 1)) == 4 && !m->seq.msg && !m->seq.cut);   /* (0.6.4: no message either) */
     button(m, MR_CC_DELETE, 1), adv(m, RATE), button(m, MR_CC_DELETE, 0);
     CHECK(nnotes_clip(m, SEQ_CLIP(0, 1)) == 4 && rfmv_seq_clip_has(m, SEQ_CLIP(0, 1)));
     step(m, 3, 1), press(m, MR_CC_DELETE), step(m, 3, 0);   /* (with a step held: nothing) */

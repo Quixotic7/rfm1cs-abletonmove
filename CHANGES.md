@@ -3,6 +3,21 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.4 (2026-11-19)
+
+- Delete tapped alone (or held and let go alone) shows nothing new: 0.6.3's "Hold Delete / + a step" message broke
+  the v2 grammar (symbols at rest, words only while something is touched or turned) and is gone; the hint is
+  spoken only. A lone Delete changes nothing (0.6.3, a5c7d4b; af8e035's "cuts the selected clip" was replaced
+  before the tag moved).
+- While Delete or Copy is held the screen is the design canvas's own (V2Screen.dc.html `seq.clip`: "the 16 steps as
+  cells (only while Copy / Delete / a step is held): notes filled, empty outlined, copied dashed, cut crossed"), as
+  the track view has drawn it since 0.5.x (the steps always shown, the owner's); a copied or cut group marks each of
+  its steps (0.6.3).
+
+**Tests:** `move_speech` 240 checks: a lone Delete leaves the screen byte for byte as it was; Delete held, a cut, a
+paste drawn (`delete_*.pbm`, the contact sheet `rfm1cs-0.6.4-delete.png`). `move_seq`: a lone Delete raises no
+message.
+
 ## 0.6.3 (2026-11-19)
 
 Speech everywhere, and Delete is cut everywhere on the sequencer (the owner: "many commands with no speech, like
@@ -11,8 +26,8 @@ the end of `rfm_move_t`: rebuild everything.
 
 - **Delete is a modifier only** (the owner: "If I quick click delete or hold the delete key and release it deletes
   every step on the track"). Since 0.1.0 (f79e90c), after Move's own Delete, **Delete alone deleted the selected
-  clip**: a tap, or a hold let go with nothing else pressed. Now it changes nothing and shows / says a hint ("Hold
-  Delete + a step"; "Delete: hold and press a step, pad or clip"). Delete held + a step or clip has cut since 0.1.0,
+  clip**: a tap, or a hold let go with nothing else pressed. Now it changes nothing and says a hint
+  ("Delete: hold and press a step, pad or clip"; 0.6.3 also showed one, dropped in 0.6.4). Delete held + a step or clip has cut since 0.1.0,
   unchanged (no regression); since 0.6.1 speech said a cut step as "Step 5 off", now "Step 5 cut".
 - **Cut and paste repeat** (the owner: "I can only ever paste once"): since 0.1.0 a pasted cut emptied the clipboard.
   Now a paste keeps it (the cut's X marks go), so it pastes again and again until something else is cut or copied.

@@ -246,10 +246,11 @@ static void copy_alone(rfm_move_t *m)
 }
 /* Delete released with nothing pressed (Move): the selected track's clip is deleted */
 static void delete_alone(rfm_move_t *m)                 /* (0.6.3, the owner's) Delete is a modifier only, as on the
-                                                         * Move: alone (a tap, or a hold let go) it changes nothing;
-                                                         * a hint how it is used (before: the selected clip deleted) */
+                                                         * Move: alone (a tap, or a hold let go) it changes nothing
+                                                         * (before: the selected clip deleted); (0.6.4) nothing on the
+                                                         * screen either: a hint for the screen reader only */
 {
-    rfmv_seq_msg(m, SEQ_MSG_DELHINT);
+    rfmv_say_text(m, "Delete: hold and press a step, pad or clip");
 }
 
 /* a clip deleted: its notes and locks, and the clip itself (the slot empty again) */
@@ -2033,7 +2034,6 @@ static const struct { const char *a, *b; int8_t icon; } MSG[] = {
     { "Cleared", "", -1 }, { "Capture", "Cleared", -1 }, { "Clock Auto", "", -1 }, { "Clock Int", "", -1 },
     { "Clock Ext", "", -1 }, { "Full Vel", "", V2I_VEL }, { "Pad Vel", "", V2I_VEL }, { "Click On", "", V2I_METRO },
     { "Click Off", "", V2I_METRO }, { "New Clip", "", V2I_CLIP }, { "Clip", "Cleared", -1 },
-    { "Hold Delete", "+ a step", -1 },
 };
 const char *rfmv_seq_msg_text(const rfm_move_t *m)
 {
