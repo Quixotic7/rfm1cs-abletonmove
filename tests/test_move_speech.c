@@ -1036,6 +1036,14 @@ static void test_fav_order(void)
     SAID(want);
     knob(&M, 1, RFM_MOVE_LIST_TICKS);                   /* (the end: no move, nothing new said) */
     SAID("");
+    rest_pop(&M), clear();
+    touch(&M, 1, 1);                                    /* (0.6.13) touched: what it does, where it is */
+    snprintf(want, sizeof want, "V:Move %s, 2 of 2|", E[ids[0]].name);
+    SAID(want);
+    touch(&M, 1, 0), rest_pop(&M), clear();
+    touch(&M, 0, 1);                                    /* (knob 1: the colour) */
+    CHECK(!strncmp(said, "V:Colour: ", 10));
+    touch(&M, 0, 0), rest_pop(&M), clear();
 }
 /* (0.6.9) the host sweep's gesture: touch, half a detent, a detent later, no readout yet past 250 ms: the name once;
  * then the readout's "Name: value". A readout naming its control (>= 0): its title reused on the Shift page */

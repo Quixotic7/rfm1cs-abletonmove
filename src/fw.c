@@ -1349,6 +1349,20 @@ static void fav_move(rfm_move_t *m, int fw, int d)
     f->bank[0] = (uint8_t)(t / 32);                     /* (the bank shown follows it) */
     pop(m, FP_ORDER, fw, t + 1);
 }
+/* (0.6.13) a listed favourite's place 1.., 0 not listed */
+static int fav_place(const rfm_move_t *m, int fw)
+{
+    static int at[RFM_MOVE_FW_LIB_MAX];
+    const int n = fav_listed(m, at), r = rec_of(m, fw);
+    int k;
+    for (k = 0; k < n; k++)
+        if (m->fw.fav[at[k]] == r)
+            return k + 1;
+    return 0;
+}
+/* (0.6.13) the firmware view's knobs with a job: 1 the selected firmware's colour, 2 its place in Favorites */
+static int knob1_job(const rfm_move_t *m) { return m->fw.sel >= 0 && !m->fw.catalog && !m->fw.states; }
+static int knob2_job(const rfm_move_t *m) { return m->fw.sel >= 0 && fav_order_on(m) && is_fav(m, m->fw.sel); }
 static void fw_input(rfm_move_t *m, const mr_event_t *ev)
 {
     rfm_move_fw_state_t *f = F(m);
@@ -1510,6 +1524,10 @@ static void fw_input(rfm_move_t *m, const mr_event_t *ev)
             f->list_acc = 0;
         if (!ev->value && ev->index == 1)
             f->knob_acc[1] = 0;
+        if (ev->value && ev->index == 0 && knob1_job(m))   /* (0.6.13) touched: its parameter and value at once */
+            f->jog = 0, pop(m, FP_COLOR, fw, 0);
+        if (ev->value && ev->index == 1 && knob2_job(m))
+            f->jog = 0, pop(m, FP_ORDER, fw, fav_place(m, fw) | 0x1000);   /* (0x1000: a touch; the same popup) */
         return;
     case MR_EV_JOG:
         if (fw >= 0 && ev->value && !f->states) {
@@ -2115,7 +2133,8 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 if (MIXPAD[r][i] >= 0)
                     c[L_PAD0 + pad_of(r * 8 + 4 + i)] = lit(MIXCOL[MIXPAD[r][i]], f->mix_par == MIXPAD[r][i] ? 256 : A(0.25));
         for (i = 0; i < RFM_MOVE_NKNOBS; i++)
-            c[L_RING0 + i] = i < 3 && slot_loaded(m, i) ? MIXCOL[f->mix_par] : OFF;
+            c[L_RING0 + i] = i < nslots(m) ? MIXCOL[f->mix_par] : OFF;   /* (0.6.13: every knob with a job, an
+                                                         * empty slot's level too) */
         w[W_MENU] = 127, w[W_BACK] = wl(A(0.35));
         return;
     }
@@ -2230,8 +2249,10 @@ void rfmv_fw_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
         w[W_LEFT] = nb > 1 && b > 0 ? wl(A(0.6)) : 0;
         w[W_RIGHT] = nb > 1 && b < nb - 1 ? wl(A(0.6)) : 0;
     }
-    if (fw >= 0 && !f->catalog)
+    if (knob1_job(m))
         c[L_RING0] = PAL[color(m, fw)];                 /* knob 1: the colour */
+    if (knob2_job(m))
+        c[L_RING0 + 1] = FAVCOL;                        /* (0.6.13) knob 2: the favourite's place */
 }
 
 /* ================================================================ the screens (the mockup's render()) === */
@@ -3010,7 +3031,7 @@ static void fw_screen(B *g, const rfm_move_t *m)
     if (pop_up(m, FP_ORDER)) {                          /* (0.6.9) a favourite moved: the FAV popup's layout */
         name_cut(m, f->pop_a, 10, nm, sizeof nm);
         ctext(g, 12, nm, 2);
-        snprintf(t, sizeof t, "position %d of %d", f->pop_b, list_len(m));
+        snprintf(t, sizeof t, "position %d of %d", f->pop_b & 0xFFF, list_len(m));
         ctext(g, 38, t, 1);
         return;
     }
@@ -3401,7 +3422,10 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap)
     }
     if (pop_up(m, FP_ORDER)) {
         asc(ename(m, f->pop_a), nm, sizeof nm);
-        snprintf(o, (size_t)cap, "%s, position %d of %d", nm, f->pop_b, list_len(m));
+        if (f->pop_b & 0x1000)                          /* (0.6.13: touched: what the knob does, where it is) */
+            snprintf(o, (size_t)cap, "Move %s, %d of %d", nm, f->pop_b & 0xFFF, list_len(m));
+        else
+            snprintf(o, (size_t)cap, "%s, position %d of %d", nm, f->pop_b, list_len(m));
         return 1;
     }
     if (pop_up(m, FP_COLOR) && f->sel >= 0) {

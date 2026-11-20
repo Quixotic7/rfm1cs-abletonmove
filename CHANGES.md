@@ -3,6 +3,22 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.13 (2026-11-20)
+
+Knobs with a job light up and answer a touch (the owner: "The favorite move should light up the LED under the knob,
+also the knobs should react to touching them to see the parameter/value").
+
+- **The firmware view:** knob 2's LED is lit in the favourites' colour (pink) while it has a job (a favourite
+  selected in the Favorites list, no filter); knob 1's in the firmware's colour while one is selected (not in the
+  catalog or the states; was lit there too). A touch shows the knob's popup at once (the layouts as before, no new
+  screen): knob 1 the colour, knob 2 "SLOOP / position 3 of 17"; speech "Colour: Red", "Move SLOOP, 3 of 17" (a turn
+  still "SLOOP, position 3 of 17"), per the Speech mode. No job: dark, a touch nothing.
+- **FX setup** already lit its knobs with a parameter and showed it on touch; the Mixer's knobs 1..3 are now lit for
+  every slot they set (an empty slot's level too; they were dark there).
+
+**Tests:** `move_fw` the LEDs dark with nothing selected and in All (knob 2), lit with a favourite selected, the
+touch popups; `move_speech` the touch words.
+
 ## 0.6.12 (2026-11-20)
 
 Speech modes in Global Settings (the owner: "Off(Default), On(Always on like it works now), or Jogwheel(Only speaks

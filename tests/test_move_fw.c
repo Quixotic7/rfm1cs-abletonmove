@@ -910,8 +910,26 @@ static void test_fav_order(void)
     n0 = rfmv_fw_bank(m, ids);
     CHECK(n0 >= 3);
     a = ids[0], b = ids[1], c = ids[2];
+    {                                                   /* (0.6.13) nothing selected: knobs 1, 2 dark, a touch nothing */
+        uint8_t c1[3], c2[3];
+        CHECK(m->fw.sel < 0 && led_of(m, 1, MR_CC_KNOB1, c1) && !c1[0] && !c1[1] && !c1[2]);
+        CHECK(led_of(m, 1, MR_CC_KNOB1 + 1, c2) && !c2[0] && !c2[1] && !c2[2]);
+        touch(m, 1, 1), touch(m, 1, 0);
+        CHECK(m->fw.pop != FP_ORDER);
+    }
     tap_pad(m, pad_of(1));                              /* (the second favourite) */
     CHECK(m->fw.sel == b);
+    {                                                   /* (0.6.13) a favourite selected: knob 2 lit (the favourites'
+                                                         * colour), knob 1 its colour; a touch: their popups at once */
+        uint8_t c2[3];
+        CHECK(led_of(m, 1, MR_CC_KNOB1 + 1, c2) && c2[0] == 255 && c2[1] == 70 && c2[2] == 110);
+        touch(m, 1, 1);
+        CHECK(m->fw.pop == FP_ORDER && (m->fw.pop_b & 0xFFF) == 2 && (m->fw.pop_b & 0x1000));
+        touch(m, 1, 0);
+        touch(m, 0, 1);
+        CHECK(m->fw.pop == FP_COLOR);
+        touch(m, 0, 0), rest_pop(m);
+    }
     clear(), nlib = 0;
     knob(m, 1, RFM_MOVE_LIST_TICKS);                    /* (a step down: third) */
     rfmv_fw_bank(m, ids);
@@ -946,10 +964,17 @@ static void test_fav_order(void)
         CHECK(ids[0] == c && ids[1] == b && ids[2] == a);
         CHECK(rfm_move_fw_favorites_set(m, NULL, 1) == -1);
     }
-    /* All: knob 2 does nothing */
+    /* All: knob 2 does nothing (its LED off, a touch nothing) */
     tap_step(m, 1), rest_pop(m);
     CHECK(m->s.fw_scope == 1);
     tap_pad(m, pad_of(0));
+    {
+        uint8_t c2[3], c1[3];
+        CHECK(led_of(m, 1, MR_CC_KNOB1 + 1, c2) && !c2[0] && !c2[1] && !c2[2]);
+        CHECK(led_of(m, 1, MR_CC_KNOB1, c1) && (c1[0] | c1[1] | c1[2]));   /* (knob 1: its colour, a job here too) */
+        touch(m, 1, 1), touch(m, 1, 0);
+        CHECK(m->fw.pop != FP_ORDER);
+    }
     {
         const int sel = m->fw.sel;
         uint16_t before[64];
