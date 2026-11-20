@@ -1127,7 +1127,9 @@ int rfm_move_midi_route_set(rfm_move_t *m, int slot, int mask);
  * whichever of the two the slot was left in (each slot remembers). Volume touched + Back: FM-1 mode from any takeover
  * (Back not sent). A slot switch closes the shown takeover; the slot switched to opens as it was left. Unclaimed
  * parts keep FM-1 mode's meaning and LEDs. The projects view and the Shift menus (Global Settings) close it while
- * they are up. Call these on the core's thread; slot 0..2 (others ignored) */
+ * they are up. Call these on the core's thread; slot 0..2 (others ignored). rfm_move_tk_screen / _leds only store: while
+ * the slot is shown (rfm_move_tk_shown) the host redraws and flushes the LEDs after them, as after any change. The core
+ * never clears a slot's takeover itself: a firmware unloaded or replaced needs rfm_move_set_takeover(m, slot, 0, ..) */
 /* claims RFM_MOVE_TK_* (0: no takeover: Track 1 does not offer it, an open one closes and the slot is in FM-1 mode
  * again); name: the mode's name (printable ASCII, 15 kept; NULL ""), shown and said on entering. Any time (a firmware
  * that changes its claims while it runs: the record's claims after every call); a new firmware in the slot: claims 0
@@ -1136,7 +1138,7 @@ void rfm_move_set_takeover(rfm_move_t *m, int slot, unsigned claims, const char 
 /* the firmware's screen (the record's, when scr_seq moved): shown while its takeover is with SCREEN claimed */
 void rfm_move_tk_screen(rfm_move_t *m, int slot, const uint8_t packed[MR_SCREEN_BYTES]);
 /* its LEDs (the record's, when led_seq moved), the LED list's order (RFM_MOVE_L_*): only the claimed ones are used;
- * a white one (63..91) takes r as its brightness (0..127, the Move's; more is 127) */
+ * a white one (63..91) takes r as its brightness (0..255, scaled to the Move's 0..127) */
 void rfm_move_tk_leds(rfm_move_t *m, int slot, const uint8_t rgb[RFM_MOVE_NLEDS][3]);
 /* its words (the record's say, when say_seq moved): a SAY (slot set) now, only while that slot's takeover is shown
  * and words may be said (rfm_move_speech_open). interrupt 1: SAY_VALUE with down 1 (stop what is being said first);
