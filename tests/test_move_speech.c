@@ -1034,6 +1034,35 @@ static void test_fav_order(void)
     knob(&M, 1, RFM_MOVE_LIST_TICKS);                   /* (the end: no move, nothing new said) */
     SAID("");
 }
+/* (0.6.9) the host sweep's gesture: touch, half a detent, a detent later, no readout yet past 250 ms: the name once;
+ * then the readout's "Name: value". A readout naming its control (>= 0): its title reused on the Shift page */
+static void test_knob_twice(void)
+{
+    const char *lbl[RFM_MOVE_LBL_N] = { NULL };
+    fresh(&M, 1);
+    lbl[RFM_MOVE_LBL_KNOB0 + 4] = "Voicing", lbl[RFM_MOVE_LBL_KNOB0 + 5] = "Bass Regis";
+    rfm_move_set_labels(&M, lbl);
+    rfm_move_readout(&M, RFM_MOVE_LBL_KNOB0 + 3, RFM_MOVE_RD_PARAM, "Other", "1", -1, 0, 0);   /* (readouts seen) */
+    rest_pop(&M), clear();
+    touch(&M, 5, 1);                                    /* (K2: Voicing) */
+    SAID("V:Voicing|");
+    adv_ms(&M, 500);
+    knob(&M, 5, 1);                                     /* (half a detent) */
+    adv_ms(&M, 300);
+    knob(&M, 5, 1);                                     /* (a detent) */
+    adv_ms(&M, 300);                                    /* (no readout: the end repeat has no value) */
+    SAID("");
+    rd("Voicing", "+1");
+    SAID("V:Voicing: +1|");
+    touch(&M, 5, 0), rest_pop(&M), clear();
+    /* control 5 (K3) named by the host on the plain page: its title on the Shift page's first touch */
+    rfm_move_readout(&M, RFM_MOVE_LBL_KNOB0 + 5, RFM_MOVE_RD_PARAM, "Bass Register", "+1 oct", -1, 0, 0);
+    rest_pop(&M), clear();
+    button(&M, MR_CC_SHIFT, 1), clear();
+    touch(&M, 6, 1);                                    /* (Move knob 7: K3) */
+    SAID("V:Bass Register|");
+    touch(&M, 6, 0), button(&M, MR_CC_SHIFT, 0), rest_pop(&M), clear();
+}
 static int g_silent;
 static void test_walk(void)
 {
@@ -1206,6 +1235,7 @@ int main(void)
     test_knob_readouts();
     test_knob_pages();
     test_fav_order();
+    test_knob_twice();
     test_walk();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");

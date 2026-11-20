@@ -564,6 +564,7 @@ void rfm_move_readouts_clear(rfm_move_t *m)
 static void readout(rfm_move_t *m, int control, int kind, const char *title, const char *value, int frac, int flags,
                     int ms)
 {
+    const int expl = control >= 0;                      /* (0.6.9: the host named the control) */
     rfm_move_readout_t r;
     const int up = m->pop && rfmv_pop_up(m, m->pop), knob_up = up ? rfmv_pop_slot(m) : -1;
     memset(&r, 0, sizeof r);
@@ -577,7 +578,7 @@ static void readout(rfm_move_t *m, int control, int kind, const char *title, con
         control = knob_up;
     if (control >= RFM_MOVE_LBL_KNOB0 && control < RFM_MOVE_LBL_BTN0) {
         m->rd[control] = r;                             /* (kept: the knob's touch shows it) */
-        rfmv_say_readout(m, control);                   /* (0.6.7: its label then, for speech) */
+        rfmv_say_readout(m, control, expl);             /* (0.6.7: its label then, for speech) */
         if (knob_up == control)
             return;                                     /* (its popup is up: drawn in place) */
     }

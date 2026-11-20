@@ -17,8 +17,15 @@ Favourites reordered (the owner: "be able to reorder your favorites. Use knob 2 
 - **API:** `rfm_move_fw_favorites(m, ids, cap)` (the ids in order, the count); `rfm_move_fw_favorites_set(m, ids, n)`
   (the given ids first in that order, the rest after as they were; -1 NULL, 0 no change, 1 done and on screen).
 
+- **Knob speech, the host's sweep of 0.6.8:** a touch then a turn said the name twice before the value ("Voicing",
+  "Voicing", "Voicing: +1"): the range's end repeat (no readout within 250 ms) said the name when no value was known,
+  for a turn short of a detent. Now the repeat says nothing then: the name once on touch, then "Name: value" when the
+  readout comes. A full title is reused on another page (the Shift page's first touch) when its readout named the
+  control itself (`control` >= 0) and the label is the same ("Bass Register", not "Bass Regis").
+
 **Tests:** `move_fw` `test_fav_order` (down, two up, the top holding, short of a step, the library's round trip, the
-getter, the setter, All untouched); `move_speech` the words and the end saying nothing new.
+getter, the setter, All untouched); `move_speech` the words and the end saying nothing new; the sweep's gesture (touch,
+half a detent, a detent, no readout past 250 ms: the name once) and a named control's title on the Shift page.
 
 ## 0.6.8 (2026-11-19)
 

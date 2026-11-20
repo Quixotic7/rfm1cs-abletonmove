@@ -162,9 +162,13 @@ static const char *title_seen(const rfm_move_t *m, int sl)
     for (i = 0; i < m->say_tcn; i++)
         if (m->say_tc[i].slot == sl && m->say_tc[i].mods == b && !strcmp(m->say_tc[i].lbl, l))
             return m->say_tc[i].title;
+    for (i = m->say_tcn - 1; i >= 0; i--)               /* (0.6.9) another page's, for a readout that named this
+                                                         * control itself (control >= 0) with this label */
+        if (m->say_tc[i].slot == sl && m->say_tc[i].expl && !strcmp(m->say_tc[i].lbl, l))
+            return m->say_tc[i].title;
     return NULL;
 }
-void rfmv_say_readout(rfm_move_t *m, int slot)
+void rfmv_say_readout(rfm_move_t *m, int slot, int expl)
 {
     const int n = (int)(sizeof m->say_tc / sizeof m->say_tc[0]);
     int i;
@@ -185,6 +189,7 @@ void rfmv_say_readout(rfm_move_t *m, int slot)
                 memmove(&m->say_tc[0], &m->say_tc[1], sizeof m->say_tc[0] * (size_t)(n - 1)), i = n - 1;
         }
         m->say_tc[i].slot = (uint8_t)slot, m->say_tc[i].mods = m->rd_mods[slot];
+        m->say_tc[i].expl = (uint8_t)(expl != 0);
         snprintf(m->say_tc[i].lbl, sizeof m->say_tc[i].lbl, "%s", m->rd_lbl[slot]);
         snprintf(m->say_tc[i].title, sizeof m->say_tc[i].title, "%s", m->rd[slot].title);
     }
@@ -315,7 +320,10 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
             else
                 rfmv_tcase(enc_label(m, m->pop == POP_SELECT ? RFM_MOVE_E_SELECT : rfm_move_knob_enc(i)), l, sizeof l);
         }
-        if (m->pop_blank || !m->pop_val)
+        if (m->say_late)
+            o[0] = 0;                                   /* (0.6.9) the range's end repeat with no value known: nothing
+                                                         * (was the name again: "Voicing", "Voicing") */
+        else if (m->pop_blank || !m->pop_val)
             snprintf(o, (size_t)cap, "%s", l);          /* (0.6.7: never the Move's placeholder "0") */
         else if (m->rd_any)
             o[0] = 0;                                   /* (0.6.7) a firmware with readouts: its value comes as one;
