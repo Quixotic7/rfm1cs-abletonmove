@@ -282,6 +282,10 @@ EMSCRIPTEN_KEEPALIVE int mw_popup(mw_t *w, const char *text)
 /* (0.6.0) speech: on / off, a SAY action's words (mw_say(i): the action's value), the screen in words now */
 EMSCRIPTEN_KEEPALIVE void mw_set_speech(mw_t *w, int on) { rfm_move_set_speech(&w->s.core, on); }
 EMSCRIPTEN_KEEPALIVE int mw_speech(const mw_t *w) { return rfm_move_speech(&w->s.core); }
+/* (0.6.12) the speech mode: the default while none is chosen, the mode now, words open now */
+EMSCRIPTEN_KEEPALIVE void mw_set_speech_default(mw_t *w, int mode) { rfm_move_set_speech_default(&w->s.core, mode); }
+EMSCRIPTEN_KEEPALIVE int mw_speech_mode(const mw_t *w) { return rfm_move_speech_mode(&w->s.core); }
+EMSCRIPTEN_KEEPALIVE int mw_speech_open(const mw_t *w) { return rfm_move_speech_open(&w->s.core); }
 EMSCRIPTEN_KEEPALIVE const char *mw_say(const mw_t *w, int i) { return i >= 0 && i < w->nsays ? w->say[i] : ""; }
 EMSCRIPTEN_KEEPALIVE const char *mw_words(mw_t *w)
 {

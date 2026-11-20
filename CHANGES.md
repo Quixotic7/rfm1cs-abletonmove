@@ -21,11 +21,13 @@ settings image is version 6 (88 bytes; versions 1..5 load, the mode then not cho
 - **Host API:** `rfm_move_speech_mode(m)` (0 off, 1 on, 2 jog), `rfm_move_speech_open(m)` (1: words may be said now:
   On, or Jog with the jog touched); hosts keep `rfm_move_set_speech(m, 1)` on and gate their own words on it.
 - `rfm_move_words` in Global Settings adds the selected row.
+- Web: `core.setSpeechDefault(mode)`, `core.speechMode()`, `core.speechOpen()`, `SPEECH`; `SETTINGS_BYTES` 88.
 
 **Tests:** `move_speech` 334 checks: Off says nothing; the default only while nothing is chosen; the Speech row's
 changes said (Off too) and saved (a SETTINGS action); Jog silent until touched, the screen on touch, words while
 held, silent again, a new touch; Jog in Global Settings; `move` the settings image (version 6, versions 5 and 4
-loading). Contact sheet `rfm1cs-0.6.12-global-speech.png`.
+loading); `web_smoke` 37 (the mode Off by default, the default On). Contact sheet
+`rfm1cs-0.6.12-global-speech.png`.
 
 ## 0.6.11 (2026-11-20)
 

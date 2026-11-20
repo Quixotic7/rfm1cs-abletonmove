@@ -116,6 +116,9 @@ core.sessStop(5000);
 {
   ok(!core.speech() && !core.setMode(MODE.MIDI).some((a) => a.kind === "say"), "(0.6.0) speech off: no say action");
   core.setMode(MODE.FM1);
+  ok(core.speechMode() === 0 && !core.speechOpen(), "(0.6.12) the speech mode: Off by default");
+  core.setSpeechDefault(1);                                   // (the system's screen reader on: On while none chosen)
+  ok(core.speechMode() === 1 && core.speechOpen(), "(0.6.12) setSpeechDefault(On): the mode On, words open");
   core.setSpeech(true);
   ok(core.speech() && core.words() === "FM-1 mode", `(0.6.0) words(): ${core.words()}`);
   const m = core.setMode(MODE.CONTROL).filter((a) => a.kind === "say");

@@ -62,6 +62,7 @@ export const ACT = { KEY: 1, PRESS: 2, BTN: 3, TURN: 4, MASTER: 5, MIDI: 6, SETT
   MIX: 25, ROUTE: 26, STATE_SAVE: 27, STATE_LOAD: 28, STATE_DELETE: 29, SAY: 30 };
 export const FX = { MIDI: 0, AUDIO: 1 };
 export const LBL_N = 49, NBTN = 14;                     // (0.5.11: RFM_MOVE_LBL_N, RFM_MOVE_NBTN)
+export const SPEECH = { OFF: 0, ON: 1, JOG: 2 };     // (0.6.12: RFM_MOVE_SPEECH_*)
 export const READOUT = { PARAM: 1, PRESET: 2, MESSAGE: 3, BIPOLAR: 1 };   // (RFM_MOVE_RD_*; BIPOLAR is a flag)
 export const CAT = { SYNTH: 1, GROOVEBOX: 2, CHORDS: 4, DRUMS: 8, OTHER: 16 };
 export const FW_FAILED = -1, FW_BUSY = -2;
@@ -277,6 +278,11 @@ export class MoveCore {
   // (0.6.0) words for a screen reader: off by default; on, the calls' actions include { kind: "say", event, text }
   setSpeech(on) { this.M._mw_set_speech(this.w, on ? 1 : 0); }
   speech() { return !!this.M._mw_speech(this.w); }
+  // (0.6.12) the user's speech mode (Global Settings: SPEECH.OFF, ON, JOG): the default while none is chosen, the mode
+  // now, and whether words may be said now (On, or Jog with the jog touched)
+  setSpeechDefault(mode) { this.M._mw_set_speech_default(this.w, mode | 0); }
+  speechMode() { return this.M._mw_speech_mode(this.w); }
+  speechOpen() { return !!this.M._mw_speech_open(this.w); }
   words() { return this._str(this.M._mw_words(this.w)); }
   // km: the panel's wiring (6 rows x 11, id or -1: engine info().keymap), or null for the FM-1's
   setKeymap(km) {
