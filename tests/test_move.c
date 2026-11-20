@@ -2119,8 +2119,17 @@ static void test_host_popup(void)
     m.seq.projects = 0;
 }
 
+/* (0.5.11) the version's numbers, its string, the library's and CMake's agree */
+static void test_version(void)
+{
+    char v[32];
+    snprintf(v, sizeof v, "%d.%d.%d", RFM1CS_VERSION_MAJOR, RFM1CS_VERSION_MINOR, RFM1CS_VERSION_PATCH);
+    CHECKF(!strcmp(v, RFM1CS_VERSION), "RFM1CS_VERSION_* %s, RFM1CS_VERSION %s", v, RFM1CS_VERSION);
+    CHECK(!strcmp(rfm_move_version(), RFM1CS_VERSION));
+}
 int main(void)
 {
+    test_version();
     test_fm1_pads();
     test_steps();
     test_buttons_knobs();
