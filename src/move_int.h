@@ -56,7 +56,7 @@ int rfmv_level(const rfm_move_t *m, int id);           /* the FM-1 LED level 0..
 /* ---- screen.c: the screen (every mode's picture, the popups, the held Track buttons' menus) */
 enum { POP_NONE = 0, POP_ENC, POP_MASTER, POP_CC, POP_SELECT, POP_DRUM, POP_TEMPO, POP_LOOP, POP_BANK, POP_STEP,
        POP_PROJ, POP_TRIG, POP_BAR, POP_TRACK, POP_MODE, POP_FW,
-       POP_HOST, POP_LABEL, POP_READ };   /* (POP_READ 0.5.7: a readout of its own, rd_pop) */   /* (POP_LABEL 0.5.6: a button's or key's label, pop_i its slot) */   /* (POP_HOST 0.5.4: rfm_move_popup's words) */   /* (POP_FW 0.4.3: Back + Track, a firmware) */
+       POP_HOST, POP_LABEL, POP_READ, POP_TK };   /* (POP_TK 0.7.0: a takeover's name, pop_i its slot) */   /* (POP_READ 0.5.7: a readout of its own, rd_pop) */   /* (POP_LABEL 0.5.6: a button's or key's label, pop_i its slot) */   /* (POP_HOST 0.5.4: rfm_move_popup's words) */   /* (POP_FW 0.4.3: Back + Track, a firmware) */
 #define RFM_MOVE_TAP_MS 300                             /* a Track button released this soon: a tap (not its menu) */
 enum { MENU_NONE = 0, MENU_LAYOUT, MENU_SCALE, MENU_ROOT, MENU_CHANNEL, MENU_CC, MENU_TRACK, MENU_TCH, MENU_RATE, MENU_SHIFT };
 uint32_t rfmv_now_ms(const rfm_move_t *m);             /* the sequencer clock's ms (what popups time out on) */
@@ -259,6 +259,18 @@ const char *rfmv_seq_smenu_name(int sm);               /* (0.6.1, seq_ui.c) a Sh
 void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap);
 void rfmv_say_tick(rfm_move_t *m);                     /* (rfm_move_seq_advance: the transport's start and stop, a
                                                          * held button's label once it shows; nothing else) */
+
+/* ---- takeover.c (0.7.0): a firmware's own Move interface */
+int rfmv_tk_mode(const rfm_move_t *m);                  /* the active slot is in its takeover (shown or not) */
+int rfmv_tk_on(const rfm_move_t *m);                    /* .. and it is shown (no projects view, no Shift menu) */
+unsigned rfmv_tk_claims(const rfm_move_t *m);           /* the claims in force now (0: none shown) */
+const char *rfmv_tk_name(const rfm_move_t *m);          /* the active slot's takeover's name */
+void rfmv_tk_set(rfm_move_t *m, int on);                /* the active slot's takeover opened / left (FM-1 mode), named */
+void rfmv_tk_mode_pop(rfm_move_t *m);                   /* the mode's name popup (the takeover's, or POP_MODE) */
+int rfmv_tk_route(rfm_move_t *m, const mr_event_t *ev);   /* input: 1 taken (the firmware's, or volume + Back) */
+void rfmv_tk_sync(rfm_move_t *m);                       /* TK_STATE (and releases) when what is shown changed */
+void rfmv_tk_release(rfm_move_t *m);                    /* the firmware's held controls let go */
+void rfmv_tk_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3]);   /* the claimed LEDs, the firmware's */
 
 /* move.c, project.c for fw.c */
 void rfmv_master_turn(rfm_move_t *m, int d);           /* the volume knob as MASTER */

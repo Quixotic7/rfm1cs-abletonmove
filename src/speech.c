@@ -107,7 +107,15 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
         }
         snprintf(o, (size_t)cap, "Track %d", m->seq.sel_track + 1);
         return S_SEQ_TRACK;
-    default: snprintf(o, (size_t)cap, "FM-1 mode"); return 1;
+    default:
+        if (rfmv_tk_mode(m)) {                          /* (0.7.0) a takeover: its name ("Chords, takeover") */
+            char t[RFM_MOVE_TK_NAME + 8];
+            rfmv_tcase(rfmv_tk_name(m), t, sizeof t);
+            snprintf(o, (size_t)cap, "%s%stakeover", t, t[0] ? ", " : "");
+            return 0x40 + m->fw.active % RFM_MOVE_FW_SLOTS;
+        }
+        snprintf(o, (size_t)cap, "FM-1 mode");
+        return 1;
     }
 }
 static int in_fw(int s) { return s >= S_FW_TRACK0 && s <= S_FW_LAST; }
@@ -480,6 +488,7 @@ int rfm_move_speech_open(const rfm_move_t *m)
 void rfm_move_set_speech_default(rfm_move_t *m, int mode)
 {
     m->say_default = (uint8_t)(mode == RFM_MOVE_SPEECH_ON || mode == RFM_MOVE_SPEECH_JOG ? mode : RFM_MOVE_SPEECH_OFF);
+    rfmv_tk_sync(m);                                    /* (0.7.0: a takeover's speech flag) */
 }
 static int g_force;                                     /* (a word said in any mode: the mode's own change) */
 static void say(rfm_move_t *m, int kind, const char *w)
@@ -926,6 +935,7 @@ void rfm_move_set_speech(rfm_move_t *m, int on)
         return;
     m->speech = on != 0;
     m->say_now[0] = 0;
+    rfmv_tk_sync(m);                                    /* (0.7.0: a takeover's speech flag) */
     if (!m->speech)
         return;
     m->view_subj = (uint16_t)base_words(m, w, sizeof w);   /* (the screen now taken as said: the host names it) */

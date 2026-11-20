@@ -1852,6 +1852,7 @@ static int set_active(rfm_move_t *m, int slot)
 int rfm_move_fw_set_active(rfm_move_t *m, int slot)
 {
     const int r = set_active(m, slot);
+    rfmv_tk_sync(m);                                    /* (0.7.0: a takeover shown or gone) */
     rfmv_say_check(m);
     return r;
 }

@@ -71,8 +71,11 @@ enum {
     RFM_MOVE_E_MASTER = 7,                              /* (labels only: MASTER is not an encoder) */
 };
 
-/* the four modes (Track 1..4) and the MIDI modes' pad layouts */
-enum { RFM_MOVE_MODE_FM1 = 0, RFM_MOVE_MODE_MIDI = 1, RFM_MOVE_MODE_CONTROL = 2, RFM_MOVE_MODE_SEQ = 3 };
+/* the four modes (Track 1..4) and the MIDI modes' pad layouts. (0.7.0) RFM_MOVE_MODE_TAKEOVER: a firmware's own Move
+ * interface (rfm_move_set_takeover; Track 1 from FM-1 mode). It is never in the settings (settings.mode stays FM1
+ * under it: what the firmware does not claim keeps FM-1 mode's meaning); rfm_move_mode() names it */
+enum { RFM_MOVE_MODE_FM1 = 0, RFM_MOVE_MODE_MIDI = 1, RFM_MOVE_MODE_CONTROL = 2, RFM_MOVE_MODE_SEQ = 3,
+       RFM_MOVE_MODE_TAKEOVER = 4 };
 enum { RFM_MOVE_LAYOUT_SCALE = 0, RFM_MOVE_LAYOUT_CHROMATIC = 1, RFM_MOVE_LAYOUT_DRUM = 2, RFM_MOVE_LAYOUT_OCTAVE = 3 };
 enum {
     RFM_MOVE_SCALE_MAJOR = 0, RFM_MOVE_SCALE_MINOR, RFM_MOVE_SCALE_DORIAN, RFM_MOVE_SCALE_MIXOLYDIAN,
@@ -140,6 +143,14 @@ enum {
  * NUL-terminated, len < RFM_MOVE_SAY_MAX; valid during the callback only), param 0. Only while speech is on. A
  * #define (not an enum value) so a host can #ifdef it */
 #define RFM_MOVE_ACT_SAY 30
+/* (0.7.0) the takeover (rfm_move_set_takeover; README "Takeover"). The host calls the slot's firmware with them:
+ *  - TK_INPUT: rfm1_tk_input(pkt): slot, pkt[4] (and data / len 4) the raw packet of a claimed control (a release the
+ *    core makes up, as the takeover closes: note off 0x80 vel 0, a button's CC value 0);
+ *  - TK_STATE: rfm1_tk_state(down, tk_claims, tk_flags): slot, down 1 the takeover is shown now with these claims
+ *    (sent again when the claims or the flags change), 0 it is gone (after a release for every control the firmware
+ *    was sent as held). SAY actions carry slot too for a firmware's words (rfm_move_tk_say) */
+#define RFM_MOVE_ACT_TK_INPUT 31
+#define RFM_MOVE_ACT_TK_STATE 32
 typedef struct {
     uint8_t kind;                                       /* RFM_MOVE_ACT_* */
     uint8_t index, down, vel;
@@ -166,6 +177,11 @@ typedef struct {
     /* (0.6.6) */
     uint8_t mroute[3];                                  /* ROUTE: each firmware slot's MIDI routes (rfm_move_fxset_t
                                                          * mroute: bits 0..2 the slots, RFM_MOVE_MROUTE_OUT Out) */
+    /* (0.7.0) the takeover (TK_INPUT, TK_STATE; slot: the firmware slot) */
+    uint8_t pkt[4];                                     /* TK_INPUT: the Move's USB-MIDI packet (byte 0 cable 0 / CIN),
+                                                         * for rfm1_tk_input as a u32 little-endian; data / len too */
+    uint16_t tk_claims;                                 /* TK_STATE: the claims granted (RFM_MOVE_TK_*), 0 when off */
+    uint8_t tk_flags;                                   /* TK_STATE: RFM_MOVE_TKF_SPEECH */
 } rfm_move_act_t;
 typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
@@ -230,6 +246,11 @@ typedef struct {
  * knob rings 1..8), 13 white CC LEDs (Shift, Menu, Back, Capture, Down, Up, Undo, Loop, Copy, Left, Right, Mute,
  * Delete) */
 #define RFM_MOVE_NLEDS 92                               /* (the last 16: the white icon LEDs under the steps, CC 16..31) */
+/* (0.7.0) the LED list's order (rfm_move_tk_leds; the takeover spec's section 4.2): 0..31 the pads, 32..47 the steps,
+ * 48 Play, 49 Rec, 50 Sample, 51..54 Track 1..4, 55..62 the knob rings, 63..75 the whites (Shift, Menu, Back, Capture,
+ * Down, Up, Undo, Loop, Copy, Left, Right, Mute, Delete), 76..91 the icons under the steps */
+enum { RFM_MOVE_L_PAD0 = 0, RFM_MOVE_L_STEP0 = 32, RFM_MOVE_L_PLAY = 48, RFM_MOVE_L_REC = 49, RFM_MOVE_L_SAMPLE = 50,
+       RFM_MOVE_L_TRACK0 = 51, RFM_MOVE_L_RING0 = 55, RFM_MOVE_L_WHITE0 = 63, RFM_MOVE_L_ICON0 = 76 };
 
 /* ---- (0.4.0) the firmware browser: the projects view's Tracks 1..3 are three firmware slots (README.md,
  * "Firmwares"; the host guide's v0.4.0 section has the whole contract)
@@ -693,6 +714,29 @@ typedef struct {
     uint8_t a, b;                                       /* key / button / (channel, note) */
 } rfm_move_hold_t;
 
+/* ---- (0.7.0) the takeover: a firmware's own Move interface (FM1VST docs/RFM1-TAKEOVER.md, tk1). The claims: the
+ * parts of the Move it takes (their input and their LEDs) */
+enum {
+    RFM_MOVE_TK_SCREEN = 0x001,                         /* the screen */
+    RFM_MOVE_TK_PADS = 0x002,                           /* pads (notes 68..99, poly / channel pressure); LEDs 0..31 */
+    RFM_MOVE_TK_STEPS = 0x004,                          /* steps (notes 16..31); LEDs 32..47, the icons 76..91 */
+    RFM_MOVE_TK_KNOBS = 0x008,                          /* knobs 1..8 (CC 71..78, touch notes 0..7); rings 55..62 */
+    RFM_MOVE_TK_JOG = 0x010,                            /* the wheel (CC 14), its click (CC 3), touch note 9 */
+    RFM_MOVE_TK_VOLUME = 0x020,                         /* the volume knob (CC 79), touch note 8 */
+    RFM_MOVE_TK_BUTTONS = 0x040,                        /* Shift .. Sample (not the Track buttons); LEDs 48..50, 63..75 */
+    RFM_MOVE_TK_TRACKS = 0x080,                         /* Track 1..4 (CC 43..40); LEDs 51..54 */
+    RFM_MOVE_TK_ALL = 0x0FF,
+};
+#define RFM_MOVE_TKF_SPEECH 1                           /* TK_STATE's flags: the screen reader is on */
+#define RFM_MOVE_TK_NAME 16                             /* a takeover's name with its NUL (15 printable ASCII) */
+typedef struct {
+    uint16_t claims;                                    /* RFM_MOVE_TK_*, 0: none (no takeover) */
+    uint8_t mode;                                       /* 1: the slot was left in its takeover (Track 1 brings it) */
+    char name[RFM_MOVE_TK_NAME];
+    uint8_t screen[MR_SCREEN_BYTES];                    /* the firmware's screen, packed */
+    uint8_t led[RFM_MOVE_NLEDS][3];                     /* its LEDs (a white one: r its brightness) */
+} rfm_move_tk_slot_t;
+
 typedef struct {
     rfm_move_settings_t s;
     rfm_move_act_fn fn;
@@ -810,6 +854,18 @@ typedef struct {
     uint8_t say_tcn, say_rdnew;
     uint8_t del_src;                                    /* this Delete hold's last step action: 0 none, 1 cut, 2 paste
                                                          * (back to none when Delete is let go; the clipboard stays) */
+    /* (0.7.0) the takeover: each slot's (rfm_move_set_takeover, _tk_screen, _tk_leds), what the host was told last
+     * (TK_STATE) and what the firmware holds now (its releases are due as the takeover closes) */
+    rfm_move_tk_slot_t tk[RFM_MOVE_FW_SLOTS];
+    uint8_t tk_sent_on, tk_sent_slot, tk_sent_flags;
+    uint16_t tk_sent_claims;
+    uint32_t tk_pad;                                    /* bit p: pad p held by the firmware */
+    uint16_t tk_step, tk_touch;                         /* steps; touches (knobs 0..7, 8 volume, 9 jog) */
+    uint32_t tk_btn[4];                                 /* by CC (buttons, Track buttons, the jog's click) */
+    uint8_t tk_vtouch;                                  /* the volume knob touched now (volume + Back: out) */
+    uint8_t tk_back;                                    /* Back held back (BUTTONS without TRACKS): 1 down, unsent */
+    uint8_t tk_back_trk;                                /* .. a Track pressed meanwhile (nothing sent at its release) */
+    uint8_t tk_back_eat;                                /* Back's release is nobody's (volume + Back took its press) */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
@@ -828,7 +884,10 @@ void rfm_move_init(rfm_move_t *m, const rfm_move_settings_t *settings, rfm_move_
 void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms);
 /* every held FM-1 key, button and MIDI note let go (ups, pressure 0, note offs); the track buttons forgotten */
 void rfm_move_release_all(rfm_move_t *m);
-void rfm_move_set_mode(rfm_move_t *m, int mode);       /* as a Track button does (releases all on a change) */
+/* as a Track button does (releases all on a change). (0.7.0) RFM_MOVE_MODE_FM1 leaves a takeover (FM-1 mode itself);
+ * RFM_MOVE_MODE_TAKEOVER opens the active slot's (nothing if it has none) */
+void rfm_move_set_mode(rfm_move_t *m, int mode);
+int rfm_move_mode(const rfm_move_t *m);                 /* (0.7.0) RFM_MOVE_MODE_* now (TAKEOVER: the active slot's) */
 void rfm_move_set_scale(rfm_move_t *m, int scale, int root);
 void rfm_move_set_master(rfm_move_t *m, int value);    /* MASTER as the host has it (the volume knob moves from it) */
 /* the Move's battery from Move Remote's STATUS (battery8, byte 4, as the surface reports it: taken as a percentage,
@@ -1060,6 +1119,30 @@ int rfm_move_midi_route(const rfm_move_t *m, int slot);   /* a slot's mask (0..1
 /* the host's edit (a web page): the slot's whole mask. -1 refused (a slot out of range, a bit past 15, its own bit,
  * a cycle, no FX setup: RFM_MOVE_CAP_FX off); 0 done or nothing to change; 1 done and on screen. ROUTE, the project */
 int rfm_move_midi_route_set(rfm_move_t *m, int slot, int mask);
+
+/* ---- (0.7.0) the takeover (README "Takeover"; FM1VST docs/RFM1-TAKEOVER.md). The host reads a slot's tk1 record and
+ * hands the core what it says; the core shows it and sends the firmware its controls (TK_INPUT, TK_STATE).
+ * Track 1 tapped in FM-1 mode opens the active slot's takeover (its name shown and said: "<name>, takeover"), Track 1
+ * tapped in it (TRACKS not claimed) goes back to FM-1 mode; from MIDI, Control or Sequencer mode Track 1 goes back to
+ * whichever of the two the slot was left in (each slot remembers). Volume touched + Back: FM-1 mode from any takeover
+ * (Back not sent). A slot switch closes the shown takeover; the slot switched to opens as it was left. Unclaimed
+ * parts keep FM-1 mode's meaning and LEDs. The projects view and the Shift menus (Global Settings) close it while
+ * they are up. Call these on the core's thread; slot 0..2 (others ignored) */
+/* claims RFM_MOVE_TK_* (0: no takeover: Track 1 does not offer it, an open one closes and the slot is in FM-1 mode
+ * again); name: the mode's name (printable ASCII, 15 kept; NULL ""), shown and said on entering. Any time (a firmware
+ * that changes its claims while it runs: the record's claims after every call); a new firmware in the slot: claims 0
+ * first, or its own */
+void rfm_move_set_takeover(rfm_move_t *m, int slot, unsigned claims, const char *name);
+/* the firmware's screen (the record's, when scr_seq moved): shown while its takeover is with SCREEN claimed */
+void rfm_move_tk_screen(rfm_move_t *m, int slot, const uint8_t packed[MR_SCREEN_BYTES]);
+/* its LEDs (the record's, when led_seq moved), the LED list's order (RFM_MOVE_L_*): only the claimed ones are used;
+ * a white one (63..91) takes r as its brightness (0..127, the Move's; more is 127) */
+void rfm_move_tk_leds(rfm_move_t *m, int slot, const uint8_t rgb[RFM_MOVE_NLEDS][3]);
+/* its words (the record's say, when say_seq moved): a SAY (slot set) now, only while that slot's takeover is shown
+ * and words may be said (rfm_move_speech_open). interrupt 1: SAY_VALUE with down 1 (stop what is being said first);
+ * 0: SAY_EVENT (after it). Printable ASCII, RFM_MOVE_SAY_MAX - 1 kept */
+void rfm_move_tk_say(rfm_move_t *m, int slot, const char *words, int interrupt);
+int rfm_move_tk_shown(const rfm_move_t *m);             /* the slot whose takeover is shown now, -1 none */
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */

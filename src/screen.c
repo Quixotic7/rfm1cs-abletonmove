@@ -122,6 +122,16 @@ static void host_popup(const rfm_move_t *m, mr_canvas_t *cv)
     v2_msg(cv, a, b);
 }
 
+/* (0.7.0) a takeover entered: its name over "Takeover", at 2x (a long name cut to fit) */
+static void tk_popup(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    char a[RFM_MOVE_TK_NAME];
+    snprintf(a, sizeof a, "%s", m->tk[m->pop_i % RFM_MOVE_FW_SLOTS].name);
+    fit_row(a, 2);
+    mr_gfx_clear(cv, 0);
+    v2_msg(cv, a[0] ? a : "Takeover", a[0] ? "Takeover" : NULL);
+}
+
 /* ---- v2 (the design canvas's V2Screen, see v2.h): full-screen popups with no frame, the left-half ones (FM-1
  * mode, MIDI's NOTES) the name and the value only; Title Case words */
 static int g_half;
@@ -822,6 +832,10 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             project_popup(m, cv);
         else if (m->pop == POP_HOST)
             host_popup(m, cv);
+        else if (m->pop == POP_TK) {                    /* (0.7.0) a takeover entered: its name, the whole screen */
+            tk_popup(m, cv);
+            g_full = 1;
+        }
         else if (m->pop == POP_READ) {                  /* (0.5.7) a readout of its own (the left half) */
             if (g_half && m->pop_i < 8)
                 knob_readout(m, cv, &m->rd_pop, m->pop_i);   /* (0.5.8: a knob's, the same rule) */
@@ -1113,6 +1127,15 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
     if (m->pop == POP_HOST && rfmv_pop_up(m, POP_HOST)) {   /* (0.5.4) a host's message: over any screen */
         host_popup(m, &cv);
         mr_gfx_pack(&cv, out);
+        return;
+    }
+    if (rfmv_tk_claims(m) & RFM_MOVE_TK_SCREEN) {       /* (0.7.0) a takeover with the screen: the firmware's, its
+                                                         * name over it on entering */
+        if (m->pop == POP_TK && rfmv_pop_up(m, POP_TK)) {
+            tk_popup(m, &cv);
+            mr_gfx_pack(&cv, out);
+        } else
+            memcpy(out, m->tk[m->fw.active % RFM_MOVE_FW_SLOTS].screen, MR_SCREEN_BYTES);
         return;
     }
     if (m->seq.projects && m->pop == POP_MODE && m->pop_i >= 20 && m->pop_i <= 23 && rfmv_pop_up(m, POP_MODE)) {

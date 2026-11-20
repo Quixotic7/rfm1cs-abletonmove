@@ -83,7 +83,7 @@ const char *const SCALE_NAMES[RFM_MOVE_NSCALES] = { "MAJ", "MIN", "DOR", "MIX", 
                                                     "PHRYG", "LYD", "LOCR", "MMIN", "WHOLE", "DIM HW", "DIM WH", "HUNG",
                                                     "PHDOM", "INSEN", "HIRA", "IWATO", "PELOG", "DBLHAR", "SPAN8",
                                                     "BEBOP" };
-static const char *const MODE_NAMES[4] = { "FM-1", "MIDI", "CONTROL", "SEQ" };
+static const char *const MODE_NAMES[5] = { "FM-1", "MIDI", "CONTROL", "SEQ", "TAKEOVER" };
 static const char *const LAYOUT_NAMES[4] = { "SCALE", "CHROMA", "DRUM", "OCTAVE" };
 static const char *const ENC_NAMES[8] = { "SELECT", "ALGO", "K1", "K2", "K3", "K4", "PRESETS", "MASTER" };
 const char *const NOTE_NAMES[12] = { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };   /* (Ableton's: flats) */
@@ -100,7 +100,7 @@ int rfm_move_button_of(int cc)
             return BUTTONS[i].b;
     return -1;
 }
-const char *rfm_move_mode_name(int mode) { return mode >= 0 && mode < 4 ? MODE_NAMES[mode] : "?"; }
+const char *rfm_move_mode_name(int mode) { return mode >= 0 && mode < 5 ? MODE_NAMES[mode] : "?"; }
 const char *rfm_move_layout_name(int l) { return l >= 0 && l < 4 ? LAYOUT_NAMES[l] : "?"; }
 const char *rfm_move_scale_name(int s) { return s >= 0 && s < RFM_MOVE_NSCALES ? SCALE_NAMES[s] : "?"; }
 const char *rfm_move_enc_name(int e) { return e >= 0 && e < 8 ? ENC_NAMES[e] : "?"; }
@@ -438,9 +438,10 @@ void rfm_move_release_all(rfm_move_t *m)
     m->back_down = m->back_used = m->back_trk = 0;
     m->touched = -1;
     m->pop = POP_NONE;
+    rfmv_tk_release(m);                                 /* (0.7.0: the firmware's held controls too) */
 }
 
-void rfm_move_set_mode(rfm_move_t *m, int mode)
+static void set_mode(rfm_move_t *m, int mode)
 {
     if (mode < 0 || mode > 3 || mode == m->s.mode)
         return;
@@ -454,6 +455,18 @@ void rfm_move_set_mode(rfm_move_t *m, int mode)
         rfmv_seq_enter(m);
     m->pop = POP_NONE;
     changed(m);
+}
+void rfm_move_set_mode(rfm_move_t *m, int mode)
+{
+    if (mode == RFM_MOVE_MODE_TAKEOVER || mode == RFM_MOVE_MODE_FM1) {   /* (0.7.0) FM-1 mode itself, or the slot's
+                                                         * takeover */
+        if (mode == RFM_MOVE_MODE_TAKEOVER && !m->tk[act_slot(m)].claims)
+            return;
+        set_mode(m, RFM_MOVE_MODE_FM1);
+        m->tk[act_slot(m)].mode = mode == RFM_MOVE_MODE_TAKEOVER;
+    } else
+        set_mode(m, mode);
+    rfmv_tk_sync(m);
     rfmv_say_check(m);
 }
 
@@ -894,11 +907,14 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
             if (now - m->tbtn_ms[t] >= RFM_MOVE_TAP_MS || m->menu_what != MENU_NONE) {
                 ;                                       /* (a hold, or used: no switch) */
             } else if (m->s.mode != t) {                /* a tap: that mode, its name first (its screen once the name
-                                                         * has gone) */
-                rfm_move_set_mode(m, t);
-                rfmv_pop(m, POP_MODE, t);
+                                                         * has gone); (0.7.0) Track 1: FM-1 mode or the slot's
+                                                         * takeover, as the slot was left */
+                set_mode(m, t);
+                rfmv_tk_mode_pop(m);
             } else {                                    /* a tap in the mode already on: its next screen (Track 2:
                                                          * MIDI mode's), named */
+                if (t == RFM_MOVE_MODE_FM1 && (rfmv_tk_mode(m) || m->tk[act_slot(m)].claims))
+                    rfmv_tk_set(m, !rfmv_tk_mode(m));   /* (0.7.0) FM-1 mode <-> the slot's takeover */
                 if (t == RFM_MOVE_MODE_MIDI) {
                     m->s.midi_view = (uint8_t)((m->s.midi_view + 1) % RFM_MOVE_MV_N);
                     changed(m);
@@ -1191,7 +1207,7 @@ static void back_click(rfm_move_t *m, uint32_t now)
         if (m->seq.projects)
             rfmv_view_input(m, &e, now);
         if (!m->seq.projects)                           /* (0.4.5) flipped out: the mode named, as a Track tap does */
-            rfmv_pop(m, POP_MODE, m->s.mode);
+            rfmv_tk_mode_pop(m);
         return;
     }
     if (m->mmenu)
@@ -1244,6 +1260,8 @@ static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
     }
     if (rfmv_global_input(m, ev))                       /* (0.6.2) Global settings owns the controls while open */
         return;
+    if (rfmv_tk_route(m, ev))                           /* (0.7.0) a takeover: its claimed controls, volume + Back */
+        return;
     if (back_input(m, ev, now_ms))
         return;
     if (m->seq.projects && m->pop == POP_MODE && ev->value && ev->type != MR_EV_TOUCH && ev->type != MR_EV_PAD_PRESSURE)
@@ -1286,6 +1304,7 @@ void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
     m->say_back = m->speech && ev->type == MR_EV_BUTTON && ev->index == MR_CC_BACK && !ev->value &&
                   m->say_n == m->say_bdown;             /* .. where it left you is said */
     input(m, ev, now_ms);
+    rfmv_tk_sync(m);                                    /* (0.7.0: the takeover shown or gone) */
     rfmv_say_check(m);                                  /* (0.6.0: speech, when on) */
 }
 
@@ -1491,6 +1510,7 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         for (i = 0; i < 16; i++)
             w[L_ICON0 + i][0] = ic[i], w[L_ICON0 + i][1] = 0, w[L_ICON0 + i][2] = 0;
     }
+    rfmv_tk_leds(m, w);                                 /* (0.7.0) a takeover: its claimed LEDs */
 }
 
 int rfm_move_leds(rfm_move_t *m, rfm_move_led_t *out, int max)
