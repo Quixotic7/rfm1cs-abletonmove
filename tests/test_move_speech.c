@@ -727,7 +727,7 @@ static void test_global(void)
     /* the list: turn, click to edit, turn, click; Back leaves the edit, then closes; the words */
     fresh(&M, 1);
     open_global(&M);
-    SAID("E:Global settings, Clock: Internal|");
+    SAID("E:Global settings, battery unknown|");        /* (0.6.10: the header, the battery) */
     rfm_move_screen(&M, NULL, out), write_pbm("global_select.pbm", out);
     jog(&M, 1);
     SAID("V:Velocity: Dynamic|");
@@ -748,17 +748,17 @@ static void test_global(void)
     SAID("V:Done|");
     CHECK(M.seq.smenu == RFM_MOVE_SM_GLOBAL && !M.gl_edit);
     jog(&M, 5);
-    SAID("V:Battery: unknown|");
+    SAID("V:Popup size: Full|");                        /* (the last row: it stays, said) */
     rfm_move_set_battery(&M, 63, 0);
     rfm_move_screen(&M, NULL, out), write_pbm("global_battery.pbm", out);
-    jog_press(&M);
-    SAID("V:Battery: 63%|");                            /* (no edit: said again) */
-    CHECK(!M.gl_edit);
     press(&M, MR_CC_BACK);
     SAID("E:FM-1 mode|");
     CHECK(!M.seq.smenu);
-    open_global(&M);                                    /* (again: the row kept, no edit) */
-    SAID("E:Global settings, Battery: 63%|");
+    open_global(&M);                                    /* (again: the row kept, no edit; the battery said) */
+    SAID("E:Global settings, battery 63%|");
+    CHECK(M.gl_row == 3 && !M.gl_edit);
+    jog(&M, -3);
+    SAID("V:Clock: Internal|");
     open_global(&M);                                    /* (its own toggle closes it) */
     SAID("E:FM-1 mode|");
 }

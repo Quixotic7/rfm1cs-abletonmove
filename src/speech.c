@@ -83,9 +83,9 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
     if (s)
         return s;
     if (m->seq.smenu && !m->seq.projects) {             /* (0.6.1) a Shift menu open: its name */
-        if (m->seq.smenu == RFM_MOVE_SM_GLOBAL) {       /* (0.6.2: the list, its row) */
+        if (m->seq.smenu == RFM_MOVE_SM_GLOBAL) {       /* (0.6.10: its header, the battery; the rows as they move) */
             char r[64];
-            rfmv_global_words(m, r, sizeof r);
+            rfmv_global_battery_words(m, r, sizeof r);
             snprintf(o, (size_t)cap, "%s, %s", rfmv_seq_smenu_name(m->seq.smenu), r);
         } else
             snprintf(o, (size_t)cap, "%s", rfmv_seq_smenu_name(m->seq.smenu));

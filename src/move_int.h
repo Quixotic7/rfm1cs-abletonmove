@@ -253,6 +253,7 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev);   /* (0.6.2) Global 
                                                          * (1 taken; releases pass, so nothing stays held) */
 int rfmv_global_rows(void);                             /* (tests) its rows */
 void rfmv_global_words(const rfm_move_t *m, char *o, int cap);   /* its row selected, in words */
+void rfmv_global_battery_words(const rfm_move_t *m, char *o, int cap);   /* (0.6.10) "battery 87%" */
 const char *rfmv_seq_smenu_name(int sm);               /* (0.6.1, seq_ui.c) a Shift menu's name, its knobs' words */
 void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap);
 void rfmv_say_tick(rfm_move_t *m);                     /* (rfm_move_seq_advance: the transport's start and stop, a

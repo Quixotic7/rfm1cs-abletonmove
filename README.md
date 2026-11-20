@@ -414,7 +414,7 @@ Workflow 1-3, Tempo 1-2 (none while following), Groove 1-2, Layout 1, Keys & Sca
 | Step | Function |
 |---|---|
 | 1 Set Overview | the project grid |
-| 2 Global Settings | (0.6.2) a list on the jog wheel, sticky (Shift + step 2 again, or Back when not editing, or Session closes it). Rows: Clock (Auto, Int, Ext; Int is the default (0.5.5); Auto follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), Velocity (the option, as the Velocity menu), Fixed level, Popup size (FM-1 mode's popups: Full, the default, or Half, 0.5.9), Battery (read only: Move Remote's STATUS byte 4 as the surface reports it, taken as 0..100 %, clamped, "--" until the first; the host passes it with `rfm_move_set_battery`). Turn the jog: the selected row (inverted) moves, the list scrolls when longer than the screen; click: edit its value (the value inverted, the row framed), the jog changes it; click again or Back: done. While it is open it owns the controls: no knob, pad, step or button reaches the FM-1, the firmware or the sequencer (the knobs do nothing; their touches show nothing); releases pass, so a pad held before it opened lets go; the Track buttons and Shift + step 2 pass |
+| 2 Global Settings | (0.6.2) a list on the jog wheel, sticky (Shift + step 2 again, or Back when not editing, or Session closes it). (0.6.10, the owner's direction A) On top the Move's battery: an icon filled to the charge and the percentage at 2x ("--" until the first STATUS: Move Remote's STATUS byte 4 as the surface reports it, taken as 0..100 %, clamped; the host passes it with `rfm_move_set_battery`), "GLOBAL" on the right, a rule under them. Rows: Clock (Auto, Int, Ext; Int is the default (0.5.5); Auto follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), Velocity (the option, as the Velocity menu), Fixed level, Popup size (FM-1 mode's popups: Full, the default, or Half, 0.5.9). Turn the jog: the selected row (inverted) moves; click: edit its value (the row framed, the value inverted between small arrows), the jog changes it; click again or Back: done. While it is open it owns the controls: no knob, pad, step or button reaches the FM-1, the firmware or the sequencer (the knobs do nothing; their touches show nothing); releases pass, so a pad held before it opened lets go; the Track buttons and Shift + step 2 pass |
 | 3 Workflow Settings | menu: the jog the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent) |
 | 5 Tempo | each press is a tap (tap tempo: the average of up to 4 taps) and opens the menu: the tempo at 4x; the jog 1 BPM (Shift, or knob 2: 0.1); following the firmware's clock: locked (a padlock, EXT; taps ignored) |
 | 6 Metronome | on / off (off at first): a click a beat, the bar's first higher (`RFM_MOVE_ACT_CLICK`, frame-stamped; the web player plays it after the volume, never into a recording); also in the count-in |
@@ -802,8 +802,9 @@ key / scale screen, kept as the owner asked (the layouts as tabs on top, "D DOR"
 the 16 channels below, or Global / Track with its icon). Velocity: the curve as a graph, the option and the level
 with a bar. Arp: the pattern's walk (outlined while off), its name, rate and octaves, the page on the strip; the lanes:
 the 16 steps as bars from a line, the edited one underlined. Record: the three modes as icons (the chosen underlined
-and named), the style with its icon. Global Settings (0.6.2): "Global Settings" over a rule, then a row a setting (name left, value right), the selected
-row inverted; editing, the row framed and its value inverted.
+and named), the style with its icon. Global Settings (0.6.10, direction A): the battery header (an 18 x 12 icon with a nub, filled 14 x 8 to the charge;
+the percentage at 2x; "GLOBAL" small on the right), a rule at y 17, four rows of 11 px from y 19 (the name left, the
+value right), the selected row inverted; editing: the row framed, its value inverted between 3 x 5 arrows.
 
 **Held Track buttons**: Track 2 the key / scale screen with the channels (midi.hold2, midi.scale); Track 3 the knob
 legend (the turned one filled), "CC" and the number it sends at 4x, which knob (ctl.hold3); Track 4 (and Mute held)
@@ -866,9 +867,9 @@ play notes (0.6.5: heard, never said).
 | Left / Right; Up / Down | track view; Session | "Bar 2"; "Tracks 9 to 16", "Scenes 2 to 5" |
 | Menu | Sequencer | "Session" / "Track 1" |
 | a clip pad | Session | "Track 1, clip 2 queued" then "Track 1, clip 2 playing"; a double tap "Track 1, stop queued", "Track 1 stopped" |
-| Shift + step | Sequencer (Track 1 held elsewhere) | menus "Tempo", "Arp", "Groove", "Workflow", "Keys and Scales", "Velocity", "Record mode", "Global settings, Clock: Internal"; "Metronome on", "Quantized", "New clip", "Loop doubled", "Clip cleared", "Firmwares, ..." (step 1) |
+| Shift + step | Sequencer (Track 1 held elsewhere) | menus "Tempo", "Arp", "Groove", "Workflow", "Keys and Scales", "Velocity", "Record mode", "Global settings, battery 87%"; "Metronome on", "Quantized", "New clip", "Loop doubled", "Clip cleared", "Firmwares, ..." (step 1) |
 | a menu's knob (turn or touch), jog | Shift menus | "Pattern: Down", "Arp: On", "Mod lane", "Groove: 5%", "Tempo 121", "Record style: Replace" |
-| jog, jog click, Back | Global settings | "Velocity: Dynamic", "Editing Velocity: Dynamic", "Velocity: Fixed", "Done" |
+| jog, jog click, Back | Global settings | opening: "Global settings, battery 87%"; "Velocity: Dynamic", "Editing Velocity: Dynamic", "Velocity: Fixed", "Done" |
 | a project pad | the project grid | "Project 3, 120 BPM, 4 clips" |
 | steps 1..16, pads, jog, jog click | the projects view | "Favorites", "All firmwares", "Filter Synth", "No filter"; "Felucca" (the catalog: ", not installed"); its description; "Loading Felucca", "Downloading Felucca 25%", "Felucca installed", "Felucca failed" |
 | Sample, Capture + step, Left / Right, Mute, Loop, a state pad, Delete, a Track again | the projects view | "Felucca added to Favorites", "Tagged Synth", "Bank 2", "Catalog", "States, Felucca", "State 1 saved", "Felucca unloaded", "Slot 1, Felucca" |

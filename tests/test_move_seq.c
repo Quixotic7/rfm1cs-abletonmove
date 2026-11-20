@@ -531,17 +531,18 @@ static void test_external(void)
     {
         uint8_t out[MR_SCREEN_BYTES], out2[MR_SCREEN_BYTES];
         m->seq.msg = 0;
-        jog(m, 9);                                      /* (the last row: the battery, "--" until its first STATUS) */
+        jog(m, 9);                                      /* (the last row; (0.6.10) the battery the header: "--" until
+                                                         * its first STATUS) */
         rfm_move_screen(m, NULL, out);
-        CHECK(m->battery == -1 && m->gl_row == rfmv_global_rows() - 1);
+        CHECK(m->battery == -1 && m->gl_row == rfmv_global_rows() - 1 && rfmv_global_rows() == 4);
         CHECK(rfm_move_set_battery(m, 63, 0) == 1 && rfm_move_set_battery(m, 63, 0) == 0);
         CHECK(rfm_move_set_battery(m, 120, 0) == 1 && m->battery == 100);   /* (clamped) */
         rfm_move_set_battery(m, 63, 0);
         rfm_move_screen(m, NULL, out2);
         write_pbm("move_seq_global.pbm", out2);
         CHECK(memcmp(out, out2, sizeof out) != 0);      /* (63 %) */
-        jog_click(m);
-        CHECK(!m->gl_edit);                             /* (the battery: no edit) */
+        CHECK(px_at(out2, 5, 8) && px_at(out2, 13, 8) && !px_at(out2, 15, 8));   /* (the fill: 9 of 14 px) */
+        CHECK(!px_at(out, 5, 8) && px_at(out, 3, 8) && px_at(out, 22, 8));   /* (empty: the outline, the nub) */
         jog(m, -9);
     }
     m->s.vel_mode = RFM_MOVE_VEL_DYNAMIC, m->s.vel_level = 127;

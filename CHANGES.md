@@ -3,6 +3,26 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.10 (2026-11-20)
+
+Global Settings redrawn (the owner: "it should have battery at the top with a battery icon and bigger text"; their
+approved direction A, the design canvas's boards "A · Battery header + list" and "A · editing a value").
+
+- **The battery is the header:** an 18 x 12 outline at 3, 3 with a 2 x 6 nub, filled 14 x 8 to the charge; the
+  percentage at 2x (the font of the titles and knob popups) at x 27; "GLOBAL" small, right-aligned; unknown: the
+  empty outline and "--". A 1 px rule at y 17.
+- **Four rows** of 11 px from y 19: Clock, Velocity, Fixed level, Popup size (the name at x 3, the value right-aligned
+  to x 122; more air than before); the battery left the list, so all fit and no scroll bar shows. The selected row
+  is inverted; editing (a jog click) frames the row and inverts its value between 3 x 5 arrows.
+- **Speech:** opening says "Global settings, battery 87%" ("battery unknown"), then the rows as they move. The
+  controls' ownership (0.6.2) is unchanged.
+- The v2 canvas port's old `menu.global` board in `test_move_v2` stays as that canvas has it (direction A supersedes
+  it; its pixels are checked in `move_seq`).
+
+**Tests:** `move_seq` the four rows, the battery's fill (63 %: 9 of 14 px) and empty outline; `move_speech` the
+opening words, the rows, the end of the list; the contact sheet `rfm1cs-0.6.10-global-settings.png` (selecting,
+editing Velocity, the battery at 63 %).
+
 ## 0.6.9 (2026-11-19)
 
 Favourites reordered (the owner: "be able to reorder your favorites. Use knob 2 to change the order").

@@ -2337,9 +2337,9 @@ static void fit2(mr_canvas_t *cv, int x, int y, const char *s, int w)   /* 2x wh
  * its value (the value inverted, the jog changes it), a click again (or Back) leaves the edit; Back closes the menu.
  * While it is open it takes the Move's controls (nothing reaches the FM-1, the firmware or the sequencer); releases
  * pass, so nothing pressed before stays held; Track buttons and Shift + step 2 (its own toggle) pass too */
-enum { GL_CLOCK, GL_VEL, GL_LEVEL, GL_POPUP, GL_BATTERY, GL_N };
-static const char *const GL_NAME[GL_N] = { "Clock", "Velocity", "Fixed level", "Popup size", "Battery" };
-#define GL_ROWS 5                                       /* rows on screen (more scroll) */
+enum { GL_CLOCK, GL_VEL, GL_LEVEL, GL_POPUP, GL_N };   /* (0.6.10: the battery a header, no longer a row) */
+static const char *const GL_NAME[GL_N] = { "Clock", "Velocity", "Fixed level", "Popup size" };
+#define GL_ROWS 4                                       /* rows on screen (more scroll) */
 int rfmv_global_rows(void) { return GL_N; }
 static void gl_words(const rfm_move_t *m, int r, const char *pre, char *o, int cap);
 void rfmv_global_words(const rfm_move_t *m, char *o, int cap) { gl_words(m, clampi(m->gl_row, 0, GL_N - 1), "", o, cap); }
@@ -2350,14 +2350,16 @@ static void gl_value(const rfm_move_t *m, int r, char *o, int cap, int spoken)
     case GL_CLOCK: snprintf(o, (size_t)cap, "%s", (spoken ? CKS : CK)[m->seq.clock_mode % 3]); break;
     case GL_VEL: rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), o, cap); break;
     case GL_LEVEL: snprintf(o, (size_t)cap, "%d", m->s.vel_level); break;
-    case GL_POPUP: snprintf(o, (size_t)cap, "%s", m->s.pop_half ? "Half" : "Full"); break;
-    default:
-        if (m->battery >= 0)
-            snprintf(o, (size_t)cap, "%d%%", m->battery);
-        else
-            snprintf(o, (size_t)cap, "%s", spoken ? "unknown" : "--");
-        break;
+    default: snprintf(o, (size_t)cap, "%s", m->s.pop_half ? "Half" : "Full"); break;
     }
+}
+/* (0.6.10) the battery as the header says it: "battery 87%", "battery unknown" */
+void rfmv_global_battery_words(const rfm_move_t *m, char *o, int cap)
+{
+    if (m->battery >= 0)
+        snprintf(o, (size_t)cap, "battery %d%%", m->battery);
+    else
+        snprintf(o, (size_t)cap, "battery unknown");
 }
 static void gl_words(const rfm_move_t *m, int r, const char *pre, char *o, int cap)
 {
@@ -2407,12 +2409,9 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
             return 1;
         if (m->gl_edit)
             m->gl_edit = 0, rfmv_say_text(m, "Done");
-        else if (m->gl_row != GL_BATTERY) {
+        else {
             m->gl_edit = 1;
             gl_words(m, m->gl_row, "Editing ", w, sizeof w);
-            rfmv_say_text(m, w);
-        } else {
-            gl_words(m, m->gl_row, "", w, sizeof w);
             rfmv_say_text(m, w);
         }
         return 1;
@@ -2441,32 +2440,52 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
     default: return 0;
     }
 }
+/* (0.6.10, the owner's direction A: design canvas DQGfSZ6KkaGXG3EgEeASou, boards "Battery header + list" and "editing
+ * a value", drawn at 4x there) the battery as a header: an 18 x 12 outline at 3, 3 with a 2 x 6 nub, filled 14 x 8
+ * to the charge, the percentage at 2x, "GLOBAL" small on the right; a rule at 17; four rows of 11 from 19 (the
+ * name left, the value right at 122), the selected one inverted; editing: the row framed, its value inverted
+ * between small arrows */
+static void gl_arrow(mr_canvas_t *cv, int x, int y, int right)   /* 3 x 5, pointing left or right, black */
+{
+    v2_R(cv, right ? x : x + 2, y, 1, 5, 0);
+    v2_R(cv, x + 1, y + 1, 1, 3, 0);
+    v2_R(cv, right ? x + 2 : x, y + 2, 1, 1, 0);
+}
 static void global_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const int n = GL_N, sel = clampi(m->gl_row, 0, GL_N - 1);
     const int top = n <= GL_ROWS ? 0 : clampi(sel - GL_ROWS / 2, 0, n - GL_ROWS);
     char v[24];
     int i;
-    v2_T(cv, 1, 0, "Global Settings", 1, 1);
-    v2_R(cv, 0, 8, 128, 1, 1);
+    v2_O(cv, 3, 3, 18, 12, 1);                          /* the battery */
+    v2_R(cv, 21, 6, 2, 6, 1);
+    if (m->battery >= 0) {
+        v2_R(cv, 5, 5, (14 * clampi(m->battery, 0, 100) + 50) / 100, 8, 1);
+        snprintf(v, sizeof v, "%d%%", clampi(m->battery, 0, 100));
+    } else
+        snprintf(v, sizeof v, "--");
+    v2_T(cv, 27, 1, v, 2, 1);
+    v2_T(cv, 126 - v2_tw("GLOBAL", 1), 4, "GLOBAL", 1, 1);
+    v2_R(cv, 0, 17, 128, 1, 1);
     for (i = 0; i < GL_ROWS && top + i < n; i++) {
-        const int r = top + i, y = 10 + i * 10, inv = r == sel && !m->gl_edit;
+        const int r = top + i, y = 19 + i * 11, inv = r == sel && !m->gl_edit;
         gl_value(m, r, v, sizeof v, 0);
         if (inv)
-            v2_R(cv, 0, y, 125, 10, 1);
+            v2_R(cv, 0, y, 125, 11, 1);
         v2_T(cv, 3, y + 2, GL_NAME[r], 1, !inv);
-        if (r == sel && m->gl_edit) {                   /* editing: the value inverted, the row framed */
-            const int w = v2_tw(v, 1) + 4;
-            v2_O(cv, 0, y, 125, 10, 1);
-            v2_R(cv, 121 - w, y + 1, w, 8, 1);
-            v2_T(cv, 123 - w, y + 2, v, 1, 0);
+        if (r == sel && m->gl_edit) {                   /* editing: framed; the value inverted between arrows */
+            const int tw = v2_tw(v, 1), w = 2 + 3 + 2 + tw + 2 + 3 + 2, x0 = 125 - w;
+            v2_O(cv, 0, y, 125, 11, 1);
+            v2_R(cv, x0, y + 1, w, 9, 1);
+            gl_arrow(cv, x0 + 2, y + 3, 0);
+            v2_T(cv, x0 + 7, y + 2, v, 1, 0);
+            gl_arrow(cv, x0 + 7 + tw + 2, y + 3, 1);
         } else
             v2_T(cv, 122 - v2_tw(v, 1), y + 2, v, 1, !inv);
     }
-    if (n > GL_ROWS) {                                  /* a scroll bar (0.6.8: the divisor never 0, even folded: the
-                                                         * rows all fit today, GCC warned) */
-        const int h = 50 * GL_ROWS / n, over = n - GL_ROWS > 0 ? n - GL_ROWS : 1;
-        v2_R(cv, 126, 10 + (50 - h) * top / over, 2, h, 1);
+    if (n > GL_ROWS) {                                  /* a scroll bar (the divisor never 0, even folded) */
+        const int h = 44 * GL_ROWS / n, over = n - GL_ROWS > 0 ? n - GL_ROWS : 1;
+        v2_R(cv, 126, 19 + (44 - h) * top / over, 2, h, 1);
     }
 }
 
