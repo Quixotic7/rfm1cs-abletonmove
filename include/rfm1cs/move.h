@@ -245,7 +245,8 @@ typedef struct {
     const char *id;                                     /* the catalog's id (ASCII, < RFM_MOVE_FW_ID_MAX bytes) */
     const char *name;                                   /* the name shown (ASCII; other bytes are skipped) */
     const char *version;                                /* the catalog's version */
-    const char *installed;                              /* the version on the Move; NULL or "": not on the Move */
+    const char *installed;                              /* the version installed on the host (the Move, or the web
+                                                         * page's / phone app's store); NULL or "": not installed */
     const char *desc;                                   /* the description (ASCII), NULL: none */
     const uint8_t *thumb;                               /* RFM_MOVE_FW_THUMB_BYTES, NULL: none (initials stand in) */
     uint8_t cats;                                       /* RFM_MOVE_CAT_* bits */
