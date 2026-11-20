@@ -916,24 +916,54 @@ static void test_delete(void)
     press(&M, MR_CC_DELETE), button(&M, MR_CC_DELETE, 1), adv_ms(&M, 800), button(&M, MR_CC_DELETE, 0);
     CHECK(all_notes(&M) == n0 && rfmv_seq_clip_has(&M, c0));
     press(&M, MR_CC_MENU), rest_pop(&M), clear();
-    /* cut one step, paste it three times (Delete or Copy held + an empty step) */
-    button(&M, MR_CC_DELETE, 1), tap_step(&M, 4), button(&M, MR_CC_DELETE, 0);
-    SAID("V:Delete|V:Step 5 cut|");
+    /* the owner's sequence, Delete held throughout: cut A; A again pastes it back; empty steps paste; B (notes)
+     * cuts; C (notes) right after the cut is pasted over; C again cuts */
+    button(&M, MR_CC_DELETE, 1);
+    SAID("V:Delete|");
+    tap_step(&M, 4);
+    SAID("V:Step 5 cut|");
     CHECK(notes_at(&M, c0, 4) == 0 && M.seq.cut && M.seq.clip_kind == 1);
-    button(&M, MR_CC_COPY, 1), tap_step(&M, 8), tap_step(&M, 9), button(&M, MR_CC_COPY, 0);
-    SAID("V:Copy|V:Pasted to step 9|V:Pasted to step 10|");
-    button(&M, MR_CC_DELETE, 1), tap_step(&M, 10), button(&M, MR_CC_DELETE, 0);
-    SAID("V:Delete|V:Pasted to step 11|");
-    CHECK(notes_at(&M, c0, 8) == 1 && notes_at(&M, c0, 9) == 1 && notes_at(&M, c0, 10) == 1 && M.seq.clip_kind == 1);
-    /* cut several steps in one hold: a group; pasted twice, the gaps kept */
+    tap_step(&M, 4);
+    SAID("V:Pasted to step 5|");
+    CHECK(notes_at(&M, c0, 4) == 1);
+    tap_step(&M, 8);
+    SAID("V:Pasted to step 9|");
+    tap_step(&M, 9);
+    SAID("V:Pasted to step 10|");
+    CHECK(notes_at(&M, c0, 8) == 1 && notes_at(&M, c0, 9) == 1 && all_notes(&M) == 5);
+    tap_step(&M, 0);                                    /* B: notes, after a paste: cut */
+    SAID("V:Step 1 cut|");
+    CHECK(notes_at(&M, c0, 0) == 0 && all_notes(&M) == 4);
+    tap_step(&M, 1);                                    /* C: notes, right after a cut: pasted over */
+    SAID("V:Step 2 replaced|");
+    CHECK(notes_at(&M, c0, 1) == 1 && all_notes(&M) == 4);
+    tap_step(&M, 1);                                    /* C again: cut */
+    SAID("V:Step 2 cut|");
+    CHECK(notes_at(&M, c0, 1) == 0 && all_notes(&M) == 3);
+    button(&M, MR_CC_DELETE, 0);
+    SAID("");
+    /* let go: the last action forgotten, the clipboard kept; a new hold: an empty step pastes, a full one cuts */
+    button(&M, MR_CC_DELETE, 1), clear();
+    tap_step(&M, 12);
+    SAID("V:Pasted to step 13|");
+    tap_step(&M, 12);
+    SAID("V:Step 13 cut|");
+    button(&M, MR_CC_DELETE, 0), clear();
+    /* Copy held + an empty step pastes it too, again and again */
+    button(&M, MR_CC_COPY, 1), tap_step(&M, 13), tap_step(&M, 14), button(&M, MR_CC_COPY, 0);
+    SAID("V:Copy|V:Pasted to step 14|V:Pasted to step 15|");
+    /* an empty clipboard: an empty step does nothing */
     seq_three(&M);
-    button(&M, MR_CC_DELETE, 1), tap_step(&M, 0), tap_step(&M, 1), tap_step(&M, 4), button(&M, MR_CC_DELETE, 0);
-    SAID("V:Delete|V:Step 1 cut|V:Step 2 cut|V:Step 5 cut|");
-    CHECK(all_notes(&M) == 0);
+    button(&M, MR_CC_DELETE, 1), tap_step(&M, 6), button(&M, MR_CC_DELETE, 0);
+    SAID("V:Delete|");
+    CHECK(all_notes(&M) == 3 && !M.seq.clip_kind);
+    /* Copy held + several steps: a group; pasted twice, its gaps kept */
+    button(&M, MR_CC_COPY, 1), tap_step(&M, 0), tap_step(&M, 1), tap_step(&M, 4), button(&M, MR_CC_COPY, 0);
+    SAID("V:Copy|V:Step 1 copied|V:Step 2 copied|V:Step 5 copied|");
     button(&M, MR_CC_COPY, 1), tap_step(&M, 8), button(&M, MR_CC_COPY, 0);
-    CHECK(notes_at(&M, c0, 8) == 1 && notes_at(&M, c0, 9) == 1 && notes_at(&M, c0, 12) == 1 && all_notes(&M) == 3);
+    CHECK(notes_at(&M, c0, 8) == 1 && notes_at(&M, c0, 9) == 1 && notes_at(&M, c0, 12) == 1 && all_notes(&M) == 6);
     button(&M, MR_CC_COPY, 1), tap_step(&M, 2), button(&M, MR_CC_COPY, 0);
-    CHECK(notes_at(&M, c0, 2) == 1 && notes_at(&M, c0, 3) == 1 && notes_at(&M, c0, 6) == 1 && all_notes(&M) == 6);
+    CHECK(notes_at(&M, c0, 2) == 1 && notes_at(&M, c0, 3) == 1 && notes_at(&M, c0, 6) == 1 && all_notes(&M) == 9);
     clear();
     /* copy (not cut): the source stays; pasted twice */
     seq_three(&M);

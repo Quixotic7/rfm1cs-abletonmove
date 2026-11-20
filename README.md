@@ -321,14 +321,19 @@ below.
 **Copy and cut** (the owner's; no popups: the source is marked, dashed when copied, an X when cut, on the steps row,
 the session grid and the LEDs). One clipboard for both:
 
-The exact gestures (0.6.3, the owner's; Delete is a modifier only, as on the Move):
+The exact gestures (0.6.3, the owner's; Delete is a modifier only, as on the Move). Pastes never empty the clipboard:
+it pastes again and again until something else is cut or copied. The owner's sequence, Delete held throughout: cut
+A; press A again: pasted back; press empty steps: each pasted; press B (notes): cut; press C (notes) right after:
+pasted over ("Step 9 replaced"); press C again: cut.
 
 | Gesture | Does | Says |
 |---|---|---|
-| Delete held, a step with notes tapped | cut: gone, into the clipboard, an X on it | "Step 5 cut" |
-| Delete held, several steps tapped (one hold) | cut as one group (the gaps kept) | "Step 1 cut", "Step 2 cut" .. |
-| Copy held, a step with notes tapped (several: a group) | copied (dashed) | "Step 5 copied" |
-| Copy or Delete held, an empty step tapped | the clipboard pasted there (a group: its first step there); again and again: the clipboard stays until something else is cut or copied | "Pasted to step 9" |
+| Delete held, a step tapped **right after a cut** (in this hold) | the clipboard pasted there; a step with notes is replaced | "Pasted to step 9", "Step 9 replaced" |
+| Delete held, a step with notes tapped (the first press, or after a paste) | cut: gone, into the clipboard, an X on it | "Step 5 cut" |
+| Delete held, an empty step tapped (the first press, or after a paste) | the clipboard pasted there (an empty clipboard: nothing) | "Pasted to step 9" |
+| Delete let go | the last action forgotten (the next hold starts fresh); the clipboard stays | |
+| Copy held, a step with notes tapped (several in one hold: a group) | copied (dashed) | "Step 5 copied" |
+| Copy held, an empty step tapped | the clipboard pasted there (a group: its first step there) | "Pasted to step 9" |
 | Copy released after copying, then a plain step | pasted there once (Move's way) | "Pasted to step 9" |
 | Delete or Copy held + a clip / an empty slot (Session) | the clip cut / copied; pasted into an empty slot | "Cut track 1 clip 2", "Pasted" |
 | Delete tapped, or held and let go alone | nothing changes; a hint ("Hold Delete + a step") | "Delete: hold and press a step, pad or clip" |
@@ -341,7 +346,8 @@ The exact gestures (0.6.3, the owner's; Delete is a modifier only, as on the Mov
 - **Copy held**: a step (or clip) with content is copied; an empty step (or slot) gets the clipboard pasted (a copy
   or a cut). Copy never overwrites a full step: pressing one copies it again (a group in the same hold).
 - **Delete held**: a step (or clip) with content is cut (gone, kept in the clipboard, an X on it); an empty one gets
-  the clipboard pasted. (0.6.3: a paste keeps the clipboard; before, a pasted cut emptied it, so a cut pasted once.)
+  the clipboard pasted; (0.6.3) right after a cut any step gets it (as the table). A paste keeps the clipboard
+  (before 0.6.3 a pasted cut emptied it, so a cut pasted once).
 
 **Recording** (the record settings, Shift + Record: the jog the mode, knob 2 the style; saved with the project):
 
@@ -845,7 +851,7 @@ modifier, the projects view, FX setup); any input that changes the screen and sa
 | step tap / hold / second step | Sequencer, track view | "Step 5 on" / "Step 5 off"; held "Step 5: C3, velocity 100, length 1 step"; another step: the new length |
 | Delete + pad | Sequencer, track view | "Deleted C3" (that note out of the clip) |
 | Copy / Delete / Mute / Shift held | Sequencer | "Copy", "Delete", "Mute", "Shift" |
-| Copy + step / clip; Delete + step / clip; + an empty one | Sequencer | "Step 5 copied", "Step 5 cut", "Cut track 1 clip 2"; "Pasted to step 9", "Pasted" |
+| Copy + step / clip; Delete + step / clip; + an empty one | Sequencer | "Step 5 copied", "Step 5 cut", "Cut track 1 clip 2"; "Pasted to step 9", "Step 9 replaced", "Pasted" |
 | Delete alone, Copy alone | Sequencer | "Delete: hold and press a step, pad or clip" (nothing changes); "Duplicated" |
 | Track 4 held + Delete; + a step | Sequencer | "Track 1 cleared"; "Track 3 cleared" |
 | Undo, Shift + Undo | Sequencer | "Undo", "Redo", and the steps that changed |

@@ -611,6 +611,8 @@ static void paste_step_at(rfm_move_t *m, int clip, int abs)
 {
     rfm_move_seq_t *q = Q(m);
     const int was = rfmv_seq_clip_used(m, clip);
+    int lo;
+    const int full = rfmv_seq_range(m, clip, abs, &lo) > lo;   /* (a step with notes: replaced) */
     char w[32];
     rfmv_seq_group(m);
     rfmv_seq_paste_step(m, clip, abs);
@@ -618,7 +620,10 @@ static void paste_step_at(rfm_move_t *m, int clip, int abs)
                                                          * again, until something else is cut or copied) */
     grow_to(m, clip, abs);
     entered(m, was);
-    snprintf(w, sizeof w, "Pasted to step %d", abs % RFM_MOVE_SEQ_PAGE + 1);
+    if (full)
+        snprintf(w, sizeof w, "Step %d replaced", abs % RFM_MOVE_SEQ_PAGE + 1);
+    else
+        snprintf(w, sizeof w, "Pasted to step %d", abs % RFM_MOVE_SEQ_PAGE + 1);
     rfmv_say_text(m, w);
 }
 /* (0.6.3) a step into the clipboard (cut: Delete held; copied: Copy held): a new clipboard, or, in the same hold on
@@ -869,19 +874,25 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         rfmv_seq_dirty(m);
         return;
     }
-    if (q->mods & SEQ_M_DELETE) {                       /* Delete + step (the owner's cut): a step with notes or
-                                                         * locks is cut (gone, kept in the clipboard, an X on it); an
-                                                         * empty one gets the clipboard pasted */
+    if (q->mods & SEQ_M_DELETE) {                       /* Delete held + steps (0.6.3, the owner's): after a cut,
+                                                         * any step gets the clipboard pasted (a step with notes:
+                                                         * replaced); else (after a paste, or the first press) a step
+                                                         * with notes or locks is cut (gone, into the clipboard, an X
+                                                         * on it) and an empty one gets the clipboard pasted. So: cut
+                                                         * A, A again pastes it back, empty steps paste, B cuts, C right
+                                                         * after pastes over C, C again cuts. The clipboard stays */
         int lo, llo;
         const int full = rfmv_seq_range(m, clip, abs, &lo) > lo || rfmv_seq_lock_range(m, clip, abs, &llo) > llo;
         q->mods_used |= SEQ_M_DELETE;
-        if (full) {
+        if (m->del_src != 1 && full) {
             rfmv_seq_group(m);
-            clip_take(m, clip, abs, 1, m->del_src);     /* (0.6.3: more in the same hold: a group) */
-            m->del_src = 1;
+            clip_take(m, clip, abs, 1, 0);
             rfmv_seq_step_clear(m, clip, abs);
-        } else if (q->clip_kind == 1)
+            m->del_src = 1;                             /* (the last: a cut) */
+        } else if (q->clip_kind == 1) {
             paste_step_at(m, clip, abs);
+            m->del_src = 2;                             /* (the last: a paste) */
+        }
         return;
     }
     if (q->paste && q->clip_kind == 1 && !q->step_held) {   /* a copy waiting (Copy released): pasted here */
@@ -1075,6 +1086,8 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
                     copy_alone(m);
                 q->copy_src = 0, q->copy_pasted = 0;
             }
+            if (mb == SEQ_M_DELETE)
+                m->del_src = 0;                         /* (0.6.3: the last action forgotten; the clipboard stays) */
             if (mb == SEQ_M_DELETE && alone)
                 delete_alone(m);
             else if (mb == SEQ_M_DELETE && !used && !q->projects && rfmv_seq_trk_held(m)) {

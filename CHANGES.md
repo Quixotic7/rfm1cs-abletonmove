@@ -15,9 +15,13 @@ the end of `rfm_move_t`: rebuild everything.
   Delete + a step"; "Delete: hold and press a step, pad or clip"). Delete held + a step or clip has cut since 0.1.0,
   unchanged (no regression); since 0.6.1 speech said a cut step as "Step 5 off", now "Step 5 cut".
 - **Cut and paste repeat** (the owner: "I can only ever paste once"): since 0.1.0 a pasted cut emptied the clipboard.
-  Now a paste keeps it (the cut's X marks go), so Copy or Delete held + empty steps paste it again and again until
-  something else is cut or copied. Several steps cut or copied in one hold are one group, pasted with its gaps (its
-  first step at the target). Words: "Step 5 cut", "Step 5 copied", "Pasted to step 9".
+  Now a paste keeps it (the cut's X marks go), so it pastes again and again until something else is cut or copied.
+  **Delete held + steps follows the last action** (the owner's): right after a cut, any step gets the clipboard
+  (a step with notes is replaced); otherwise (the first press in a hold, or after a paste) a step with notes is cut
+  and an empty one gets the clipboard (an empty clipboard: nothing). Letting go of Delete forgets the last action;
+  the clipboard stays. So: cut A, A again pastes it back, empty steps paste, B cuts, C right after is pasted over, C
+  again cuts. Several steps copied in one Copy hold are one group, pasted with its gaps. Words: "Step 5 cut", "Step
+  5 copied", "Pasted to step 9", "Step 9 replaced".
 - **Track 4 held + Delete** (let go, no step) clears the selected track (the owner: "the right shortcut"); Track 4
   held + Delete + a step clears that track (as before). Both said: "Track 1 cleared". The only Delete gesture that
   clears without the clipboard.
@@ -29,9 +33,10 @@ the end of `rfm_move_t`: rebuild everything.
   menu's knob touched (its item).
 - README: a table of every input and its words.
 
-**Tests:** `move_speech` 223 checks: the input walk (2002 inputs, none silent when the screen changes); Delete tapped
-and held-then-let-go leave every step and clip as they were (track view and Session); one step cut, pasted three
-times; three steps cut in one hold, the group pasted twice with its gaps; a copy pasted twice and undone one by one;
+**Tests:** `move_speech` 237 checks: the input walk (2002 inputs, none silent when the screen changes); Delete tapped
+and held-then-let-go leave every step and clip as they were (track view and Session); the owner's Delete sequence word for word (cut, paste
+back, paste on, cut, replace, cut), a new hold, an empty clipboard; a Copy group pasted twice; a copy pasted twice
+and undone one by one;
 Track 4 + Delete and Track 4 + Delete + a step; every word. `move_seq`: Delete alone changes nothing.
 
 ## 0.6.2 (2026-11-19)
