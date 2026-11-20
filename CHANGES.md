@@ -3,6 +3,27 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.8 (2026-11-19)
+
+Knob speech, the second sweep (ChoralRoot 0.42 rd1). New fields at the end of `rfm_move_t`: rebuild everything.
+
+- **A readout belongs to its page:** it is kept with the FM-1 buttons held when it came (the firmware's Shift page:
+  GLO) as well as the control's label, so Shift + knob 1 no longer says the plain page's "FM6: FM BELL" (readouts
+  given for control -1 and paired with the knob in use included); Shift + knob 6 still gets its own readout.
+- **Each words once per touch-and-turn:** a readout answering a turn with the same words is not said again at once;
+  the range's end repeat (a turn with no new words within 250 ms) says "Name: value" once, and nothing when no value
+  is known (was the label again: "Presets", "Presets").
+- **The full name on touch:** the full titles seen are kept by control, page and label (24); a touch before this
+  page's readout says the title seen ("Bass Register"), else the label ("Bass Regis").
+- Build warnings (the host's arm64 GCC): Global Settings' scroll bar folded a `/ 0` in a branch never taken (five rows
+  fit; not a runtime bug), now guarded; fw.c's compile-time page check compared two enum types, now as ints;
+  `rfm_move_save`'s definition now matches its array-parameter declaration (`-Warray-parameter`). Clean with Arm GCC
+  14.2 `-Wall -Wextra -Wshadow`.
+
+**Tests:** `move_speech` 285 checks: the plain page's preset readout, Shift held (its own readout, the plain one never
+said), the same readout back said once by the range's end repeat, each page's title on touch, a turn with no value
+known saying nothing; the 0.6.7 cases updated (the same value once, the full title on the plain page).
+
 ## 0.6.7 (2026-11-19)
 
 Knob speech with firmware readouts (ChoralRoot 0.42's rd1; the owner: "the screen reader is not saying the parameter

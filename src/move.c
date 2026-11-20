@@ -179,7 +179,7 @@ void rfm_move_settings_default(rfm_move_settings_t *s)
         s->drum[p] = (uint8_t)(RFM_MOVE_DRUM_BASE + (p / 8) * 8 + (7 - p % 8));
 }
 
-uint32_t rfm_move_save(const rfm_move_settings_t *s, uint8_t *o)
+uint32_t rfm_move_save(const rfm_move_settings_t *s, uint8_t o[RFM_MOVE_SETTINGS_BYTES])
 {
     uint8_t *p = o;
     *p++ = 'R', *p++ = 'M', *p++ = 'V', *p++ = RFM_MOVE_SETTINGS_VERSION;

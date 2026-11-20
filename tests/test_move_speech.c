@@ -923,8 +923,10 @@ static void test_knob_readouts(void)
     SAID("");
     rd("Bass Register", "+2 oct");
     SAID("V:Bass Register: +2 oct|");
-    /* 4. the same value back (a readout for the turn): said again */
+    /* 4. the same value back (a readout for the turn): (0.6.8) once, by the range's end repeat, not twice */
     knob(&M, 4, 2), rd("Bass Register", "+2 oct");
+    SAID("");
+    adv_ms(&M, RFM_MOVE_SAY_TURN_MS + 20);
     SAID("V:Bass Register: +2 oct|");
     /* 4. the range's end: no readout; its words again once, a moment later */
     knob(&M, 4, 2);
@@ -956,16 +958,60 @@ static void test_knob_readouts(void)
     rd("Voicing", "+1");
     SAID("V:Voicing: +1|");
     touch(&M, 5, 0), rest_pop(&M), clear();
-    /* back on the plain page: the label again, its old readout (from the other page's knob) not said */
+    /* back on the plain page: its old readout (the other page's) not said; (0.6.8) its full title seen before */
     lbl[RFM_MOVE_LBL_KNOB0 + 3] = "Bass Regis";
     rfm_move_set_labels(&M, lbl);
     touch(&M, 4, 1);
-    SAID("V:Bass Regis|");
+    SAID("V:Bass Register|");
     touch(&M, 4, 0), rest_pop(&M), clear();
     /* a readout cleared (another firmware): the labels and counts again */
     rfm_move_readouts_clear(&M);
     touch(&M, 5, 1);
     SAID("V:Voicing|");
+    touch(&M, 5, 0), rest_pop(&M), clear();
+}
+/* (0.6.8) readouts given for control -1 (paired with the knob in use) on the FM-1's Shift page (GLO held): the plain
+ * page's never said; one touch-and-turn says each words once; the full title remembered per page */
+static void test_knob_pages(void)
+{
+    fresh(&M, 1);
+    clear();
+    touch(&M, 0, 1);                                    /* (knob 1: PRESETS) */
+    SAID("V:Presets|");
+    knob(&M, 0, 2);
+    SAID("V:Presets: +1|");                             /* (no readout seen yet from this firmware: the count, once) */
+    rd("FM6", "FM BELL");
+    SAID("V:FM6: FM BELL|");
+    adv_ms(&M, RFM_MOVE_SAY_TURN_MS + 20);
+    SAID("");                                           /* (answered: no repeat) */
+    touch(&M, 0, 0), rest_pop(&M), clear();
+    button(&M, MR_CC_SHIFT, 1);                         /* (the FM-1's GLO: the firmware's Shift page) */
+    SAID("V:Global|");
+    touch(&M, 0, 1);
+    SAID("V:Presets|");                                 /* (not the plain page's "FM6: FM BELL") */
+    knob(&M, 0, 2);
+    SAID("");
+    rd("FM TONE", "EP");
+    SAID("V:FM TONE: EP|");
+    knob(&M, 0, 2), rd("FM TONE", "EP");                /* (the range's end: the same readout back) */
+    SAID("");
+    adv_ms(&M, RFM_MOVE_SAY_TURN_MS + 20);
+    SAID("V:FM TONE: EP|");
+    adv_ms(&M, 600);
+    SAID("");
+    touch(&M, 0, 0), rest_pop(&M), clear();
+    touch(&M, 0, 1);                                    /* (Shift still held: this page's own) */
+    SAID("V:FM TONE: EP|");
+    touch(&M, 0, 0), button(&M, MR_CC_SHIFT, 0), rest_pop(&M), clear();
+    touch(&M, 0, 1);                                    /* (plain again: the plain page's title) */
+    SAID("V:FM6|");
+    touch(&M, 0, 0), rest_pop(&M), clear();
+    /* a turn with no readout at all on a firmware with readouts: nothing, not the name again */
+    touch(&M, 5, 1);
+    SAID("V:K2|");
+    knob(&M, 5, 2);
+    adv_ms(&M, RFM_MOVE_SAY_TURN_MS + 20);
+    SAID("");
     touch(&M, 5, 0), rest_pop(&M), clear();
 }
 static int g_silent;
@@ -1138,6 +1184,7 @@ int main(void)
     test_playing();
     test_mroute();
     test_knob_readouts();
+    test_knob_pages();
     test_walk();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");

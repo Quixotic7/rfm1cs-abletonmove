@@ -1757,8 +1757,9 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
  * same action, the same dirty marks (the project's autosave, the library's save). No popup, except the Track popup
  * of rfm_move_fw_set_active in the projects view (a Track press). -1 refused (out of range; nothing changed), 0 done
  * or nothing to change, 1 done and the Move's screen shows it: redraw (rfm1cs_session_redraw). */
-typedef char rfmv_pg_check[PG_MIDI == RFM_MOVE_FX_PAGE_MIDI && PG_ROUTE == RFM_MOVE_FX_PAGE_ROUTE &&
-                           PG_AUDIO == RFM_MOVE_FX_PAGE_AUDIO && PG_MIX == RFM_MOVE_FX_PAGE_MIX ? 1 : -1];
+typedef char rfmv_pg_check[(int)PG_MIDI == (int)RFM_MOVE_FX_PAGE_MIDI && (int)PG_ROUTE == (int)RFM_MOVE_FX_PAGE_ROUTE &&
+                           (int)PG_AUDIO == (int)RFM_MOVE_FX_PAGE_AUDIO && (int)PG_MIX == (int)RFM_MOVE_FX_PAGE_MIX ? 1 : -1];
+                                                        /* (0.6.8: as ints, GCC's -Wenum-compare) */
 static int fx_shown(const rfm_move_t *m) { return m->seq.projects && m->fw.fx; }
 static int set_active(rfm_move_t *m, int slot)
 {

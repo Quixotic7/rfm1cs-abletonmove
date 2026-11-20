@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 6
-#define RFM1CS_VERSION_PATCH 7
-#define RFM1CS_VERSION "0.6.7"
+#define RFM1CS_VERSION_PATCH 8
+#define RFM1CS_VERSION "0.6.8"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -795,6 +795,11 @@ typedef struct {
     uint8_t say_turn, say_force, say_late;              /* the knob slot + 1 turned, its readout to say even if the
                                                          * same, the turn's words due with no readout */
     uint32_t say_turn_ms;
+    /* (0.6.8) a readout's page: the FM-1 buttons held when it came (Shift: GLO); the full titles seen, by control,
+     * page and label (a touch before a readout says the title, not the 10-character label); a turn's readout came */
+    uint16_t rd_mods[8];
+    struct { uint8_t slot; uint16_t mods; char lbl[RFM_MOVE_LABEL_MAX + 1], title[RFM_MOVE_LABEL_MAX + 1]; } say_tc[24];
+    uint8_t say_tcn, say_rdnew;
     uint8_t del_src;                                    /* this Delete hold's last step action: 0 none, 1 cut, 2 paste
                                                          * (back to none when Delete is let go; the clipboard stays) */
 } rfm_move_t;

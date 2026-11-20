@@ -2463,9 +2463,10 @@ static void global_screen(const rfm_move_t *m, mr_canvas_t *cv)
         } else
             v2_T(cv, 122 - v2_tw(v, 1), y + 2, v, 1, !inv);
     }
-    if (n > GL_ROWS) {                                  /* a scroll bar */
-        const int h = 50 * GL_ROWS / n;
-        v2_R(cv, 126, 10 + (50 - h) * top / (n - GL_ROWS), 2, h, 1);
+    if (n > GL_ROWS) {                                  /* a scroll bar (0.6.8: the divisor never 0, even folded: the
+                                                         * rows all fit today, GCC warned) */
+        const int h = 50 * GL_ROWS / n, over = n - GL_ROWS > 0 ? n - GL_ROWS : 1;
+        v2_R(cv, 126, 10 + (50 - h) * top / over, 2, h, 1);
     }
 }
 
