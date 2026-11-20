@@ -495,6 +495,32 @@ The owner's layout: Back flips, Up is the FM-1's SEQ, Down cycles the firmwares.
 
 Track 4 held + Up / Down is still the selected sequencer track's rate in every mode.
 
+## Takeover (0.7.0)
+
+A firmware can bring its own Move interface (FM1VST `docs/RFM1-TAKEOVER.md`, `tk1`): it draws the screen and its
+LEDs and gets the Move's raw input for the parts it **claims** (`RFM_MOVE_TK_SCREEN`, `PADS`, `STEPS`, `KNOBS`,
+`JOG`, `VOLUME`, `BUTTONS`, `TRACKS`; `ALL`). The host reads the slot's record and hands the core what it says:
+`rfm_move_set_takeover(m, slot, claims, name)`, `rfm_move_tk_screen`, `rfm_move_tk_leds`, `rfm_move_tk_say`; the
+core sends the firmware `RFM_MOVE_ACT_TK_INPUT` (the raw packet, for `rfm1_tk_input`) and `RFM_MOVE_ACT_TK_STATE`
+(for `rfm1_tk_state`). Under a takeover the settings stay in FM-1 mode (`rfm_move_mode()` says
+`RFM_MOVE_MODE_TAKEOVER`), so every part not claimed keeps FM-1 mode's meaning and LEDs.
+
+| | |
+|---|---|
+| Track 1 tapped in FM-1 mode | the active slot's takeover, if it has one: its name over the whole screen ("CHORDS / Takeover"), said "Chords, takeover" |
+| Track 1 tapped in it (TRACKS not claimed) | FM-1 mode, named and said |
+| Track 1 from MIDI, Control or Sequencer mode | whichever of the two the slot was left in (each slot remembers) |
+| volume touched + Back | FM-1 mode from any takeover; Back is not sent, nor its release |
+| a slot switch (Back + Track, Down, the projects view, the host) | the shown takeover closes; the slot switched to opens as it was left |
+| the projects view, a Shift menu (Global Settings) | the takeover closes while it is up and opens again after |
+| claimed input | to the firmware only; a release goes to whoever got the press |
+| Back with BUTTONS but not TRACKS | held back: press and release together at its release, if no Track was pressed meanwhile (Back + Track still switches slots) |
+| closing (any way), a claim dropped, `rfm_move_release_all` | a release for everything the firmware holds (pads, steps, buttons, touches), then `TK_STATE` off (or on with the new claims) |
+| the screen | the firmware's with SCREEN, under the name popup and the host's messages only; else FM-1 mode's |
+| the LEDs | each claimed one the firmware's (the whites: r, at most 127), the rest FM-1 mode's |
+| words | the mode's name on entering, "FM-1 mode" on leaving, the firmware's own (`rfm_move_tk_say`, a SAY with its slot) while shown and words are open; `TK_STATE`'s flag says whether speech is on (sent again when it changes) |
+| claims 0 | no takeover: Track 1 does not offer it, an open one closes |
+
 ## Firmwares (0.4.0): the projects view's Tracks 1..3, FX setup, states
 
 The owner's design (move-firmware-browser-design.md, revision 2) and its mockup's screens (ported pixel for pixel,
@@ -927,6 +953,10 @@ project popup, the Track 4 menu, the count-in, a message: `move_seq_*.pbm` in th
 
 `move_speech` (test_move_speech.c, 0.6.0): the words a screen reader gets, case by case (the SAY actions logged as
 `E:` / `V:` and compared whole), and one script run with speech off and on (the same other actions, the same screen).
+
+`move_takeover` (0.7.0): the takeover's actions logged and compared whole: entry and exit both ways, volume + Back,
+claimed and unclaimed controls, Back held back, the releases before off, each slot's memory, slot switches, the LED
+merge, the screen, the firmware's words and the speech flag, claims changing and claims 0, a Shift menu over it.
 
 `move_fw` (test_move_fw.c, 0.4.0): a host with no firmware list, the lists and filters (OR / AND), banks, load /
 unload / active, levels and voices (the slow blink), the library's edits and its blob (a round trip, every damaged

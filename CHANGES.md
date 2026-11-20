@@ -3,6 +3,31 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.7.0 (2026-11-20)
+
+The takeover (FM1VST `docs/RFM1-TAKEOVER.md`, `tk1`): a firmware's own Move interface beside FM-1, MIDI, Control and
+Sequencer mode. New fields at the end of `rfm_move_act_t` and `rfm_move_t`: rebuild everything; `src/takeover.c` is
+a new source (web/build.sh lists it).
+
+- **Host API:** `rfm_move_set_takeover(m, slot, claims, name)` (claims `RFM_MOVE_TK_*`; 0: none, an open one
+  closes), `rfm_move_tk_screen(m, slot, packed)`, `rfm_move_tk_leds(m, slot, rgb[92][3])` (only the claimed ones;
+  whites r 0..127), `rfm_move_tk_say(m, slot, words, interrupt)`, `rfm_move_tk_shown(m)`, `rfm_move_mode(m)`;
+  `RFM_MOVE_MODE_TAKEOVER` (4: never in the settings), `RFM_MOVE_L_*` (the LED list's order).
+- **Actions:** `RFM_MOVE_ACT_TK_INPUT` (31: slot, `pkt[4]` the raw packet of a claimed control, or a release the
+  core makes up) and `RFM_MOVE_ACT_TK_STATE` (32: slot, down on / off, `tk_claims`, `tk_flags` bit 0 speech on).
+- **Track 1** in FM-1 mode opens the active slot's takeover (its name, the whole screen; said "Chords, takeover");
+  in it (TRACKS free) FM-1 mode again; from MIDI, Control, Sequencer mode whichever the slot was left in. **Volume
+  touched + Back** leaves any takeover (Back not sent). A slot switch closes it; the slot switched to opens as it was
+  left. The projects view and the Shift menus close it while up.
+- **Routing:** claimed input to the firmware only (a release follows its press); the rest as in FM-1 mode. Back with
+  BUTTONS but not TRACKS is held back (press and release at its release, no Track meanwhile). Everything the firmware
+  holds is let go before `TK_STATE` off, when a claim is dropped, and in `rfm_move_release_all`.
+- **Screen and LEDs:** the firmware's screen with SCREEN (only the name popup and the host's messages over it); each
+  claimed LED the firmware's, the rest FM-1 mode's.
+- `rfm_move_set_mode(m, RFM_MOVE_MODE_FM1)` now leaves a takeover; `RFM_MOVE_MODE_TAKEOVER` opens one.
+
+**Tests:** `move_takeover` (new, 110 checks).
+
 ## 0.6.13 (2026-11-20)
 
 Knobs with a job light up and answer a touch (the owner: "The favorite move should light up the LED under the knob,
