@@ -193,6 +193,7 @@ uint32_t rfm_move_save(const rfm_move_settings_t *s, uint8_t o[RFM_MOVE_SETTINGS
     *p++ = s->fw_cat_scope, *p++ = (uint8_t)(s->fx_page | (s->fw_fx ? 0x80 : 0));   /* (version 4; 0.4.5: FX setup's
                                                          * memory in bit 7) */
     *p++ = s->pop_half;                                 /* (version 5) */
+    *p++ = s->speech;                                   /* (version 6) */
     return (uint32_t)(p - o);
 }
 
@@ -204,7 +205,8 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
     rfm_move_settings_default(s);
     if (!b || n < 6 || b[0] != 'R' || b[1] != 'M' || b[2] != 'V' ||
         !((b[3] == RFM_MOVE_SETTINGS_VERSION && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES && n >= RFM_MOVE_SETTINGS_BYTES) ||
-          (b[3] == 4 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES - 1 && n >= RFM_MOVE_SETTINGS_BYTES - 1) ||
+          (b[3] == 5 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES - 1 && n >= RFM_MOVE_SETTINGS_BYTES - 1) ||
+          (b[3] == 4 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES - 2 && n >= RFM_MOVE_SETTINGS_BYTES - 2) ||
           (b[3] == 3 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V3 && n >= RFM_MOVE_SETTINGS_BYTES_V3) ||
           (b[3] == 2 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V3 - 2 && n >= RFM_MOVE_SETTINGS_BYTES_V3 - 2) ||
           (b[3] == 1 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V3 - 3 && n >= RFM_MOVE_SETTINGS_BYTES_V3 - 3)))
@@ -248,6 +250,8 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
     }
     if (b[3] >= 5)                                      /* (0.5.9; older: the whole screen, the default) */
         s->pop_half = p[9] & 1;
+    if (b[3] >= 6)                                      /* (0.6.12; older: not chosen, the host's default) */
+        s->speech = p[10] <= 3 ? p[10] : 0;
     return 0;
 }
 
@@ -1233,6 +1237,11 @@ static int back_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)   /* 1:
 
 static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
 {
+    if (ev->type == MR_EV_TOUCH && ev->index == 9) {   /* (0.6.12) the jog's touch, wherever it goes: Jog speech */
+        if (ev->value && !m->jog_touch)
+            m->say_jogstart = 1;
+        m->jog_touch = (uint8_t)(ev->value != 0);
+    }
     if (rfmv_global_input(m, ev))                       /* (0.6.2) Global settings owns the controls while open */
         return;
     if (back_input(m, ev, now_ms))

@@ -128,6 +128,7 @@ static void fresh(rfm_move_t *m, int speech)
     rfm_move_fx_modules(m, RFM_MOVE_FX_MIDI, MFX, 1);
     rfm_move_fx_modules(m, RFM_MOVE_FX_AUDIO, AFX, 1);
     rfm_move_fw_slots(m, ids);
+    rfm_move_set_speech_default(m, RFM_MOVE_SPEECH_ON);   /* (0.6.12: the mode On, as a screen reader user's) */
     rfm_move_set_speech(m, speech);
     clear();
 }
@@ -730,6 +731,8 @@ static void test_global(void)
     SAID("E:Global settings, battery unknown|");        /* (0.6.10: the header, the battery) */
     rfm_move_screen(&M, NULL, out), write_pbm("global_select.pbm", out);
     jog(&M, 1);
+    SAID("V:Clock: Internal|");                         /* (0.6.12: Speech first) */
+    jog(&M, 1);
     SAID("V:Velocity: Dynamic|");
     jog_press(&M);
     SAID("V:Editing Velocity: Dynamic|");
@@ -756,7 +759,7 @@ static void test_global(void)
     CHECK(!M.seq.smenu);
     open_global(&M);                                    /* (again: the row kept, no edit; the battery said) */
     SAID("E:Global settings, battery 63%|");
-    CHECK(M.gl_row == 3 && !M.gl_edit);
+    CHECK(M.gl_row == 4 && !M.gl_edit);
     jog(&M, -3);
     SAID("V:Clock: Internal|");
     open_global(&M);                                    /* (its own toggle closes it) */
@@ -1119,6 +1122,72 @@ static void test_fw_speaks(void)
     press(&M, MR_CC_PLAY);
     SAID("V:Play|");
 }
+/* (0.6.12) the screen reader's modes: Off (the default), On, Jog (only while the jog is touched; a touch says the
+ * screen); the host's first-run default; the Speech row (its change said in any mode) */
+static void test_speech_modes(void)
+{
+    char want[96];
+    fresh(&M, 0);                                       /* (speech tracking on, the default left Off) */
+    M.say_default = RFM_MOVE_SPEECH_OFF;
+    rfm_move_set_speech(&M, 1);
+    clear();
+    CHECK(rfm_move_speech_mode(&M) == RFM_MOVE_SPEECH_OFF && !rfm_move_speech_open(&M) && M.s.speech == 0);
+    tap_track(&M, 1), knob(&M, 8, 1), press(&M, MR_CC_PLAY);
+    SAID("");                                           /* Off: nothing at all */
+    /* the host's default: only while nothing is chosen */
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON);
+    CHECK(rfm_move_speech_mode(&M) == RFM_MOVE_SPEECH_ON && rfm_move_speech_open(&M));
+    M.s.speech = 1 + RFM_MOVE_SPEECH_OFF;
+    CHECK(rfm_move_speech_mode(&M) == RFM_MOVE_SPEECH_OFF && !rfm_move_speech_open(&M));
+    rfm_move_set_speech_default(&M, 7);                 /* (out of range: Off) */
+    M.s.speech = 0;
+    CHECK(rfm_move_speech_mode(&M) == RFM_MOVE_SPEECH_OFF);
+    /* the Speech row: Off, yet its change is said; the settings saved */
+    tap_track(&M, 0), rest_pop(&M), clear();
+    track(&M, 0, 1), tap_step(&M, 1), track(&M, 0, 0);
+    SAID("");                                           /* (Off: the menu's name not said) */
+    CHECK(M.gl_row == 0);
+    jog_press(&M);
+    SAID("");
+    memset(kinds, 0, sizeof kinds);
+    jog(&M, 1);
+    SAID("V:Speech on|");
+    CHECK(M.s.speech == 1 + RFM_MOVE_SPEECH_ON && kinds[RFM_MOVE_ACT_SETTINGS] == 1);
+    jog(&M, 1);
+    SAID("V:Speech jog wheel|");
+    jog(&M, -2);
+    SAID("V:Speech off|");                              /* (said, though Off now) */
+    jog(&M, 1);
+    SAID("V:Speech on|");
+    jog_press(&M);
+    SAID("V:Done|");                                    /* (On now: every word again) */
+    press(&M, MR_CC_BACK);
+    SAID("E:FM-1 mode|");
+    /* Jog: silent until the jog is touched; a touch says the screen; while held, every word; let go: silent */
+    M.s.speech = 1 + RFM_MOVE_SPEECH_JOG;
+    tap_track(&M, 2);
+    SAID("");
+    CHECK(!rfm_move_speech_open(&M));
+    touch(&M, 9, 1);
+    SAID("V:Control mode|");
+    CHECK(rfm_move_speech_open(&M));
+    knob(&M, 0, 1);
+    SAID("V:CC 16: 65|");
+    touch(&M, 9, 0);
+    CHECK(!rfm_move_speech_open(&M));
+    rest_pop(&M), tap_track(&M, 1);
+    SAID("");
+    touch(&M, 9, 1);                                    /* (a new touch: the screen again) */
+    SAID("V:MIDI mode|");
+    touch(&M, 9, 0), clear();
+    /* Jog in Global Settings: the jog's touch passes (the menu owns the rest) */
+    tap_track(&M, 0), rest_pop(&M), clear();
+    track(&M, 0, 1), tap_step(&M, 1), track(&M, 0, 0), clear();
+    touch(&M, 9, 1);
+    snprintf(want, sizeof want, "V:Global settings, battery unknown, Speech: Jog wheel|");
+    SAID(want);
+    touch(&M, 9, 0), press(&M, MR_CC_BACK), clear();
+}
 static int g_silent;
 static void test_walk(void)
 {
@@ -1293,6 +1362,7 @@ int main(void)
     test_fav_order();
     test_knob_twice();
     test_fw_speaks();
+    test_speech_modes();
     test_walk();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");

@@ -458,11 +458,27 @@ static int pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint
 }
 
 /* ================================================================ saying === */
+int rfm_move_speech_mode(const rfm_move_t *m)
+{
+    return m->s.speech >= 1 && m->s.speech <= 3 ? m->s.speech - 1 : m->say_default;
+}
+int rfm_move_speech_open(const rfm_move_t *m)
+{
+    const int md = rfm_move_speech_mode(m);
+    return md == RFM_MOVE_SPEECH_ON || (md == RFM_MOVE_SPEECH_JOG && m->jog_touch);
+}
+void rfm_move_set_speech_default(rfm_move_t *m, int mode)
+{
+    m->say_default = (uint8_t)(mode == RFM_MOVE_SPEECH_ON || mode == RFM_MOVE_SPEECH_JOG ? mode : RFM_MOVE_SPEECH_OFF);
+}
+static int g_force;                                     /* (a word said in any mode: the mode's own change) */
 static void say(rfm_move_t *m, int kind, const char *w)
 {
     rfm_move_act_t a;
     if (!w[0] || !m->fn)
         return;
+    if (!g_force && !rfm_move_speech_open(m))
+        return;                                         /* (0.6.12: Off, or Jog let go: tracked, not said) */
     memset(&a, 0, sizeof a);
     a.kind = RFM_MOVE_ACT_SAY, a.index = (uint8_t)kind, a.frame = 0;
     a.data = (const uint8_t *)w, a.len = (uint32_t)strlen(w);
@@ -507,7 +523,12 @@ void rfmv_say_text(rfm_move_t *m, const char *text)
     if (!m->speech)
         return;
     snprintf(m->say_now, sizeof m->say_now, "%s", text ? text : "");
-    m->say_lbl_t0 = 0;
+    m->say_lbl_t0 = 0, m->say_now_force = 0;
+}
+void rfmv_say_text_always(rfm_move_t *m, const char *text)   /* (0.6.12) said in any mode */
+{
+    rfmv_say_text(m, text);
+    m->say_now_force = 1;
 }
 
 /* values the screen shows without a popup (or that a button changes): their words, said when they change */
@@ -829,8 +850,17 @@ void rfmv_say_check(rfm_move_t *m)
         }
     }
     say_transport(m);
+    if (m->say_jogstart) {                              /* (0.6.12) Jog: a touch says the screen as it is now */
+        m->say_jogstart = 0;
+        if (rfm_move_speech_mode(m) == RFM_MOVE_SPEECH_JOG && m->jog_touch) {
+            rfm_move_words(m, w, sizeof w);
+            say(m, RFM_MOVE_SAY_VALUE, w);
+        }
+    }
     if (m->say_now[0]) {                                /* 2. a button pressed */
+        g_force = m->say_now_force;
         say(m, RFM_MOVE_SAY_VALUE, m->say_now);
+        g_force = 0;
         sn.w[sn.n++] = m->say_now;
     }
     up = pop_words(m, pw, sizeof pw, &ps, &st);         /* 3. a popup: its words when they change */
@@ -867,7 +897,7 @@ void rfmv_say_check(rfm_move_t *m)
     }
     m->say_force = 0, m->say_late = 0, m->say_rdnew = 0;
     watch(m, fresh, &sn);                               /* 5. the values a button or a menu changed */
-    m->say_now[0] = 0;
+    m->say_now[0] = 0, m->say_now_force = 0;
     if (m->say_back && m->say_n == said0) {             /* (0.6.3) Back that changed nothing said: where you are */
         base_said(m, -1, w, sizeof w);
         tidy(w);
@@ -925,6 +955,8 @@ int rfm_move_words(const rfm_move_t *m, char *out, int cap)
     tidy(b);
     if (!pop_words(m, p, sizeof p, &ps, &st))
         rfmv_fw_say_focus(m, p, sizeof p);
+    if (!p[0] && m->seq.smenu == RFM_MOVE_SM_GLOBAL && !m->seq.projects)
+        rfmv_global_words(m, p, sizeof p);              /* (0.6.12: Global Settings: its row selected) */
     tidy(p);
     n = snprintf(out, (size_t)cap, "%s%s%s", b, p[0] ? ", " : "", p);
     return n < cap ? n : cap - 1;

@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 6
-#define RFM1CS_VERSION_PATCH 11
-#define RFM1CS_VERSION "0.6.11"
+#define RFM1CS_VERSION_PATCH 12
+#define RFM1CS_VERSION "0.6.12"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -197,6 +197,9 @@ typedef struct {
     uint8_t pop_half;                                   /* FM-1 mode's label, readout and knob popups: 0 the whole
                                                          * screen (the default, 0.5.9), 1 the left half (the FM-1's
                                                          * screen stays on the right) */
+    /* (version 6, 0.6.12) */
+    uint8_t speech;                                     /* the screen reader: 0 not chosen yet (the host's default,
+                                                         * rfm_move_set_speech_default), 1 + RFM_MOVE_SPEECH_* */
 } rfm_move_settings_t;
 enum { RFM_MOVE_VEL_DYNAMIC, RFM_MOVE_VEL_FIXED, RFM_MOVE_VEL_SOFT, RFM_MOVE_VEL_HARD, RFM_MOVE_VEL_LINEAR, RFM_MOVE_VEL_N };
 /* (the jog's order: Dynamic, Fixed, Soft, Linear, Hard; LINEAR came last, so older settings keep their values) */
@@ -204,11 +207,11 @@ const char *rfm_move_vel_name(int v);                   /* "DYNAMIC", "FIXED", "
 int rfm_move_vel(const rfm_move_settings_t *s, int v);  /* a pad's velocity 1..127 through the setting */
 #define RFM_MOVE_LIST_TICKS 5                           /* a list-type menu knob (scale, root, layout ..): ticks an item */
 #define RFM_MOVE_KNOB_TICKS 2                           /* the Move's knob ticks an FM-1 encoder detent (the jog: 1) */
-#define RFM_MOVE_SETTINGS_VERSION 5                     /* (versions 1, 2, 3 and 4, 77, 78, 80 and 86 bytes, load too:
-                                                         * no MIDI screen, no velocity setting, no projects view state,
-                                                         * no popup width (full)) */
+#define RFM_MOVE_SETTINGS_VERSION 6                     /* (versions 1..5, 77, 78, 80, 86 and 87 bytes, load too: no
+                                                         * MIDI screen, no velocity setting, no projects view state, no
+                                                         * popup width (full), no speech mode (the host's default)) */
 #define RFM_MOVE_SETTINGS_BYTES_V3 (6 + 7 + RFM_MOVE_NBANKS * RFM_MOVE_NKNOBS + RFM_MOVE_NPADS + 3)
-#define RFM_MOVE_SETTINGS_BYTES (RFM_MOVE_SETTINGS_BYTES_V3 + 7)
+#define RFM_MOVE_SETTINGS_BYTES (RFM_MOVE_SETTINGS_BYTES_V3 + 8)
 enum { RFM_MOVE_MV_PADS, RFM_MOVE_MV_NOTES, RFM_MOVE_MV_N };   /* MIDI mode's screens (a tap on Track 2 turns them) */
 void rfm_move_settings_default(rfm_move_settings_t *s);
 /* "RMV" version8 len16, then the fields; returns RFM_MOVE_SETTINGS_BYTES */
@@ -784,6 +787,9 @@ typedef struct {
     uint8_t gl_edit;                                    /* its value being edited (the jog changes it) */
     /* (0.6.11) the firmware speaks for its own controls (fm1-reader): rfm_move_set_fw_speech */
     uint8_t fw_speaks;
+    /* (0.6.12) the screen reader's mode (settings.speech; unset: this default), a jog touch to say the screen, a word
+     * that is said in any mode (the mode's own change) */
+    uint8_t say_default, say_jogstart, say_now_force;
     /* (0.6.3) */
     uint8_t say_back;                                   /* Back let go this call: say where it left you if nothing else */
     uint16_t say_n;                                     /* words said so far (a call that said nothing: 0 more) */
@@ -1021,6 +1027,17 @@ int rfm_move_speech(const rfm_move_t *m);              /* 1 on */
  * or key's label or press. RemoteFM1's own words stay: modes, the projects view, menus, the volume, held Track
  * menus, Global Settings, the sequencer, and a touched knob's name. Off by default; any time */
 void rfm_move_set_fw_speech(rfm_move_t *m, int fw_speaks);
+/* (0.6.12) the screen reader's mode, the owner's: Off (the default), On (always), Jog (only while the jog wheel is
+ * touched: a touch says the screen as it is, rfm_move_words, then every word while held; let go: silent). The user
+ * picks it in Global Settings (row Speech; saved in the settings, version 6); its change is said in any mode
+ * ("Speech off"). Hosts keep rfm_move_set_speech(m, 1) on (the core then tracks the screen) and gate their own words
+ * on rfm_move_speech_open. rfm_move_set_speech_default: the mode while the settings have none (never chosen: an
+ * older image, the first run): RFM_MOVE_SPEECH_ON when the system's screen reader is on, so a blind user is never
+ * locked out */
+enum { RFM_MOVE_SPEECH_OFF = 0, RFM_MOVE_SPEECH_ON = 1, RFM_MOVE_SPEECH_JOG = 2 };
+void rfm_move_set_speech_default(rfm_move_t *m, int mode);
+int rfm_move_speech_mode(const rfm_move_t *m);         /* RFM_MOVE_SPEECH_* now */
+int rfm_move_speech_open(const rfm_move_t *m);         /* 1: words may be said now (On, or Jog with the jog touched) */
 int rfm_move_fw_speech(const rfm_move_t *m);           /* 1 set */
 /* what the screen shows now, in words: its base view, then ", " and its popup or selection if any (a host's "say it
  * again", the tests). Works with speech off too. Returns the length written (out NUL-terminated; cut to cap - 1) */

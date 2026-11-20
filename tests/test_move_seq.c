@@ -521,20 +521,21 @@ static void test_external(void)
     CHECK(m->seq.smenu == RFM_MOVE_SM_GLOBAL && m->seq.clock_mode == RFM_MOVE_CLOCK_EXTERNAL && m->gl_row == 0);
     jog(m, -2);
     CHECK(m->seq.clock_mode == RFM_MOVE_CLOCK_EXTERNAL && m->gl_row == 0);   /* (selecting: the row, clamped) */
+    jog(m, 1);                                          /* (0.6.12: Speech first, Clock second) */
     jog_click(m), jog(m, -2), jog_click(m);
     CHECK(m->seq.clock_mode == RFM_MOVE_CLOCK_AUTO && !m->gl_edit);
     knob(m, 1, RFM_MOVE_LIST_TICKS), knob(m, 2, -7);
     CHECK(m->s.vel_mode == RFM_MOVE_VEL_DYNAMIC && m->s.vel_level == 127);   /* (the knobs: nothing) */
     jog(m, 1), jog_click(m), jog(m, 1), jog_click(m);
     jog(m, 1), jog_click(m), jog(m, -7), jog_click(m);
-    CHECK(m->s.vel_mode == RFM_MOVE_VEL_FIXED && m->s.vel_level == 120 && m->gl_row == 2);
+    CHECK(m->s.vel_mode == RFM_MOVE_VEL_FIXED && m->s.vel_level == 120 && m->gl_row == 3);
     {
         uint8_t out[MR_SCREEN_BYTES], out2[MR_SCREEN_BYTES];
         m->seq.msg = 0;
         jog(m, 9);                                      /* (the last row; (0.6.10) the battery the header: "--" until
                                                          * its first STATUS) */
         rfm_move_screen(m, NULL, out);
-        CHECK(m->battery == -1 && m->gl_row == rfmv_global_rows() - 1 && rfmv_global_rows() == 4);
+        CHECK(m->battery == -1 && m->gl_row == rfmv_global_rows() - 1 && rfmv_global_rows() == 5);
         CHECK(rfm_move_set_battery(m, 63, 0) == 1 && rfm_move_set_battery(m, 63, 0) == 0);
         CHECK(rfm_move_set_battery(m, 120, 0) == 1 && m->battery == 100);   /* (clamped) */
         rfm_move_set_battery(m, 63, 0);

@@ -2051,14 +2051,18 @@ static void test_popup_width(void)
     static uint8_t out[MR_SCREEN_BYTES];
     uint8_t img[RFM_MOVE_SETTINGS_BYTES];
     rfm_move_settings_t st;
-    /* the setting: whole screen by default; saved (version 5); older settings: the default */
+    /* the setting: whole screen by default; saved (version 5; 0.6.12: version 6, the speech mode after it); older
+     * settings: the default */
     rfm_move_settings_default(&st);
-    CHECK(st.pop_half == 0);
-    st.pop_half = 1;
-    CHECK(rfm_move_save(&st, img) == RFM_MOVE_SETTINGS_BYTES && img[3] == 5 && img[RFM_MOVE_SETTINGS_BYTES - 1] == 1);
-    CHECK(rfm_move_load(&st, img, sizeof img) == 0 && st.pop_half == 1);
-    img[3] = 4, img[4] = (uint8_t)(RFM_MOVE_SETTINGS_BYTES - 1);   /* (a version 4 image: 86 bytes) */
-    CHECK(rfm_move_load(&st, img, RFM_MOVE_SETTINGS_BYTES - 1) == 0 && st.pop_half == 0);
+    CHECK(st.pop_half == 0 && st.speech == 0);
+    st.pop_half = 1, st.speech = 1 + RFM_MOVE_SPEECH_JOG;
+    CHECK(rfm_move_save(&st, img) == RFM_MOVE_SETTINGS_BYTES && img[3] == 6 && img[RFM_MOVE_SETTINGS_BYTES - 2] == 1 &&
+          img[RFM_MOVE_SETTINGS_BYTES - 1] == 3);
+    CHECK(rfm_move_load(&st, img, sizeof img) == 0 && st.pop_half == 1 && st.speech == 3);
+    img[3] = 5, img[4] = (uint8_t)(RFM_MOVE_SETTINGS_BYTES - 1);   /* (a version 5 image: 87 bytes) */
+    CHECK(rfm_move_load(&st, img, RFM_MOVE_SETTINGS_BYTES - 1) == 0 && st.pop_half == 1 && st.speech == 0);
+    img[3] = 4, img[4] = (uint8_t)(RFM_MOVE_SETTINGS_BYTES - 2);   /* (a version 4 image: 86 bytes) */
+    CHECK(rfm_move_load(&st, img, RFM_MOVE_SETTINGS_BYTES - 2) == 0 && st.pop_half == 0);
     /* Global Settings (Shift + step 2 in Sequencer mode): (0.6.2) its Popup size row (the jog, a click to edit) */
     rfm_move_init(&m, NULL, on_act, NULL);
     rfm_move_set_mode(&m, RFM_MOVE_MODE_SEQ);
@@ -2067,8 +2071,8 @@ static void test_popup_width(void)
     rfm_move_screen(&m, NULL, out);
     write_pbm("move_global_popup_full.pbm", out);
     clear();
-    jog(&m, 3), raw(&m, 0xB0, MR_CC_JOG_CLICK, 127), raw(&m, 0xB0, MR_CC_JOG_CLICK, 0);
-    CHECK(m.gl_row == 3 && m.gl_edit);
+    jog(&m, 4), raw(&m, 0xB0, MR_CC_JOG_CLICK, 127), raw(&m, 0xB0, MR_CC_JOG_CLICK, 0);
+    CHECK(m.gl_row == 4 && m.gl_edit);                  /* (0.6.12: Speech first) */
     jog(&m, 1);
     CHECK(m.s.pop_half == 1 && nact >= 1 && acts[nact - 1].kind == RFM_MOVE_ACT_SETTINGS);
     rfm_move_screen(&m, NULL, out);

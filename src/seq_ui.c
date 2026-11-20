@@ -2337,8 +2337,9 @@ static void fit2(mr_canvas_t *cv, int x, int y, const char *s, int w)   /* 2x wh
  * its value (the value inverted, the jog changes it), a click again (or Back) leaves the edit; Back closes the menu.
  * While it is open it takes the Move's controls (nothing reaches the FM-1, the firmware or the sequencer); releases
  * pass, so nothing pressed before stays held; Track buttons and Shift + step 2 (its own toggle) pass too */
-enum { GL_CLOCK, GL_VEL, GL_LEVEL, GL_POPUP, GL_N };   /* (0.6.10: the battery a header, no longer a row) */
-static const char *const GL_NAME[GL_N] = { "Clock", "Velocity", "Fixed level", "Popup size" };
+enum { GL_SPEECH, GL_CLOCK, GL_VEL, GL_LEVEL, GL_POPUP, GL_N };   /* (0.6.10: the battery a header, no longer a row;
+                                                         * 0.6.12: Speech first, the rest scroll) */
+static const char *const GL_NAME[GL_N] = { "Speech", "Clock", "Velocity", "Fixed level", "Popup size" };
 #define GL_ROWS 4                                       /* rows on screen (more scroll) */
 int rfmv_global_rows(void) { return GL_N; }
 static void gl_words(const rfm_move_t *m, int r, const char *pre, char *o, int cap);
@@ -2346,7 +2347,9 @@ void rfmv_global_words(const rfm_move_t *m, char *o, int cap) { gl_words(m, clam
 static void gl_value(const rfm_move_t *m, int r, char *o, int cap, int spoken)
 {
     static const char *const CK[3] = { "Auto", "Int", "Ext" }, *const CKS[3] = { "Auto", "Internal", "External" };
+    static const char *const SP[3] = { "Off", "On", "Jog" }, *const SPS[3] = { "Off", "On", "Jog wheel" };
     switch (r) {
+    case GL_SPEECH: snprintf(o, (size_t)cap, "%s", (spoken ? SPS : SP)[rfm_move_speech_mode(m) % 3]); break;
     case GL_CLOCK: snprintf(o, (size_t)cap, "%s", (spoken ? CKS : CK)[m->seq.clock_mode % 3]); break;
     case GL_VEL: rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), o, cap); break;
     case GL_LEVEL: snprintf(o, (size_t)cap, "%d", m->s.vel_level); break;
@@ -2370,6 +2373,13 @@ static void gl_words(const rfm_move_t *m, int r, const char *pre, char *o, int c
 static void gl_change(rfm_move_t *m, int r, int d)
 {
     switch (r) {
+    case GL_SPEECH: {                                   /* (0.6.12) said in any mode: "Speech off" */
+        static const char *const W[3] = { "Speech off", "Speech on", "Speech jog wheel" };
+        const int md = clampi(rfm_move_speech_mode(m) + d, 0, 2);
+        m->s.speech = (uint8_t)(md + 1), rfmv_changed(m);
+        rfmv_say_text_always(m, W[md]);
+        break;
+    }
     case GL_CLOCK: rfm_move_seq_set_clock(m, clampi(m->seq.clock_mode + d, 0, 2)); break;
     case GL_VEL: rfmv_vel_step(m, d), rfmv_changed(m); break;
     case GL_LEVEL: m->s.vel_level = (uint8_t)clampi(m->s.vel_level + d, 1, 127), rfmv_changed(m); break;
@@ -2396,6 +2406,8 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
             return 1;
         if (m->gl_edit) {
             gl_change(m, m->gl_row, d);
+            if (m->gl_row == GL_SPEECH)
+                return 1;                               /* (its own words, said in any mode) */
             gl_words(m, m->gl_row, "", w, sizeof w);
         } else {
             m->gl_row = (uint8_t)clampi(m->gl_row + d, 0, GL_N - 1);
@@ -2433,8 +2445,11 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
         if (!ev->value || rfmv_track_held(m, 0) || (q->mods & SEQ_M_SHIFT))
             return 0;                                   /* (releases; Shift + step: the menus, this one's toggle) */
         return 1;
-    case MR_EV_PAD:
-    case MR_EV_TOUCH: return ev->value != 0;            /* (releases pass: a pad or knob let go) */
+    case MR_EV_TOUCH:
+        if (ev->index == 9)
+            return 0;                                   /* (0.6.12: the jog's touch: Jog speech) */
+        return ev->value != 0;                          /* (releases pass: a knob let go) */
+    case MR_EV_PAD: return ev->value != 0;              /* (releases pass: a pad let go) */
     case MR_EV_PAD_PRESSURE:
     case MR_EV_KNOB: return 1;
     default: return 0;

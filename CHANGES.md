@@ -3,6 +3,30 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.12 (2026-11-20)
+
+Speech modes in Global Settings (the owner: "Off(Default), On(Always on like it works now), or Jogwheel(Only speaks
+if you are also touching the jogwheel)"). New fields at the end of `rfm_move_settings_t` and `rfm_move_t`; the
+settings image is version 6 (88 bytes; versions 1..5 load, the mode then not chosen): rebuild everything; the web's
+`SETTINGS_BYTES` is 88.
+
+- **Off** (the default): the core says nothing (it keeps tracking the screen). **On**: as before. **Jog**: words only
+  while the jog wheel is touched; the touch says the screen as it is (`rfm_move_words`), then every word while held;
+  let go: silent; a new touch starts again (the jog's touch passes through Global Settings' ownership).
+- **The Speech row**, first in Global Settings (Off, On, Jog; said "Off", "On", "Jog wheel"); saved in the settings
+  (`settings.speech`: 0 not chosen, 1 + `RFM_MOVE_SPEECH_*`). Its change is said in any mode: "Speech off", "Speech
+  on", "Speech jog wheel". Five rows now: four show and the list scrolls (direction A's 11 px rows kept, a 2 px bar).
+- **The default:** `rfm_move_set_speech_default(m, mode)`: the mode while the settings have none (the first run, an
+  older image): `RFM_MOVE_SPEECH_ON` when the system's screen reader is on.
+- **Host API:** `rfm_move_speech_mode(m)` (0 off, 1 on, 2 jog), `rfm_move_speech_open(m)` (1: words may be said now:
+  On, or Jog with the jog touched); hosts keep `rfm_move_set_speech(m, 1)` on and gate their own words on it.
+- `rfm_move_words` in Global Settings adds the selected row.
+
+**Tests:** `move_speech` 334 checks: Off says nothing; the default only while nothing is chosen; the Speech row's
+changes said (Off too) and saved (a SETTINGS action); Jog silent until touched, the screen on touch, words while
+held, silent again, a new touch; Jog in Global Settings; `move` the settings image (version 6, versions 5 and 4
+loading). Contact sheet `rfm1cs-0.6.12-global-speech.png`.
+
 ## 0.6.11 (2026-11-20)
 
 For firmwares that speak for themselves (fm1-reader: their SysEx SAYs, about 30 catalog firmwares, the host speaking

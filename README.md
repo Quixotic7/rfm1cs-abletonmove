@@ -414,7 +414,7 @@ Workflow 1-3, Tempo 1-2 (none while following), Groove 1-2, Layout 1, Keys & Sca
 | Step | Function |
 |---|---|
 | 1 Set Overview | the project grid |
-| 2 Global Settings | (0.6.2) a list on the jog wheel, sticky (Shift + step 2 again, or Back when not editing, or Session closes it). (0.6.10, the owner's direction A) On top the Move's battery: an icon filled to the charge and the percentage at 2x ("--" until the first STATUS: Move Remote's STATUS byte 4 as the surface reports it, taken as 0..100 %, clamped; the host passes it with `rfm_move_set_battery`), "GLOBAL" on the right, a rule under them. Rows: Clock (Auto, Int, Ext; Int is the default (0.5.5); Auto follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), Velocity (the option, as the Velocity menu), Fixed level, Popup size (FM-1 mode's popups: Full, the default, or Half, 0.5.9). Turn the jog: the selected row (inverted) moves; click: edit its value (the row framed, the value inverted between small arrows), the jog changes it; click again or Back: done. While it is open it owns the controls: no knob, pad, step or button reaches the FM-1, the firmware or the sequencer (the knobs do nothing; their touches show nothing); releases pass, so a pad held before it opened lets go; the Track buttons and Shift + step 2 pass |
+| 2 Global Settings | (0.6.2) a list on the jog wheel, sticky (Shift + step 2 again, or Back when not editing, or Session closes it). (0.6.10, the owner's direction A) On top the Move's battery: an icon filled to the charge and the percentage at 2x ("--" until the first STATUS: Move Remote's STATUS byte 4 as the surface reports it, taken as 0..100 %, clamped; the host passes it with `rfm_move_set_battery`), "GLOBAL" on the right, a rule under them. Rows (0.6.12: Speech first, then the others; four show, the list scrolls): Speech (Off, On, Jog: see Speech modes), Clock (Auto, Int, Ext; Int is the default (0.5.5); Auto follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), Velocity (the option, as the Velocity menu), Fixed level, Popup size (FM-1 mode's popups: Full, the default, or Half, 0.5.9). Turn the jog: the selected row (inverted) moves; click: edit its value (the row framed, the value inverted between small arrows), the jog changes it; click again or Back: done. While it is open it owns the controls: no knob, pad, step or button reaches the FM-1, the firmware or the sequencer (the knobs do nothing; their touches show nothing); releases pass, so a pad held before it opened lets go; the Track buttons and Shift + step 2 pass |
 | 3 Workflow Settings | menu: the jog the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent) |
 | 5 Tempo | each press is a tap (tap tempo: the average of up to 4 taps) and opens the menu: the tempo at 4x; the jog 1 BPM (Shift, or knob 2: 0.1); following the firmware's clock: locked (a padlock, EXT; taps ignored) |
 | 6 Metronome | on / off (off at first): a click a beat, the bar's first higher (`RFM_MOVE_ACT_CLICK`, frame-stamped; the web player plays it after the volume, never into a recording); also in the count-in |
@@ -804,7 +804,8 @@ with a bar. Arp: the pattern's walk (outlined while off), its name, rate and oct
 the 16 steps as bars from a line, the edited one underlined. Record: the three modes as icons (the chosen underlined
 and named), the style with its icon. Global Settings (0.6.10, direction A): the battery header (an 18 x 12 icon with a nub, filled 14 x 8 to the charge;
 the percentage at 2x; "GLOBAL" small on the right), a rule at y 17, four rows of 11 px from y 19 (the name left, the
-value right), the selected row inverted; editing: the row framed, its value inverted between 3 x 5 arrows.
+value right), the selected row inverted; editing: the row framed, its value inverted between 3 x 5 arrows. (0.6.12)
+Five rows: four show and the list scrolls, a 2 px bar at x 126 (the rows keep direction A's 11 px).
 
 **Held Track buttons**: Track 2 the key / scale screen with the channels (midi.hold2, midi.scale); Track 3 the knob
 legend (the turned one filled), "CC" and the number it sends at 4x, which knob (ctl.hold3); Track 4 (and Mute held)
@@ -835,6 +836,15 @@ down"). Values with no popup are said when they change: the track selected, mute
 bar shown, scenes, clips queued / playing / stopped (at the bar), the octave, bank, layout, key, scale, channel,
 velocity, tempo, latch, Step record, sampling, Loop's page edit, Fill, the clipboard, the modifiers pressed; the
 Shift menus are views ("Tempo", "Arp") that say their knobs ("Pattern: Down").
+
+**Speech modes (0.6.12, the owner's).** Global Settings' first row, Speech: **Off** (the default: nothing is said),
+**On** (every word, as before) or **Jog** (only while the jog wheel is touched: the touch says the screen as it is,
+`rfm_move_words`, then every word while it is held; let go: silent; a new touch starts again). Saved with the
+settings (version 6, `settings.speech`: 0 not chosen yet, 1 + the mode). Changing it is said in any mode ("Speech
+off", "Speech on", "Speech jog wheel"). While nothing is chosen the host's default applies:
+`rfm_move_set_speech_default(m, RFM_MOVE_SPEECH_ON)` when the system's screen reader is on, so a blind user is never
+locked out. Hosts keep `rfm_move_set_speech(m, 1)` on and gate their own words on `rfm_move_speech_open(m)`;
+`rfm_move_speech_mode(m)` gives the mode.
 
 **A firmware that speaks for itself (0.6.11).** With fm1-reader (a firmware's own SysEx SAYs, the host speaking them)
 the host calls `rfm_move_set_fw_speech(m, 1)`: the core then says nothing for the firmware's controls (an encoder
