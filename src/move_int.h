@@ -206,7 +206,8 @@ const char *rfmv_seq_msg_text(const rfm_move_t *m);    /* the message up now, NU
 /* ---- fw.c: the firmware browser, FX setup, the library (0.4.0) */
 /* the view's popups (rfm_move_fw_state_t.pop: one at a time, RFM_MOVE_POPUP_MS after the last touch) */
 enum { FP_NONE, FP_TRACK, FP_LEVEL, FP_CATALOG, FP_UNLOAD, FP_LOADED, FP_FILTER, FP_BANK, FP_FAV, FP_COLOR, FP_MSG,
-       FP_STATE, FP_RPAGE, FP_PARAM, FP_RFILTER, FP_RLOADED, FP_MROUTE };   /* (FP_MROUTE 0.6.6: a MIDI route toggled:
+       FP_STATE, FP_RPAGE, FP_PARAM, FP_RFILTER, FP_RLOADED, FP_MROUTE, FP_ORDER };   /* (FP_ORDER 0.6.9: a
+                                                         * favourite moved: pop_a it, pop_b its place 1..) */   /* (FP_MROUTE 0.6.6: a MIDI route toggled:
                                                          * pop_a the source, pop_b target | on << 4 | refused << 5) */
 void rfmv_fw_init(rfm_move_t *m);
 void rfmv_fw_enter(rfm_move_t *m);                     /* the projects view entered: the track to show */

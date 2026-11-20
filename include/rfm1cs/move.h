@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 6
-#define RFM1CS_VERSION_PATCH 8
-#define RFM1CS_VERSION "0.6.8"
+#define RFM1CS_VERSION_PATCH 9
+#define RFM1CS_VERSION "0.6.9"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -1025,6 +1025,12 @@ int rfm_move_words(const rfm_move_t *m, char *out, int cap);
  * with OUT, to its MIDI out. The masks travel in
  * every RFM_MOVE_ACT_ROUTE (act.mroute[3]) and are saved with the project (version 7; older ones load with none) */
 #define RFM_MOVE_MROUTE_OUT 8
+/* ---- (0.6.9) the favourites' order (Favorites list; knob 2 there moves the selected one). The ids in order (n of
+ * them; ids[] at most cap filled; the pointers live until the library changes): returns how many favourites there
+ * are. The host's reorder: the ids given first, in that order (ids not favourites ignored), the rest after them as
+ * they were; FW_LIBRARY later as for any library change. -1 refused (NULL), 0 nothing to change, 1 done and on screen */
+int rfm_move_fw_favorites(const rfm_move_t *m, const char **ids, int cap);
+int rfm_move_fw_favorites_set(rfm_move_t *m, const char *const *ids, int n);
 int rfm_move_midi_route(const rfm_move_t *m, int slot);   /* a slot's mask (0..15), -1 no such slot */
 /* the host's edit (a web page): the slot's whole mask. -1 refused (a slot out of range, a bit past 15, its own bit,
  * a cycle, no FX setup: RFM_MOVE_CAP_FX off); 0 done or nothing to change; 1 done and on screen. ROUTE, the project */

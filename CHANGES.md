@@ -3,6 +3,23 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.9 (2026-11-19)
+
+Favourites reordered (the owner: "be able to reorder your favorites. Use knob 2 to change the order").
+
+- **Knob 2 in the Favorites list** (no filter on): the selected favourite moves one place up or down the list a step
+  (a step every few ticks, as knob 1's colours); the pads follow live, the selection stays on it, the bank shown
+  follows it; the ends hold. The popup reuses the favourite popup's layout ("SLOOP / position 3 of 17"); speech
+  "SLOOP, position 3 of 17", once a move. Nothing in All, the catalog or a filtered list (knob 2 did nothing there
+  before either).
+- The order is the library's (its favourites list, FW_LIBRARY): it survives a restart and every Favorites list shows
+  it. Favourites not listed (not installed) keep their places.
+- **API:** `rfm_move_fw_favorites(m, ids, cap)` (the ids in order, the count); `rfm_move_fw_favorites_set(m, ids, n)`
+  (the given ids first in that order, the rest after as they were; -1 NULL, 0 no change, 1 done and on screen).
+
+**Tests:** `move_fw` `test_fav_order` (down, two up, the top holding, short of a step, the library's round trip, the
+getter, the setter, All untouched); `move_speech` the words and the end saying nothing new.
+
 ## 0.6.8 (2026-11-19)
 
 Knob speech, the second sweep (ChoralRoot 0.42 rd1). New fields at the end of `rfm_move_t`: rebuild everything.

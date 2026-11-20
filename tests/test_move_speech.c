@@ -1014,6 +1014,26 @@ static void test_knob_pages(void)
     SAID("");
     touch(&M, 5, 0), rest_pop(&M), clear();
 }
+/* (0.6.9) a favourite moved with knob 2: "Name, position N of M" */
+static void test_fav_order(void)
+{
+    int ids[32], n;
+    char want[96];
+    fresh(&M, 1);
+    press(&M, MR_CC_BACK), rest_pop(&M);
+    tap_step(&M, 1), rest_pop(&M);                      /* (All) */
+    tap_pad(&M, pad_of(0)), press(&M, MR_CC_SAMPLE);   /* (two favourites) */
+    tap_pad(&M, pad_of(1)), press(&M, MR_CC_SAMPLE);
+    tap_step(&M, 0), rest_pop(&M);                      /* (Favorites) */
+    n = rfmv_fw_bank(&M, ids);
+    CHECK(n == 2);
+    tap_pad(&M, pad_of(0)), clear();
+    knob(&M, 1, RFM_MOVE_LIST_TICKS);
+    snprintf(want, sizeof want, "V:%s, position 2 of 2|", E[ids[0]].name);
+    SAID(want);
+    knob(&M, 1, RFM_MOVE_LIST_TICKS);                   /* (the end: no move, nothing new said) */
+    SAID("");
+}
 static int g_silent;
 static void test_walk(void)
 {
@@ -1185,6 +1205,7 @@ int main(void)
     test_mroute();
     test_knob_readouts();
     test_knob_pages();
+    test_fav_order();
     test_walk();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");

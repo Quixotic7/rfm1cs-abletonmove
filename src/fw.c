@@ -1310,6 +1310,45 @@ load:
     act_fw(m, RFM_MOVE_ACT_FW_LOAD, f->track, fw, fw);
 }
 
+/* (0.6.9) favourites reordered: knob 2 in the Favorites list (no filter: every one listed) moves the selected one */
+static int fav_order_on(const rfm_move_t *m)
+{
+    return !m->fw.catalog && !scope(m) && !m->s.fw_filter && !m->fw.states && !m->fw.capture;
+}
+/* the listed favourites' places in fav[] (installed ones; others kept where they are), n */
+static int fav_listed(const rfm_move_t *m, int *at)
+{
+    int i, n = 0;
+    for (i = 0; i < m->fw.nfav; i++) {
+        const int fw = m->fw.rec[m->fw.fav[i]].fw;
+        if (fw >= 0 && installed(m, fw) && passes(m, fw))
+            at[n++] = i;
+    }
+    return n;
+}
+static void fav_move(rfm_move_t *m, int fw, int d)
+{
+    rfm_move_fw_state_t *f = F(m);
+    static int at[RFM_MOVE_FW_LIB_MAX];
+    const int n = fav_listed(m, at), r = rec_of(m, fw);
+    int k, t;
+    for (k = 0; k < n && f->fav[at[k]] != r; k++) {}
+    if (k == n)
+        return;
+    t = clampi(k + d, 0, n - 1);
+    if (t != k) {
+        const int a = at[k], b = at[t];
+        const uint16_t e = f->fav[a];
+        if (b > a)
+            memmove(&f->fav[a], &f->fav[a + 1], (size_t)(b - a) * sizeof f->fav[0]);
+        else
+            memmove(&f->fav[b + 1], &f->fav[b], (size_t)(a - b) * sizeof f->fav[0]);
+        f->fav[b] = e;
+        lib_changed(m);
+    }
+    f->bank[0] = (uint8_t)(t / 32);                     /* (the bank shown follows it) */
+    pop(m, FP_ORDER, fw, t + 1);
+}
 static void fw_input(rfm_move_t *m, const mr_event_t *ev)
 {
     rfm_move_fw_state_t *f = F(m);
@@ -1454,10 +1493,23 @@ static void fw_input(rfm_move_t *m, const mr_event_t *ev)
             f->rec[r].color = (uint8_t)(((color(m, fw) + d) % 16 + 16) % 16 + 1);
             lib_changed(m);
         }
+        if (ev->index == 1 && fw >= 0 && fav_order_on(m) && is_fav(m, fw) && ev->value) {   /* (0.6.9) knob 2: the
+                                                         * selected favourite moved up / down the list, a place a step */
+            const int a0 = f->knob_acc[1], d0 = ev->value;
+            int a = (a0 > 0 && d0 < 0) || (a0 < 0 && d0 > 0) ? 0 : a0, d;
+            a += d0;
+            d = a / RFM_MOVE_LIST_TICKS;
+            f->knob_acc[1] = (int8_t)(a - d * RFM_MOVE_LIST_TICKS);
+            f->jog = 0;
+            if (d)
+                fav_move(m, fw, d);
+        }
         return;
     case MR_EV_TOUCH:
         if (!ev->value && ev->index == 0)
             f->list_acc = 0;
+        if (!ev->value && ev->index == 1)
+            f->knob_acc[1] = 0;
         return;
     case MR_EV_JOG:
         if (fw >= 0 && ev->value && !f->states) {
@@ -1847,6 +1899,44 @@ int rfm_move_route_set(rfm_move_t *m, const int fw_filt[RFM_MOVE_FW_SLOTS], cons
     act_route(m);
     rfmv_seq_dirty(m);
     return fx_shown(m);
+}
+/* (0.6.9) the favourites in order (their ids), and the host's reorder */
+int rfm_move_fw_favorites(const rfm_move_t *m, const char **ids, int cap)
+{
+    int i;
+    for (i = 0; ids && i < m->fw.nfav && i < cap; i++)
+        ids[i] = m->fw.rec[m->fw.fav[i]].id;
+    return m->fw.nfav;
+}
+int rfm_move_fw_favorites_set(rfm_move_t *m, const char *const *ids, int n)
+{
+    rfm_move_fw_state_t *f = F(m);
+    static uint16_t nu[RFM_MOVE_FW_LIB_MAX];
+    int i, k, c = 0;
+    if (!ids || n < 0)
+        return -1;
+    for (i = 0; i < n; i++)                             /* (the given ones first, in their order) */
+        for (k = 0; ids[i] && k < f->nfav; k++)
+            if (f->fav[k] != 0xFFFF && !strcmp(f->rec[f->fav[k]].id, ids[i])) {
+                int j, dup = 0;
+                for (j = 0; j < c; j++)
+                    dup |= nu[j] == f->fav[k];
+                if (!dup)
+                    nu[c++] = f->fav[k];
+                break;
+            }
+    for (k = 0; k < f->nfav; k++) {                     /* (the rest after them, as they were) */
+        int j, there = 0;
+        for (j = 0; j < c; j++)
+            there |= nu[j] == f->fav[k];
+        if (!there)
+            nu[c++] = f->fav[k];
+    }
+    if (!memcmp(nu, f->fav, (size_t)c * sizeof nu[0]))
+        return 0;
+    memcpy(f->fav, nu, (size_t)c * sizeof nu[0]);
+    lib_changed(m);
+    return m->seq.projects && !f->fx && f->track < 3;
 }
 int rfm_move_midi_route(const rfm_move_t *m, int slot)
 {
@@ -2917,6 +3007,13 @@ static void fw_screen(B *g, const rfm_move_t *m)
         ctext(g, 38, f->pop_b ? "added to Favorites" : "removed from Favorites", 1);
         return;
     }
+    if (pop_up(m, FP_ORDER)) {                          /* (0.6.9) a favourite moved: the FAV popup's layout */
+        name_cut(m, f->pop_a, 10, nm, sizeof nm);
+        ctext(g, 12, nm, 2);
+        snprintf(t, sizeof t, "position %d of %d", f->pop_b, list_len(m));
+        ctext(g, 38, t, 1);
+        return;
+    }
     if (f->capture && fw >= 0) {
         tagging(g, m, fw);
         return;
@@ -3300,6 +3397,11 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap)
     if (pop_up(m, FP_FAV)) {
         asc(ename(m, f->pop_a), nm, sizeof nm);
         snprintf(o, (size_t)cap, "%s %s", nm, f->pop_b ? "added to Favorites" : "removed from Favorites");
+        return 1;
+    }
+    if (pop_up(m, FP_ORDER)) {
+        asc(ename(m, f->pop_a), nm, sizeof nm);
+        snprintf(o, (size_t)cap, "%s, position %d of %d", nm, f->pop_b, list_len(m));
         return 1;
     }
     if (pop_up(m, FP_COLOR) && f->sel >= 0) {

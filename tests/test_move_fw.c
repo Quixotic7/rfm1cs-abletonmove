@@ -897,6 +897,67 @@ static void test_mroute(void)
     rfm_move_fw_caps(&M2, 0);
     CHECK(rfm_move_midi_route_set(&M2, 0, RFM_MOVE_MROUTE_OUT) == -1);
 }
+/* (0.6.9) favourites reordered with knob 2 (Favorites list): the selection follows, the ends hold, the library keeps
+ * it; All and the catalog: nothing; the host's getter and setter */
+static void test_fav_order(void)
+{
+    rfm_move_t *m = &M;
+    int ids[32], n0, k, a, b, c;
+    const char *fv[64];
+    fixture(m);
+    tap_track(m, 0), rest_pop(m);
+    CHECK(!m->fw.catalog && !m->s.fw_scope && !m->s.fw_filter);
+    n0 = rfmv_fw_bank(m, ids);
+    CHECK(n0 >= 3);
+    a = ids[0], b = ids[1], c = ids[2];
+    tap_pad(m, pad_of(1));                              /* (the second favourite) */
+    CHECK(m->fw.sel == b);
+    clear(), nlib = 0;
+    knob(m, 1, RFM_MOVE_LIST_TICKS);                    /* (a step down: third) */
+    rfmv_fw_bank(m, ids);
+    CHECK(ids[0] == a && ids[1] == c && ids[2] == b && m->fw.sel == b && m->fw.pop == FP_ORDER && m->fw.pop_b == 3);
+    screen(m), write_pbm("fav_order");
+    knob(m, 1, -2 * RFM_MOVE_LIST_TICKS);              /* (two up: first) */
+    rfmv_fw_bank(m, ids);
+    CHECK(ids[0] == b && ids[1] == a && ids[2] == c && m->fw.sel == b && m->fw.pop_b == 1);
+    knob(m, 1, -RFM_MOVE_LIST_TICKS);                   /* (the top: it stays) */
+    rfmv_fw_bank(m, ids);
+    CHECK(ids[0] == b && m->fw.pop_b == 1);
+    knob(m, 1, 1);                                      /* (short of a step: nothing) */
+    rfmv_fw_bank(m, ids);
+    CHECK(ids[0] == b);
+    touch(m, 1, 0);
+    /* the library keeps the order (FW_LIBRARY, debounced): a new core reads it */
+    adv_ms(m, RFM_MOVE_FW_LIB_SAVE_MS + 20);
+    CHECK(nlib == 1);
+    rfm_move_init(&M2, NULL, on_act, NULL);
+    CHECK(rfm_move_fw_library(&M2, lib, lib_n) == 0);
+    rfm_move_fw_list(&M2, E, NFW);
+    CHECK(rfm_move_fw_favorites(&M2, fv, 64) == m->fw.nfav && rfm_move_fw_favorites(m, NULL, 0) == m->fw.nfav);
+    rfm_move_fw_favorites(m, fv + 32, 32);
+    for (k = 0; k < m->fw.nfav && k < 32; k++)
+        CHECK(!strcmp(fv[k], fv[32 + k]));
+    CHECK(!strcmp(fv[0], E[b].id));
+    /* the host's reorder: the given ones first, the rest as they were */
+    {
+        const char *want[2] = { E[c].id, "no-such-firmware" };
+        CHECK(rfm_move_fw_favorites_set(m, want, 2) == 1 && rfm_move_fw_favorites_set(m, want, 2) == 0);
+        rfmv_fw_bank(m, ids);
+        CHECK(ids[0] == c && ids[1] == b && ids[2] == a);
+        CHECK(rfm_move_fw_favorites_set(m, NULL, 1) == -1);
+    }
+    /* All: knob 2 does nothing */
+    tap_step(m, 1), rest_pop(m);
+    CHECK(m->s.fw_scope == 1);
+    tap_pad(m, pad_of(0));
+    {
+        const int sel = m->fw.sel;
+        uint16_t before[64];
+        memcpy(before, m->fw.fav, sizeof before);
+        knob(m, 1, 3 * RFM_MOVE_LIST_TICKS);
+        CHECK(!memcmp(before, m->fw.fav, sizeof before) && m->fw.pop != FP_ORDER && m->fw.sel == sel);
+    }
+}
 static void test_states(void)
 {
     rfm_move_t *m = &M;
@@ -2030,6 +2091,7 @@ int main(void)
     test_single();
     test_states();
     test_mroute();
+    test_fav_order();
     test_midi_track();
     test_old_formats();
     test_screens();
