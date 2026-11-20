@@ -1063,6 +1063,62 @@ static void test_knob_twice(void)
     SAID("V:Bass Register|");
     touch(&M, 6, 0), button(&M, MR_CC_SHIFT, 0), rest_pop(&M), clear();
 }
+/* (0.6.11) the firmware speaks for its own controls (fm1-reader): the core steps back from them, keeps its own */
+static void test_fw_speaks(void)
+{
+    const char *lbl[RFM_MOVE_LBL_N] = { NULL };
+    char want[48];
+    fresh(&M, 1);
+    lbl[RFM_MOVE_LBL_KNOB0 + 3] = "Cutoff", lbl[RFM_MOVE_LBL_BTN0 + 1] = "SEL/KEYS";
+    rfm_move_set_labels(&M, lbl);
+    CHECK(rfm_move_fw_speech(&M) == 0);
+    rfm_move_set_fw_speech(&M, 1);
+    CHECK(rfm_move_fw_speech(&M) == 1);
+    clear();
+    touch(&M, 4, 1);                                    /* a touched knob: its name (kept) */
+    SAID("V:Cutoff|");
+    knob(&M, 4, 2), knob(&M, 4, 2);                     /* turns: nothing (the count, the end repeat) */
+    adv_ms(&M, RFM_MOVE_SAY_TURN_MS + 50);
+    SAID("");
+    rd("Cutoff", "64");                                 /* its readout: the firmware's to say */
+    SAID("");
+    touch(&M, 4, 0), rest_pop(&M), clear();
+    touch(&M, 4, 1);                                    /* (touched again with a readout known: the name only) */
+    SAID("V:Cutoff|");
+    touch(&M, 4, 0), rest_pop(&M), clear();
+    rfm_move_readout(&M, -1, RFM_MOVE_RD_MESSAGE, "Saved", "", -1, 0, 0);   /* a readout's own popup: nothing */
+    SAID("");
+    rest_pop(&M);
+    press(&M, MR_CC_PLAY);                              /* an FM-1 button's press: nothing */
+    SAID("");
+    button(&M, MR_CC_SAMPLE, 1), adv_ms(&M, RFM_MOVE_LABEL_HOLD_MS + 20);   /* its label held: nothing */
+    SAID("");
+    button(&M, MR_CC_SAMPLE, 0), rest_pop(&M), clear();
+    jog(&M, 1);                                         /* SELECT turned: nothing */
+    SAID("");
+    rest_pop(&M), clear();
+    knob(&M, 8, 1);                                     /* RemoteFM1's own: the volume, modes, menus */
+    snprintf(want, sizeof want, "V:Volume %d%%|", (M.master * 100 + 511) / 1023);
+    SAID(want);
+    rest_pop(&M), clear();
+    tap_track(&M, 1);
+    SAID("E:MIDI mode|");
+    track(&M, 1, 1), knob(&M, 1, RFM_MOVE_LIST_TICKS), track(&M, 1, 0);
+    SAID("V:Scale: Minor|");
+    tap_track(&M, 0), rest_pop(&M), clear();
+    track(&M, 0, 1), tap_step(&M, 1), track(&M, 0, 0);
+    SAID("E:Global settings, battery unknown|");
+    press(&M, MR_CC_BACK), rest_pop(&M), clear();
+    /* off again: the core's words for them return */
+    rfm_move_set_fw_speech(&M, 0);
+    touch(&M, 4, 1);
+    SAID("V:Cutoff: 64|");
+    knob(&M, 4, 2), rd("Cutoff", "65");
+    SAID("V:Cutoff: 65|");
+    touch(&M, 4, 0), rest_pop(&M), clear();
+    press(&M, MR_CC_PLAY);
+    SAID("V:Play|");
+}
 static int g_silent;
 static void test_walk(void)
 {
@@ -1236,6 +1292,7 @@ int main(void)
     test_knob_pages();
     test_fav_order();
     test_knob_twice();
+    test_fw_speaks();
     test_walk();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");

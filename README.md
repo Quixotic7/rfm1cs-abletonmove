@@ -836,6 +836,12 @@ bar shown, scenes, clips queued / playing / stopped (at the bar), the octave, ba
 velocity, tempo, latch, Step record, sampling, Loop's page edit, Fill, the clipboard, the modifiers pressed; the
 Shift menus are views ("Tempo", "Arp") that say their knobs ("Pattern: Down").
 
+**A firmware that speaks for itself (0.6.11).** With fm1-reader (a firmware's own SysEx SAYs, the host speaking them)
+the host calls `rfm_move_set_fw_speech(m, 1)`: the core then says nothing for the firmware's controls (an encoder
+turned, its readouts and the range's end repeat, a readout's own popup, an FM-1 button's or key's label or press) and
+keeps RemoteFM1's own words (modes, the projects view, menus, the volume, held Track menus, Global Settings, the
+sequencer, a touched knob's name). `rfm_move_fw_speech(m)` reads it back.
+
 **Every input and its words (0.6.3).** `move_speech`'s input walk presses every button, step and pad, turns every
 knob and the jog, clicks the jog and touches knobs in 34 contexts (each mode and view, each Shift menu, each held
 modifier, the projects view, FX setup); any input that changes the screen and says nothing fails it, except pads that

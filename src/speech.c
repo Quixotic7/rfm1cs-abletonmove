@@ -200,7 +200,7 @@ void rfmv_say_readout(rfm_move_t *m, int slot, int expl)
 void rfmv_say_turned(rfm_move_t *m)
 {
     const int sl = rfmv_pop_slot(m);
-    if (!m->speech || sl < 0)
+    if (!m->speech || m->fw_speaks || sl < 0)
         return;
     m->say_turn = (uint8_t)(sl + 1), m->say_turn_ms = rfmv_now_ms(m);
 }
@@ -304,6 +304,18 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
     case POP_ENC:
     case POP_MASTER: {
         const int sl = rfmv_pop_slot(m);
+        if (m->fw_speaks && m->pop != POP_MASTER) {     /* (0.6.11) the firmware speaks for its controls: a touched
+                                                         * knob's name only (the label; nothing for a turn) */
+            if (m->pop_blank) {
+                rfmv_tcase(enc_label(m, m->pop == POP_SELECT ? RFM_MOVE_E_SELECT : rfm_move_knob_enc(i)), l, sizeof l);
+                snprintf(o, (size_t)cap, "%s", l);
+            }
+            return;
+        }
+        if (m->fw_speaks) {                             /* (the volume: RemoteFM1's own, never a readout) */
+            snprintf(o, (size_t)cap, "Volume %d%%", (m->master * 100 + 511) / 1023);
+            return;
+        }
         if (rd_valid(m, sl)) {                          /* (0.6.7) touched or turned: "Name: value" (the readout's
                                                          * full title) */
             readout_words(m, &m->rd[sl], sl, o, cap);
@@ -387,12 +399,12 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
     case POP_HOST: snprintf(o, (size_t)cap, "%s", m->pop_text); return;
     case POP_LABEL: {
         char t[RFM_MOVE_LABEL_MAX + 1];
-        if (rfmv_half(m) && rfmv_label(m, i, t, sizeof t))
+        if (!m->fw_speaks && rfmv_half(m) && rfmv_label(m, i, t, sizeof t))   /* (0.6.11: the firmware's own) */
             rfmv_tcase(t, o, cap);
         return;
     }
     case POP_READ:
-        if (rfmv_half(m))
+        if (rfmv_half(m) && !m->fw_speaks)              /* (0.6.11: the firmware's own) */
             readout_words(m, &m->rd_pop, i < 8 ? i : -1, o, cap);
         return;
     default: return;
@@ -481,8 +493,8 @@ void rfmv_say_press(rfm_move_t *m, int slot)
                                                         "Save", "Arp", "Sequencer", "Play", "Record", "Octave down",
                                                         "Octave up" };   /* (the panel's words, as said) */
     char t[RFM_MOVE_LABEL_MAX + 1];
-    if (!m->speech || slot < RFM_MOVE_LBL_BTN0 || slot >= RFM_MOVE_LBL_BTN0 + RFM_MOVE_NBTN)
-        return;
+    if (!m->speech || m->fw_speaks || slot < RFM_MOVE_LBL_BTN0 || slot >= RFM_MOVE_LBL_BTN0 + RFM_MOVE_NBTN)
+        return;                                         /* (0.6.11: the firmware says its own) */
     if (rfmv_label(m, slot, t, sizeof t))
         rfmv_tcase(t, m->say_now, sizeof m->say_now);   /* (as its popup shows it) */
     else
@@ -893,6 +905,13 @@ void rfm_move_set_speech(rfm_move_t *m, int on)
     watch(m, 1, &sn);
 }
 int rfm_move_speech(const rfm_move_t *m) { return m->speech; }
+void rfm_move_set_fw_speech(rfm_move_t *m, int fw_speaks)
+{
+    m->fw_speaks = fw_speaks != 0;
+    if (m->fw_speaks)
+        m->say_turn = 0, m->say_now[0] = 0;             /* (nothing of the firmware's waiting to be said) */
+}
+int rfm_move_fw_speech(const rfm_move_t *m) { return m->fw_speaks; }
 
 int rfm_move_words(const rfm_move_t *m, char *out, int cap)
 {

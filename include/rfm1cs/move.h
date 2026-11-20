@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 6
-#define RFM1CS_VERSION_PATCH 10
-#define RFM1CS_VERSION "0.6.10"
+#define RFM1CS_VERSION_PATCH 11
+#define RFM1CS_VERSION "0.6.11"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -782,6 +782,8 @@ typedef struct {
     /* (0.6.2) Global settings (Shift + step 2): a list on the jog wheel */
     uint8_t gl_row;                                     /* the row selected */
     uint8_t gl_edit;                                    /* its value being edited (the jog changes it) */
+    /* (0.6.11) the firmware speaks for its own controls (fm1-reader): rfm_move_set_fw_speech */
+    uint8_t fw_speaks;
     /* (0.6.3) */
     uint8_t say_back;                                   /* Back let go this call: say where it left you if nothing else */
     uint16_t say_n;                                     /* words said so far (a call that said nothing: 0 more) */
@@ -1014,6 +1016,12 @@ int rfm_move_fx_set_page(rfm_move_t *m, int page);
 enum { RFM_MOVE_SAY_VALUE = 0, RFM_MOVE_SAY_EVENT = 1 };
 void rfm_move_set_speech(rfm_move_t *m, int on);
 int rfm_move_speech(const rfm_move_t *m);              /* 1 on */
+/* (0.6.11) the firmware speaks for its own controls (fm1-reader's SysEx SAYs): while set, the core says nothing for
+ * them: an encoder turned (its count, its readouts, the range's end repeat), a readout's own popup, an FM-1 button's
+ * or key's label or press. RemoteFM1's own words stay: modes, the projects view, menus, the volume, held Track
+ * menus, Global Settings, the sequencer, and a touched knob's name. Off by default; any time */
+void rfm_move_set_fw_speech(rfm_move_t *m, int fw_speaks);
+int rfm_move_fw_speech(const rfm_move_t *m);           /* 1 set */
 /* what the screen shows now, in words: its base view, then ", " and its popup or selection if any (a host's "say it
  * again", the tests). Works with speech off too. Returns the length written (out NUL-terminated; cut to cap - 1) */
 int rfm_move_words(const rfm_move_t *m, char *out, int cap);

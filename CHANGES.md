@@ -3,6 +3,21 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.11 (2026-11-20)
+
+For firmwares that speak for themselves (fm1-reader: their SysEx SAYs, about 30 catalog firmwares, the host speaking
+them). New field at the end of `rfm_move_t`: rebuild everything.
+
+- **`rfm_move_set_fw_speech(m, fw_speaks)`** / `rfm_move_fw_speech(m)`: while set, the core says nothing for the
+  firmware's controls: an encoder turned (its count, its readouts, the range's end repeat), a readout's own popup, an
+  FM-1 button's or key's label or press. It keeps RemoteFM1's own words: modes, the projects view, menus, the volume
+  (never a readout then), held Track menus, Global Settings, the sequencer, and a touched knob's name (its label).
+  Off by default; set any time. Hosts no longer need to match popup numbers from `move_int.h`.
+
+**Tests:** `move_speech` 309 checks: with it set, a touch says the name, turns, readouts, the end repeat, a readout
+popup, a button press and a held label say nothing, the volume, a mode, a held Track menu and Global Settings speak;
+off again, the knob and button words return.
+
 ## 0.6.10 (2026-11-20)
 
 Global Settings redrawn (the owner: "it should have battery at the top with a battery icon and bigger text"; their
