@@ -70,7 +70,8 @@ core.sessStop(5000);
                             { name: "Delay", params: [{ name: "Time", words: ["1/8", "1/4"], def: 0 }] }]);
   const sync = core.fxSync();
   ok(sync.filter((a) => a.kind === "fxLoad").length === 6 && sync.filter((a) => a.kind === "mix").length === 3 &&
-     sync.some((a) => a.kind === "route" && a.fw[0] === 0xFFFF), "fxSync: fxLoad x6, mix x3, route");
+     sync.some((a) => a.kind === "route" && a.fw[0] === 0xFFFF && a.midiRoute.length === 3 && a.midiRoute[0] === 0),
+     "fxSync: fxLoad x6, mix x3, route (0.6.6: midiRoute)");
   io(0xB0, 50, 127); io(0xB0, 50, 0);                                       // Session: FX setup
   io(0xB0, 41, 127); io(0xB0, 41, 0);                                       // Track 3: Audio FX
   io(0x90, 96, 100); io(0xB0, 14, 1);                                       // (0.5.0) slot 1's pad held + the jog: the module list

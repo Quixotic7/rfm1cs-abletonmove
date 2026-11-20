@@ -879,6 +879,25 @@ static void test_playing(void)
     CHECKF(!strstr(said, "Step") && M.seq.nnotes > 0, "\"%s\" (%d notes)", said, M.seq.nnotes);
     press(&M, MR_CC_PLAY), clear();
 }
+/* (0.6.6) MIDI routes on the Routing page: the words of a toggle and of a refused cycle */
+static void test_mroute(void)
+{
+    fresh(&M, 1);
+    press(&M, MR_CC_BACK), press(&M, MR_CC_MENU), tap_track(&M, 1), rest_pop(&M), clear();
+    pad(&M, fxpad(1, 0), 100);
+    tap_pad(&M, fxpad(1, 1));
+    SAID("V:Felucca to Melodee, on|");
+    tap_pad(&M, fxpad(1, 3));
+    SAID("V:Felucca to Out, on|");
+    tap_pad(&M, fxpad(1, 3));
+    SAID("V:Felucca to Out, off|");
+    pad(&M, fxpad(1, 0), 0), rest_pop(&M), clear();
+    pad(&M, fxpad(1, 1), 100);
+    SAID("V:Slot 2, Melodee|");                         /* (the press: slot 2 selected) */
+    tap_pad(&M, fxpad(1, 0));
+    SAID("V:Loop|");
+    pad(&M, fxpad(1, 1), 0);
+}
 static int g_silent;
 static void test_walk(void)
 {
@@ -1047,6 +1066,7 @@ int main(void)
     test_global();
     test_delete();
     test_playing();
+    test_mroute();
     test_walk();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");

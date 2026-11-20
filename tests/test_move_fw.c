@@ -752,7 +752,7 @@ static void test_fx(void)
     {
         static uint8_t blob[RFM_MOVE_PROJECT_MAX];
         const int n = rfm_move_project_save(m, blob, sizeof blob);
-        CHECK(n == RFM_MOVE_PROJECT_FIXED && blob[4] == 6);
+        CHECK(n == RFM_MOVE_PROJECT_FIXED && blob[4] == 7);
         rfm_move_init(&M2, NULL, on_act, NULL);
         rfm_move_fw_list(&M2, E, NFW);
         rfm_move_fx_modules(&M2, RFM_MOVE_FX_AUDIO, AFX, 5);   /* (no MIDI FX modules: kept by name) */
@@ -805,6 +805,98 @@ static void test_fx(void)
 }
 
 /* ================================================================ states === */
+/* (0.6.6) MIDI routes on the Routing page: a firmware's pad held + another's (or the Out pad under them) toggles;
+ * a cycle refused; the act carries every slot's mask; saved (version 7), older projects load with none */
+static void test_mroute(void)
+{
+    rfm_move_t *m = &M;
+    static uint8_t blob[RFM_MOVE_PROJECT_MAX];
+    const act_t *a;
+    uint8_t c[3];
+    int n, k;
+    uint32_t h;
+    fixture(m);
+    rfm_move_fw_slots(m, (const char *const[3]){ "sloop", "choralroot", "golf" });
+    press(m, MR_CC_MENU), tap_track(m, 1), rest_pop(m), clear();   /* FX setup, the Routing page */
+    CHECK(m->fw.fx && m->s.fx_page == 1 && m->fw.fx_focus == 0);
+    /* at rest: the Out pad dark */
+    CHECK(led_of(m, 0, MR_NOTE_PAD0 + fxpad(1, 3), c) && !c[0] && !c[1] && !c[2]);
+    /* slot 1 held: slot 2 tapped, slot 3, Out: each on (the act: every slot's mask); the focus stays */
+    pad(m, fxpad(1, 0), 100);
+    CHECK(led_of(m, 0, MR_NOTE_PAD0 + fxpad(1, 3), c) && c[0] < 60 && c[0] == c[1]);   /* (held: Out shown, off) */
+    tap_pad(m, fxpad(1, 1));
+    CHECK(m->seq.fx.mroute[0] == 2 && m->fw.fx_focus == 0 && m->fw.pop == FP_MROUTE && m->fw.pop_b == (1 | 1 << 4));
+    CHECK((a = last(RFM_MOVE_ACT_ROUTE)) && a->a.mroute[0] == 2 && a->a.mroute[1] == 0 && a->a.filt[0] == m->seq.fx.ffilt[0]);
+    screen(m), write_pbm("mroute_on");
+    tap_pad(m, fxpad(1, 2)), tap_pad(m, fxpad(1, 3));
+    CHECK(m->seq.fx.mroute[0] == (2 | 4 | RFM_MOVE_MROUTE_OUT) && rfm_move_midi_route(m, 0) == 14 && m->seq.dirty);
+    CHECK(led_of(m, 0, MR_NOTE_PAD0 + fxpad(1, 3), c) && c[0] == 20 && c[1] == 220 && c[2] == 255);
+    CHECK(led_of(m, 0, MR_NOTE_PAD0 + fxpad(1, 1), c) && c[0] == 20 && c[1] == 220 && c[2] == 255);
+    tap_pad(m, fxpad(1, 2));                            /* (again: off) */
+    CHECK(m->seq.fx.mroute[0] == (2 | RFM_MOVE_MROUTE_OUT) && (m->fw.pop_b >> 4 & 1) == 0);
+    pad(m, fxpad(1, 0), 0), rest_pop(m);
+    screen(m), write_pbm("mroute_rest");                /* (the routes' notches; Out faint) */
+    CHECK(led_of(m, 0, MR_NOTE_PAD0 + fxpad(1, 3), c) && c[1] > 20 && c[1] < 120);
+    /* a plain tap on slot 2: selected, no route changed; the Out pad alone: nothing */
+    clear();
+    tap_pad(m, fxpad(1, 1));
+    CHECK(m->fw.fx_focus == 1 && m->seq.fx.mroute[1] == 0 && m->seq.fx.mroute[0] == 10 && !count(RFM_MOVE_ACT_ROUTE));
+    tap_pad(m, fxpad(1, 3));
+    CHECK(m->seq.fx.mroute[1] == 0 && !count(RFM_MOVE_ACT_ROUTE));
+    /* a cycle refused: slot 2 held + slot 1 (1 -> 2 already): "Loop", nothing changed, no act */
+    pad(m, fxpad(1, 1), 100), tap_pad(m, fxpad(1, 0));
+    CHECK(m->seq.fx.mroute[1] == 0 && m->fw.pop == FP_MROUTE && (m->fw.pop_b >> 5 & 1) && !count(RFM_MOVE_ACT_ROUTE));
+    screen(m), write_pbm("mroute_loop");
+    tap_pad(m, fxpad(1, 2));                            /* (2 -> 3: fine) */
+    pad(m, fxpad(1, 1), 0);
+    CHECK(m->seq.fx.mroute[1] == 4);
+    pad(m, fxpad(1, 2), 100), tap_pad(m, fxpad(1, 0)), pad(m, fxpad(1, 2), 0);   /* (3 -> 1: 1 -> 2 -> 3 -> 1) */
+    CHECK(m->seq.fx.mroute[2] == 0 && (m->fw.pop_b >> 5 & 1));
+    /* the host's edit */
+    CHECK(rfm_move_midi_route_set(m, 0, 1) == -1 && rfm_move_midi_route_set(m, 0, 16) == -1 &&
+          rfm_move_midi_route_set(m, 2, 1) == -1 && rfm_move_midi_route_set(m, 3, 0) == -1);   /* (own, >15, cycle) */
+    clear();
+    CHECK(rfm_move_midi_route_set(m, 2, RFM_MOVE_MROUTE_OUT) == 1 && (a = last(RFM_MOVE_ACT_ROUTE)) &&
+          a->a.mroute[0] == 10 && a->a.mroute[1] == 4 && a->a.mroute[2] == 8);
+    CHECK(rfm_move_midi_route_set(m, 2, RFM_MOVE_MROUTE_OUT) == 0 && rfm_move_midi_route(m, 3) == -1);
+    /* saved and loaded (version 7; the load tells the host) */
+    n = rfm_move_project_save(m, blob, sizeof blob);
+    CHECK(n > 0 && blob[4] == 7 && blob[n - 4 - 3] == 10 && blob[n - 4 - 2] == 4 && blob[n - 4 - 1] == 8);
+    rfm_move_init(&M2, NULL, on_act, NULL);
+    rfm_move_fw_list(&M2, E, NFW);
+    clear();
+    CHECK(rfm_move_project_load(&M2, 0, blob, (uint32_t)n) == 0 && !memcmp(M2.seq.fx.mroute, m->seq.fx.mroute, 3));
+    CHECK((a = last(RFM_MOVE_ACT_ROUTE)) && a->a.mroute[0] == 10 && a->a.mroute[2] == 8);
+    /* a cycle or an own bit in a blob: refused */
+    {
+        static uint8_t bad[RFM_MOVE_PROJECT_MAX];
+        int j;
+        for (j = 0; j < 2; j++) {
+            memcpy(bad, blob, (size_t)n);
+            if (j == 0)
+                bad[n - 4 - 3] = 1;                     /* (slot 1 to itself) */
+            else
+                bad[n - 4 - 1] = 1;                     /* (3 -> 1: 1 -> 2 -> 3 -> 1) */
+            for (h = 2166136261u, k = 0; k < n - 4; k++)
+                h = (h ^ bad[k]) * 16777619u;
+            for (k = 0; k < 4; k++)
+                bad[n - 4 + k] = (uint8_t)(h >> (8 * k));
+            CHECK(rfm_move_project_check(bad, (uint32_t)n) < 0);
+        }
+    }
+    /* a version 6 blob (no routes): loads with none */
+    memmove(blob + n - 4 - 3, blob + n - 4, 4);
+    n -= 3, blob[4] = 6;
+    for (h = 2166136261u, k = 0; k < n - 4; k++)
+        h = (h ^ blob[k]) * 16777619u;
+    for (k = 0; k < 4; k++)
+        blob[n - 4 + k] = (uint8_t)(h >> (8 * k));
+    M2.seq.fx.mroute[0] = 6;
+    CHECK(rfm_move_project_load(&M2, 0, blob, (uint32_t)n) == 0 && !M2.seq.fx.mroute[0] && !M2.seq.fx.mroute[2]);
+    /* no FX setup (RFM_MOVE_CAP_FX off): the host's edit refused */
+    rfm_move_fw_caps(&M2, 0);
+    CHECK(rfm_move_midi_route_set(&M2, 0, RFM_MOVE_MROUTE_OUT) == -1);
+}
 static void test_states(void)
 {
     rfm_move_t *m = &M;
@@ -878,8 +970,8 @@ static void test_old_formats(void)
     rfmv_seq_note_put(m, 0, 3, 64, 90, 24, 0);
     m->seq.fx.send[0][1] = 33;
     n = rfm_move_project_save(m, blob, sizeof blob);
-    CHECK(blob[4] == RFM_MOVE_PROJECT_VERSION && RFM_MOVE_PROJECT_VERSION == 6);
-    n4 = n - RFM_MOVE_FXSET_BYTES;                      /* a version 4 blob: no FX setup */
+    CHECK(blob[4] == RFM_MOVE_PROJECT_VERSION && RFM_MOVE_PROJECT_VERSION == 7);
+    n4 = n - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS;   /* a version 4 blob: no FX setup (0.6.6: nor MIDI routes) */
     blob[4] = 4;
     for (h = 2166136261u, k = 0; k < n4 - 4; k++)
         h = (h ^ blob[k]) * 16777619u;
@@ -1682,13 +1774,13 @@ static void test_fx_pages(void)
     CHECK(count(RFM_MOVE_ACT_FX_PARAM) == 4 + 3 + 10 + 16 + 3);   /* (Arp, Chord, Big; CloudSeed, Delay) */
     /* saved and loaded: all 16 values */
     n = rfm_move_project_save(m, blob, sizeof blob);
-    CHECK(n > 0 && blob[4] == 6);
+    CHECK(n > 0 && blob[4] == 7);
     rfm_move_init(&M2, NULL, on_act, NULL), fx6(&M2);
     CHECK(rfm_move_project_load(&M2, 0, blob, (uint32_t)n) == 0 && M2.seq.fx.afx[0].mod == 5);
     CHECK(!memcmp(M2.seq.fx.afx[0].val, sl->val, 16) && M2.seq.fx.afx[0].val[14] == 99);
     CHECK(M2.seq.fx.mfx[2].val[9] == 20);               /* (page 2's knob 2 turned +1) */
     /* a version 5 project (8 values a slot): those 8, the rest the defaults */
-    body = n - 4 - RFM_MOVE_FXSET_BYTES;
+    body = n - 4 - RFM_MOVE_FW_SLOTS - RFM_MOVE_FXSET_BYTES;   /* (0.6.6: the MIDI routes after FX setup) */
     memcpy(b5, blob, (size_t)body);
     {
         const uint8_t *p = blob + body;
@@ -1702,7 +1794,7 @@ static void test_fx_pages(void)
         memcpy(o, p, 18), o += 18;
         n5 = (int)(o - b5) + 4;
     }
-    CHECK(n5 == n - (RFM_MOVE_FXSET_BYTES - RFM_MOVE_FXSET_BYTES_V5));
+    CHECK(n5 == n - RFM_MOVE_FW_SLOTS - (RFM_MOVE_FXSET_BYTES - RFM_MOVE_FXSET_BYTES_V5));
     b5[4] = 5;
     for (h = 2166136261u, k = 0; k < n5 - 4; k++)
         h = (h ^ b5[k]) * 16777619u;
@@ -1937,6 +2029,7 @@ int main(void)
     test_fantasy();
     test_single();
     test_states();
+    test_mroute();
     test_midi_track();
     test_old_formats();
     test_screens();

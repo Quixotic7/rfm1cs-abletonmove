@@ -53,7 +53,8 @@
 //   actions: { kind: "fwLoad", slot, fw } { kind: "fwUnload", slot } { kind: "fwActive", slot } { kind: "fwDownload", fw }
 //   { kind: "fwLibrary", bytes } { kind: "fwLevel", slot, level } { kind: "fxLoad", fx, slot, module } (-1 empty)
 //   { kind: "fxParam", fx, slot, param, value } { kind: "mix", slot, level, pan, sends: [3] }
-//   { kind: "route", fw: [3 filters], midiFx: [3 filters] } (bit t: track t + 1) { kind: "stateSave" / "stateLoad" /
+//   { kind: "route", fw: [3 filters], midiFx: [3 filters], midiRoute: [3 masks] } (bit t: track t + 1; midiRoute (0.6.6):
+//   bit s firmware slot s, 8 USB out) { kind: "stateSave" / "stateLoad" /
 //   "stateDelete", slot, state }; fw is the index in fwList's array; "midi" has `track` (1..16 the sequencer's, 0 live)
 export const ACT = { KEY: 1, PRESS: 2, BTN: 3, TURN: 4, MASTER: 5, MIDI: 6, SETTINGS: 7, PROJECT_SAVE: 8, PROJECT_LOAD: 9, PROJECT_DELETE: 10,
   CLICK: 11, AUDIO_REC: 12, PROJECT_CUT: 13, PROJECT_COPY: 14, PROJECT_PASTE: 15, PROJECT_COLOR: 16,
@@ -65,7 +66,7 @@ export const READOUT = { PARAM: 1, PRESET: 2, MESSAGE: 3, BIPOLAR: 1 };   // (RF
 export const CAT = { SYNTH: 1, GROOVEBOX: 2, CHORDS: 4, DRUMS: 8, OTHER: 16 };
 export const FW_FAILED = -1, FW_BUSY = -2;
 export const CLOCK = { AUTO: 0, INT: 1, EXT: 2 };
-export const PROJECTS = 32, PROJECT_MAX = 40136;   // (RFM_MOVE_PROJECT_MAX, version 6 blobs; mw_project_max())
+export const PROJECTS = 32, PROJECT_MAX = 40139;   // (RFM_MOVE_PROJECT_MAX, version 7 blobs (0.6.6); mw_project_max())
 export const FILE_ONE = 1, FILE_SET = 2, FILE_MAX = 8 + PROJECTS * (10 + PROJECT_MAX);   // (store.h RFM1CS_FILE_*)
 export const TONES = ["off", "busy", "on", "bad"];   // (RFM1CS_TONE_*)
 export const MODE = { FM1: 0, MIDI: 1, CONTROL: 2, SEQ: 3 };
@@ -79,7 +80,7 @@ const EV_NAMES = { 1: "send", 2: "open", 3: "close", 4: "action", 5: "released",
 const STORE_KINDS = { projectSave: ACT.PROJECT_SAVE, projectLoad: ACT.PROJECT_LOAD, projectDelete: ACT.PROJECT_DELETE,
   projectCut: ACT.PROJECT_CUT, projectCopy: ACT.PROJECT_COPY, projectPaste: ACT.PROJECT_PASTE, projectColor: ACT.PROJECT_COLOR };
 export const SCREEN_BYTES = 1024, SETTINGS_BYTES = 87, NLEDS = 92, POPUP_MS = 1000;   // (RFM_MOVE_POPUP_MS: a popup stays this long)
-const ACT_BYTES = 10, ACT_EXT = 21, LED_BYTES = 6;
+const ACT_BYTES = 10, ACT_EXT = 24, LED_BYTES = 6;   // (0.6.6: + mroute[3])
 // pressure 0..127 as key_lean 0..100 (move.h rfm_move_lean)
 export const lean = (p) => Math.floor((Math.max(0, Math.min(127, p | 0)) * 100 + 63) / 127);
 
@@ -159,7 +160,8 @@ export class MoveCore {
       else if (kind === ACT.FX_LOAD) a = { kind: "fxLoad", fx, slot, module: value };
       else if (kind === ACT.FX_PARAM) a = { kind: "fxParam", fx, slot, param: b[x + 3], value };
       else if (kind === ACT.MIX) a = { kind: "mix", slot, level: b[x + 4], pan: b[x + 5], sends: [b[x + 6], b[x + 7], b[x + 8]] };
-      else if (kind === ACT.ROUTE) a = { kind: "route", fw: [f16(0), f16(1), f16(2)], midiFx: [f16(3), f16(4), f16(5)] };
+      else if (kind === ACT.ROUTE) a = { kind: "route", fw: [f16(0), f16(1), f16(2)], midiFx: [f16(3), f16(4), f16(5)],
+                                         midiRoute: [b[x + 21], b[x + 22], b[x + 23]] };   // (0.6.6: bits 0..2 slots, 8 out)
       else a = { kind: ["stateSave", "stateLoad", "stateDelete"][kind - ACT.STATE_SAVE], slot, state: index };
     } else if (kind === ACT.SAY) a = { kind: "say", event: index === 1, text: this._str(M._mw_say(this.w, value)) };
     if (a) a.frame = (b[fr + 4 * i] | (b[fr + 4 * i + 1] << 8) | (b[fr + 4 * i + 2] << 16) | (b[fr + 4 * i + 3] << 24)) >>> 0;

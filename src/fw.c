@@ -515,7 +515,7 @@ static void act_route(rfm_move_t *m)
     memset(&a, 0, sizeof a);
     a.kind = RFM_MOVE_ACT_ROUTE;
     for (k = 0; k < 3; k++)
-        a.filt[k] = x->ffilt[k], a.filt[3 + k] = x->mfx[k].filt;
+        a.filt[k] = x->ffilt[k], a.filt[3 + k] = x->mfx[k].filt, a.mroute[k] = x->mroute[k];   /* (0.6.6) */
     send(m, &a);
 }
 static rfm_move_fxslot_t *fxslot(rfm_move_t *m, int kind, int slot)
@@ -628,6 +628,32 @@ void rfmv_fw_init(rfm_move_t *m)
     for (s = 0; s < RFM_MOVE_FW_SLOTS; s++)
         f->slot_fw[s] = -1, f->level[s] = 100, f->st_cur[s] = -1;
     f->track = 3;
+}
+/* (0.6.6) the MIDI routes: a slot reaches b through them (bits 0..2) */
+static int mroute_reaches(const uint8_t r[RFM_MOVE_FW_SLOTS], int a, int b)
+{
+    uint8_t seen = 0, todo = (uint8_t)(1u << a);
+    while (todo) {
+        int s;
+        for (s = 0; s < RFM_MOVE_FW_SLOTS; s++)
+            if (todo >> s & 1) {
+                todo = (uint8_t)(todo & ~(1u << s)), seen = (uint8_t)(seen | 1u << s);
+                todo = (uint8_t)(todo | ((r[s] & 7) & ~seen));
+            }
+    }
+    return seen >> b & 1;
+}
+int rfmv_mroute_check(const uint8_t r[RFM_MOVE_FW_SLOTS])
+{
+    int s, t;
+    for (s = 0; s < RFM_MOVE_FW_SLOTS; s++)
+        if (r[s] > 15 || (r[s] >> s & 1))
+            return -1;
+    for (s = 0; s < RFM_MOVE_FW_SLOTS; s++)             /* (a cycle: some target reaches back) */
+        for (t = 0; t < RFM_MOVE_FW_SLOTS; t++)
+            if ((r[s] >> t & 1) && mroute_reaches(r, t, s))
+                return -1;
+    return 0;
 }
 void rfmv_fxset_default(rfm_move_fxset_t *x)
 {
@@ -1539,6 +1565,20 @@ static void mix_turn(rfm_move_t *m, int slot, int par, int d)
         rfmv_seq_dirty(m);
     }
 }
+/* (0.6.6) a MIDI route toggled (bit 3: Out); a cycle refused ("Loop"): the popup says which */
+static void mroute_toggle(rfm_move_t *m, int src, int bit)
+{
+    rfm_move_fxset_t *x = &m->seq.fx;
+    const int on = !(x->mroute[src] >> bit & 1);
+    if (on && bit < 3 && mroute_reaches(x->mroute, bit, src)) {
+        pop(m, FP_MROUTE, src, bit | 1 << 5);
+        return;
+    }
+    x->mroute[src] = (uint8_t)(x->mroute[src] ^ 1u << bit);
+    pop(m, FP_MROUTE, src, bit | on << 4);
+    act_route(m);
+    rfmv_seq_dirty(m);
+}
 static void fx_input(rfm_move_t *m, const mr_event_t *ev)
 {
     rfm_move_fw_state_t *f = F(m);
@@ -1562,6 +1602,16 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
             return;
         }
         m->pad_down[p] = 1;
+        if (pg == PG_ROUTE && col == 2) {               /* (0.6.6) a firmware's pad held + another firmware's (or the
+                                                         * Out pad under them): its MIDI routed there, or no longer */
+            const int src = i, held = src != row && m->pad_down[slot_pad(PG_ROUTE, src)];
+            if (held && row <= 3 && (row == 3 || row < nslots(m))) {
+                mroute_toggle(m, src, row == 3 ? 3 : row);
+                return;
+            }
+            if (row == 3)
+                return;
+        }
         if (pg == PG_MIX) {                             /* the Mixer: the right 4 x 4 picks what knobs 1..3 set */
             if (col >= 4 && MIXPAD[row][col - 4] >= 0)
                 f->mix_par = (uint8_t)MIXPAD[row][col - 4], pop_clear(m);
@@ -1797,6 +1847,26 @@ int rfm_move_route_set(rfm_move_t *m, const int fw_filt[RFM_MOVE_FW_SLOTS], cons
     rfmv_seq_dirty(m);
     return fx_shown(m);
 }
+int rfm_move_midi_route(const rfm_move_t *m, int slot)
+{
+    return slot >= 0 && slot < RFM_MOVE_FW_SLOTS ? m->seq.fx.mroute[slot] : -1;
+}
+int rfm_move_midi_route_set(rfm_move_t *m, int slot, int mask)
+{
+    uint8_t r[RFM_MOVE_FW_SLOTS];
+    if (!has_fx(m) || slot < 0 || slot >= RFM_MOVE_FW_SLOTS || mask < 0 || mask > 15)
+        return -1;
+    memcpy(r, m->seq.fx.mroute, sizeof r);
+    r[slot] = (uint8_t)mask;
+    if (rfmv_mroute_check(r) != 0)
+        return -1;
+    if (mask == m->seq.fx.mroute[slot])
+        return 0;
+    m->seq.fx.mroute[slot] = (uint8_t)mask;
+    act_route(m);
+    rfmv_seq_dirty(m);
+    return fx_shown(m);
+}
 int rfm_move_fx_set_module(rfm_move_t *m, int kind, int slot, int module_index)
 {
     if (!has_fx(m) || (kind != RFM_MOVE_FX_MIDI && kind != RFM_MOVE_FX_AUDIO) || slot < 0 || slot >= RFM_MOVE_FX_SLOTS ||
@@ -1973,6 +2043,20 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 col = empty ? WHITE : FXCOL[p];
             c[L_PAD0 + slot_pad(p, r)] = lit(col, foc ? (pages_shown(m) ? breathe(m) : 256) : empty ? A(0.12) : A(0.42));
         }
+    }
+    if (pg == PG_ROUTE) {                               /* (0.6.6) the MIDI routes: the focused firmware's pad held,
+                                                         * its targets (and Out, the pad under them) lit in the routes'
+                                                         * colour; at rest Out only where it is on, faint */
+        static const rgb_t MROUTE = { 20, 220, 255 };
+        const int src = f->fx_focus, held = m->pad_down[slot_pad(PG_ROUTE, src)];
+        const uint8_t mr = x->mroute[src];
+        if (held) {
+            for (i = 0; i < nslots(m); i++)
+                if (i != src)
+                    c[L_PAD0 + slot_pad(PG_ROUTE, i)] = mr >> i & 1 ? MROUTE : lit(WHITE, A(0.12));
+            c[L_PAD0 + slot_pad(PG_ROUTE, 3)] = mr & RFM_MOVE_MROUTE_OUT ? MROUTE : lit(WHITE, A(0.12));
+        } else if (mr & RFM_MOVE_MROUTE_OUT)
+            c[L_PAD0 + slot_pad(PG_ROUTE, 3)] = lit(MROUTE, A(0.2));
     }
     for (i = 0; i < 16; i++)
         c[L_STEP0 + i] = pg == PG_MIDI || pg == PG_ROUTE ? lit(WHITE, filt >> i & 1 ? 256 : A(0.15)) : OFF;
@@ -2459,6 +2543,30 @@ static void fx_screen(B *g, const rfm_move_t *m)
             ctext(g, 56, "100 % wet for a send", 1);
         return;
     }
+    if (pop_up(m, FP_MROUTE)) {                         /* (0.6.6) a MIDI route toggled: from, to, on / off / Loop */
+        const int src = f->pop_a, bit = f->pop_b & 15, on = f->pop_b >> 4 & 1, loop = f->pop_b >> 5 & 1;
+        char nm[32];
+        if (slot_loaded(m, src))
+            slot_name(m, src, nm, sizeof nm);
+        else
+            snprintf(nm, sizeof nm, "empty");
+        snprintf(t, sizeof t, "FW%d %s", src + 1, nm);
+        header(g, t, NULL);
+        ctext(g, 14, "MIDI to", 1);
+        if (bit == 3)
+            snprintf(v, sizeof v, "Out");
+        else if (slot_loaded(m, bit))
+            slot_name(m, bit, v, sizeof v);
+        else
+            snprintf(v, sizeof v, "FW%d", bit + 1);
+        {
+            const int s2 = strlen(v) <= 10;
+            cut(v, 21);
+            ctext(g, s2 ? 26 : 29, v, s2 ? 2 : 1);
+        }
+        ctext(g, 50, loop ? "Loop: not set" : on ? "on" : "off", 1);
+        return;
+    }
     if (pop_up(m, FP_RFILTER) && (pg == PG_MIDI || pg == PG_ROUTE)) {
         const uint16_t filt = pg == PG_MIDI ? x->mfx[i].filt : x->ffilt[i];
         range_text(filt, t, sizeof t);
@@ -2572,6 +2680,12 @@ static void fx_screen(B *g, const rfm_move_t *m)
                     drect(g, X[c], Y[r], BW, BH), text(g, tx, Y[r] + 4, lab, 1, 1);
                 else
                     rect(g, X[c], Y[r], BW, BH), text(g, tx, Y[r] + 4, lab, 1, 1);
+                if (c == 1 && x->mroute[r]) {           /* (0.6.6) its MIDI routed on: a notch in the top-right
+                                                         * corner (Out too: one in the bottom-right) */
+                    fill(g, X[c] + BW - 4, Y[r] + 1, 3, 2, !foc);
+                    if (x->mroute[r] & RFM_MOVE_MROUTE_OUT)
+                        fill(g, X[c] + BW - 4, Y[r] + BH - 3, 3, 2, !foc);
+                }
             }
         fill(g, 19, 27, 1, 2, 1), fill(g, 19, 44, 1, 2, 1);
         hline(g, 36, 53, 6, 0), fill(g, 41, 19, 1, 35, 1);
@@ -3067,6 +3181,26 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap)
                     param_text(&md->params[p], sl->val[p], v, sizeof v);
                     snprintf(o, (size_t)cap, "%s: %s", t, v);
                 }
+            }
+            return 1;
+        }
+        if (pop_up(m, FP_MROUTE)) {                     /* (0.6.6) "ChoralRoot to Oberwave, on", "Loop" */
+            const int src = f->pop_a, bit = f->pop_b & 15;
+            if (f->pop_b >> 5 & 1)
+                snprintf(o, (size_t)cap, "Loop");
+            else {
+                char a[64], b[64];
+                if (slot_loaded(m, src))
+                    slot_name(m, src, a, sizeof a);
+                else
+                    snprintf(a, sizeof a, "Slot %d", src + 1);
+                if (bit == 3)
+                    snprintf(b, sizeof b, "Out");
+                else if (slot_loaded(m, bit))
+                    slot_name(m, bit, b, sizeof b);
+                else
+                    snprintf(b, sizeof b, "Slot %d", bit + 1);
+                snprintf(o, (size_t)cap, "%s to %s, %s", a, b, f->pop_b >> 4 & 1 ? "on" : "off");
             }
             return 1;
         }

@@ -813,11 +813,12 @@ static void test_file(void)
     memcpy(g, f, n), g[n] = 0;
     bad_file(g, n + 1, "Not a Move project file: 1 bytes after the last project.");
     MUT(g[0] = 0x58, "Not a Move project file: it does not start with RMVP.");
-    memset(g, 0, RFM1CS_FILE_MAX + 1);                 /* (RFM_MOVE_PROJECT_MAX 40136 since 0.5.0's 128 FX values, 39416
+    memset(g, 0, RFM1CS_FILE_MAX + 1);                 /* (RFM_MOVE_PROJECT_MAX 40139 since 0.6.6's MIDI routes, 40136
+                                                         * since 0.5.0's 128 FX values, 39416
                                                          * since 0.4.0's FX setup, 39200
                                                          * before: the web had 39072 written down) */
-    CHECK(RFM1CS_FILE_MAX == 8 + 32 * (10 + 40136));
-    bad_file(g, RFM1CS_FILE_MAX + 1, "Not a Move project file: it is 1284681 bytes, more than a full set (1284680).");
+    CHECK(RFM1CS_FILE_MAX == 8 + 32 * (10 + 40139));
+    bad_file(g, RFM1CS_FILE_MAX + 1, "Not a Move project file: it is 1284777 bytes, more than a full set (1284776).");
     MUT(g[40] ^= 0x55, "Not a Move project file: project 1 (slot 4) is damaged.");
     bad_file(f, 8, "Not a Move project file: project 1 is cut off.");
     bad_file(f, 0, "Not a Move project file: it does not start with RMVP.");

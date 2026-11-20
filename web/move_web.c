@@ -8,6 +8,7 @@
  *   each action's frame (uint32, mw_act_frames(): the offset in mw_seq_advance's frames; 0 for every other call). A
  *   PROJECT_SAVE (or FW_LIBRARY) action's blob is copied out: value = its index for mw_blob() / mw_blob_len(); and
  *   (0.4.0) each action's new fields, MW_ACT_EXT bytes at mw_act_ext(): track, slot, fx, param, mix[5], then filt[6]
+ *   (uint16 LE), then (0.6.6) mroute[3]
  *   (uint16 LE). FW_* actions name their firmware by value (its index in the list given), FX_LOAD its module by value;
  *   STATE_* by slot (the firmware there); (0.6.0) a SAY action's words are copied out: value = its index for mw_say();
  *   the session's events (mw_sess_* calls), at mw_evs(): 4 int32 each: type (RFM1CS_EV_*, or MW_EV_LOADED), a, b, c:
@@ -29,7 +30,7 @@
 
 #define MW_MAX_ACTS 1024
 #define MW_ACT_BYTES 10
-#define MW_ACT_EXT 21
+#define MW_ACT_EXT 24
 #define MW_MAX_BLOBS 4                                  /* PROJECT_SAVEs in one call (a project switch makes 2) */
 #define MW_MAX_SAYS 16                                  /* (0.6.0) SAY actions' words in one call */
 #define MW_MAX_EVS 1024
@@ -103,6 +104,7 @@ static int add_act(mw_t *w, const rfm_move_act_t *a)
         int k;
         for (k = 0; k < 6; k++)
             o[9 + k * 2] = (uint8_t)(a->filt[k] & 0xFF), o[10 + k * 2] = (uint8_t)(a->filt[k] >> 8);
+        memcpy(o + 21, a->mroute, 3);                   /* (0.6.6) */
     }
     return w->nacts++;
 }

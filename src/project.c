@@ -22,6 +22,7 @@
  *      128 by parameter index, 0..127 or 255 unset), track
  *      filter u16 (one bit, or 0xFFFF all) }, 3 audio FX x { name 24, 8 values }, 3 firmware track filters u16,
  *      3 pans, 3 x 3 sends (firmware by audio FX), 0..127
+ *      (version 7) 3 firmwares' MIDI routes (bits 0..2 the slots, never its own; 8 USB out; no cycle)
  *      FNV-1a (32 bit) of everything before it */
 #include <string.h>
 
@@ -97,6 +98,8 @@ int rfm_move_project_save(rfm_move_t *m, uint8_t *out, uint32_t cap)
     for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++, p += 8)
         memcpy(p, q->tr[i].tdef, 8);
     rfmv_fxset_write(&q->fx, p), p += RFM_MOVE_FXSET_BYTES;   /* (version 5: FX setup) */
+    for (i = 0; i < RFM_MOVE_FW_SLOTS; i++)              /* (version 7: the MIDI routes) */
+        *p++ = q->fx.mroute[i];
     w32(p, fnv(out, (uint32_t)(p - out)));
     p += 4;
     return (int)(p - out);
@@ -130,7 +133,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
     ver = b[4];
     if (ver < 1 || ver > RFM_MOVE_PROJECT_VERSION)
         return -2;
-    ext = ver >= 6 ? RFM_MOVE_PROJECT_EXT : ver == 5 ? RFM_MOVE_PROJECT_EXT_V5 : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
+    ext = ver >= 7 ? RFM_MOVE_PROJECT_EXT : ver == 6 ? RFM_MOVE_PROJECT_EXT_V6 : ver == 5 ? RFM_MOVE_PROJECT_EXT_V5 : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
           ver == 2 ? RFM_MOVE_PROJECT_EXT_V2 : 0;
     ab = ver >= 3 ? RFM_MOVE_ARP_BYTES : RFM_MOVE_ARP_BYTES_V2;   /* (an arp's bytes) */
     fixed = RFM_MOVE_PROJECT_FIXED - RFM_MOVE_PROJECT_EXT + ext;
@@ -219,6 +222,8 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
             }
         if (ver >= 5 && rfmv_fxset_check(x + RFM_MOVE_PROJECT_EXT_V4, ver >= 6 ? RFM_MOVE_FX_PARAMS : RFM_MOVE_FX_PARAMS_V5) != 0)
             return -9;                                  /* (FX setup) */
+        if (ver >= 7 && rfmv_mroute_check(x + RFM_MOVE_PROJECT_EXT_V6) != 0)
+            return -9;                                  /* (the MIDI routes: no own bit, no cycle) */
         for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++) {      /* (each track's layout and CC numbers) */
             const uint8_t *l = x + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_SEQ_CLIPS / 8 + RFM_MOVE_SEQ_TRACKS * (2 + ab) +
                                i * (1 + RFM_MOVE_NBANKS * RFM_MOVE_NKNOBS);
@@ -287,6 +292,9 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
                 memcpy(q->tr[i].tdef, x + RFM_MOVE_PROJECT_EXT_V3 + i * 8, 8);
         if (ver >= 5)
             rfmv_fxset_read(&q->fx, x + RFM_MOVE_PROJECT_EXT_V4, ver >= 6 ? RFM_MOVE_FX_PARAMS : RFM_MOVE_FX_PARAMS_V5);
+        memset(q->fx.mroute, 0, sizeof q->fx.mroute);   /* (before version 7: no routes) */
+        if (ver >= 7)
+            memcpy(q->fx.mroute, x + RFM_MOVE_PROJECT_EXT_V6, sizeof q->fx.mroute);
     } else {                                            /* version 1: loops from step 1, clips with notes, 1/16 */
         memset(q->lstart, 0, sizeof q->lstart);
         memset(q->made, 0, sizeof q->made);

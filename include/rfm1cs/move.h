@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 6
-#define RFM1CS_VERSION_PATCH 5
-#define RFM1CS_VERSION "0.6.5"
+#define RFM1CS_VERSION_PATCH 6
+#define RFM1CS_VERSION "0.6.6"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -163,6 +163,9 @@ typedef struct {
     uint8_t dest;                                       /* MIDI (track 0): 0 the active slot, as always; 1..3 firmware
                                                          * slot dest - 1, whichever is active now (a latched note's
                                                          * note off: the slot it was played on) */
+    /* (0.6.6) */
+    uint8_t mroute[3];                                  /* ROUTE: each firmware slot's MIDI routes (rfm_move_fxset_t
+                                                         * mroute: bits 0..2 the slots, RFM_MOVE_MROUTE_OUT USB out) */
 } rfm_move_act_t;
 typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
@@ -311,6 +314,9 @@ typedef struct {                                        /* (saved with the proje
     uint16_t ffilt[RFM_MOVE_FW_SLOTS];                  /* each firmware's track filter (all 16 at first) */
     uint8_t pan[RFM_MOVE_FW_SLOTS];                     /* 0..127, 64 centre */
     uint8_t send[RFM_MOVE_FW_SLOTS][RFM_MOVE_FX_SLOTS];  /* firmware -> audio FX bus, 0..127 */
+    /* (0.6.6, saved with the project, version 7; not in RFM_MOVE_FXSET_BYTES) each firmware slot's MIDI routes: bit s
+     * (0..2) to firmware slot s (never its own), RFM_MOVE_MROUTE_OUT to the host's USB MIDI out; no cycles */
+    uint8_t mroute[RFM_MOVE_FW_SLOTS];
 } rfm_move_fxset_t;
 #define RFM_MOVE_FXSET_BYTES_N(nv) (RFM_MOVE_FX_SLOTS * (RFM_MOVE_FX_NAME + (nv) + 2) + \
                                     RFM_MOVE_FX_SLOTS * (RFM_MOVE_FX_NAME + (nv)) + \
@@ -468,8 +474,8 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 6                      /* (versions 1..5 load too; 5 adds FX setup, 6 its 128
-                                                         * values a slot) */
+#define RFM_MOVE_PROJECT_VERSION 7                      /* (versions 1..6 load too; 5 adds FX setup, 6 its 128
+                                                         * values a slot, 7 the firmwares' MIDI routes) */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -481,7 +487,8 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_PROJECT_EXT_V3 (RFM_MOVE_PROJECT_EXT_V2 + RFM_MOVE_SEQ_TRACKS * (RFM_MOVE_ARP_BYTES - RFM_MOVE_ARP_BYTES_V2 + 4))
 #define RFM_MOVE_PROJECT_EXT_V4 (RFM_MOVE_PROJECT_EXT_V3 + RFM_MOVE_SEQ_TRACKS * 8)   /* + the trig defaults (version 4) */
 #define RFM_MOVE_PROJECT_EXT_V5 (RFM_MOVE_PROJECT_EXT_V4 + RFM_MOVE_FXSET_BYTES_V5)   /* + FX setup (version 5) */
-#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V4 + RFM_MOVE_FXSET_BYTES)   /* .. 128 values a slot (version 6) */
+#define RFM_MOVE_PROJECT_EXT_V6 (RFM_MOVE_PROJECT_EXT_V4 + RFM_MOVE_FXSET_BYTES)   /* .. 128 values a slot (version 6) */
+#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V6 + RFM_MOVE_FW_SLOTS)   /* + the MIDI routes (version 7, 0.6.6) */
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 7 + RFM_MOVE_SEQ_LOCKS * 4)
 enum { RFM_MOVE_CLOCK_AUTO = 0, RFM_MOVE_CLOCK_INTERNAL = 1, RFM_MOVE_CLOCK_EXTERNAL = 2 };
@@ -996,6 +1003,17 @@ int rfm_move_speech(const rfm_move_t *m);              /* 1 on */
 /* what the screen shows now, in words: its base view, then ", " and its popup or selection if any (a host's "say it
  * again", the tests). Works with speech off too. Returns the length written (out NUL-terminated; cut to cap - 1) */
 int rfm_move_words(const rfm_move_t *m, char *out, int cap);
+
+/* ---- (0.6.6) MIDI from a firmware routed to other firmwares and out (the Routing page: hold a firmware's pad, tap
+ * another firmware's pad or the Out pad under them). A slot's mask: bit s (0..2) its MIDI goes to firmware slot s
+ * too (never its own), RFM_MOVE_MROUTE_OUT to the host's USB MIDI out; no cycle (A to B to A) is ever set. The host
+ * forwards each slot's MIDI out (its channel messages) to its targets and, with OUT, to USB. The masks travel in
+ * every RFM_MOVE_ACT_ROUTE (act.mroute[3]) and are saved with the project (version 7; older ones load with none) */
+#define RFM_MOVE_MROUTE_OUT 8
+int rfm_move_midi_route(const rfm_move_t *m, int slot);   /* a slot's mask (0..15), -1 no such slot */
+/* the host's edit (a web page): the slot's whole mask. -1 refused (a slot out of range, a bit past 15, its own bit,
+ * a cycle, no FX setup: RFM_MOVE_CAP_FX off); 0 done or nothing to change; 1 done and on screen. ROUTE, the project */
+int rfm_move_midi_route_set(rfm_move_t *m, int slot, int mask);
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */

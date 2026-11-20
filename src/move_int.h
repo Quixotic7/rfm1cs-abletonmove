@@ -206,7 +206,8 @@ const char *rfmv_seq_msg_text(const rfm_move_t *m);    /* the message up now, NU
 /* ---- fw.c: the firmware browser, FX setup, the library (0.4.0) */
 /* the view's popups (rfm_move_fw_state_t.pop: one at a time, RFM_MOVE_POPUP_MS after the last touch) */
 enum { FP_NONE, FP_TRACK, FP_LEVEL, FP_CATALOG, FP_UNLOAD, FP_LOADED, FP_FILTER, FP_BANK, FP_FAV, FP_COLOR, FP_MSG,
-       FP_STATE, FP_RPAGE, FP_PARAM, FP_RFILTER, FP_RLOADED };
+       FP_STATE, FP_RPAGE, FP_PARAM, FP_RFILTER, FP_RLOADED, FP_MROUTE };   /* (FP_MROUTE 0.6.6: a MIDI route toggled:
+                                                         * pop_a the source, pop_b target | on << 4 | refused << 5) */
 void rfmv_fw_init(rfm_move_t *m);
 void rfmv_fw_enter(rfm_move_t *m);                     /* the projects view entered: the track to show */
 void rfmv_view_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now);   /* the projects view's input */
@@ -220,6 +221,7 @@ void rfmv_fxset_default(rfm_move_fxset_t *x);
 void rfmv_fxset_write(const rfm_move_fxset_t *x, uint8_t *p);   /* RFM_MOVE_FXSET_BYTES */
 int rfmv_fxset_check(const uint8_t *p, int nv);        /* 0 ok; nv: values a slot (8 version 5, 128 version 6) */
 void rfmv_fxset_read(rfm_move_fxset_t *x, const uint8_t *p, int nv);
+int rfmv_mroute_check(const uint8_t m[RFM_MOVE_FW_SLOTS]);   /* (0.6.6) 0: the MIDI routes valid (no own bit, no cycle) */
 void rfmv_fx_resolve(rfm_move_t *m, rfm_move_fxslot_t *x, int kind);
 void rfmv_fx_loaded(rfm_move_t *m);                    /* a project loaded: modules found, the host told */
 int rfmv_fw_bank(const rfm_move_t *m, int ids[32]);   /* (tests) the bank shown, its size */

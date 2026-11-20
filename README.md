@@ -566,6 +566,7 @@ and the custom JavaScript UIs (`ui_chain.js`) are not part of 0.5.0.
 |---|---|
 | column 1, rows 1..3 | the MIDI FX slots 1..3 (the MIDI FX colour; empty dim) |
 | column 3, rows 1..3 | the firmware slots 1..3, for routing and their mix (each firmware's colour; empty dim) |
+| column 3, row 4 | (0.6.6) Out: the host's USB MIDI out, a MIDI route's target (dark; faint cyan when the selected firmware routes there) |
 | column 5, rows 1..3 | the audio FX slots 1..3 (the audio FX colour; empty dim) |
 
 The selected pad is bright (breathing while its module's pages are open). `settings.fx_page` says which column is
@@ -582,6 +583,7 @@ columns too, Track 4 the Mixer (`_MIX`). The screen is the chain, as before.
 | Back in the pages | the slots again (a layer); Back on the slots leaves the view (0.4.5). Another slot's pad closes the pages too |
 | knobs, an FX slot | its page's parameters (on the slots too: the slot's page as it was left); a gap: nothing |
 | knobs, a firmware | 1 level, 2 pan, 3..5 sends to audio FX 1..3 |
+| hold a firmware's pad + tap another firmware's pad, or Out under them | (0.6.6) **MIDI routes**: that firmware's MIDI goes there too, or no longer (a toggle; one firmware may feed two and Out). While held its targets and Out light cyan, the others dim. A route that closes a loop (A to B while B reaches A) is refused: "Loop: not set". A plain tap still selects. The popup: "FW1 ChoralRoot / MIDI to / Oberwave / on"; at rest a firmware's box in the chain has a notch top right (it routes to a firmware) and bottom right (to Out) |
 | a knob touched | its popup while touched (0.4.5) |
 
 Each slot remembers its page; a newly loaded module starts on its first page. The jog turned with no pad held, or
@@ -870,6 +872,7 @@ play notes (0.6.5: heard, never said).
 | steps 1..16, pads, jog, jog click | the projects view | "Favorites", "All firmwares", "Filter Synth", "No filter"; "Felucca" (the catalog: ", not installed"); its description; "Loading Felucca", "Downloading Felucca 25%", "Felucca installed", "Felucca failed" |
 | Sample, Capture + step, Left / Right, Mute, Loop, a state pad, Delete, a Track again | the projects view | "Felucca added to Favorites", "Tagged Synth", "Bank 2", "Catalog", "States, Felucca", "State 1 saved", "Felucca unloaded", "Slot 1, Felucca" |
 | Menu, Track 1..4, a slot pad (+ jog, let go), jog click, knobs, steps | FX setup | "FX setup, MIDI FX", "Routing", "Mixer"; "MIDI FX 1: empty", "Arp", "MIDI FX 1: Arp"; "Arp, Page 1"; "Rate: 1/8", "Slot 1 Level: 100"; "MIDI FX 1: track 3" |
+| a firmware's pad held + another's or Out | FX setup, Routing | "ChoralRoot to Oberwave, on", "ChoralRoot to Out, off", "Loop" (refused) |
 
 The selection (the firmware picked, its description, the FX slot focused, the module list, the Mixer's choice) is
 said when it changes and not again when a popup over it closes. The host debounces (Schwung: 300 ms, a VALUE

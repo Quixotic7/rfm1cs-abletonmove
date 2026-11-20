@@ -3,6 +3,35 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.6 (2026-11-19)
+
+MIDI from one firmware routed to other firmwares and to USB out, set on the Routing page (the owner: "hold down a
+firmware pad and then click the other firmware pads to enable midi routing to them ... Use the 4th slot at the bottom
+of the column ... to route the midi to the main output"). New fields at the end of `rfm_move_fxset_t` and
+`rfm_move_act_t`; the project record is version 7 (3 bytes more: `RFM_MOVE_PROJECT_MAX` 40139, was 40136): rebuild
+everything; hosts that wrote the number down (the web's `PROJECT_MAX`) update it.
+
+- **The gesture** (FX setup, Routing; column 3): hold a firmware's pad, tap another firmware's pad or the new **Out**
+  pad (row 4, under them): that route on, or off again. A plain tap still selects. While held the targets and Out
+  light cyan; at rest Out is dark (faint cyan when the selected firmware routes out) and the chain marks a routing
+  firmware's box (a notch top right: to a firmware; bottom right: to Out).
+- **No cycles:** a route closing a loop (A to B while B reaches A, directly or through the third) is refused: the
+  popup "Loop: not set", the words "Loop", nothing changed.
+- **The state:** `rfm_move_fxset_t.mroute[3]`: bits 0..2 the firmware slots (never its own), `RFM_MOVE_MROUTE_OUT`
+  (8) the USB out. Saved with the project (version 7; versions 1..6 load with no routes; a blob with an own bit or a
+  cycle is refused). Every `RFM_MOVE_ACT_ROUTE` carries all three masks in the new `act.mroute[3]` (the Move's
+  toggle, `rfm_move_route_set`, `rfm_move_midi_route_set`, `rfm_move_fx_sync`, a project load).
+- **API:** `rfm_move_midi_route(m, slot)` (the mask, -1 no slot); `rfm_move_midi_route_set(m, slot, mask)` (-1
+  refused: out of range, its own bit, a cycle, no FX setup; 0 nothing to change; 1 done and on screen).
+- Popup (full screen by default): "FW1 ChoralRoot", "MIDI to", the target large, "on" / "off"; speech "ChoralRoot to
+  Oberwave, on", "ChoralRoot to Out, off", "Loop".
+- Web: the route action has `midiRoute: [3]` (`MW_ACT_EXT` 24); `PROJECT_MAX` 40139.
+
+**Tests:** `move_fw` `test_mroute`: the gesture (three targets, Out, off again, the focus kept, a plain tap selects,
+Out alone nothing), the LEDs held and at rest, the cycle refused (direct and through the third), the act's masks,
+the host's edit and its refusals, save / load, version 6 loading with none, a blob with an own bit or a cycle
+refused, no FX setup refusing; `move_speech` the words; `web_smoke` the route action's `midiRoute`.
+
 ## 0.6.5 (2026-11-19)
 
 Shorter speech (the owner: "it should just say: "Step 1", "Step 2", and when playing notes, I can hear the notes,
