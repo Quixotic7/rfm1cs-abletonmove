@@ -27,8 +27,8 @@ extern "C" {
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
 #define RFM1CS_VERSION_MINOR 6
-#define RFM1CS_VERSION_PATCH 4
-#define RFM1CS_VERSION "0.6.4"
+#define RFM1CS_VERSION_PATCH 5
+#define RFM1CS_VERSION "0.6.5"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -780,6 +780,7 @@ typedef struct {
     uint16_t say_n;                                     /* words said so far (a call that said nothing: 0 more) */
     uint16_t say_bdown;                                 /* .. when Back went down */
     uint32_t say_fwms;                                  /* the projects view's Track / page / catalog popup said last */
+    uint8_t say_stepev;                                 /* (0.6.5) this call is a step press or release */
     uint8_t del_src;                                    /* this Delete hold's last step action: 0 none, 1 cut, 2 paste
                                                          * (back to none when Delete is let go; the clipboard stays) */
 } rfm_move_t;

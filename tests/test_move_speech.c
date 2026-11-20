@@ -455,19 +455,19 @@ static void test_seq(void)
     tap_pad(&M, 0);                                     /* a note, then a step: it is entered */
     clear();
     tap_step(&M, 4);
-    SAID("V:Step 5 on|");                               /* (0.6.1) */
+    SAID("V:Step 5|");                                  /* (0.6.5: just the step) */
     step(&M, 4, 1);
     adv_ms(&M, RFM_MOVE_SEQ_HOLD_MS + 20);
-    CHECKF(!strncmp(said, "V:Step 5: ", 10) && strstr(said, "empty") == NULL, "%s", said);
+    SAID("V:Step 5|");                                  /* (held: its popup, the step only) */
     step(&M, 4, 0), clear(), tap_step(&M, 6);
-    SAID("V:Step 7 on|");
+    SAID("V:Step 7|");
     rest_pop(&M), clear();
     press(&M, MR_CC_UNDO);
-    SAID("V:Undo|V:Step 7 off|");
+    SAID("V:Undo|");
     press(&M, MR_CC_UNDO);
-    SAID("V:Undo|V:Step 5 off|");                       /* (another one, its message still up: said again) */
+    SAID("V:Undo|");                                    /* (another one, its message still up: said again) */
     button(&M, MR_CC_SHIFT, 1), press(&M, MR_CC_UNDO), button(&M, MR_CC_SHIFT, 0);
-    SAID("V:Shift|V:Redo|V:Step 5 on|");
+    SAID("V:Shift|V:Redo|");
     rest_pop(&M);
     track(&M, 3, 1), step(&M, 2, 1);
     SAID("V:Track 3|");
@@ -564,9 +564,9 @@ static void test_rows(void)
     /* steps, a held step's trig values, the loop, pages */
     tap_pad(&M, 0), clear();
     tap_step(&M, 0);
-    HAS("V:Step 1 on|");
+    HAS("V:Step 1|");
     step(&M, 0, 1), adv_ms(&M, RFM_MOVE_SEQ_HOLD_MS + 20);
-    HAS("V:Step 1: ");
+    SAID("V:Step 1|");
     knob(&M, 7, 3);
     HAS("V:");
     step(&M, 0, 0), rest_pop(&M), clear();
@@ -857,6 +857,28 @@ static void apply(rfm_move_t *m, const in_t *in)
     default: touch(m, in->a, 1); break;
     }
 }
+/* (0.6.5) playing notes says nothing: pads and steps as keys in FM-1 mode, pads in the MIDI modes, the sequencer's pads
+ * live and recorded */
+static void test_playing(void)
+{
+    int i, mode;
+    for (mode = RFM_MOVE_MODE_FM1; mode <= RFM_MOVE_MODE_SEQ; mode++) {
+        fresh(&M, 1);
+        rfm_move_set_mode(&M, mode), rest_pop(&M), clear();
+        for (i = 0; i < 16; i++)
+            tap_pad(&M, i * 2), adv_ms(&M, 30);
+        if (mode == RFM_MOVE_MODE_FM1)
+            for (i = 0; i < 16; i++)
+                tap_step(&M, i);                        /* (the steps: the white keys) */
+        CHECKF(!said[0], "mode %d: \"%s\"", mode, said);
+    }
+    fresh(&M, 1);                                       /* recording: the notes land on steps, nothing said */
+    tap_track(&M, 3), press(&M, MR_CC_REC), press(&M, MR_CC_PLAY), adv_ms(&M, 2600), clear();
+    for (i = 0; i < 12; i++)
+        pad(&M, i % 8, 100), adv_ms(&M, 60), pad(&M, i % 8, 0), adv_ms(&M, 60);
+    CHECKF(!strstr(said, "Step") && M.seq.nnotes > 0, "\"%s\" (%d notes)", said, M.seq.nnotes);
+    press(&M, MR_CC_PLAY), clear();
+}
 static int g_silent;
 static void test_walk(void)
 {
@@ -869,6 +891,11 @@ static void test_walk(void)
                 continue;                               /* (the held Track pressed again: its release, no input) */
             if (CTX[c].set == c_step && !strcmp(INS[i].name, "step 5"))
                 continue;                               /* (the held step again: its release) */
+            if (INS[i].kind == 2 && CTX[c].set != c_fw && CTX[c].set != c_fwsel && CTX[c].set != c_catalog &&
+                CTX[c].set != c_states && CTX[c].set != c_capture && CTX[c].set != c_fx && CTX[c].set != c_mixer &&
+                CTX[c].set != c_routing && CTX[c].set != c_grid && CTX[c].set != c_session && CTX[c].set != c_global &&
+                CTX[c].set != c_t2 && CTX[c].set != c_delete)
+                continue;                               /* (0.6.5: pads play notes: heard, never said) */
             fresh(&M, 1);
             CTX[c].set(&M);
             rest_pop(&M), rfm_move_screen(&M, NULL, a), clear();
@@ -1019,6 +1046,7 @@ int main(void)
     test_browser_rows();
     test_global();
     test_delete();
+    test_playing();
     test_walk();
     CHECKF(bad_words == 0, "%d SAY actions with bad words", bad_words);
     return check_done("move_speech");

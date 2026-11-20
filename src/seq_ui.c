@@ -911,6 +911,11 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             }
             q->step_edit |= (uint16_t)(1u << q->step_first);
         }
+        {
+            char w[16];                                 /* (0.6.5: speech: just the step) */
+            snprintf(w, sizeof w, "Step %d", s + 1);
+            rfmv_say_text(m, w);
+        }
         return;
     }
     if (!q->step_held)
@@ -1127,6 +1132,8 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
         case MR_CC_UP:
         case MR_CC_DOWN:
             held_transpose(m, (cc == MR_CC_UP ? 1 : -1) * ((q->mods & SEQ_M_SHIFT) ? 12 : 1));
+            rfmv_say_text(m, (q->mods & SEQ_M_SHIFT) ? (cc == MR_CC_UP ? "Octave up" : "Octave down")
+                                                     : (cc == MR_CC_UP ? "Transpose up" : "Transpose down"));
             if (q->mods & SEQ_M_SHIFT)
                 q->mods_used |= SEQ_M_SHIFT;
             return 1;

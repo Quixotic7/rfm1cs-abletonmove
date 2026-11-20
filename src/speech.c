@@ -202,20 +202,10 @@ static void loop_words(const rfm_move_t *m, char *o, int cap)
     else
         snprintf(o, (size_t)cap, "Loop: %d %s", P, P == 1 ? "bar" : "bars");
 }
-static void step_words(const rfm_move_t *m, char *o, int cap)
+static void step_words(const rfm_move_t *m, char *o, int cap)   /* (0.6.5, the owner's: just the step; the notes
+                                                         * are heard) */
 {
-    const rfm_move_seq_t *q = &m->seq;
-    const int s = m->pop_i, clip = SEQ_CLIP(q->sel_track, q->tr[q->sel_track].sel);
-    int lo, hi = rfmv_seq_range(m, clip, q->page * RFM_MOVE_SEQ_PAGE + s, &lo), i, n;
-    char nb[8];
-    n = snprintf(o, (size_t)cap, "Step %d: %s", s + 1, hi > lo ? "" : "empty");
-    for (i = lo; i < hi && n < cap - 1; i++)
-        n += snprintf(o + n, (size_t)(cap - n), "%s%s", i > lo ? ", " : "", rfmv_note_name(q->notes[i].note, nb, sizeof nb));
-    if (hi > lo && n < cap - 1) {                       /* (0.6.3) as the popup: the first note's velocity, length */
-        char l[24];
-        len_words(q->notes[lo].len, l, sizeof l);
-        snprintf(o + n, (size_t)(cap - n), ", velocity %d, length %s", q->notes[lo].vel, l);
-    }
+    snprintf(o, (size_t)cap, "Step %d", m->pop_i + 1);
 }
 static void menu_words(const rfm_move_t *m, char *o, int cap)
 {
@@ -621,14 +611,15 @@ static void watch(rfm_move_t *m, int silent, said_now_t *sn)
             quiet |= SMITEMS;                           /* (the arp's page turned: its knobs' new words) */
     }
     b = page_steps(m, &key);                            /* a step on or off */
-    if (!silent && !m->say_now[0] && key && key == m->say_skey && b != m->say_steps &&
-        popcount16((unsigned)(b ^ m->say_steps)) <= 2)  /* (a cut, a paste: their own words) */
+    if (!silent && !m->say_now[0] && m->say_stepev && key && key == m->say_skey && b != m->say_steps &&
+        popcount16((unsigned)(b ^ m->say_steps)) <= 2)  /* (a cut, a paste: their own words; 0.6.5: a step pressed
+                                                         * only, never notes played or recorded) */
         for (i = 0; i < RFM_MOVE_SEQ_PAGE; i++)
             if ((b ^ m->say_steps) >> i & 1) {
                 if (q->cut && q->clip_kind == 1 && q->clip_step % RFM_MOVE_SEQ_PAGE == i && !(b >> i & 1) &&
                     q->clip_step / RFM_MOVE_SEQ_PAGE == q->page)
                     continue;                           /* (a Delete's cut: "Cut step n" says it) */
-                snprintf(w, sizeof w, "Step %d %s", i + 1, b >> i & 1 ? "on" : "off");
+                snprintf(w, sizeof w, "Step %d", i + 1);
                 say_v(m, sn, w);
             }
     m->say_steps = b, m->say_skey = key;

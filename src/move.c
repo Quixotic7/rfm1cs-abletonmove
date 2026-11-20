@@ -1266,6 +1266,7 @@ static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
 }
 void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
 {
+    m->say_stepev = ev->type == MR_EV_STEP;
     if (ev->type == MR_EV_BUTTON && ev->index == MR_CC_BACK && ev->value)
         m->say_bdown = m->say_n;                        /* (0.6.3) Back: nothing said from its press to its release: */
     m->say_back = m->speech && ev->type == MR_EV_BUTTON && ev->index == MR_CC_BACK && !ev->value &&

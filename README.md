@@ -824,7 +824,7 @@ short, digits for numbers, note names as the screen has them):
 | kind | when | examples |
 |---|---|---|
 | EVENT | the base view changes (not when a popup over it closes) | "FM-1 mode", "MIDI mode, Notes", "Control mode", "Sequencer mode", "Session", "Track 3", "Firmwares, Slot 1, Felucca", "Slot 2, empty", "Catalog", "States, Felucca", "Projects", "FX setup, MIDI FX", "Routing", "Mixer", "Arp, Page 1" |
-| VALUE | a popup's words change, or the selection's | knobs "K1", "K1: +3", "Volume 75%", "CC 16: 65", readouts "Voicing: Wide"; held Track menus "Scale: Dorian", "Root: Db", "Layout: Drum", "Channel: 3", "Knob 1: CC 17", "Track 3, muted", "Rate: 1/16"; "Latch on"; a held label "SEL/KEYS"; host popups "FM-1 linked"; the sequencer "Playing", "Stopped", "Record on", "Step 5: C3, E3", "Chance: 50%", "Loop: 2 bars", "Tempo 120", "Bar 2", "Undo", "Metronome on", "Sync: EXT"; projects "Project 3, 120 BPM, 4 clips"; Back + Track "Playing, Slot 2, Melodee"; the browser "All firmwares", "Filter Synth", "Bank 2", the firmware selected ("Felucca"; in the catalog "Felucca, not installed"), its description (the jog's first detent, 250 characters at most), "Downloading Felucca 25%", "Felucca installed", "Felucca added to Favorites", "Tagged Synth"; FX setup "MIDI FX 1: Arp", the module list "Arp", "Rate: 1/8", "Slot 1 Level: 100", "MIDI FX 1: track 3" |
+| VALUE | a popup's words change, or the selection's | knobs "K1", "K1: +3", "Volume 75%", "CC 16: 65", readouts "Voicing: Wide"; held Track menus "Scale: Dorian", "Root: Db", "Layout: Drum", "Channel: 3", "Knob 1: CC 17", "Track 3, muted", "Rate: 1/16"; "Latch on"; a held label "SEL/KEYS"; host popups "FM-1 linked"; the sequencer "Playing", "Stopped", "Record on", "Step 5", "Chance: 50%", "Loop: 2 bars", "Tempo 120", "Bar 2", "Undo", "Metronome on", "Sync: EXT"; projects "Project 3, 120 BPM, 4 clips"; Back + Track "Playing, Slot 2, Melodee"; the browser "All firmwares", "Filter Synth", "Bank 2", the firmware selected ("Felucca"; in the catalog "Felucca, not installed"), its description (the jog's first detent, 250 characters at most), "Downloading Felucca 25%", "Felucca installed", "Felucca added to Favorites", "Tagged Synth"; FX setup "MIDI FX 1: Arp", the module list "Arp", "Rate: 1/8", "Slot 1 Level: 100", "MIDI FX 1: track 3" |
 
 (0.6.1) Every FM-1 button press is said at once (its label, else its name, else the panel's word: "Play", "Octave
 down"). Values with no popup are said when they change: the track selected, mutes and solos, a step on or off, the
@@ -834,7 +834,8 @@ Shift menus are views ("Tempo", "Arp") that say their knobs ("Pattern: Down").
 
 **Every input and its words (0.6.3).** `move_speech`'s input walk presses every button, step and pad, turns every
 knob and the jog, clicks the jog and touches knobs in 34 contexts (each mode and view, each Shift menu, each held
-modifier, the projects view, FX setup); any input that changes the screen and says nothing fails it.
+modifier, the projects view, FX setup); any input that changes the screen and says nothing fails it, except pads that
+play notes (0.6.5: heard, never said).
 
 | Input | Where | Words |
 |---|---|---|
@@ -849,7 +850,8 @@ modifier, the projects view, FX setup); any input that changes the screen and sa
 | jog | Control | "Bank 2" |
 | knob | Control, Sequencer | "CC 16: 65"; a held step's lock; the TRIG page "Chance: 50%", "Ratchet: 3" |
 | Back | anywhere | what it changed: the view ("Firmwares, Slot 1, Felucca", "FM-1 mode"), a layer ("Loop edit off", "Done"), a selection gone (the view named); nothing changed: where you are |
-| step tap / hold / second step | Sequencer, track view | "Step 5 on" / "Step 5 off"; held "Step 5: C3, velocity 100, length 1 step"; another step: the new length |
+| step tap / hold / second step | Sequencer, track view | "Step 5" (0.6.5, the owner's: the step only, no on / off, no notes); a held step's Up / Down "Transpose up" / "down" (Shift: "Octave up" / "down") |
+| pads, keys, steps as keys; notes recorded | any mode | nothing: notes are heard, never said (0.6.5) |
 | Delete + pad | Sequencer, track view | "Deleted C3" (that note out of the clip) |
 | Copy / Delete / Mute / Shift held | Sequencer | "Copy", "Delete", "Mute", "Shift" |
 | Copy + step / clip; Delete + step / clip; + an empty one | Sequencer | "Step 5 copied", "Step 5 cut", "Cut track 1 clip 2"; "Pasted to step 9", "Step 9 replaced", "Pasted" |

@@ -3,6 +3,22 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.6.5 (2026-11-19)
+
+Shorter speech (the owner: "it should just say: "Step 1", "Step 2", and when playing notes, I can hear the notes,
+there is no need to say out loud the names of the notes").
+
+- A step pressed (tapped, held, a second step stretching a held one) says only "Step 5": no "on" / "off", no note
+  names, velocity or length. Undo and Redo no longer add the steps they changed.
+- Nothing is said for playing: pads and keys in any mode, steps as keys, notes recorded live (the step words come
+  only from a step press now, not from notes landing on steps).
+- A held step's Up / Down says "Transpose up" / "Transpose down" (Shift: "Octave up" / "Octave down").
+- Unchanged: cut and paste ("Step 5 cut", "Pasted to step 9", "Step 9 replaced"), Delete + pad ("Deleted C3": an
+  edit, not playing), a drum pad's note edited with the jog.
+
+**Tests:** `move_speech` 245 checks: pads, keys and steps played in every mode and notes recorded live say nothing;
+the input walk exempts note playing; the step words.
+
 ## 0.6.4 (2026-11-19)
 
 - Delete tapped alone (or held and let go alone) shows nothing new: 0.6.3's "Hold Delete / + a step" message broke
