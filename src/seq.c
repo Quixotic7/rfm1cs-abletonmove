@@ -1479,13 +1479,16 @@ static void relocate(rfm_move_t *m, int32_t tl, int32_t clocks)
 void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
 {
     rfm_move_seq_t *q = &m->seq;
-    if (!msg || n < 1 || q->clock_mode == RFM_MOVE_CLOCK_INTERNAL)
+    const int tk = q->clock_mode != RFM_MOVE_CLOCK_EXTERNAL && rfmv_tk_on(m);   /* (0.8.1) a takeover shown: its
+                                                         * clock leads as EXT does (its Play is the Move's: the
+                                                         * sequencer starts and stops with it, at its tempo) */
+    if (!msg || n < 1 || (q->clock_mode == RFM_MOVE_CLOCK_INTERNAL && !tk))
         return;
     q->frame = 0;
     switch (msg[0]) {
     case 0xF8: {
         int32_t target;
-        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following) {
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following && !tk) {
             if (!q->ext_arm)
                 break;                                  /* (0.5.1) AUTO: a clock with no start (FA / FB) is not
                                                          * followed: a firmware that sends clock unasked, at its own
@@ -1540,7 +1543,7 @@ void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
         break;
     }
     case 0xFA:                                          /* start: bar 1 on the next clock */
-        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following) {
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following && !tk) {
             q->ext_arm = 1, q->ext_arm_n = 0;           /* (0.5.5: a master only once its clocks come) */
             break;
         }
@@ -1551,7 +1554,7 @@ void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
         q->start_pending = 2;
         break;
     case 0xFB:                                          /* continue: from the song position, at its next bar */
-        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following) {
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following && !tk) {
             q->ext_arm = 2, q->ext_arm_n = 0;
             break;
         }

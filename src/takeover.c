@@ -126,6 +126,8 @@ void rfmv_tk_sync(rfm_move_t *m)
     const int on = rfmv_tk_on(m), s = tk_slot(m);
     const unsigned claims = on ? m->tk[s].claims : 0, flags = tk_flags(m);
     if (m->tk_sent_on && (!on || s != m->tk_sent_slot)) {   /* gone (or another slot's now): let go, then off */
+        if (m->seq.clock_mode == RFM_MOVE_CLOCK_INTERNAL && m->seq.following)
+            m->seq.following = 0;                       /* (0.8.1: the takeover's clock no longer leads) */
         release_fw(m, 0);
         emit_state(m, m->tk_sent_slot, 0, 0, flags);
         m->tk_sent_on = 0;
@@ -229,7 +231,12 @@ static int route(rfm_move_t *m, const mr_event_t *ev)
             m->tk_back_eat = 0;
             return 1;
         }
-        if (ev->value && m->tk_vtouch && rfmv_tk_on(m)) {   /* volume + Back: out */
+        if (ev->value && m->tk_vtouch && rfmv_tk_on(m) &&
+            (rfmv_tk_claims(m) & (RFM_MOVE_TK_BUTTONS | RFM_MOVE_TK_TRACKS)) != RFM_MOVE_TK_BUTTONS) {
+                                                        /* volume + Back: out (0.8.1: not when the firmware claims the
+                                                         * buttons and leaves the Tracks: Back is its own, the Track
+                                                         * buttons the way out; a
+                                                         * finger resting on the volume knob made every Back an exit) */
             m->tk_back_eat = 1;
             rfmv_tk_set(m, 0);
             return 1;
