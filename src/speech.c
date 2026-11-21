@@ -717,7 +717,8 @@ static void item_words(const rfm_move_t *m, int i, char *o, int cap)
         }
         break;
     case I_PASTED:
-        if (q->copy_pasted && q->clip_kind != 1)        /* (steps: "Pasted to step 9") */
+        if (q->copy_pasted && q->clip_kind == 3)        /* (steps: "Pasted to step 9"; 0.9.2 clips: "Pasted to track
+                                                         * 1 clip 3", seq_ui.c) */
             snprintf(o, (size_t)cap, "Pasted");
         break;
     default:

@@ -271,14 +271,24 @@ static void clip_delete(rfm_move_t *m, int clip)
     rfmv_seq_clip_clear(m, clip);
     rfmv_seq_clip_make(m, clip, 0);
 }
-/* the clipboard's clip at clip; a cut (already gone from its slot) is pasted once */
+/* the clipboard's clip at clip (0.9.2, as the steps'): a clip there is replaced; the cut's mark goes and the
+ * clipboard stays: it pastes again and again, until something else is cut or copied */
 static void paste_clip_at(rfm_move_t *m, int clip)
 {
     rfm_move_seq_t *q = Q(m);
+    const int track = clip / RFM_MOVE_SEQ_SCENES, scene = clip % RFM_MOVE_SEQ_SCENES;
+    const int full = rfmv_seq_clip_has(m, clip);
+    char w[40];
     rfmv_seq_group(m);
+    if (full && q->tr[track].active == scene)
+        rfmv_seq_release(m, track);                     /* (the replaced clip's sounding notes let go) */
     rfmv_seq_paste_clip(m, clip);
-    if (q->cut)
-        q->cut = 0, q->clip_kind = 0;
+    q->cut = 0;
+    if (full)
+        snprintf(w, sizeof w, "Track %d clip %d replaced", track + 1, scene + 1);
+    else
+        snprintf(w, sizeof w, "Pasted to track %d clip %d", track + 1, scene + 1);
+    rfmv_say_text(m, w);
 }
 
 /* Step record: the cursor a step on, round the loop (the steps are the track's rate) */
@@ -413,16 +423,23 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
                 paste_clip_at(m, clip);
                 q->copy_pasted = 1, q->paste = 0;
             }
-        } else if (q->mods & SEQ_M_DELETE) {            /* Delete + clip (cut): a clip is cut (an X in its slot); an
-                                                         * empty slot gets the clipboard's clip */
+        } else if (q->mods & SEQ_M_DELETE) {            /* Delete + clip (0.9.2: the steps' rules, 0.6.3): after a
+                                                         * cut (in this hold) any slot gets the clipboard pasted (a clip
+                                                         * there: replaced); else (the first press, or after a paste)
+                                                         * a clip is cut (gone, into the clipboard, an X in its slot)
+                                                         * and an empty slot gets the clipboard pasted. The clipboard
+                                                         * stays */
             q->mods_used |= SEQ_M_DELETE;
-            if (rfmv_seq_clip_has(m, clip)) {
+            if (m->del_src != 1 && rfmv_seq_clip_has(m, clip)) {
                 rfmv_seq_group(m);
                 rfmv_seq_copy_clip(m, clip);
                 q->cut = 1, q->paste = 0, q->clip_src = (uint8_t)clip, layer(q, LY_CLIP);
                 clip_delete(m, clip);
-            } else if (q->clip_kind == 2)
+                m->del_src = 1;                         /* (the last: a cut) */
+            } else if (q->clip_kind == 2) {
                 paste_clip_at(m, clip);
+                m->del_src = 2;                         /* (the last: a paste) */
+            }
         } else if (q->paste && q->clip_kind == 2) {     /* a copy waiting (Copy released): pasted here */
             paste_clip_at(m, clip);
             q->paste = 0;
@@ -1825,9 +1842,12 @@ void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now)
 
 /* ================================================================ LEDs === */
 static int blink(const rfm_move_seq_t *q) { return q->tl >= 0 && (q->tl / (RFM_MOVE_SEQ_TPS * 2)) & 1; }   /* 8ths */
-static int pulse(const rfm_move_seq_t *q)                                  /* a beat: bright, fading */
+/* a beat: bright, fading, in RFM_MOVE_PULSE_STEPS steps (0.9.2: was a new level every tick, 96 a beat: every playing
+ * clip in session view an RGB write a tick, some 630 a second with four clips at 99 BPM, against 13 in track view) */
+#define RFM_MOVE_PULSE_STEPS 6
+static int pulse(const rfm_move_seq_t *q)
 {
-    return q->playing && q->T >= 0 ? 256 - (int)(q->T % 96) * 160 / 96 : 256;
+    return q->playing && q->T >= 0 ? 256 - (int)(q->T % 96) / (96 / RFM_MOVE_PULSE_STEPS) * (160 / RFM_MOVE_PULSE_STEPS) : 256;
 }
 
 
@@ -2230,6 +2250,14 @@ static void session_screen(const rfm_move_t *m, mr_canvas_t *cv)
                 default: break;
                 }
             v2_cell(cv, c, r, s);
+            if (track == q->sel_track && q->tr[track].sel == scene) {   /* (0.9.2) the selected clip (or empty slot):
+                                                         * a frame round its cell, in the gap between the cells; a
+                                                         * filled cell (playing, recording) stands clear of it */
+                const int x = c * 16 + 1, y = 4 + r * 15;
+                if (s == 'P' || s == 'R')
+                    v2_O(cv, x, y, 14, 13, 0);
+                v2_O(cv, x - 1, y - 1, 16, 15, 1);
+            }
         }
 }
 

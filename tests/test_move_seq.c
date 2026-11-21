@@ -1405,7 +1405,7 @@ static void write_pbm(const char *path, const uint8_t *packed)
 
 #define GOLD_TRACK 0xa1088f61u
 #define GOLD_STEP 0x7923b304u
-#define GOLD_SESSION 0xa247c937u
+#define GOLD_SESSION 0xb520851fu
 #define GOLD_PROJECTS 0x5204a535u
 #define GOLD_PROJECT 0xb8a42ba8u
 #define GOLD_TRACKS 0x0e18c2a2u                     /* (0.9.0: the merged menu, "FM-1" "Track 3" "selected") */
@@ -1517,7 +1517,9 @@ static void test_screens_leds(void)
     rfm_move_screen(m, NULL, out);
     CHECK(px_at(out, 1, 0) && px_at(out, 14, 1) && !px_at(out, 17, 0));      /* track 1 selected */
     CHECK(px_at(out, 65, 1) && px_at(out, 66, 1) && !px_at(out, 67, 1) && !px_at(out, 65, 0));   /* track 5 muted: dashed */
-    CHECK(px_at(out, 1, 4) && !px_at(out, 5, 7) && px_at(out, 4, 7));        /* track 1 scene 1: playing, a black triangle */
+    CHECK(px_at(out, 2, 5) && !px_at(out, 5, 7) && px_at(out, 4, 7));        /* track 1 scene 1: playing, a black triangle */
+    CHECK(px_at(out, 0, 3) && px_at(out, 15, 17) && !px_at(out, 1, 4));      /* (0.9.2) .. and selected: framed, clear of it */
+    CHECK(!px_at(out, 16, 18));                                              /* (track 2's clips: not framed) */
     CHECK(px_at(out, 17, 19) && !px_at(out, 20, 23));                        /* track 2 scene 2: content, outlined */
     CHECK(px_at(out, 55, 9) && !px_at(out, 54, 9));                          /* track 4 scene 1: empty, a dot */
     gold("session", out, GOLD_SESSION);

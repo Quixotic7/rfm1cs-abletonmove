@@ -3,6 +3,30 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.9.2 (2026-11-21, not released)
+
+Session view (the owner, on the Move: "Scenes don't launch, clicking a clip won't show as selected, the screen and
+the pads don't seem aligned. I cannot cut and copy clips in the same way you can cut and copy steps"). No fault was
+found in the launches or the mapping: on the simulator, with the Move's own build, project and firmware states,
+clips launch, Shift + a clip launches its row and the pads match the screen. What was found and changed:
+
+- **The pulse in steps.** A playing clip's pad faded through a new level every tick (96 a beat): in session view
+  every playing clip was an RGB write a tick, about 630 SysEx writes a second with four clips at 99 BPM, against 13
+  in track view. It fades in 6 steps a beat now (`RFM_MOVE_PULSE_STEPS`): about 40 a second in the same view.
+  Unconfirmed on the hardware whether the flood was what kept the pads from showing a press.
+- **The selected clip on the screen:** a frame round its cell (16 x 15, in the gap between the cells; a filled cell
+  stands clear of it), at once when a clip is pressed, also while it waits for the bar. Before, only the bar over
+  its track's column said anything. The board: `remoteFM14Move/docs/design/session-view-v1.movedesign.json`.
+- **Clips are cut, copied and pasted as steps are** (0.6.3's rules): Delete held: a clip is cut; the press right
+  after a cut pastes (a clip there is replaced); an empty slot gets the clipboard; the clipboard stays and pastes
+  again (a cut clip pasted once emptied it). Copy held + a clip copies, + an empty slot pastes; Copy let go, then a
+  press: pasted there once. Said: "Pasted to track 1 clip 3", "Track 3 clip 1 replaced".
+
+**Tests:** `move_sessview` (new): session view reached as on the Move (a firmware's Track tapped, Menu), a test a
+reported problem (scenes; the selected clip on the pad and the screen; the screen against the pads over the 16 x 16;
+cut / copy / paste), the LED writes of a playing session view, and session view entered while a takeover's clock
+led the sequencer.
+
 ## 0.9.1 (2026-11-21)
 
 The takeover with proposal 3 (the move-takeover session's ecb9272, 76923a0 on 0.9.0):

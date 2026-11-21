@@ -28,6 +28,7 @@ log. This code lived in RemoteFM1 (`host/src/move/`) until 0.1.0; its history ca
 | `tests/test_move.c` | ctest `move` |
 | `tests/test_move_seq.c` | ctest `move_seq`: the sequencer |
 | `tests/test_move_v2.c`, `move_v2_ref.*` | ctest `move_v2`: the v2 screens against the mockup's pixels |
+| `tests/move_sessview.c` | ctest `move_sessview` (0.9.2): session view reached as on the Move (a Track tapped, Menu): scenes, the selected clip, the screen against the pads, clips cut / copied / pasted as steps, its LED writes |
 | `tests/move_e2e.c`, `move_e2e.sh` | ctest `move_e2e`: against Move Remote's simulator |
 | `tests/test_session.c` | ctest `session`: the session and the store against a fake Move |
 | `tests/session_e2e.c` | ctest `session_e2e`: the session over posix_tcp against the simulator |
@@ -342,7 +343,8 @@ chosen half way through a step (functions, conditions and chance decided then), 
 sound in time.
 
 **Clips (session view)**: a press on a clip launches it at the next bar (queued, blinking; stopped: at once, playing
-with Play); on the playing clip it stays. Everything launches at the next bar (the owner's): **a double tap**
+with Play); on the playing clip it stays. The pressed clip is the selected one at once (0.9.2: also while it waits
+for the bar): its pad white (green while queued), its cell framed on the screen. Everything launches at the next bar (the owner's): **a double tap**
 (300 ms) on a clip that is not playing is a tap; **on the playing clip it stops it** at the next bar (as the
 track's stop step). **A press on an empty slot makes a new empty clip there** (drawn as a clip),
 selects it and launches it (with Rec armed: records into it, growing a bar at a time). **Shift + a clip** launches its
@@ -366,7 +368,12 @@ pasted over ("Step 9 replaced"); press C again: cut.
 | Copy held, a step with notes tapped (several in one hold: a group) | copied (dashed) | "Step 5 copied" |
 | Copy held, an empty step tapped | the clipboard pasted there (a group: its first step there) | "Pasted to step 9" |
 | Copy released after copying, then a plain step | pasted there once (Move's way) | "Pasted to step 9" |
-| Delete or Copy held + a clip / an empty slot (Session) | the clip cut / copied; pasted into an empty slot | "Cut track 1 clip 2", "Pasted" |
+| Delete held, a clip pressed (Session: the first press, or after a paste) (0.9.2: clips as steps) | cut: gone, into the clipboard, an X in its slot | "Cut track 1 clip 2" |
+| Delete held, a slot pressed **right after a cut** (in this hold) | the clipboard pasted there; a clip there is replaced | "Pasted to track 1 clip 3", "Track 3 clip 1 replaced" |
+| Delete held, an empty slot pressed (the first press, or after a paste) | the clipboard pasted there (an empty clipboard: nothing); it pastes again and again | "Pasted to track 1 clip 3" |
+| Copy held, a clip pressed | copied (dashed while Copy is held, and while it waits) | "Copied track 1 clip 2" |
+| Copy held, an empty slot pressed | the clipboard pasted there | "Pasted to track 1 clip 3" |
+| Copy released after copying, then a plain press on any slot | pasted there once (Move's way); a clip there is replaced | "Track 8 clip 1 replaced" |
 | Delete tapped, or held and let go alone | nothing changes, on the screen neither (0.6.4) | "Delete: hold and press a step, pad or clip" (spoken only) |
 | Delete or Copy held (track view) | the screen as ever: the canvas's seq.clip, the roll over the 16 step cells (copied dashed, cut crossed; a group: each of its steps) | |
 | Copy tapped alone | a waiting copy dropped, else the clip duplicated into the track's next empty slot | "Duplicated" |
@@ -824,7 +831,7 @@ clock alone.
 | (Control mode, gone in 0.8.0) | (the note layouts show the pad map; the CCs in their popups) |
 | Track view (seq.track) | the shown page as a piano roll, full height (8 px a step, rows of 4 px, the page's notes centred, squeezed past 12 semitones; the beats dashed; the playhead a line); the strip: the clip's pages, the shown one thick, the playhead tick over the whole clip (a ghost page shown: the real pages a line, a + at the far end). The steps row always under it (the owner's: no popping in and out; the roll shrinks for it): notes filled, empty outlined, outside the loop a dashed line, copied dashed, cut crossed, the held ones (and Step record's cursor) marked above; Move's strip under the row. Recording: a record icon and "Recording" on top (rec.capture); the audio loop: a wave icon and "Sample" (armed, blinking) / "Sampling", the take's levels as a waveform scrolling in from the right (bars about the centre line, 60 of them 2 px apart; flat while armed), the bar lines dashed, the strip its bars and where it is (rec.sample, pixel for pixel) |
 | Loop page edit (loop.edit) | Loop held or latched: the loop icon, "Bars 3-6", the 16 pages as cells (looped filled, the clip's others outlined, past it a dot, cut crossed, copied dashed), the shown one underlined |
-| Session view (sess.rest) | the owner's mockup: 8 tracks across, 4 slots down; playing filled with a black play icon, recording with a black square, queued doubled (blinking), stopping blinking, a clip outlined, empty a dot, copied dashed, cut crossed; a bar over the selected track, a dashed line over muted ones |
+| Session view (sess.rest) | the owner's mockup: 8 tracks across, 4 slots down; playing filled with a black play icon, recording with a black square, queued doubled (blinking), stopping blinking, a clip outlined, empty a dot, copied dashed, cut crossed; a bar over the selected track, a dashed line over muted ones; (0.9.2) the selected clip (or empty slot) framed: a 16 x 15 outline in the gap round its cell, a filled cell standing clear of it |
 | Projects (proj.grid) | the 32 slots as the pads are: the open one filled, saved ones outlined, each with three bars (how full its tracks are), empty a dot; cut crossed, copied dashed; loading blinks. Entering: the set icon over "Projects" (mode.proj) |
 
 **FM-1 mode's drawing, live** (the owner's exact drawing; only these change): the touched knob's 2 × 2 dot inverted
