@@ -3,6 +3,15 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.9.1 (2026-11-21)
+
+The takeover with proposal 3 (the move-takeover session's ecb9272, 76923a0 on 0.9.0):
+
+- **Back in a takeover** is the firmware's when it claims the buttons but not the Track buttons (no volume + Back
+  exit there: a Track button is the way out). While a takeover is shown its MIDI clock leads the sequencer (as an
+  external clock), so the firmware's Play starts and stops RemoteFM1's sequencer.
+- **The volume knob** (not claimed) shows the host's level popup over the firmware's screen.
+
 ## 0.9.0 (2026-11-20)
 
 Proposal 3, "one main layout" (the owner's board `remoteFM14Move/docs/design/track-buttons-v3.movedesign.json`,
