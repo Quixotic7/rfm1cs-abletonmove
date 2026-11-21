@@ -207,21 +207,23 @@ int main(int argc, char **argv)
     CHECK(state_has(dir, "drew=1") && state_has(dir, "led_pending=0 ") && state_has(dir, "host=rfm_move e2e"),
           "simulator state: our host, the screen drawn, every LED write taken");
 
-    /* (0.8.0) Track 1 held + the top row's pad 3: slot 1's Scale layout (MIDI mode); pad 1 (bottom left) = C3 on
-     * channel 1 */
+    /* (0.9.0) Track 1 held + the top row's pad 3: slot 1's Scale layout, which is the sequencer on track 1; pad 1
+     * (bottom left) = C3 live on track 1's channel 1 */
     g_nact = 0;
     inject(fifo, "cc 43 127\nnote 94 100\nnote 94 0\ncc 43 0\nnote 68 90\nnote 68 0\n");
     pump(c, 4, 3000);
-    CHECK(g_m.s.mode == RFM_MOVE_MODE_MIDI && find(RFM_MOVE_ACT_SETTINGS, 0, 0, 0), "Track 1 held + Scale: MIDI mode");
+    CHECK(g_m.s.mode == RFM_MOVE_MODE_SEQ && g_m.seq.sel_track == 0 && rfm_move_slot_layout(&g_m, 0) == RFM_MOVE_LAY_SCALE &&
+              find(RFM_MOVE_ACT_SETTINGS, 0, 0, 0),
+          "Track 1 held + Scale: the note layout, the sequencer on track 1");
     CHECK(find_midi(0x90, 48, 90) && find_midi(0x80, 48, 0), "the bottom-left pad: C3 on and off, channel 1");
     n = send_leds(c);
     CHECK(n > 0 && n < RFM_MOVE_NLEDS, "the mode change rewrote %d LEDs, not all", n);
     rfm_move_screen(&g_m, NULL, frame);
     mr_display(c, frame);
-    CHECK(shot_matches(dir, fifo, c, frame), "the MIDI mode's screen shown");
+    CHECK(shot_matches(dir, fifo, c, frame), "the note layout's screen shown");
 
-    /* Back: the sequencer (0.8.0: Back's flip). Pad 1 picks C3, steps 1 and 5 get it, then Play starts the transport (only Play does,
-     * the owner's); the internal clock (driven here as an audio callback would, 48 kHz in blocks of
+    /* (0.9.0) the note layout is the sequencer: Back with nothing open does nothing (no flip). Pad 1 picks C3, steps 1
+     * and 5 get it, then Play starts the transport (only Play does, the owner's); the internal clock (driven here as an audio callback would, 48 kHz in blocks of
      * 128) plays them as MIDI actions and the step LEDs show them */
     {
         rfm_move_led_t out[RFM_MOVE_NLEDS];
@@ -233,7 +235,7 @@ int main(int argc, char **argv)
         for (tries = 0; tries < 300 && g_inputs < before + 10; tries++)
             pump(c, -1, 10);
         CHECK(g_m.s.mode == RFM_MOVE_MODE_SEQ && g_m.seq.nnotes == 2 && g_m.seq.start_pending == 1,
-              "Back: the Sequencer, two steps set, Play started the transport (%d notes)", g_m.seq.nnotes);
+              "Back: still the sequencer; two steps set, Play started the transport (%d notes)", g_m.seq.nnotes);
         g_nact = 0;
         for (frames = 0; frames < 48000; frames += 128) {
             const int n0 = g_nact;
@@ -270,9 +272,7 @@ int main(int argc, char **argv)
             pump(c, -1, 25);
         CHECK(state_has(dir, "led_pending=0 "), "every LED write taken");
         g_nact = 0;
-        rfm_move_seq_play(&g_m, 0);
-        inject(fifo, "cc 42 127\ncc 42 0\n");          /* a Track 2 tap: MIDI mode for the last part */
-        pump(c, 1, 3000);
+        rfm_move_seq_play(&g_m, 0);                     /* stopped (still the note layout for the last part) */
     }
 
     /* a held pad, then the link goes: everything let go */

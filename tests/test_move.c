@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: MPL-2.0
  * Copyright (C) 2026 RemoteFM1 contributors */
 /* rfm_move: the Move as a RemoteFM1 panel. The FM-1 mode's mapping against the owner's design
- * (design/remotefm1move.movedesign.json), the note layouts against hand-computed notes, each slot's CCs, (0.8.0) the
- * Track buttons (a tap, a double click, the held menus) and Back's flip, release-all, settings round trips, LED
- * diffing, and the screen's golden frame.
+ * (design/remotefm1move.movedesign.json), the note layouts against hand-computed notes, (0.8.0) the Track buttons (a
+ * tap, a double click, the held menus), (0.9.0, proposal 3) a slot's note layout = the sequencer on its selected
+ * track, Back no flip, the merged Track menu, per-firmware solo, the browser's double tap, the clock out, release-all,
+ * settings round trips, LED diffing, and the screen's golden frame.
  * Events go in as the Move's raw USB-MIDI packets through libmoveremote's own mr_decode. */
 #include <stdio.h>
 #include <string.h>
@@ -192,16 +193,32 @@ static void test_buttons_knobs(void)
         CHECK(nact == 2 && has(RFM_MOVE_ACT_BTN, B[i].b, 0, 0));
         covered |= 1 << B[i].b;
     }
-    /* (0.8.0) a note layout: no FM-1 button at all (Play is the sequencer's transport there) */
+    /* (0.8.0) a note layout: no FM-1 button at all (Play is the sequencer's transport there; 0.9.0: a note layout IS
+     * the sequencer, rfm_move_set_mode(MIDI) the slot's note layout) */
     rfm_move_set_mode(&m, RFM_MOVE_MODE_MIDI);
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_SCALE);
     for (i = 0; i < 13; i++) {
         clear();
         button(&m, B[i].cc, 1), button(&m, B[i].cc, 0);
         CHECKF(count(RFM_MOVE_ACT_BTN) == 0, "note layout: cc %d", B[i].cc);
     }
     CHECK(m.seq.playing || m.seq.start_pending);        /* (Play: the transport started) */
-    button(&m, MR_CC_PLAY, 1), button(&m, MR_CC_PLAY, 0);
+    {   /* (0.9.0) its own clock out to every firmware: Start, a clock every 4 ticks (24 PPQN), Stop */
+        int fa = 0, f8 = 0, fc = 0, k;
+        clear();
+        for (k = 0; k < 50; k++)
+            rfm_move_seq_advance(&m, 480, 48000);       /* (0.5 s: 120 BPM, 24 clocks) */
+        for (k = 0; k < nact; k++)
+            if (acts[k].kind == RFM_MOVE_ACT_MIDI && acts[k].n == 1 && acts[k].dest == RFM_MOVE_DEST_ALL)
+                fa += acts[k].bytes[0] == 0xFA, f8 += acts[k].bytes[0] == 0xF8;
+        CHECKF(fa == 1 && f8 >= 22 && f8 <= 26, "FA %d, F8 %d", fa, f8);
+        clear();
+        button(&m, MR_CC_PLAY, 1), button(&m, MR_CC_PLAY, 0);
+        for (k = 0; k < nact; k++)
+            fc += acts[k].kind == RFM_MOVE_ACT_MIDI && acts[k].n == 1 && acts[k].bytes[0] == 0xFC &&
+                  acts[k].dest == RFM_MOVE_DEST_ALL;
+        CHECK(fc == 1 && count(RFM_MOVE_ACT_BTN) == 0);
+    }
     CHECK(!m.seq.playing && !m.seq.start_pending);
     rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
     CHECK(covered == (((1 << 14) - 1) & ~(1 << RFM_MOVE_B_SEQ)) && rfm_move_button_of(MR_CC_BACK) < 0);
@@ -333,23 +350,26 @@ static void test_modes(void)
     clear();
     track(&m, 0, 1);                                    /* Track 1 down: nothing yet */
     CHECK(m.s.mode == RFM_MOVE_MODE_FM1 && (m.track_held & 1) && nact == 0);
-    pad(&m, 24 + RFM_MOVE_LAY_SCALE, 100);              /* (0.8.0) its layout menu: Scale: MIDI mode, everything let go */
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_SCALE &&
+    pad(&m, 24 + RFM_MOVE_LAY_SCALE, 100);              /* (0.8.0) its layout menu: Scale, everything let go; (0.9.0) a
+                                                         * note layout IS the sequencer, on the slot's selected track
+                                                         * (track 1), routed to it, the TRIG page, the track view */
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_SCALE &&
           m.s.layout == RFM_MOVE_LAYOUT_SCALE);
+    CHECK(rfm_move_seq_lock(&m, 0) == 0 && m.seq.sel_track == 0 && (m.seq.fx.ffilt[0] & 1) && m.seq.trig &&
+          !m.seq.view && m.seq.tr[0].layout == RFM_MOVE_LAYOUT_SCALE);
     CHECK(has(RFM_MOVE_ACT_KEY, 0, 0, 0) && has(RFM_MOVE_ACT_PRESS, 0, 0, 0) &&
           has(RFM_MOVE_ACT_KEY, rfm_move_step_key(4), 0, 0) && has(RFM_MOVE_ACT_BTN, RFM_MOVE_B_GLO, 0, 0));
     CHECK(count(RFM_MOVE_ACT_SETTINGS) >= 1);           /* (two now: the layout, the mode) */
     pad(&m, 24 + RFM_MOVE_LAY_SCALE, 0);
     track(&m, 0, 0);                                    /* (its menu used: no tap) */
-    CHECK(m.track_held == 0 && m.s.mode == RFM_MOVE_MODE_MIDI && m.pop != POP_LAYOUT);
+    CHECK(m.track_held == 0 && m.s.mode == RFM_MOVE_MODE_SEQ && m.pop != POP_LAYOUT);
     clear();
     pad(&m, pad_of(2, 1), 0), step(&m, 4, 0), button(&m, MR_CC_SHIFT, 0);   /* the old presses' ends: nothing */
     CHECK(nact == 0);
     clear();
-    tap(&m, 0);                                         /* the slot's tap: its layout played, named (no PADS / NOTES
-                                                         * toggle any more) */
-    CHECK(count(RFM_MOVE_ACT_SETTINGS) == 0 && m.s.mode == RFM_MOVE_MODE_MIDI && m.s.midi_view == RFM_MOVE_MV_PADS &&
-          m.pop == POP_LAYOUT && m.pop_i == 0);
+    tap(&m, 0);                                         /* the slot's tap: its layout played (its track view), named */
+    CHECK(count(RFM_MOVE_ACT_SETTINGS) == 0 && m.s.mode == RFM_MOVE_MODE_SEQ && m.seq.sel_track == 0 && m.seq.trig &&
+          !m.seq.view && m.pop == POP_LAYOUT && m.pop_i == 0);
     /* release-all: notes, the transport */
     pad(&m, 0, 100);
     button(&m, MR_CC_PLAY, 1);
@@ -360,18 +380,30 @@ static void test_modes(void)
     clear();
     rfm_move_release_all(&m);
     CHECK(nact == 0);
-    /* (0.8.0) Back's click: the layouts <-> the Sequencer (Control mode is gone) */
-    back(&m);
-    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.pop == POP_SEQ);
+    /* (0.9.0) Back's click with nothing open: nothing (no Sequencer mode to flip to); Menu: session view, Back: the
+     * track view again */
     clear();
-    pad(&m, 0, 100);                                    /* the sequencer's placeholder: the MIDI mode's pads */
+    back(&m);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && !m.seq.view && nact == 0);
+    button(&m, MR_CC_MENU, 1), button(&m, MR_CC_MENU, 0);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.seq.view);
+    back(&m);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && !m.seq.view);
+    clear();
+    pad(&m, 0, 100);                                    /* the live pads: track 1's channel (1) */
     CHECK(has_midi(0x90, 48, 100));
-    tap(&m, 0);                                         /* the Sequencer: Track 1's tap selects its locked track */
-    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.seq.sel_track == rfm_move_seq_lock(&m, 0) && m.pop == POP_LOCK);
-    back(&m);                                           /* .. Back: the slot's layout again, the notes let go */
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && has_midi(0x80, 48, 0) && m.pop == POP_LAYOUT);
-    rfm_move_set_mode(&m, RFM_MOVE_MODE_CONTROL);      /* (Control: MIDI mode now) */
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI);
+    pad(&m, 0, 0);
+    /* (0.9.0) Track 1 held + step 3: track 3 selected for slot 1 (edited now: the slot is played), its channel */
+    track(&m, 0, 1), step(&m, 2, 1), step(&m, 2, 0), now_ms += 400, track(&m, 0, 0);
+    CHECK(rfm_move_seq_lock(&m, 0) == 2 && m.seq.sel_track == 2 && (m.seq.fx.ffilt[0] >> 2 & 1) &&
+          m.s.mode == RFM_MOVE_MODE_SEQ);
+    clear();
+    pad(&m, 0, 100), pad(&m, 0, 0);
+    CHECK(has_midi(0x92, 48, 100) && has_midi(0x82, 48, 0));
+    tap(&m, 0);                                         /* (a tap: the slot's selected track kept) */
+    CHECK(m.seq.sel_track == 2 && m.pop == POP_LAYOUT);
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_CONTROL);      /* (Control, MIDI: the note layout, the sequencer) */
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_SCALE);
     lay(&m, 0, RFM_MOVE_LAY_FM1);
     CHECK(m.s.mode == RFM_MOVE_MODE_FM1 && rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_FM1);
 }
@@ -412,17 +444,19 @@ static void test_layouts(void)
     s.octave = -4, s.layout = RFM_MOVE_LAYOUT_DRUM;
     CHECK(rfm_move_pad_note(&s, 7) == -1 && rfm_move_pad_note(&s, 24) == 19);
 
-    /* through the input (0.8.0): Track 1 held + top pads = its slot's layout, + steps = the channel; Up / Down the
-     * octave */
+    /* through the input (0.9.0): Track 1 held + top pads = its slot's layout (a note layout: the sequencer), + steps =
+     * the track selected for the slot (step 10: track 10, its channel 10); Up / Down the octave */
     rfm_move_init(&m, NULL, on_act, NULL);
     track(&m, 0, 1);
     clear();
-    pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 100), pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 0);
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && m.s.layout == RFM_MOVE_LAYOUT_CHROMATIC &&
-          rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_CHROMA && count(RFM_MOVE_ACT_MIDI) == 0 &&
-          count(RFM_MOVE_ACT_SETTINGS) >= 1);
     step(&m, 9, 1), step(&m, 9, 0);
-    CHECK(m.s.channel == 9 && m.s.slot[0].channel == 9 && count(RFM_MOVE_ACT_KEY) == 0);
+    CHECK(rfm_move_seq_lock(&m, 0) == 9 && (m.seq.fx.ffilt[0] >> 9 & 1) && count(RFM_MOVE_ACT_KEY) == 0 &&
+          m.s.mode == RFM_MOVE_MODE_FM1);
+    pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 100), pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 0);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.s.layout == RFM_MOVE_LAYOUT_CHROMATIC &&
+          rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_CHROMA && m.seq.sel_track == 9 &&
+          m.seq.tr[9].layout == RFM_MOVE_LAYOUT_CHROMATIC && count(RFM_MOVE_ACT_MIDI) == 0 &&
+          count(RFM_MOVE_ACT_SETTINGS) >= 1);
     clear();
     pad(&m, 30, 100), pad(&m, 30, 0);                   /* the menu's unused pad while held: nothing */
     CHECK(nact == 0 && m.s.layout == RFM_MOVE_LAYOUT_CHROMATIC);
@@ -453,10 +487,11 @@ static void test_layouts(void)
     button(&m, MR_CC_UP, 1);
     pad(&m, 0, 0);
     CHECK(has_midi(0x99, 48, 100) && has_midi(0x89, 48, 0));
-    /* (0.8.0) a note layout's knobs: the slot's CCs (16..23) on its channel, no FM-1 encoder */
+    button(&m, MR_CC_UP, 0);
+    /* (0.9.0) the knobs: the sequencer's (the TRIG page first), no slot CC, no FM-1 encoder */
     clear();
     knob(&m, 0, 2);
-    CHECK(nact == 1 && has_midi(0xB9, 16, 66) && count(RFM_MOVE_ACT_TURN) == 0 && m.pop == POP_CC && m.pop_i == 0);
+    CHECK(m.seq.trig && count(RFM_MOVE_ACT_MIDI) == 0 && count(RFM_MOVE_ACT_TURN) == 0);
 }
 
 static void test_drum_settings(void)
@@ -466,8 +501,9 @@ static void test_drum_settings(void)
     rfm_move_settings_t s, t;
     uint8_t img[RFM_MOVE_SETTINGS_BYTES], bad[RFM_MOVE_SETTINGS_BYTES];
     rfm_move_init(&m, NULL, on_act, NULL);
-    lay(&m, 0, RFM_MOVE_LAY_DRUM);                      /* (0.8.0) Track 1 held + the Drum pad */
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && m.s.layout == RFM_MOVE_LAYOUT_DRUM);
+    lay(&m, 0, RFM_MOVE_LAY_DRUM);                      /* (0.8.0) Track 1 held + the Drum pad (0.9.0: the sequencer,
+                                                         * track 1 in Drum) */
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.s.layout == RFM_MOVE_LAYOUT_DRUM && m.seq.tr[0].layout == RFM_MOVE_LAYOUT_DRUM);
     clear();
     pad(&m, 7, 100);                                    /* bottom right: C2 */
     CHECK(has_midi(0x90, 36, 100));
@@ -478,8 +514,9 @@ static void test_drum_settings(void)
     pad(&m, 7, 0);
     CHECK(has_midi(0x80, 36, 0));                       /* the note that sounded ends */
     clear();
-    jog(&m, 1);                                         /* no pad held: nothing (0.8.0: no SELECT in a note layout) */
-    CHECK(nact == 0);
+    jog(&m, 1);                                         /* no pad held: no note, no FM-1 SELECT (the sequencer's jog) */
+    CHECK(count(RFM_MOVE_ACT_TURN) == 0 && count(RFM_MOVE_ACT_MIDI) == 0 && m.s.drum[7] == 37);
+    jog(&m, -1);
     clear();
     pad(&m, 7, 90);
     CHECK(has_midi(0x90, 37, 90));
@@ -490,11 +527,15 @@ static void test_drum_settings(void)
     m.s.cc[3][7] = 1;
     CHECK(rfm_move_save(&m.s, img) == RFM_MOVE_SETTINGS_BYTES);
     CHECK(rfm_move_load(&s, img, sizeof img) == 0 && !memcmp(&s, &m.s, sizeof s));
-    rfm_move_init(&m, &s, on_act, NULL);                /* a new session from the saved settings */
-    CHECK(m.s.drum[7] == 37 && m.s.mode == RFM_MOVE_MODE_MIDI && m.s.layout == RFM_MOVE_LAYOUT_DRUM);
+    rfm_move_init(&m, &s, on_act, NULL);                /* a new session from the saved settings: the slot's Drum layout,
+                                                         * the sequencer on its track (1) */
+    CHECK(m.s.drum[7] == 37 && m.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_DRUM);
+    CHECK(m.s.layout == RFM_MOVE_LAYOUT_DRUM);          /* CORE? (rfm_move_init: the Sequencer entered, not the slot's
+                                                         * note layout: the track's own layout, Scale) */
     clear();
     pad(&m, 7, 90);
-    CHECK(has_midi(0x95, 37 - 24, 90));                 /* channel 6, octave -2 */
+    CHECK(has_midi(0x90, 37 - 24, 90));                 /* (0.9.0: track 1's channel, not s.channel; octave -2) CORE? */
+    pad(&m, 7, 0);
     /* not an image: the defaults */
     memcpy(bad, img, sizeof bad);
     bad[3] = 99;
@@ -507,15 +548,20 @@ static void test_drum_settings(void)
     bad[6] = 9, bad[8] = 16, bad[9] = (uint8_t)(int8_t)-7, bad[13 + 2] = 200;
     CHECK(rfm_move_load(&s, bad, sizeof bad) == 0);
     CHECK(s.mode == 0 && s.channel == 0 && s.octave == 0 && s.cc[0][2] == 18 && s.root == 7 && s.drum[7] == 37);
-    /* (0.8.0) a version 6 image (88 bytes): every slot as the one mode was (MIDI, Drum), the bank's CCs (bank 3) */
+    /* (0.8.0) a version 6 image (88 bytes) as a 0.7 host saved it in MIDI mode (Drum, bank 3): every slot as the one
+     * mode was, the bank's CCs (0.9.0: this image's mode byte is the sequencer's; written as MIDI here) */
     memcpy(bad, img, sizeof bad);
     bad[3] = 6, bad[4] = (uint8_t)RFM_MOVE_SETTINGS_BYTES_V6, bad[5] = 0;
-    CHECK(bad[6] == RFM_MOVE_MODE_MIDI && bad[7] == RFM_MOVE_LAYOUT_DRUM && bad[12] == 2);
+    CHECK(bad[6] == RFM_MOVE_MODE_SEQ && bad[7] == RFM_MOVE_LAYOUT_DRUM && bad[12] == 2);
+    bad[6] = RFM_MOVE_MODE_MIDI;
     CHECK(rfm_move_load(&s, bad, RFM_MOVE_SETTINGS_BYTES_V6) == 0);
     for (p = 0; p < RFM_MOVE_FW_SLOTS; p++)
         CHECKF(s.slot[p].lay == RFM_MOVE_LAY_DRUM && s.slot[p].channel == 5 && s.slot[p].octave == -2 &&
                s.slot[p].root == 7 && s.slot[p].scale == RFM_MOVE_SCALE_DORIAN && s.slot[p].cc[0] == 102 &&
                s.lock[p] == p, "slot %d", p);
+    rfm_move_init(&m, &s, on_act, NULL);                /* (0.9.0) a session from it: slot 1's Drum, the sequencer (MIDI
+                                                         * mode is never entered) */
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.s.layout == RFM_MOVE_LAYOUT_DRUM);   /* CORE? (rfm_move_init: MIDI) */
     bad[6] = RFM_MOVE_MODE_CONTROL;                     /* (Control mode: MIDI now) */
     CHECK(rfm_move_load(&s, bad, RFM_MOVE_SETTINGS_BYTES_V6) == 0 && s.mode == RFM_MOVE_MODE_MIDI &&
           s.slot[0].lay == RFM_MOVE_LAY_DRUM);
@@ -538,10 +584,15 @@ static void test_control(void)
             CHECK(d.slot[t].cc[k] == 16 + k && d.slot[t].lay == RFM_MOVE_LAY_FM1);
     rfm_move_init(&m, NULL, on_act, NULL);
     rfm_move_set_mode(&m, RFM_MOVE_MODE_CONTROL);
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_SCALE);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_SCALE && m.seq.trig);
+    clear();
+    knob(&m, 0, 3);                                     /* (the TRIG page first: no CC) */
+    CHECK(count(RFM_MOVE_ACT_MIDI) == 0);
+    jog(&m, 1);                                         /* the jog: the next knob page, bank 1 (16..23) */
+    CHECK(!m.seq.trig && m.s.bank == 0);
     clear();
     knob(&m, 0, 3);
-    CHECK(nact == 1 && has_midi(0xB0, 16, 67));
+    CHECK(nact == 1 && has_midi(0xB0, 16, 67) && m.pop == POP_CC && m.pop_i == 0);
     knob(&m, 7, -58);                                   /* a big turn: 64 - 58 */
     CHECK(has_midi(0xB0, 23, 6));
     knob(&m, 7, -10);
@@ -549,63 +600,66 @@ static void test_control(void)
     clear();
     knob(&m, 7, -1);                                    /* at 0: nothing sent */
     CHECK(nact == 0);
-    clear();
-    jog(&m, 1);                                         /* (no banks: the jog nothing here) */
-    CHECK(nact == 0);
-    /* Track 1 held + a knob: its CC number, nothing sent */
+    /* Track 1 held + a knob: the selected track's CC number, nothing sent */
     track(&m, 0, 1);
     clear();
     knob(&m, 1, 5);
-    CHECK(m.s.slot[0].cc[1] == 22 && count(RFM_MOVE_ACT_MIDI) == 0 && count(RFM_MOVE_ACT_SETTINGS) == 1 &&
+    CHECK(m.s.cc[0][1] == 22 && count(RFM_MOVE_ACT_MIDI) == 0 && count(RFM_MOVE_ACT_SETTINGS) == 1 &&
           m.menu_what == MENU_CC);
-    track(&m, 0, 0);
+    now_ms += 400, track(&m, 0, 0);
     clear();
     knob(&m, 1, 1);
     CHECK(has_midi(0xB0, 22, 65));
-    /* Shift + a knob: the same, its popup */
-    button(&m, MR_CC_SHIFT, 1);
-    clear();
-    knob(&m, 2, -3);
-    CHECK(m.s.slot[0].cc[2] == 15 && count(RFM_MOVE_ACT_MIDI) == 0 && m.pop == POP_CCNUM && m.pop_i == 2);
-    button(&m, MR_CC_SHIFT, 0);
     /* the FM-1 layout: Track 1 held + a knob is nothing */
     rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
     track(&m, 0, 1);
     clear();
     knob(&m, 3, 4);
-    CHECK(nact == 0 && m.s.slot[0].cc[3] == 19);
-    track(&m, 0, 0);
+    CHECK(nact == 0);
+    now_ms += 400, track(&m, 0, 0);
     rfm_move_set_mode(&m, RFM_MOVE_MODE_MIDI);
-    /* the channel follows the slot's; the volume knob is still MASTER; the pads still play notes */
-    m.s.channel = 3;
+    CHECK(m.s.cc[0][1] == 22 && m.seq.tr[0].cc[0][1] == 22);   /* (kept in the track) */
+    /* the channel is the track's; the volume knob is still MASTER; the pads still play notes */
+    m.seq.tr[0].ch = 3;
+    jog(&m, 1);
+    CHECK(!m.seq.trig);
     clear();
     knob(&m, 1, 1);
     knob(&m, 8, 1);
     pad(&m, 0, 50);
     CHECK(has_midi(0xB3, 22, 66) && has(RFM_MOVE_ACT_MASTER, 0, 0, 784) && has_midi(0x93, 48, 50));
     pad(&m, 0, 0);
-    /* each slot its own: Track 2 held + a knob sets slot 2's (slot 1 played); slot 2 played sends its own */
+    /* each slot its own track: Track 2 held + a knob sets the CC number of the track selected for slot 2 (slot 1
+     * played, its track 1 untouched); slot 2 played sends its own */
     fl[0].id = "a", fl[0].name = "A", fl[0].version = fl[0].installed = "1";
     fl[1].id = "b", fl[1].name = "B", fl[1].version = fl[1].installed = "1";
     rfm_move_fw_list(&m, fl, 2);
     rfm_move_fw_slots(&m, sl);
     CHECK(rfm_move_set_slot_layout(&m, 1, RFM_MOVE_LAY_DRUM) == 0);
+    CHECK(rfm_move_seq_lock(&m, 1) == 1 && m.seq.tr[1].layout == RFM_MOVE_LAYOUT_DRUM && m.seq.sel_track == 0);
     track(&m, 1, 1);
     clear();
     knob(&m, 0, 10);
-    track(&m, 1, 0);
-    CHECK(m.s.slot[1].cc[0] == 26 && m.s.slot[0].cc[0] == 16 && rfm_move_fw_active(&m) == 0 && count(RFM_MOVE_ACT_MIDI) == 0);
+    now_ms += 400, track(&m, 1, 0);
+    CHECK(rfm_move_fw_active(&m) == 0 && count(RFM_MOVE_ACT_MIDI) == 0 && m.seq.sel_track == 0);
+    CHECKF(m.seq.tr[1].cc[0][0] == 26 && m.s.cc[0][0] == 16, "track 2's CC %d, track 1's %d", m.seq.tr[1].cc[0][0],
+           m.s.cc[0][0]);                               /* (fixed in 0.9.0) */
     tap(&m, 1);
-    CHECK(rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_MIDI && m.s.layout == RFM_MOVE_LAYOUT_DRUM &&
-          m.s.channel == 0);
+    CHECK(rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_SEQ && m.s.layout == RFM_MOVE_LAYOUT_DRUM &&
+          m.seq.sel_track == 1 && m.seq.trig);
+    jog(&m, 1);
     clear();
     knob(&m, 0, 1);
-    CHECK(nact == 1 && has_midi(0xB0, 26, 65));
+    CHECKF(nact >= 1 && acts[0].bytes[0] == 0xB1 && acts[0].bytes[1] == 26, "%d: %02x %d", nact, nact ? acts[0].bytes[0] : 0,
+           nact ? acts[0].bytes[1] : 0);               /* (fixed in 0.9.0: track 2's own CC number) */
     tap(&m, 0);
-    CHECK(rfm_move_fw_active(&m) == 0 && m.s.layout == RFM_MOVE_LAYOUT_SCALE && m.s.channel == 3);
+    CHECK(rfm_move_fw_active(&m) == 0 && m.s.layout == RFM_MOVE_LAYOUT_SCALE && m.seq.sel_track == 0);
+    jog(&m, 1);
     clear();
     knob(&m, 0, 1);
-    CHECK(nact == 1 && has_midi(0xB3, 16, 68));
+    CHECKF(nact == 1 && acts[0].bytes[0] == 0xB3 && acts[0].bytes[1] == 16, "%02x %d %d", nact ? acts[0].bytes[0] : 0,
+           nact ? acts[0].bytes[1] : 0, nact ? acts[0].bytes[2] : 0);   /* (fixed in 0.9.0: track 1's CC 16 untouched;
+                                                         * the knob's value is the sequencer's, shared by the tracks) */
 }
 
 /* ---- LEDs */
@@ -654,16 +708,28 @@ static void test_leds(void)
     /* a mode change repaints what changes, once; at most max a call, the rest next time (0.8.0: Track 1's layout
      * menu, Scale) */
     lay(&m, 0, RFM_MOVE_LAY_SCALE);
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ);               /* (0.9.0: the note layout is the sequencer) */
     n = rfm_move_leds(&m, out, 5);
     CHECK(n == 5);
     n = rfm_move_leds(&m, out, RFM_MOVE_NLEDS);
     CHECK(n > 0);
     CHECK(rfm_move_leds(&m, out, RFM_MOVE_NLEDS) == 0);
-    /* a pressed pad lights, and only it */
+    /* a pressed pad lights white (0.9.0, the sequencer's pads: the other pad of its note (pad 8, F3) and Capture's
+     * LED (a note to capture) change too; nothing else) */
     pad(&m, 3, 100);
     n = rfm_move_leds(&m, out, RFM_MOVE_NLEDS);
-    CHECK(n == 1 && out[0].number == MR_NOTE_PAD0 + 3 && out[0].r == 255 && out[0].g == 255 && out[0].b == 255);
+    for (i = 0, j = 0; i < n; i++) {
+        if (!out[i].cc && out[i].number == MR_NOTE_PAD0 + 3) {
+            j += 100;
+            CHECK(out[i].r == 255 && out[i].g == 255 && out[i].b == 255);
+        } else {
+            j++;
+            CHECKF((!out[i].cc && out[i].number == MR_NOTE_PAD0 + 8) || (out[i].cc && out[i].number == MR_CC_CAPTURE),
+                        "LED %s %d changed", out[i].cc ? "cc" : "note", out[i].number);
+        }
+    }
+    CHECK(j >= 100 && j <= 102);
+    pad(&m, 3, 0);
     rfm_move_leds_invalidate(&m);
     CHECK(rfm_move_leds(&m, out, RFM_MOVE_NLEDS + 4) == RFM_MOVE_NLEDS);
 }
@@ -698,11 +764,11 @@ static void write_pbm(const char *path, const uint8_t *packed)
 #define GOLD_FM1_LIVE 0x714e834du
 #define GOLD_KNOB 0xa5cf1bbau
 #define GOLD_MASTER 0x7ac52bc1u
-#define GOLD_MIDI 0x3de84831u
-#define GOLD_MIDI_HIT 0xf3eb1a5bu
-#define GOLD_CC 0xff095fdcu                             /* (0.8.0: no bank strip) */
+#define GOLD_MIDI 0x6bbd6df5u                           /* (0.9.0: the sequencer's track view) */
+#define GOLD_MIDI_HIT GOLD_MIDI                         /* (0.9.0: a live note draws nothing) */
+#define GOLD_CC 0xb28a5e1cu                             /* (0.9.0: the sequencer's CC popup, its page strip) */
 #define GOLD_MENU_MIDI 0x91e1fc98u
-#define GOLD_MENU_CC 0x4ce8d36du                        /* (0.8.0: "Knob 3", "CC 20", "FM-1") */
+#define GOLD_MENU_CC 0x4ce8d36du                        /* (0.9.0: the sequencer's "Knob 3 CC", "20") */
 
 static int lit_in(const uint8_t *out, int x0, int y0, int x1, int y1)   /* the pixels on in [x0, x1) x [y0, y1) */
 {
@@ -913,38 +979,34 @@ static void test_screen(void)
     gold("master", out, GOLD_MASTER);
     ms(&m, RFM_MOVE_POPUP_MS);
 
-    /* MIDI mode: the pad map (C major from C3: the bottom-left pad the root). (0.8.0) Track 1's layout menu: Scale;
-     * its tap names the layout */
+    /* (0.9.0) a note layout: the sequencer's track view (the edited clip: 16 step cells, the beat lines), no pad map
+     * any more. (0.8.0) Track 1's layout menu: Scale; its tap names the layout */
     lay(&m, 0, RFM_MOVE_LAY_SCALE);
     tap(&m, 0);
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && m.pop == POP_LAYOUT && m.pop_i == 0);   /* ("FM-1, Scale" named) */
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.pop == POP_LAYOUT && m.pop_i == 0);   /* ("FM-1, Scale" named) */
     rfm_move_screen(&m, NULL, out);
     write_pbm("move_pop_layout.pbm", out);
     CHECK(lit_in(out, 0, 0, 128, 16) > 20 && lit_in(out, 0, 20, 128, 48) > 60 && px_at(out, 24 + 2 * 14 + 5, 60) &&
           !px_at(out, 24 + 5, 60) && px_at(out, 24 + 5, 61));   /* ("FM-1", "Scale", 6 dashes: the 3rd thick) */
     ms(&m, RFM_MOVE_POPUP_MS);
     rfm_move_screen(&m, NULL, out);
-    CHECK(px_at(out, 1, 49) && px_at(out, 7, 55) && px_at(out, 14, 62));      /* pad 0: the root, filled */
-    CHECK(px_at(out, 17, 49) && !px_at(out, 23, 55));                         /* pad 1: D, outlined */
+    CHECK(lit_in(out, 0, 46, 128, 58) > 200 && lit_in(out, 0, 0, 128, 44) < 200);   /* (the 16 step cells below) */
     gold("midi", out, GOLD_MIDI);
-    pad(&m, 1, 90);
-    rfm_move_screen(&m, NULL, out);
-    CHECK(px_at(out, 17, 49) && !px_at(out, 18, 50) && px_at(out, 21, 53) && px_at(out, 26, 58));   /* pressed: a square in the
-                                                         * opposite colour (outlined: white) */
-    gold("midi_hit", out, GOLD_MIDI_HIT);
+    pad(&m, 1, 90);                                     /* a live note (stopped, not recording): the clip unchanged */
+    rfm_move_screen(&m, NULL, out2);
+    CHECK(!memcmp(out, out2, sizeof out) && m.seq.nnotes == 0);
+    gold("midi_hit", out2, GOLD_MIDI_HIT);
     pad(&m, 1, 0);
-    touch(&m, 4, 1);                                    /* MIDI mode: a touch alone brings the popup (0.8.0: the knob's
-                                                         * CC) */
-    rfm_move_screen(&m, NULL, out);
-    CHECK(m.pop == POP_CC && m.pop_i == 4 && px_at(out, 4, 54) && px_at(out, 123, 54));   /* (full screen: a bar's track) */
+    touch(&m, 4, 1);                                    /* a touch: the TRIG page's knob (0.9.0: no slot CC) */
+    CHECK(m.pop == POP_TRIG && m.pop_i == 4);
     touch(&m, 4, 0);
     ms(&m, RFM_MOVE_POPUP_MS);
-    /* Track 1 held: its layout menu; then the scale changed: the keys screen, its name at 4x */
+    /* Track 1 held: its menu; then the scale changed (0.9.0: the key the track uses): the keys screen, its name at 4x */
     track(&m, 0, 1);
     pad(&m, 17, 100), pad(&m, 17, 0);                   /* row 2, pad 2: minor */
     rfm_move_screen(&m, NULL, out);
-    CHECK(m.menu_what == MENU_SCALE && m.s.scale == RFM_MOVE_SCALE_MINOR && m.s.slot[0].scale == RFM_MOVE_SCALE_MINOR);
-    CHECK(px_at(out, 1, 0) && !px_at(out, 33, 0) && px_at(out, 3, 58));       /* (the layout tab thick, channel 1 filled) */
+    CHECK(m.menu_what == MENU_SCALE && m.s.scale == RFM_MOVE_SCALE_MINOR && m.seq.scale == RFM_MOVE_SCALE_MINOR);
+    CHECK(px_at(out, 1, 0) && !px_at(out, 33, 0) && px_at(out, 3, 58));       /* (the layout tab thick, a cell filled) */
     gold("menu_midi", out, GOLD_MENU_MIDI);
     pad(&m, 16, 100), pad(&m, 16, 0);
     pad(&m, 24 + RFM_MOVE_LAY_DRUM, 100), pad(&m, 24 + RFM_MOVE_LAY_DRUM, 0);   /* the drum layout: a pad held + the jog
@@ -962,21 +1024,23 @@ static void test_screen(void)
     CHECK(!rfmv_pop_up(&m, POP_DRUM));
     lay(&m, 0, RFM_MOVE_LAY_SCALE);
 
-    /* (0.8.0) the note layout's knobs: the slot's CCs (Control mode's screen, its banks, are gone) */
+    /* (0.9.0) the note layout's knobs: the sequencer's; the jog to bank 1: the track's CCs (the slot's are gone) */
+    jog(&m, 1);
+    CHECK(!m.seq.trig && m.s.bank == 0);
     knob(&m, 1, 36);                                    /* knob 2: 100 */
     ms(&m, RFM_MOVE_POPUP_MS);
     knob(&m, 0, 1);
     rfm_move_screen(&m, NULL, out);
-    CHECK(m.pop == POP_CC && m.pop_i == 0 && m.slot_ccv[0][1] == 100 && m.slot_ccv[0][0] == 65);
+    CHECK(m.pop == POP_CC && m.pop_i == 0 && m.cc_val[0][1] == 100 && m.cc_val[0][0] == 65);
     gold("cc", out, GOLD_CC);
     ms(&m, RFM_MOVE_POPUP_MS);
     rfm_move_screen(&m, NULL, out2);
     CHECK(px_at(out, 4, 54) && !rfmv_pop_up(&m, POP_CC));   /* dropped (the bar gone) */
-    track(&m, 0, 1);                                    /* Track 1 held + knob 3: its CC number */
+    track(&m, 0, 1);                                    /* Track 1 held + knob 3: the track's CC number */
     knob(&m, 2, 2);
     rfm_move_screen(&m, NULL, out);
-    CHECK(m.menu_what == MENU_CC && m.menu_i == 2 && m.s.slot[0].cc[2] == 20 && lit_in(out, 0, 20, 128, 48) > 60);   /* ("Knob 3",
-                                                         * "CC 20" at 4x, the slot) */
+    CHECK(m.menu_what == MENU_CC && m.menu_i == 2 && m.s.cc[0][2] == 20 && lit_in(out, 0, 20, 128, 48) > 60);   /* ("Knob 3",
+                                                         * "CC 20" at 4x) */
     gold("menu_cc", out, GOLD_MENU_CC);
     track(&m, 0, 0);
     CHECK(GOLD_FM1 && GOLD_FM1_LIVE && GOLD_KNOB && GOLD_MASTER && GOLD_MIDI && GOLD_MIDI_HIT && GOLD_CC &&
@@ -1039,11 +1103,12 @@ static void test_midi_round(void)
               !strcmp(rfmv_note_name(70, c, sizeof c), "Bb3") && !strcmp(rfmv_note_name(36, c, sizeof c), "C1") &&
               !strcmp(rfmv_note_name(66, c, sizeof c), "Gb3"));   /* (Ableton's names: MIDI 60 = C3, flats) */
     }
-    /* (0.8.0) Track 1's tap names the slot's layout over the whole screen; a hold (its menu) names nothing */
+    /* (0.8.0) Track 1's tap names the slot's layout over the whole screen; a hold (its menu) names nothing (0.9.0: a
+     * note layout is the sequencer, s.mode SEQ) */
     rfm_move_set_slot_layout(&m, 0, RFM_MOVE_LAY_SCALE);
     ms(&m, RFM_MOVE_POPUP_MS);
     tap(&m, 0);
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && m.pop == POP_LAYOUT && m.pop_i == 0);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.pop == POP_LAYOUT && m.pop_i == 0);
     rfm_move_screen(&m, NULL, out);
     write_pbm("move_mode_midi.pbm", out);
     for (d = 0, y = 0; y < 64; y++)
@@ -1054,9 +1119,9 @@ static void test_midi_round(void)
                                                          * "Scale" at 4x, centred; the strip: layout 3 of 6) */
     ms(&m, RFM_MOVE_POPUP_MS);
     track(&m, 0, 1), now_ms += 500, track(&m, 0, 0);    /* Track 1 held: its menu, no tap */
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && !rfmv_pop_up(&m, POP_LAYOUT));
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && !rfmv_pop_up(&m, POP_LAYOUT));
     tap(&m, 2);                                         /* (no firmware list: one slot, Tracks 2 and 3 nothing) */
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && !rfmv_pop_up(&m, POP_LAYOUT) && rfm_move_fw_active(&m) == 0);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && !rfmv_pop_up(&m, POP_LAYOUT) && rfm_move_fw_active(&m) == 0);
     rfm_move_set_slot_layout(&m, 0, RFM_MOVE_LAY_FM1);
     ms(&m, RFM_MOVE_POPUP_MS);
     m.thumb[10][10] = 1;                                /* (a lit pixel on the FM-1's screen: covered by the popup) */
@@ -1071,13 +1136,14 @@ static void test_midi_round(void)
     rfm_move_set_slot_layout(&m, 0, RFM_MOVE_LAY_SCALE);
     ms(&m, RFM_MOVE_POPUP_MS);
     /* (0.8.0) a note layout's Shift + a step: the Move's shortcuts on the sequencer (step 9: Keys), no FM-1 GLO; Back
-     * closes it */
+     * closes it (0.9.0: the sequencer's own Shift) */
     clear();
     button(&m, MR_CC_SHIFT, 1), step(&m, 8, 1), step(&m, 8, 0), button(&m, MR_CC_SHIFT, 0);
-    CHECK(m.seq.smenu == RFM_MOVE_SM_KEYS && count(RFM_MOVE_ACT_BTN) == 0 && m.s.mode == RFM_MOVE_MODE_MIDI);
+    CHECK(m.seq.smenu == RFM_MOVE_SM_KEYS && count(RFM_MOVE_ACT_BTN) == 0 && m.s.mode == RFM_MOVE_MODE_SEQ);
     back(&m);
-    CHECK(!m.seq.smenu && m.s.mode == RFM_MOVE_MODE_MIDI);
-    /* the scale: Track 1 held, row 2's pads (cyan); its hold screen only once held 300 ms, or used */
+    CHECK(!m.seq.smenu && m.s.mode == RFM_MOVE_MODE_SEQ);
+    /* the scale: Track 1 held, row 2's pads (cyan); its hold screen only once held 300 ms, or used (0.9.0: the key the
+     * track uses; track 1 is GLOBAL: the project's key too) */
     clear();
     rfm_move_screen(&m, NULL, out2);                    /* (the pad map) */
     track(&m, 0, 1);
@@ -1093,21 +1159,22 @@ static void test_midi_round(void)
     write_pbm("move_midi_keys.pbm", out);
     CHECK(lit_in(out, 0, 7, 128, 35) > 200);           /* ("C MIN" at 4x) */
     jog(&m, 2);                                         /* D */
-    CHECK(m.s.scale == RFM_MOVE_SCALE_MINOR && m.s.root == 2 && count(RFM_MOVE_ACT_MIDI) == 0);
+    CHECK(m.s.scale == RFM_MOVE_SCALE_MINOR && m.s.root == 2 && m.seq.scale == RFM_MOVE_SCALE_MINOR && m.seq.root == 2 &&
+          count(RFM_MOVE_ACT_MIDI) == 0);
     rfm_move_leds_invalidate(&m);
     n = rfm_move_leds(&m, leds, RFM_MOVE_NLEDS);
     for (i = 0; i < n; i++)
         if (!leds[i].cc && leds[i].number == MR_NOTE_PAD0 + 17)
-            CHECK(leds[i].r == 255 && leds[i].g == 255 && leds[i].b == 255);   /* (0.8.0, the board's: the slot's scale
+            CHECK(leds[i].r == 255 && leds[i].g == 255 && leds[i].b == 255);   /* (0.8.0, the board's: the scale in use
                                                          * white) */
         else if (!leds[i].cc && leds[i].number == MR_NOTE_PAD0 + 16)
             CHECK(leds[i].r < 20 && leds[i].b > 20 && leds[i].b < 100);   /* (the others cyan, dim) */
     clear();
     jog(&m, -3);                                        /* (the jog wraps the root: B) */
-    CHECK(m.s.root == 11 && m.s.slot[0].root == 11 && m.menu_what == MENU_ROOT && count(RFM_MOVE_ACT_TURN) == 0);
+    CHECK(m.s.root == 11 && m.seq.root == 11 && m.menu_what == MENU_ROOT && count(RFM_MOVE_ACT_TURN) == 0);
     jog(&m, 3);
-    button(&m, MR_CC_UP, 1), button(&m, MR_CC_UP, 0);   /* (0.8.0) Up / Down: the slot's octave */
-    CHECK(m.s.octave == 1 && m.s.slot[0].octave == 1 && m.menu_what == MENU_OCT);
+    button(&m, MR_CC_UP, 1), button(&m, MR_CC_UP, 0);   /* (0.8.0) Up / Down: the pads' octave */
+    CHECK(m.s.octave == 1 && m.menu_what == MENU_OCT);
     button(&m, MR_CC_DOWN, 1), button(&m, MR_CC_DOWN, 0);
     CHECK(m.s.octave == 0 && m.s.scale == RFM_MOVE_SCALE_MINOR && m.s.root == 2);
     /* 24 scales: rows 2, 3, 4 of the pads (the first 8 as before); knob 2 walks all of them; short names */
@@ -1137,39 +1204,16 @@ static void test_midi_round(void)
     }
     pad(&m, 17, 100), pad(&m, 17, 0);                   /* (minor again) */
     track(&m, 0, 0);                                    /* (used: no tap on its release) */
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && m.s.midi_view == RFM_MOVE_MV_PADS && m.pop != POP_LAYOUT);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.s.midi_view == RFM_MOVE_MV_PADS && m.pop != POP_LAYOUT);
     rfm_move_set_scale(&m, RFM_MOVE_SCALE_MAJOR, 0);
     ms(&m, RFM_MOVE_POPUP_MS);
     track(&m, 0, 1), track(&m, 0, 0);                   /* a quick click on Track 1: its hold screen never drawn */
     CHECK(m.pop == POP_LAYOUT && m.menu_what == MENU_NONE && !rfmv_hold_shown(&m, 0));
     gap();
     ms(&m, RFM_MOVE_POPUP_MS);
-    /* NOTES (0.8.0: no gesture any more, a saved setting): the notes held and their chord on the left, the FM-1's
-     * screen right; a knob's popup (its CC) on the left half */
+    /* (0.9.0) the NOTES screen (notes held, their chord) was MIDI mode's: a note layout is the sequencer now, its
+     * screen the track view; midi_view is only kept as saved */
     m.s.midi_view = RFM_MOVE_MV_NOTES;
-    rfm_move_screen(&m, NULL, out);
-    for (d = 0, y = 0; y < 64; y++)
-        for (x = 0; x < 64; x++)
-            d += px_at(out, x, y);
-    CHECK(d == 0);                                      /* (at rest: black) */
-    pad(&m, 0, 100), pad(&m, 2, 100), pad(&m, 4, 100); /* C3 E3 G3: "C" */
-    rfm_move_screen(&m, NULL, out);
-    write_pbm("move_midi_notes.pbm", out);
-    CHECK(lit_in(out, 0, 4, 64, 28) > 40 && px_at(out, 1, 34) && px_at(out, 3, 50));   /* ("C" at 3x, the keyboard: C held) */
-    for (d = 0, y = 0; y < 64; y++)
-        for (x = 0; x < 64; x++)
-            d += px_at(out, 64 + x, y) != m.thumb[y][x];
-    CHECK(d == 0);
-    pad(&m, 0, 0), pad(&m, 2, 0), pad(&m, 4, 0);
-    touch(&m, 4, 1);
-    CHECK(rfmv_pop_up(&m, POP_CC) && m.pop_i == 4);     /* (a touch: the knob's CC) */
-    knob(&m, 4, 4);
-    rfm_move_screen(&m, NULL, out);
-    CHECK(rfmv_pop_up(&m, POP_CC) && m.slot_ccv[0][4] == 68 && !px_at(out, 0, 0) && lit_in(out, 0, 0, 64, 64) > 40);
-    write_pbm("move_midi_notes_cc.pbm", out);
-    CHECK(lit_in(out, 64, 3, 96, 17) > 20 && px_at(out, 2, 60) && !px_at(out, 70, 60));   /* (0.8.0: the CC's popup
-                                                         * over the whole screen, "CC 20", 68, its bar) */
-    touch(&m, 4, 0);
     /* the settings keep the screen; a version 1 image (77 bytes) still loads */
     rfm_move_save(&m.s, img);
     CHECK(rfm_move_load(&st, img, sizeof img) == 0 && st.midi_view == RFM_MOVE_MV_NOTES);
@@ -1178,7 +1222,7 @@ static void test_midi_round(void)
           st.vel_mode == RFM_MOVE_VEL_DYNAMIC && st.vel_level == 127);
     img[3] = 1, img[4] = (uint8_t)(RFM_MOVE_SETTINGS_BYTES_V3 - 3);
     CHECK(rfm_move_load(&st, img, RFM_MOVE_SETTINGS_BYTES_V3 - 3) == 0 && st.midi_view == RFM_MOVE_MV_PADS &&
-          st.mode == RFM_MOVE_MODE_MIDI);
+          st.mode == RFM_MOVE_MODE_SEQ);                /* (0.9.0: the mode it was saved in, the sequencer) */
     m.s.midi_view = RFM_MOVE_MV_PADS;
 }
 
@@ -1254,10 +1298,8 @@ static void test_fm1_shift_layer(void)
     clear();
     back(&m);                                           /* Back: the menu closes (not the FM-1's SEQ) */
     CHECK(!m.seq.smenu && nact == 0 && m.s.mode == RFM_MOVE_MODE_FM1);
-    back(&m);                                           /* (0.8.0: nothing open: the Sequencer; again: back) */
-    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && !m.seq.projects && count(RFM_MOVE_ACT_BTN) == 0);
-    back(&m);
-    CHECK(m.s.mode == RFM_MOVE_MODE_FM1 && !m.seq.projects && count(RFM_MOVE_ACT_BTN) == 0);
+    back(&m);                                           /* (0.9.0: nothing open: nothing, no flip, no FM-1 button) */
+    CHECK(m.s.mode == RFM_MOVE_MODE_FM1 && !m.seq.projects && nact == 0);
     track(&m, 3, 1), button(&m, MR_CC_REC, 1), button(&m, MR_CC_REC, 0), track(&m, 3, 0);   /* Track 4 + Record */
     CHECK(m.seq.smenu == RFM_MOVE_SM_REC && !m.seq.projects && count(RFM_MOVE_ACT_BTN) == 0);
     clear();
@@ -1273,34 +1315,16 @@ static void test_fm1_shift_layer(void)
     CHECK(m.seq.projects);
     back(&m);
     CHECK(!m.seq.projects && m.s.mode == RFM_MOVE_MODE_FM1);
-    /* (0.8.0) Shift in a note layout: the Shift layer, its icons; in the FM-1 layout none (GLO) */
+    /* (0.8.0) Shift in a note layout (0.9.0: the sequencer's Shift): held, or locked: the Shift layer's icons; in the
+     * FM-1 layout none (GLO) */
     gap();
     rfm_move_set_slot_layout(&m, 0, RFM_MOVE_LAY_SCALE);
     button(&m, MR_CC_SHIFT, 1);
     {
         uint8_t ic[16];
         rfmv_shift_icons(&m, ic);
-        CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && ic[0] == 24 && ic[3] == 0 && ic[5] == 127);
-        button(&m, MR_CC_SHIFT, 0);
-        rfmv_shift_icons(&m, ic);
-        CHECK(ic[0] == 0 && ic[5] == 0);
-    }
-    rfm_move_set_slot_layout(&m, 0, RFM_MOVE_LAY_FM1);
-    button(&m, MR_CC_SHIFT, 1);
-    {
-        uint8_t ic[16];
-        rfmv_shift_icons(&m, ic);
-        for (i = 0; i < 16; i++)
-            CHECK(ic[i] == 0);
-    }
-    button(&m, MR_CC_SHIFT, 0);
-    back(&m);                                           /* the sequencer: Shift held, or locked: the icons */
-    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ);
-    button(&m, MR_CC_SHIFT, 1);
-    {
-        uint8_t ic[16];
-        rfmv_shift_icons(&m, ic);
-        CHECK(ic[0] == 24 && ic[3] == 0 && ic[5] == 127 && ic[15] == 24);   /* (the metronome on: full) */
+        CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && ic[0] == 24 && ic[3] == 0 && ic[5] == 127 && ic[15] == 24);   /* (the
+                                                         * metronome on: full) */
         button(&m, MR_CC_SHIFT, 0);
         rfmv_shift_icons(&m, ic);
         CHECK(ic[0] == 0 && ic[5] == 0);
@@ -1311,8 +1335,17 @@ static void test_fm1_shift_layer(void)
         back(&m);
         CHECK(!m.seq.shift_lock && m.s.mode == RFM_MOVE_MODE_SEQ);
     }
-    back(&m);                                           /* (Back again: the FM-1 layout, named) */
-    CHECK(m.s.mode == RFM_MOVE_MODE_FM1 && m.pop == POP_LAYOUT && m.pop_i == 0);
+    rfm_move_set_slot_layout(&m, 0, RFM_MOVE_LAY_FM1);
+    button(&m, MR_CC_SHIFT, 1);
+    {
+        uint8_t ic[16];
+        rfmv_shift_icons(&m, ic);
+        for (i = 0; i < 16; i++)
+            CHECK(ic[i] == 0);
+    }
+    button(&m, MR_CC_SHIFT, 0);
+    back(&m);                                           /* (Back: nothing; still the FM-1 layout) */
+    CHECK(m.s.mode == RFM_MOVE_MODE_FM1);
     clear();
     step(&m, 4, 1), step(&m, 4, 0);                     /* (Track 4 let go: the steps are keys again) */
     CHECK(count(RFM_MOVE_ACT_KEY) == 2);
@@ -1338,7 +1371,7 @@ static void test_mode_name_first(void)
     for (d = 0, y = 0; y < 64; y++)
         for (x = 0; x < 128; x++)
             d += px_at(out, x, y) && ((y > 14 && y < 20) || (y > 48 && y < 60));
-    CHECK(rfm_move_fw_active(&m) == 1 && count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && m.s.mode == RFM_MOVE_MODE_MIDI &&
+    CHECK(rfm_move_fw_active(&m) == 1 && count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && m.s.mode == RFM_MOVE_MODE_SEQ &&
           m.s.layout == RFM_MOVE_LAYOUT_DRUM && m.pop == POP_LAYOUT && m.pop_i == 1 && d == 0 &&
           rfm_move_screen_timed(&m));                   /* (no pads drawn; the host draws again) */
     ms(&m, RFM_MOVE_POPUP_MS);
@@ -1348,10 +1381,10 @@ static void test_mode_name_first(void)
     track(&m, 0, 1);                                    /* Track 1 held 300 ms: its menu over slot 2's layout */
     ms(&m, RFM_MOVE_TAP_MS);
     rfm_move_screen(&m, NULL, out);
-    CHECK(rfmv_hold_shown(&m, 0) && lit_in(out, 0, 20, 128, 48) > 60 && m.s.mode == RFM_MOVE_MODE_MIDI);
+    CHECK(rfmv_hold_shown(&m, 0) && lit_in(out, 0, 20, 128, 48) > 60 && m.s.mode == RFM_MOVE_MODE_SEQ);
     now_ms += 400;
     track(&m, 0, 0);
-    CHECK(!rfmv_pop_up(&m, POP_LAYOUT) && rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_MIDI);   /* (no
+    CHECK(!rfmv_pop_up(&m, POP_LAYOUT) && rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_SEQ);   /* (no
                                                          * switch, no name) */
     tap(&m, 0);                                         /* (a tap: slot 1, its FM-1 layout) */
     ms(&m, RFM_MOVE_POPUP_MS);
@@ -1359,9 +1392,9 @@ static void test_mode_name_first(void)
     track(&m, 1, 1), ms(&m, RFM_MOVE_TAP_MS);          /* Track 2 held from slot 1: slot 2's menu, its pads */
     rfm_move_screen(&m, NULL, out);
     CHECK(rfmv_hold_shown(&m, 1) && lit_in(out, 0, 20, 128, 48) > 60 && m.s.mode == RFM_MOVE_MODE_FM1);
-    pad(&m, 0, 100), pad(&m, 0, 0);                     /* (the top-left scale pad: slot 2's) */
-    CHECK(m.s.slot[1].scale == rfmv_scale_of_pad(0) && m.s.slot[0].scale == RFM_MOVE_SCALE_MAJOR &&
-          m.s.scale == RFM_MOVE_SCALE_MAJOR);
+    pad(&m, 0, 100), pad(&m, 0, 0);                     /* (the top-left scale pad: 0.9.0, the key the tracks use;
+                                                         * the FM-1 layout played: the project's) */
+    CHECK(m.seq.scale == rfmv_scale_of_pad(0) && m.s.scale == RFM_MOVE_SCALE_MAJOR && m.menu_what == MENU_SCALE);
     now_ms += 400, track(&m, 1, 0);
     CHECK(m.s.mode == RFM_MOVE_MODE_FM1 && rfm_move_fw_active(&m) == 0 && !rfmv_pop_up(&m, POP_LAYOUT));   /* (slot
                                                          * 1's FM-1 layout, as it was) */
@@ -1376,11 +1409,11 @@ static void test_track1_anywhere(void)
     uint8_t ic[16];
     int x, y, d;
     rfm_move_init(&m, NULL, on_act, NULL);
-    lay(&m, 0, RFM_MOVE_LAY_SCALE);                     /* MIDI mode */
+    lay(&m, 0, RFM_MOVE_LAY_SCALE);                     /* a note layout (0.9.0: the sequencer) */
     ms(&m, RFM_MOVE_POPUP_MS);
     gap();
-    track(&m, 3, 1);                                    /* Track 4 down: still MIDI mode, the Shift layer */
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI);
+    track(&m, 3, 1);                                    /* Track 4 down: still the note layout, the Shift layer */
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ);
     rfmv_shift_icons(&m, ic);
     CHECK(ic[5] == 24 && ic[3] == 0);                   /* (the icons under the steps) */
     clear();
@@ -1393,27 +1426,27 @@ static void test_track1_anywhere(void)
     CHECK(rfmv_hold_shown(&m, 3) && lit_in(out, 0, 20, 128, 48) > 60);   /* (held: Track 4's screen over MIDI mode's) */
     step(&m, 8, 1), step(&m, 8, 0);                     /* Track 4 + step 9: Keys & Scales, open past the release */
     track(&m, 3, 0);
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && m.seq.smenu == RFM_MOVE_SM_KEYS && !m.seq.projects);   /* (used: no tap) */
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.seq.smenu == RFM_MOVE_SM_KEYS && !m.seq.projects);   /* (used: no tap) */
     clear();
     knob(&m, 1, RFM_MOVE_LIST_TICKS);                   /* (the menu's: the scale, not a CC) */
     CHECK(m.s.scale == 1 && count(RFM_MOVE_ACT_TURN) == 0 && count(RFM_MOVE_ACT_MIDI) == 0);
     back(&m);
-    CHECK(!m.seq.smenu && m.s.mode == RFM_MOVE_MODE_MIDI);
+    CHECK(!m.seq.smenu && m.s.mode == RFM_MOVE_MODE_SEQ);
     /* a tap on Track 1: the slot's layout named first */
     gap();
     track(&m, 0, 1);
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && m.pop != POP_LAYOUT);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.pop != POP_LAYOUT);
     track(&m, 0, 0);
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && m.pop == POP_LAYOUT && m.pop_i == 0);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.pop == POP_LAYOUT && m.pop_i == 0);
     rfm_move_screen(&m, NULL, out);
     for (d = 0, y = 0; y < 64; y++)
         for (x = 0; x < 128; x++)
             d += px_at(out, x, y) && ((y > 14 && y < 20) || (y > 48 && y < 60));
     CHECK(d == 0);                                      /* (the name only, no drawing) */
-    /* the sequencer: Track 4 held is its Shift layer too (no step entered) */
+    /* (0.9.0) Back with nothing open: nothing (no flip); Track 4 held is the Shift layer here too (no step entered) */
     gap();
     back(&m);
-    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && !m.seq.view);
     ms(&m, RFM_MOVE_POPUP_MS);
     track(&m, 3, 1), step(&m, 5, 1), step(&m, 5, 0), track(&m, 3, 0);
     CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && !m.seq.metro && m.seq.nnotes == 0 && !m.seq.projects);
@@ -1460,9 +1493,9 @@ static void close_all(rfm_move_t *m)
     for (k = 0; k < 8 && (rfmv_seq_layer_open(m) || m->seq.projects || m->seq.smenu); k++)
         back(m);
 }
-/* the owner's: only a Track gesture (0.8.0: or Back's click with nothing open) changes the mode. Every other button
- * (alone, with Shift, with a Track held, with Back after to close what it opened), the jog and the knobs leave it as
- * it was, in every mode */
+/* the owner's: only a Track gesture changes the mode (0.9.0: Back's click with nothing open flips nothing). Every other
+ * button (alone, with Shift, with a Track held, with Back after to close what it opened), the jog and the knobs leave
+ * it as it was, in every layout (0.9.0: the FM-1 layout, a note layout = the sequencer, the bare Sequencer API) */
 static void test_mode_only_by_tap(void)
 {
     static const int CC[] = { MR_CC_CAPTURE, MR_CC_SAMPLE, MR_CC_MUTE, MR_CC_DELETE, MR_CC_COPY, MR_CC_SHIFT,
@@ -1473,8 +1506,8 @@ static void test_mode_only_by_tap(void)
     int mi, i, ok = 1;
     rfm_move_init(&m, NULL, on_act, NULL);
     for (mi = 0; mi < 3; mi++) {
-        const int mode = MODES[mi];
-        rfm_move_set_mode(&m, mode);
+        const int mode = MODES[mi] == RFM_MOVE_MODE_MIDI ? RFM_MOVE_MODE_SEQ : MODES[mi];
+        rfm_move_set_mode(&m, MODES[mi]);
         CHECK(m.s.mode == mode);
         for (i = 0; i < (int)(sizeof CC / sizeof CC[0]); i++) {
             button(&m, CC[i], 1), button(&m, CC[i], 0);
@@ -1487,7 +1520,7 @@ static void test_mode_only_by_tap(void)
             if (m.s.mode != mode) {
                 CHECKF(0, "mode %d changed to %d by CC %d", mode, m.s.mode, CC[i]);
                 ok = 0;
-                rfm_move_set_mode(&m, mode);
+                rfm_move_set_mode(&m, MODES[mi]);
             }
         }
         for (i = 0; i < 16; i++) {                      /* (the Shift layer's shortcuts, Back after each) */
@@ -1500,18 +1533,19 @@ static void test_mode_only_by_tap(void)
             if (m.s.mode != mode) {
                 CHECKF(0, "mode %d changed to %d by shortcut %d", mode, m.s.mode, i + 1);
                 ok = 0;
-                rfm_move_set_mode(&m, mode);
+                rfm_move_set_mode(&m, MODES[mi]);
             }
         }
         rfm_move_seq_play(&m, 0);
     }
     CHECK(ok);
-    /* Back's click with nothing open: the flip, and back */
+    /* (0.9.0) Back's click with nothing open: no flip, in the FM-1 layout or a note layout */
     rfm_move_set_mode(&m, RFM_MOVE_MODE_FM1);
     back(&m);
-    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ);
-    back(&m);
     CHECK(m.s.mode == RFM_MOVE_MODE_FM1);
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_MIDI);
+    back(&m);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_SCALE);
 }
 
 /* the Shift menus take the screen, knobs, jog, Back and Session only: the pads and steps play on (the owner's) */
@@ -1596,10 +1630,10 @@ static void test_track4_pads(void)
     static const int MODES[3] = { RFM_MOVE_MODE_FM1, RFM_MOVE_MODE_MIDI, RFM_MOVE_MODE_SEQ };
     int i;
     for (i = 0; i < 3; i++) {
-        const int mode = MODES[i];
+        const int mode = MODES[i], want = mode == RFM_MOVE_MODE_FM1 ? RFM_MOVE_MODE_FM1 : RFM_MOVE_MODE_SEQ;
         int lay0;
         rfm_move_init(&m, NULL, on_act, NULL);
-        rfm_move_set_mode(&m, mode);
+        rfm_move_set_mode(&m, mode);                    /* (0.9.0: MIDI = the slot's note layout = the sequencer) */
         lay0 = rfm_move_slot_layout(&m, 0);
         clear();
         track(&m, 3, 1);                                /* (0.8.0) Track 4 held: pads 1, 2 the Mixer, Routing (no FX
@@ -1607,21 +1641,17 @@ static void test_track4_pads(void)
         pad(&m, 25, 100), pad(&m, 25, 0);
         pad(&m, 3, 100), pad(&m, 3, 0);
         now_ms += 400, track(&m, 3, 0);                 /* (a hold: no tap) */
-        CHECKF(m.s.mode == mode && rfm_move_slot_layout(&m, 0) == lay0 && m.s.slot[0].scale == RFM_MOVE_SCALE_MAJOR &&
+        CHECKF(m.s.mode == want && rfm_move_slot_layout(&m, 0) == lay0 && m.s.scale == RFM_MOVE_SCALE_MAJOR &&
                !m.seq.projects && count(RFM_MOVE_ACT_SETTINGS) == 0 && count(RFM_MOVE_ACT_MIDI) == 0,
-               "mode %d: layout %d scale %d", mode, rfm_move_slot_layout(&m, 0), m.s.slot[0].scale);
-        track(&m, 0, 1);                                /* Track 1 held: its layout menu (the Sequencer: its lock menu,
-                                                         * the pads nothing) */
+               "mode %d: layout %d scale %d", mode, rfm_move_slot_layout(&m, 0), m.s.scale);
+        track(&m, 0, 1);                                /* Track 1 held: its menu, in every layout (0.9.0: the sequencer
+                                                         * too): Chroma, then a scale pad (the key the track uses) */
         pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 100), pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 0);
         pad(&m, 3, 100), pad(&m, 3, 0);
         now_ms += 400, track(&m, 0, 0);
-        if (mode == RFM_MOVE_MODE_SEQ)
-            CHECKF(m.s.mode == mode && rfm_move_slot_layout(&m, 0) == lay0 && m.s.slot[0].scale == RFM_MOVE_SCALE_MAJOR,
-                   "mode %d", mode);
-        else
-            CHECKF(m.s.mode == RFM_MOVE_MODE_MIDI && m.s.layout == RFM_MOVE_LAYOUT_CHROMATIC &&
-                   rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_CHROMA && m.s.scale == rfmv_scale_of_pad(3) &&
-                   m.s.slot[0].scale == rfmv_scale_of_pad(3), "mode %d", mode);
+        CHECKF(m.s.mode == RFM_MOVE_MODE_SEQ && m.s.layout == RFM_MOVE_LAYOUT_CHROMATIC &&
+               rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_CHROMA && m.s.scale == rfmv_scale_of_pad(3) &&
+               m.seq.scale == rfmv_scale_of_pad(3) && count(RFM_MOVE_ACT_MIDI) == 0, "mode %d", mode);
     }
 }
 
@@ -1642,9 +1672,9 @@ static void test_latch(void)
     static uint8_t out[MR_SCREEN_BYTES];
     int n0, n1, n2;
     rfm_move_init(&m, NULL, on_act, NULL);
-    rfm_move_set_mode(&m, RFM_MOVE_MODE_MIDI);
+    rfm_move_set_mode(&m, RFM_MOVE_MODE_MIDI);         /* (0.9.0: the slot's Scale layout, the sequencer, track 1) */
     n0 = rfm_move_pad_note(&m.s, 0), n1 = rfm_move_pad_note(&m.s, 1), n2 = rfm_move_pad_note(&m.s, 2);
-    CHECK(!rfm_move_latch(&m) && n0 >= 0 && n1 >= 0 && n2 >= 0);
+    CHECK(!rfm_move_latch(&m) && n0 >= 0 && n1 >= 0 && n2 >= 0 && m.s.mode == RFM_MOVE_MODE_SEQ);
     /* the toggle: Track 1 held + pad 32 (the top row's 8th), its popup over the menu, the pad lit */
     clear();
     track(&m, 0, 1), pad(&m, 31, 100), pad(&m, 31, 0);
@@ -1653,15 +1683,16 @@ static void test_latch(void)
     write_pbm("move_latch_on.pbm", out);
     CHECK(lit_in(out, 20, 18, 108, 40) > 0);
     now_ms += 400, track(&m, 0, 0);
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && m.s.layout == RFM_MOVE_LAYOUT_SCALE);
-    /* a note latched: no off at its release */
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.s.layout == RFM_MOVE_LAYOUT_SCALE);
+    /* a note latched: no off at its release (0.9.0: in the note layout, the sequencer, live notes) */
     clear();
     pad(&m, 0, 100), pad(&m, 0, 0);
     CHECK(has_midi(0x90, n0, 100) && !has_midi(0x80, n0, 0) && m.nlat == 1);
     m.pop = POP_NONE;
     rfm_move_screen(&m, NULL, out);
     write_pbm("move_latch_midi.pbm", out);
-    CHECK(px_at(out, 119, 5) && px_at(out, 121, 5) && !px_at(out, 124, 3));   /* (the framed "L") */
+    /* (0.9.0) no framed "L" in the sequencer's track view (its corner holds the 16-track map); the Track menu's pad 8
+     * shows the latch */
     /* a new chord (no pad down): the old one goes; its notes latched together */
     clear();
     pad(&m, 1, 100), pad(&m, 2, 100);
@@ -1675,23 +1706,24 @@ static void test_latch(void)
     /* off: all go */
     clear();
     track(&m, 0, 1), pad(&m, 31, 100), pad(&m, 31, 0), now_ms += 400, track(&m, 0, 0);
-    CHECK(!rfm_move_latch(&m) && m.pop_i == 30 && has_midi(0x80, n2, 0) && m.nlat == 0 && sounding_notes(&m) == 0);
+    CHECK(!rfm_move_latch(&m) && m.pop_i == 30 && m.nlat == 0 && sounding_notes(&m) == 0);
+    CHECK(has_midi(0x80, n2, 0));
     /* off: a pad's release ends it, as before */
     clear();
     pad(&m, 0, 100), pad(&m, 0, 0);
     CHECK(has_midi(0x80, n0, 0) && sounding_notes(&m) == 0);
-    /* (0.8.0) a layout change in the slot keeps them; the Sequencer lets them go (latch stays on); release_all; a
-     * project load */
+    /* (0.8.0) a layout change in the slot keeps them; (0.9.0) the FM-1 layout (out of the sequencer) lets them go
+     * (latch stays on); release_all; a project load */
     rfm_move_set_latch(&m, 1);
     pad(&m, 0, 100), pad(&m, 0, 0);
     clear();
     rfm_move_set_slot_layout(&m, 0, RFM_MOVE_LAY_CHROMA);
     CHECK(m.s.layout == RFM_MOVE_LAYOUT_CHROMATIC && !has_midi(0x80, n0, 0) && m.nlat == 1 && sounding_notes(&m) == 1);
     rfm_move_set_slot_layout(&m, 0, RFM_MOVE_LAY_SCALE);
-    rfm_move_set_mode(&m, RFM_MOVE_MODE_SEQ);
+    rfm_move_set_slot_layout(&m, 0, RFM_MOVE_LAY_FM1);
     CHECK(has_midi(0x80, n0, 0) && m.nlat == 0 && rfm_move_latch(&m) && sounding_notes(&m) == 0);
     rfm_move_set_mode(&m, RFM_MOVE_MODE_MIDI);
-    CHECK(m.s.mode == RFM_MOVE_MODE_MIDI && m.s.layout == RFM_MOVE_LAYOUT_SCALE);
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.s.layout == RFM_MOVE_LAYOUT_SCALE);
     pad(&m, 0, 100), pad(&m, 0, 0);
     CHECK(m.nlat == 1 && sounding_notes(&m) == 1);
     rfm_move_release_all(&m);
@@ -1730,21 +1762,25 @@ static void test_latch_slots(void)
     CHECK(rfm_move_set_slot_layout(&m, 1, RFM_MOVE_LAY_SCALE) == 0);   /* (0.8.0: each slot its own layout) */
     rfm_move_set_latch(&m, 1);
     n0 = rfm_move_pad_note(&m.s, 0), n1 = rfm_move_pad_note(&m.s, 1);
+    /* (0.9.0) each slot's note layout plays its selected track: slot 1 track 1 (channel 1, 0x90), slot 2 track 2
+     * (channel 2, 0x91) */
     /* slot 1 latched n0; slot 2 active: nothing sent, the same note plays there anew */
     pad(&m, 0, 100), pad(&m, 0, 0);
     CHECK(m.nlat == 1 && rfm_move_fw_active(&m) == 0);
     clear();
     rfm_move_fw_set_active(&m, 1);
-    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && !has_midi(0x80, n0, 0));
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && !has_midi(0x80, n0, 0) && m.seq.sel_track == 1);
     pad(&m, 0, 100);
-    CHECK(has_midi(0x90, n0, 100) && midi_dest(0x90, n0) == 0 && !has_midi(0x80, n0, 0));   /* (a new chord: slot 1's
+    CHECK(has_midi(0x91, n0, 100) && midi_dest(0x91, n0) == 0 && !has_midi(0x80, n0, 0));   /* (a new chord: slot 1's
                                                          * stays) */
     pad(&m, 0, 0);
-    CHECK(m.nlat == 2 && sounding_notes(&m) == 1);
+    CHECKF(m.nlat == 2 && sounding_notes(&m) == 1, "latched %d, sounding %d", m.nlat, sounding_notes(&m));   /* (slot
+                                                         * 1's is counted on its slot, as in 0.5.4) */
     /* a new chord on slot 2: only slot 2's latched note goes (to slot 2) */
     clear();
     pad(&m, 1, 100), pad(&m, 1, 0);
-    CHECK(has_midi(0x80, n0, 0) && midi_dest(0x80, n0) == 2 && has_midi(0x90, n1, 100) && m.nlat == 2);
+    CHECK(has_midi(0x81, n0, 0) && midi_dest(0x81, n0) == 2 && !has_midi(0x80, n0, 0) && has_midi(0x91, n1, 100) &&
+          m.nlat == 2);
     /* back on slot 1: its note is a hold again; a re-press there lets it go, to slot 1 */
     clear();
     rfm_move_fw_set_active(&m, 0);
@@ -1753,8 +1789,8 @@ static void test_latch_slots(void)
     /* latch off: slot 2's n1 goes to slot 2, while slot 1 is active */
     clear();
     rfm_move_set_latch(&m, 0);
-    CHECK(has_midi(0x80, n1, 0) && midi_dest(0x80, n1) == 2 && m.nlat == 0 && sounding_notes(&m) == 0);
-    /* release_all and a mode change: every slot's, each to its own */
+    CHECK(has_midi(0x81, n1, 0) && midi_dest(0x81, n1) == 2 && m.nlat == 0 && sounding_notes(&m) == 0);
+    /* release_all and leaving the note layout: every slot's, each to its own */
     rfm_move_set_latch(&m, 1);
     pad(&m, 0, 100), pad(&m, 0, 0);
     rfm_move_fw_set_active(&m, 1);
@@ -1766,8 +1802,8 @@ static void test_latch_slots(void)
     pad(&m, 0, 100), pad(&m, 0, 0);
     rfm_move_fw_set_active(&m, 0);
     clear();
-    rfm_move_set_mode(&m, RFM_MOVE_MODE_SEQ);           /* (0.8.0: the Sequencer; Control mode is gone) */
-    CHECK(has_midi(0x80, n0, 0) && midi_dest(0x80, n0) == 2 && m.nlat == 0 && sounding_notes(&m) == 0);
+    rfm_move_set_slot_layout(&m, 0, RFM_MOVE_LAY_FM1);  /* (0.9.0: out of the sequencer, the FM-1 layout) */
+    CHECK(has_midi(0x81, n0, 0) && midi_dest(0x81, n0) == 2 && m.nlat == 0 && sounding_notes(&m) == 0);
     /* a pad played unlatched: no dest, as always */
     rfm_move_set_mode(&m, RFM_MOVE_MODE_MIDI);
     rfm_move_set_latch(&m, 0);
@@ -2362,12 +2398,24 @@ static void test_track_gestures(void)
     dbl(&m, 1);
     CHECK(m.seq.projects && !m.fw.fx && m.fw.track == 1 && rfm_move_fw_active(&m) == 1 &&
           count(RFM_MOVE_ACT_FW_ACTIVE) == 1);
+    clear();                                            /* (0.9.0) a firmware's pad tapped twice at once: loaded into
+                                                         * the slot (as the jog's press), the browser stays */
+    pad(&m, 24, 100), pad(&m, 24, 0);
+    CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 0);
+    pad(&m, 24, 100), pad(&m, 24, 0);
+    CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 1 && m.seq.projects);
+    for (s = 0; s < nact; s++)
+        if (acts[s].kind == RFM_MOVE_ACT_FW_LOAD)
+            CHECK(acts[s].slot == 1);
+    clear();
+    gap(), pad(&m, 24, 100), pad(&m, 24, 0), gap(), pad(&m, 24, 100), pad(&m, 24, 0);   /* (apart: no load) */
+    CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 0 && m.seq.projects);
     tap(&m, 0);                                         /* (a Track 1..3 tap in the view: out, slot 1 played) */
     CHECK(!m.seq.projects && rfm_move_fw_active(&m) == 0 && m.s.mode == RFM_MOVE_MODE_FM1 && m.pop == POP_LAYOUT &&
           m.pop_i == 0);
-    tap(&m, 1);                                         /* slot 2's Scale layout */
-    CHECK(!m.seq.projects && rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_MIDI && m.pop == POP_LAYOUT &&
-          m.pop_i == 1);
+    tap(&m, 1);                                         /* slot 2's Scale layout (0.9.0: the sequencer, its track 2) */
+    CHECK(!m.seq.projects && rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_SEQ && m.pop == POP_LAYOUT &&
+          m.pop_i == 1 && m.seq.sel_track == 1 && (m.seq.fx.ffilt[1] >> 1 & 1));
     tap(&m, 2);                                         /* (an empty slot: active, its FM-1 layout) */
     CHECK(rfm_move_fw_active(&m) == 2 && m.s.mode == RFM_MOVE_MODE_FM1);
     tap(&m, 0);
@@ -2397,41 +2445,59 @@ static void test_track_gestures(void)
     CHECK(m.seq.projects && m.fw.fx && m.s.fx_page == RFM_MOVE_FX_PAGE_MIX);
     back(&m);
     CHECK(!m.seq.projects);
-    /* the Sequencer: Track 2's tap selects its locked track (2), slot 2 played; stays in the Sequencer */
+    /* (0.9.0) Back with nothing open: nothing. Track 2's tap: slot 2's note layout, its selected track (2) */
     back(&m);
-    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ);
+    CHECK(m.s.mode == RFM_MOVE_MODE_FM1 && rfm_move_fw_active(&m) == 0);
     gap();
     tap(&m, 1);
-    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_fw_active(&m) == 1 && m.seq.sel_track == 1 && m.pop == POP_LOCK &&
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_fw_active(&m) == 1 && m.seq.sel_track == 1 && m.pop == POP_LAYOUT &&
           m.pop_i == 1);
-    /* the lock menu: Track 2 held + step 6 tapped: track 6 locked to slot 2, selected */
+    /* the Track menu's steps: Track 2 held + step 6 tapped: track 6 selected for slot 2 and routed to it; slot 2 is
+     * played: the track edited now */
     track(&m, 1, 1);
     clear();
     step(&m, 5, 1), step(&m, 5, 0);
-    CHECK(rfm_move_seq_lock(&m, 1) == 5 && m.seq.sel_track == 5 && count(RFM_MOVE_ACT_SETTINGS) >= 1 &&
-          m.seq.nnotes == 0);
+    CHECK(rfm_move_seq_lock(&m, 1) == 5 && m.seq.sel_track == 5 && (m.seq.fx.ffilt[1] >> 5 & 1) &&
+          m.lk_word == LK_LOCKED && count(RFM_MOVE_ACT_SETTINGS) >= 1 && m.seq.nnotes == 0);
     now_ms += 500;                                      /* (later: no double tap) */
-    step(&m, 7, 1), step(&m, 7, 0), step(&m, 7, 1), step(&m, 7, 0);   /* step 8 twice: track 8 soloed */
-    CHECK(m.seq.tr[7].solo && rfm_move_seq_lock(&m, 1) == 7);
+    s = m.seq.fx.ffilt[1];
+    step(&m, 7, 1), step(&m, 7, 0), step(&m, 7, 1), step(&m, 7, 0);   /* step 8 twice: track 8 soloed on slot 2 alone
+                                                         * (the sequencer's own solo untouched) */
+    CHECK(m.fsolo[1] == 8 && m.seq.fx.ffilt[1] == 1u << 7 && m.fsolo_save[1] == (s | 1u << 7) && !m.seq.tr[7].solo &&
+          m.seq.fx.ffilt[0] == 0xFFFF && rfm_move_seq_lock(&m, 1) == 7 && m.lk_word == LK_SOLO);
     now_ms += 500;
-    step(&m, 7, 1), step(&m, 7, 0), step(&m, 7, 1), step(&m, 7, 0);
-    CHECK(!m.seq.tr[7].solo);
+    step(&m, 9, 1), step(&m, 9, 0), step(&m, 9, 1), step(&m, 9, 0);   /* another: the solo moves (one a firmware) */
+    CHECK(m.fsolo[1] == 10 && m.seq.fx.ffilt[1] == 1u << 9 && !m.seq.tr[9].solo);
+    now_ms += 500;
+    step(&m, 9, 1), step(&m, 9, 0), step(&m, 9, 1), step(&m, 9, 0);   /* on the soloed one: off, the filter back */
+    CHECKF(!m.fsolo[1] && (m.seq.fx.ffilt[1] & (s | 1u << 7)) == (s | 1u << 7) && m.lk_word == LK_UNSOLO,
+           "filter %04x, was %04x", m.seq.fx.ffilt[1], s);
+    now_ms += 500;
     s = m.seq.fx.ffilt[1] >> 2 & 1;
     step(&m, 2, 1), ms(&m, RFM_MOVE_SEQ_HOLD_MS + 10), step(&m, 2, 0);   /* step 3 held: its routing to slot 2 */
-    CHECK((m.seq.fx.ffilt[1] >> 2 & 1) == !s && (m.seq.fx.ffilt[0] >> 2 & 1) == 1 && rfm_move_seq_lock(&m, 1) == 7);
+    CHECK((m.seq.fx.ffilt[1] >> 2 & 1) == !s && (m.seq.fx.ffilt[0] >> 2 & 1) == 1 && rfm_move_seq_lock(&m, 1) == 9);
+    now_ms += 500;
+    step(&m, 4, 1), step(&m, 4, 0), step(&m, 4, 1), step(&m, 4, 0);   /* a solo, then a hold on another: the solo ends
+                                                         * first, then that track's routing flips */
+    CHECK(m.fsolo[1] == 5);
+    now_ms += 500;
+    s = m.seq.fx.ffilt[1];
+    step(&m, 11, 1), ms(&m, RFM_MOVE_SEQ_HOLD_MS + 10), step(&m, 11, 0);
+    CHECKF(!m.fsolo[1] && m.seq.fx.ffilt[1] == (m.fsolo_save[1] ^ 1u << 11), "filter %04x, saved %04x (solo %04x)",
+           m.seq.fx.ffilt[1], m.fsolo_save[1], s);
     now_ms += 400, track(&m, 1, 0);
     CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_fw_active(&m) == 1);
     gap();
-    tap(&m, 0);                                         /* Track 1: its lock (track 1) */
-    CHECK(m.seq.sel_track == 0 && rfm_move_fw_active(&m) == 0 && m.s.mode == RFM_MOVE_MODE_SEQ);
-    tap(&m, 1);                                         /* Track 2: track 8 now */
-    CHECK(m.seq.sel_track == 7 && rfm_move_fw_active(&m) == 1);
+    tap(&m, 0);                                         /* Track 1: slot 1's FM-1 layout */
+    CHECK(rfm_move_fw_active(&m) == 0 && m.s.mode == RFM_MOVE_MODE_FM1);
+    tap(&m, 1);                                         /* Track 2: its track (5, the last tapped) now */
+    CHECK(rfm_move_seq_lock(&m, 1) == 4 && m.seq.sel_track == 4 && rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_SEQ);
     /* the settings keep the locks and the slots' layouts (version 7) */
     {
         rfm_move_settings_t st;
         uint8_t img[RFM_MOVE_SETTINGS_BYTES];
         CHECK(rfm_move_save(&m.s, img) == RFM_MOVE_SETTINGS_BYTES && rfm_move_load(&st, img, sizeof img) == 0);
-        CHECK(st.lock[1] == 7 && st.lock[0] == 0 && st.slot[1].lay == RFM_MOVE_LAY_SCALE && st.slot[0].lay == RFM_MOVE_LAY_FM1);
+        CHECK(st.lock[1] == 4 && st.lock[0] == 0 && st.slot[1].lay == RFM_MOVE_LAY_SCALE && st.slot[0].lay == RFM_MOVE_LAY_FM1);
     }
 }
 

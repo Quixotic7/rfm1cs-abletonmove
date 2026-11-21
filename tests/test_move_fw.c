@@ -1054,7 +1054,7 @@ static void test_states(void)
 static void test_midi_track(void)
 {
     rfm_move_t *m = &M;
-    int i, tagged = 0, other = 0;
+    int i, tagged = 0, other = 0, fa = 0, f8 = 0, fc = 0;
     rfm_move_init(m, NULL, on_act, NULL);
     rfmv_seq_note_put(m, SEQ_CLIP(0, 0), 0, 60, 100, 24, 0);
     rfmv_seq_note_put(m, SEQ_CLIP(5, 0), 2, 62, 100, 24, 0);
@@ -1065,20 +1065,34 @@ static void test_midi_track(void)
     adv_ms(m, 600);
     for (i = 0; i < nact; i++)
         if (acts[i].a.kind == RFM_MOVE_ACT_MIDI) {
-            const int ch = acts[i].a.bytes[0] & 15;
-            if ((ch == 0 && acts[i].a.track == 1) || (ch == 9 && acts[i].a.track == 6))
+            const act_t *x = &acts[i];
+            const int ch = x->a.bytes[0] & 15;
+            if (x->a.n == 1 && x->a.track == 0 && x->a.dest == RFM_MOVE_DEST_ALL && x->a.bytes[0] >= 0xF8)
+                fa += x->a.bytes[0] == 0xFA, f8 += x->a.bytes[0] == 0xF8;   /* (0.9.0: the clock out, untagged) */
+            else if ((ch == 0 && x->a.track == 1) || (ch == 9 && x->a.track == 6))
                 tagged++;
             else
                 other++;
         }
     CHECK(tagged >= 5 && other == 0);                   /* (on, off, the CC lock: each with its track) */
-    rfm_move_seq_play(m, 0);
+    CHECK(fa == 1 && f8 >= 27 && f8 <= 30);             /* (0.9.0) Start, then 24 PPQN: 48 a second at 120 BPM */
     clear();
-    track(m, 0, 1), tap_pad(m, 24 + RFM_MOVE_LAY_SCALE), track(m, 0, 0);   /* (0.8.0) Track 1 held + Scale: a note layout */
-    CHECK(m->s.mode == RFM_MOVE_MODE_MIDI && rfm_move_slot_layout(m, 0) == RFM_MOVE_LAY_SCALE);
-    clear();                                            /* a pad played live: no track */
+    rfm_move_seq_play(m, 0);
+    for (i = 0; i < nact; i++)
+        fc += acts[i].a.kind == RFM_MOVE_ACT_MIDI && acts[i].a.n == 1 && acts[i].a.bytes[0] == 0xFC &&
+              acts[i].a.dest == RFM_MOVE_DEST_ALL;
+    CHECK(fc == 1);                                     /* (and Stop as it stops) */
+    clear();
+    adv_ms(m, 200);                                     /* (stopped: no clock) */
+    CHECK(count(RFM_MOVE_ACT_MIDI) == 0);
+    /* (0.9.0) Track 1 held + Scale: a note layout, which is the sequencer, on slot 1's selected track (track 1) */
+    track(m, 0, 1), tap_pad(m, 24 + RFM_MOVE_LAY_SCALE), track(m, 0, 0);
+    CHECK(m->s.mode == RFM_MOVE_MODE_SEQ && rfm_move_slot_layout(m, 0) == RFM_MOVE_LAY_SCALE &&
+          rfm_move_seq_lock(m, 0) == 0 && m->seq.sel_track == 0 && (m->seq.fx.ffilt[0] & 1));
+    clear();                                            /* a pad played live: the track's channel, untagged, slot played */
     pad(m, 0, 100), pad(m, 0, 0);
-    CHECK(last(RFM_MOVE_ACT_MIDI) && last(RFM_MOVE_ACT_MIDI)->a.track == 0);
+    CHECK(last(RFM_MOVE_ACT_MIDI) && last(RFM_MOVE_ACT_MIDI)->a.track == 0 && last(RFM_MOVE_ACT_MIDI)->a.dest == 0 &&
+          (last(RFM_MOVE_ACT_MIDI)->a.bytes[0] & 15) == m->seq.tr[0].ch);
 }
 
 /* ================================================================ the old formats === */
@@ -1544,6 +1558,76 @@ static void test_download_load(void)
     catalog_reset();
 }
 
+/* (0.9.0, the owner's) the browser: a pad tapped twice within RFM_MOVE_DOUBLE_MS (the same pad) loads it, as the jog's
+ * press; the browser stays. In the catalog only one on the Move and current (a download is still the jog's) */
+enum { DL_OK, DL_NEW, DL_UPD };
+static int dl_kind(int i)
+{
+    return !E[i].installed || !E[i].installed[0] ? DL_NEW : E[i].version && strcmp(E[i].installed, E[i].version) ? DL_UPD : DL_OK;
+}
+static int dl_find(rfm_move_t *m, int kind, int not_fw)   /* a cell of the bank shown (Right: the next), or -1 */
+{
+    int ids[32], n, k, tries;
+    for (tries = 0; tries < 8; tries++, press(m, MR_CC_RIGHT))
+        for (n = rfmv_fw_bank(m, ids), k = 0; k < n; k++)
+            if (ids[k] >= 0 && ids[k] != not_fw && dl_kind(ids[k]) == kind)
+                return k;
+    return -1;
+}
+/* (the browser times its taps on the sequencer's clock, the Track buttons on the input's: both, as on a Move) */
+static void wait_ms(rfm_move_t *m, uint32_t ms) { now_ms += ms, adv_ms(m, ms); }
+static void test_dbl_load(void)
+{
+    rfm_move_t *m = &M;
+    const act_t *a;
+    int ids[32], k, j;
+    fixture(m), browser(m, 1), rest_pop(m);
+    CHECK(m->seq.projects && m->fw.track == 1 && !m->fw.catalog);
+    k = dl_find(m, DL_OK, m->fw.slot_fw[1]);
+    CHECK(k >= 0);
+    if (k < 0)
+        return;
+    rfmv_fw_bank(m, ids);
+    clear();
+    tap_pad(m, pad_of(k)), wait_ms(m, RFM_MOVE_DOUBLE_MS + 50), tap_pad(m, pad_of(k));   /* (too slow: selected only) */
+    CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 0 && m->fw.sel == ids[k]);
+    j = (k + 1) % rfmv_fw_bank(m, ids);                 /* (another pad, then this one: no load) */
+    wait_ms(m, RFM_MOVE_DOUBLE_MS + 50), tap_pad(m, pad_of(j)), tap_pad(m, pad_of(k));
+    CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 0 && m->fw.sel == ids[k]);
+    wait_ms(m, RFM_MOVE_DOUBLE_MS + 50), tap_pad(m, pad_of(k)), tap_pad(m, pad_of(k));
+    CHECK((a = last(RFM_MOVE_ACT_FW_LOAD)) && count(RFM_MOVE_ACT_FW_LOAD) == 1 && a->a.slot == 1 &&
+          !strcmp(a->id, E[ids[k]].id) && m->seq.projects && !m->fw.states && m->fw.busy_kind == 1);
+    tap_pad(m, pad_of(k));                              /* (a third tap: no second load) */
+    CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 1);
+    rfm_move_fw_progress(m, E[ids[k]].id, 100);
+    CHECK(!m->fw.busy_kind && m->fw.slot_fw[1] == ids[k] && m->seq.projects);
+    /* the catalog: not on the Move, an update: nothing (the jog's); current: loaded */
+    press(m, MR_CC_MUTE), rest_pop(m);
+    CHECK(m->fw.catalog);
+    for (j = DL_NEW; j <= DL_UPD; j++) {
+        k = dl_find(m, j, -1);
+        CHECK(k >= 0);
+        if (k < 0)
+            continue;
+        rfmv_fw_bank(m, ids);
+        clear();
+        wait_ms(m, RFM_MOVE_DOUBLE_MS + 50), tap_pad(m, pad_of(k)), tap_pad(m, pad_of(k));
+        CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 0 && count(RFM_MOVE_ACT_FW_DOWNLOAD) == 0 && m->fw.sel == ids[k] &&
+              !m->fw.busy_kind);
+    }
+    k = dl_find(m, DL_OK, m->fw.slot_fw[1]);
+    CHECK(k >= 0);
+    if (k < 0)
+        return;
+    rfmv_fw_bank(m, ids);
+    clear();
+    wait_ms(m, RFM_MOVE_DOUBLE_MS + 50), tap_pad(m, pad_of(k)), tap_pad(m, pad_of(k));
+    CHECK((a = last(RFM_MOVE_ACT_FW_LOAD)) && a->a.slot == 1 && !strcmp(a->id, E[ids[k]].id) &&
+          count(RFM_MOVE_ACT_FW_DOWNLOAD) == 0 && m->seq.projects && m->fw.catalog);
+    rfm_move_fw_progress(m, E[ids[k]].id, 100);
+    catalog_reset();
+}
+
 /* ================================================================ Back (0.4.3) === */
 static void test_back(void)
 {
@@ -1551,15 +1635,15 @@ static void test_back(void)
     const act_t *a;
     uint8_t base[MR_SCREEN_BYTES];
     const int mode0 = (fixture(m), m->s.mode);
-    /* the view at its root: a click flips back to the mode. (0.8.0) Another (nothing open): the layouts <-> the
-     * Sequencer (no longer into the view) */
+    /* the view at its root: a click flips back to the mode. (0.9.0) Another (nothing open): nothing at all (no
+     * flip to a Sequencer, nor into the view) */
     CHECK(m->seq.projects && m->fw.track == 0 && m->fw.sel < 0);
     press(m, MR_CC_BACK);
-    CHECK(!m->seq.projects && m->s.mode == mode0 && count(RFM_MOVE_ACT_BTN) == 0);
-    press(m, MR_CC_BACK);
-    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ && m->pop == POP_SEQ && count(RFM_MOVE_ACT_BTN) == 0);
-    press(m, MR_CC_BACK);
     CHECK(!m->seq.projects && m->s.mode == mode0 && m->pop == POP_LAYOUT && count(RFM_MOVE_ACT_BTN) == 0);
+    rest_pop(m), screen(m), memcpy(base, scr, sizeof base);
+    press(m, MR_CC_BACK), press(m, MR_CC_BACK);
+    screen(m);
+    CHECK(!m->seq.projects && m->s.mode == mode0 && count(RFM_MOVE_ACT_BTN) == 0 && !memcmp(scr, base, sizeof base));
     browser(m, 0);
     /* not at its root: one level up first (the description, the selection; FX setup) */
     select_fw(m, "golf"), jog(m, 1);
@@ -1596,10 +1680,10 @@ static void test_back(void)
     clear();
     tap_track(m, 1);
     CHECK(!m->seq.projects && m->fw.active == 1 && count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && m->s.mode == mode0);
-    /* the sequencer: Back ends Loop's latch first (not a flip), the sequencer's screen at once; then (0.8.0) the
-     * layout, and back. (The Sequencer: Back's click, 0.8.0) */
-    press(m, MR_CC_BACK);
-    CHECK(m->s.mode == RFM_MOVE_MODE_SEQ);
+    /* the sequencer: Back ends Loop's latch first, the sequencer's screen at once. (0.9.0: the sequencer is slot 2's
+     * note layout, on its selected track, 2) */
+    rfm_move_set_slot_layout(m, 1, RFM_MOVE_LAY_DRUM);
+    CHECK(m->s.mode == RFM_MOVE_MODE_SEQ && m->seq.sel_track == 1 && !m->seq.view && m->seq.trig);
     rest_pop(m), screen(m), memcpy(base, scr, sizeof base);
     press(m, MR_CC_LOOP);
     CHECK(m->seq.loop_latch && rfmv_pop_up(m, POP_LOOP));
@@ -1618,16 +1702,21 @@ static void test_back(void)
     screen(m);
     CHECK(!rfmv_pop_up(m, POP_LOOP));
     jog(m, -1), rest_pop(m), screen(m), memcpy(base, scr, sizeof base);
+    clear();
+    press(m, MR_CC_BACK);                               /* (0.9.0) nothing open: nothing (no flip) */
+    screen(m);
+    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ && count(RFM_MOVE_ACT_BTN) == 0 &&
+          !memcmp(scr, base, sizeof base));
+    press(m, MR_CC_MENU);                               /* (0.9.0) session view: Back closes it */
+    CHECK(m->seq.view);
     press(m, MR_CC_BACK);
-    CHECK(!m->seq.projects && m->s.mode == mode0 && m->pop == POP_LAYOUT);
-    press(m, MR_CC_BACK);
-    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ && m->pop == POP_SEQ);
-    rest_pop(m), screen(m);                             /* (0.4.5: the mode named first, then the sequencer's screen) */
-    CHECK(!memcmp(scr, base, sizeof base));
-    /* Shift + step 1 still opens the view */
+    rest_pop(m), screen(m);
+    CHECK(!m->seq.view && m->s.mode == RFM_MOVE_MODE_SEQ && !memcmp(scr, base, sizeof base));
+    /* Shift + step 1 still opens the view; out: the note layout again */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 0), button(m, MR_CC_SHIFT, 0);
     CHECK(m->seq.projects);
     press(m, MR_CC_BACK);
+    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ && m->pop == POP_LAYOUT && m->pop_i == 1);
 }
 
 /* (0.4.4) Down in FM-1 mode: the next loaded firmware (1 -> 2 -> 3 -> 1, empty slots skipped), its popup; lit with
@@ -1663,17 +1752,15 @@ static void test_down(void)
     press(m, MR_CC_DOWN);
     CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.active == 0 && m->pop == POP_LAYOUT && m->pop_i == 0);
     CHECK(led_of(m, 1, MR_CC_DOWN, rgb) && rgb[0] == 0);
-    /* the MIDI modes: the octave; Sequencer mode: its own (no firmware) */
+    /* (0.9.0) a note layout (= the sequencer): the octave, no firmware */
     rfm_move_fw_slots(m, (const char *const[3]){ "sloop", "choralroot", NULL });
     rfm_move_set_mode(m, RFM_MOVE_MODE_MIDI);
+    CHECK(m->s.mode == RFM_MOVE_MODE_SEQ);
     clear();
     press(m, MR_CC_DOWN);
-    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->s.octave == -1);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.active == 0 && m->s.octave == -1);
     press(m, MR_CC_UP);
-    rfm_move_set_mode(m, RFM_MOVE_MODE_SEQ);
-    clear();
-    press(m, MR_CC_DOWN);
-    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.active == 0);
+    CHECK(m->s.octave == 0);
     /* Up in FM-1 mode: the FM-1's SEQ */
     rfm_move_set_mode(m, RFM_MOVE_MODE_FM1);
     clear();
@@ -1736,9 +1823,10 @@ static void test_flip_fx(void)
     press(m, MR_CC_MENU), press(m, MR_CC_BACK);         /* (left on the firmwares: forgotten) */
     CHECK(!m->seq.projects && !m->s.fw_fx);
     /* a note layout: out names it */
-    rfm_move_set_mode(m, RFM_MOVE_MODE_MIDI);
+    rfm_move_set_mode(m, RFM_MOVE_MODE_MIDI);           /* (0.9.0: MIDI = the slot's note layout = the sequencer) */
+    CHECK(m->s.mode == RFM_MOVE_MODE_SEQ && rfm_move_slot_layout(m, 0) >= RFM_MOVE_LAY_SCALE);
     browser(m, 0), rest_pop(m), press(m, MR_CC_BACK);
-    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_MIDI && m->pop == POP_LAYOUT && m->pop_i == 0);
+    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ && m->pop == POP_LAYOUT && m->pop_i == 0);
     rfm_move_set_mode(m, RFM_MOVE_MODE_FM1);
 }
 
@@ -2162,6 +2250,7 @@ int main(void)
     test_no_favs();
     test_filter_popup();
     test_download_load();
+    test_dbl_load();
     test_back();
     test_down();
     test_flip_fx();

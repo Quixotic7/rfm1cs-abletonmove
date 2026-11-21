@@ -207,7 +207,7 @@ static void keys_menu_v(mr_canvas_t *cv, int root, int scale, int layout, int ch
         v2_TC(cv, 64, v2_tw(b, 3) <= 128 ? 10 : 13, b, v2_tw(b, 3) <= 128 ? 3 : 2, 1);
     }
 }
-static const char *const LK_WORDS[] = { "locked", "solo", "solo off", "not routed", "routed", "muted", "unmuted",
+static const char *const LK_WORDS[] = { "selected", "solo", "solo off", "not routed", "routed", "muted", "unmuted",
                                         "cleared" };
 /* a held Track's menu: a firmware's layout menu (its layout; a scale, the root, the channel or the octave changed:
  * the keys screen; a knob: its CC number), Track 4's (its page), the Sequencer's lock menu (the track locked) */
@@ -223,28 +223,20 @@ static void track_menu(const rfm_move_t *m, mr_canvas_t *cv, int t)
             rfmv_pop_screen(cv, "Track 4", "Shift", 0, 0, NULL);
         return;
     }
-    if (m->s.mode == RFM_MOVE_MODE_SEQ) {               /* the lock menu (a channel, CC number or rate changed: its
-                                                         * popup, as Track 4 held showed it before 0.8.0) */
-        if (recent && (m->menu_what == MENU_TCH || m->menu_what == MENU_CC || m->menu_what == MENU_RATE)) {
-            mr_gfx_clear(cv, 0);
-            rfmv_seq_track_menu(m, cv);
-            return;
-        }
-        snprintf(a, sizeof a, "Track %d", m->s.lock[t] + 1);
-        pop_screen_at(cv, nm, a, 0, 0, m->menu_what == MENU_LOCK && recent && m->lk_word < 8 ? LK_WORDS[m->lk_word] : "locked", 18);
-        return;
-    }
-    {
-        const rfm_move_slotset_t *ss = &m->s.slot[t];
-        const int lay = rfmv_slot_lay(m, t);
-        if ((m->menu_what == MENU_CC && (recent || m->touched == (m->menu_i & 7))) && lay >= RFM_MOVE_LAY_SCALE) {
-            snprintf(a, sizeof a, "Knob %d", (m->menu_i & 7) + 1);
-            snprintf(b, sizeof b, "CC %d", ss->cc[m->menu_i & 7]);
+    {                                                   /* (0.9.0) one menu: the pads the layout, the steps the tracks */
+        const int lay = rfmv_slot_lay(m, t), seq = m->s.mode == RFM_MOVE_MODE_SEQ;
+        if (recent && m->menu_what == MENU_LOCK) {      /* a step: the lock screen (the track, what changed) */
+            snprintf(a, sizeof a, "Track %d", m->s.lock[t] + 1);
+            pop_screen_at(cv, nm, a, 0, 0, m->lk_word < 8 ? LK_WORDS[m->lk_word] : "selected", 18);
+        } else if (seq && m->menu_what == MENU_CC && (recent || m->touched == (m->menu_i & 7))) {
+            const int tr = m->s.lock[t] % 16, k = m->menu_i & 7;   /* a knob: the track's CC number (the board's I) */
+            snprintf(a, sizeof a, "Knob %d", k + 1);
+            snprintf(b, sizeof b, "CC %d", tr == m->seq.sel_track ? m->s.cc[m->s.bank & 3][k] : m->seq.tr[tr].cc[m->s.bank & 3][k]);
             rfmv_pop_screen(cv, a, b, 0, 0, nm);
-        } else if (recent && (m->menu_what == MENU_SCALE || m->menu_what == MENU_ROOT || m->menu_what == MENU_CHANNEL ||
-                              m->menu_what == MENU_OCT)) {
-            mr_gfx_clear(cv, 0);
-            keys_menu_v(cv, ss->root, ss->scale, lay >= RFM_MOVE_LAY_SCALE ? lay - RFM_MOVE_LAY_SCALE : -1, ss->channel);
+        } else if (recent && (m->menu_what == MENU_SCALE || m->menu_what == MENU_ROOT || m->menu_what == MENU_OCT)) {
+            mr_gfx_clear(cv, 0);                        /* the key */
+            keys_menu_v(cv, seq ? m->s.root : m->seq.root, seq ? m->s.scale : m->seq.scale,
+                        lay >= RFM_MOVE_LAY_SCALE ? lay - RFM_MOVE_LAY_SCALE : -1, m->seq.tr[m->s.lock[t] % 16].ch);
         } else
             rfmv_pop_screen(cv, nm, rfmv_lay_name(m, t, lay), RFM_MOVE_LAY_N, lay, NULL);
     }
@@ -1242,7 +1234,10 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
         return;
     }
     if (!(m->pop == POP_MODE && (m->pop_i == 30 || m->pop_i == 31) && rfmv_pop_up(m, POP_MODE))) {
-        for (t = 0; t < 4 && ((m->seq.projects && t < 3) || !rfmv_hold_shown(m, t)); t++) {}   /* (0.8.0) a held Track's menu: over any layout, a
+        for (t = 0; t < 4 && (!rfmv_hold_shown(m, t) || (t == 3 && m->seq.smenu) ||
+                              (t < 3 && m->seq.projects && m->fw.pop == FP_LEVEL)); t++) {}   /* (a slot's level set in the
+                                                         * view: its popup) */   /* (0.9.0: over the view
+                                                         * too; Track 4's gives way to a Shift menu it opened) */   /* (0.8.0) a held Track's menu: over any layout, a
                                                          * takeover too (a tap: nothing of it) */
         if (t < 4) {
             track_menu(m, &cv, t);
@@ -1262,6 +1257,13 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
     if (m->seq.projects && ((m->pop == POP_MODE && m->pop_i >= 20 && m->pop_i <= 23) || m->pop == POP_T4) &&
         rfmv_pop_up(m, m->pop)) {
         mr_gfx_clear(&cv, 0);                           /* (0.4.5) Back into the view: its name, a second */
+        popups(m, &cv);
+        mr_gfx_pack(&cv, out);
+        return;
+    }
+    if (m->seq.projects && m->seq.smenu) {              /* (0.9.0) a Shift menu over the Mixer / Routing */
+        mr_gfx_clear(&cv, 0);
+        rfmv_seq_screen(m, &cv);
         popups(m, &cv);
         mr_gfx_pack(&cv, out);
         return;

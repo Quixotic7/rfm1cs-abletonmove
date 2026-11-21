@@ -713,10 +713,10 @@ int rfm1cs_status_text(const rfm1cs_status_t *st, const rfm1cs_words_t *w, char 
         const char *link = w && w->link ? w->link : "";
         const int mode = st->mode >= 0 && st->mode < 4 ? st->mode : 0;
         if (st->via >= 0 && st->via < 3)
-            snprintf(out, cap, "%s connected over %s (%s): %s mode. Track 1..4 pick the mode.", or_(st->name, "Move"),
+            snprintf(out, cap, "%s connected over %s (%s): %s mode. Track 1..3 play the firmwares.", or_(st->name, "Move"),
                      via_names[st->via], link, mode_names[mode]);
         else
-            snprintf(out, cap, "%s connected (%s): %s mode. Track 1..4 pick the mode.", or_(st->name, "Move"), link,
+            snprintf(out, cap, "%s connected (%s): %s mode. Track 1..3 play the firmwares.", or_(st->name, "Move"), link,
                      mode_names[mode]);
         return RFM1CS_TONE_ON;
     }

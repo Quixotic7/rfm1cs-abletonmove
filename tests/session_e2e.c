@@ -202,7 +202,9 @@ int main(int argc, char **argv)
     g_nact = 0;
     inject(fifo, "cc 43 127\nnote 94 100\nnote 94 0\ncc 43 0\nnote 68 90\nnote 68 0\n");
     run(3000, 4);
-    CHECK(S.st.mode == RFM_MOVE_MODE_MIDI && find(RFM_MOVE_ACT_SETTINGS, 0, 0, 0), "Track 1 held + Scale: MIDI mode");
+    CHECK(S.st.mode == RFM_MOVE_MODE_SEQ && rfm_move_slot_layout(&S.core, 0) == RFM_MOVE_LAY_SCALE &&
+              find(RFM_MOVE_ACT_SETTINGS, 0, 0, 0),
+          "Track 1 held + Scale: the note layout (the sequencer)");
     rfm1cs_session_stop(&S);
     CHECK(S.st.state == RFM1CS_OFF && g_fd < 0, "stopped: closed");
     printf("session_e2e: %d checks, %d failed\n", g_checks, g_fail);

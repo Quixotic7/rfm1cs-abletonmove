@@ -448,8 +448,8 @@ static void test_leds_screen_input(void)
     rfm1cs_session_closed(s, t + 310, g_att, 0);
     CHECKF(g_nacts > k && g_acts[k].kind == RFM_MOVE_ACT_KEY && !g_acts[k].down && g_released == 1,
            "the link lost with a pad held: its key let go, RELEASED");
-    /* settings: (0.8.0) Track 1 held + pad 27 (the Scale layout) gives MIDI mode and asks for them to be kept, with
-     * the image */
+    /* settings: (0.9.0) Track 1 held + pad 27 (the Scale layout) gives slot 1's note layout, the sequencer (track 1),
+     * and asks for them to be kept, with the image */
     rfm1cs_session_stop(s);
     connect(s, t + 400);
     clear();
@@ -457,12 +457,16 @@ static void test_leds_screen_input(void)
     input(s, t + 402, 0x90, MR_NOTE_PAD0 + 24 + RFM_MOVE_LAY_SCALE, 100);
     input(s, t + 403, 0x80, MR_NOTE_PAD0 + 24 + RFM_MOVE_LAY_SCALE, 0);
     input(s, t + 404, 0xB0, MR_CC_TRACK1, 0);
-    CHECKF(s->st.mode == RFM_MOVE_MODE_MIDI && (g_changed & RFM1CS_CH_MODE) && find_act(RFM_MOVE_ACT_SETTINGS, 0, 0) >= 0 &&
-               g_settings_len == RFM_MOVE_SETTINGS_BYTES && rfm_move_slot_layout(&s->core, 0) == RFM_MOVE_LAY_SCALE,
-           "Track 1 held + Scale: MIDI mode, SETTINGS with its image (%u)", g_settings_len);
+    CHECKF(s->st.mode == RFM_MOVE_MODE_SEQ && (g_changed & RFM1CS_CH_MODE) && find_act(RFM_MOVE_ACT_SETTINGS, 0, 0) >= 0 &&
+               g_settings_len == RFM_MOVE_SETTINGS_BYTES && rfm_move_slot_layout(&s->core, 0) == RFM_MOVE_LAY_SCALE &&
+               s->core.seq.sel_track == 0,
+           "Track 1 held + Scale: the sequencer on track 1, SETTINGS with its image (%u)", g_settings_len);
+    clear();
     input(s, t + 410, 0x90, MR_NOTE_PAD0, 90);
-    i = find_act(RFM_MOVE_ACT_MIDI, 0, 0);
-    CHECKF(i >= 0 && g_acts[i].bytes[0] == 0x90 && g_acts[i].bytes[1] == 48 && s->st.midi >= 1, "MIDI mode: the pad is C3");
+    i = find_act(RFM_MOVE_ACT_MIDI, 0, 0);              /* (live: track 1's channel 1, to the slot played) */
+    CHECKF(i >= 0 && g_acts[i].bytes[0] == 0x90 && g_acts[i].bytes[1] == 48 && g_acts[i].dest == 0 && s->st.midi >= 1,
+           "the note layout: the pad is C3 on channel 1 (%02x %d, dest %d)", i >= 0 ? g_acts[i].bytes[0] : 0,
+           i >= 0 ? g_acts[i].bytes[1] : -1, i >= 0 ? g_acts[i].dest : -1);
     input(s, t + 411, 0x80, MR_NOTE_PAD0, 0);
     rfm1cs_session_stop(s);
 }
@@ -482,14 +486,16 @@ static void test_sequencer_projects(void)
     CHECK(rfm1cs_store_scan(&st, 0, &used) == 0 && used == 0);
     CHECK(rfm1cs_session_projects_init(s, t, used, 0, NULL, 0) == 0 && s->st.project == 0);
     connect(s, t);
-    /* (0.8.0) Back (a layout -> the Sequencer), pad 1 (C3), steps 1 and 5, Play */
+    /* (0.9.0) Track 1 held + Scale (slot 1's note layout: the sequencer, track 1), pad 1 (C3), steps 1 and 5, Play */
     clear();
-    input(s, t, 0xB0, MR_CC_BACK, 127), input(s, t, 0xB0, MR_CC_BACK, 0);
+    input(s, t, 0xB0, MR_CC_TRACK1, 127);
+    input(s, t, 0x90, MR_NOTE_PAD0 + 24 + RFM_MOVE_LAY_SCALE, 100), input(s, t, 0x80, MR_NOTE_PAD0 + 24 + RFM_MOVE_LAY_SCALE, 0);
+    input(s, t, 0xB0, MR_CC_TRACK1, 0);
     input(s, t, 0x90, MR_NOTE_PAD0, 100), input(s, t, 0x80, MR_NOTE_PAD0, 0);
     input(s, t, 0x90, MR_NOTE_STEP0, 127), input(s, t, 0x80, MR_NOTE_STEP0, 0);
     input(s, t, 0x90, MR_NOTE_STEP0 + 4, 127), input(s, t, 0x80, MR_NOTE_STEP0 + 4, 0);
     input(s, t, 0xB0, MR_CC_PLAY, 127), input(s, t, 0xB0, MR_CC_PLAY, 0);
-    CHECKF(s->st.mode == RFM_MOVE_MODE_SEQ && s->core.seq.nnotes == 2, "Back: the Sequencer, two steps (%d)", s->core.seq.nnotes);
+    CHECKF(s->st.mode == RFM_MOVE_MODE_SEQ && s->core.seq.nnotes == 2, "Track 1 held + Scale: the sequencer, two steps (%d)", s->core.seq.nnotes);
     clear();
     for (frames = 0; frames < 48000; frames += 128) {
         const int n0 = g_nacts;
@@ -674,7 +680,7 @@ static void test_words(void)
     rfm1cs_session_opened(s, t + 100, g_att);
     hello(s, t + 100, MR_PROTO, MR_VIA_USB, "Move", 1);
     text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_ON,
-         "Move connected over USB (WebSocket): FM-1 mode. Track 1..4 pick the mode.");
+         "Move connected over USB (WebSocket): FM-1 mode. Track 1..3 play the firmwares.");
     rfm1cs_session_tick(s, t + 4000);                   /* (silent) */
     text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_BUSY, "The Move went quiet: trying again in 1 s...");
     CHECK(rfm1cs_lost_text(g_lost_why, g_lost_live, &s->st, &w, out, sizeof out) > 0 &&
@@ -693,14 +699,15 @@ static void test_words(void)
     w.closed = NULL;
     rfm1cs_session_stop(s);
     text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_OFF, "Not connected.");
-    /* the mode changed while away: the CONNECTED event's status has it already */
+    /* the mode changed while away: the CONNECTED event's status has it already ((0.9.0) MIDI = the slot's note
+     * layout, the sequencer) */
     rfm_move_set_mode(&s->core, RFM_MOVE_MODE_MIDI);
     rfm1cs_session_start(s, t);
     rfm1cs_session_opened(s, t, g_att);
     w.link = NULL;
     hello(s, t, MR_PROTO, MR_VIA_WIFI, "Mine", 1);
-    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_ON, "Mine connected over Wi-Fi (): MIDI mode. Track 1..4 pick the mode.");
-    CHECKF(!strcmp(g_conn_text, "Mine connected over Wi-Fi (): MIDI mode. Track 1..4 pick the mode."), "%s", g_conn_text);
+    text(rfm1cs_status_text, &s->st, &w, RFM1CS_TONE_ON, "Mine connected over Wi-Fi (): Sequencer mode. Track 1..3 play the firmwares.");
+    CHECKF(!strcmp(g_conn_text, "Mine connected over Wi-Fi (): Sequencer mode. Track 1..3 play the firmwares."), "%s", g_conn_text);
     w.link = "WebSocket";
     rfm1cs_session_stop(s);
     rfm_move_set_mode(&s->core, RFM_MOVE_MODE_FM1);

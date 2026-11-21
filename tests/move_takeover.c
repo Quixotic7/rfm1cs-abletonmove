@@ -223,10 +223,11 @@ static void test_entry(void)
     LOG("S0:-|E:Felucca, FM-1 layout|V:Felucca, FM-1|");
     rfm_move_set_slot_layout(&M, 0, RFM_MOVE_LAY_TK);
     LOG("S0:7f/1|E:Chords, takeover|V:Felucca, Chords|");
-    rfm_move_set_mode(&M, RFM_MOVE_MODE_MIDI);
+    rfm_move_set_mode(&M, RFM_MOVE_MODE_MIDI);          /* (0.9.0: MIDI == the slot's note layout == the sequencer) */
     CHECKF(!strncmp(logb, "S0:-|", 5), "%s", logb);
     clear();
-    CHECK(M.s.mode == RFM_MOVE_MODE_MIDI && rfm_move_tk_shown(&M) == -1);
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_tk_shown(&M) == -1);
+    CHECK(rfm_move_slot_layout(&M, 0) == RFM_MOVE_LAY_SCALE && M.seq.sel_track == M.s.lock[0]);
     rfm_move_set_takeover(&M, 1, 0, NULL);
     rfm_move_fw_set_active(&M, 1);
     clear();
@@ -394,15 +395,31 @@ static void test_back(void)
     tap_track(0);                                       /* slot 0: as it was left */
     LOG("S0:40/0|");
     CHECK(rfm_move_tk_shown(&M) == 0);
-    /* BUTTONS free: Back is the core's (a click: the Sequencer, which closes the takeover) */
+    /* BUTTONS free: Back is the core's (0.9.0: a click with nothing open does nothing, no flip; the takeover stays) */
     rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_PADS, "Keys");
     LOG("S0:2/0|");
     press(MR_CC_BACK);
-    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_tk_shown(&M) == -1 && !M.seq.projects);
-    LOG("S0:-|");
-    press(MR_CC_BACK);                                  /* back to the slot's layout: the takeover again, named */
-    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && rfm_move_tk_shown(&M) == 0 && M.pop == POP_TK);
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && rfm_move_tk_shown(&M) == 0 && !M.seq.projects);
+    LOG("");
+    press(MR_CC_BACK);                                  /* (again: still nothing) */
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && rfm_move_tk_shown(&M) == 0 && !M.seq.projects);
+    LOG("");
+    rfm_move_set_slot_layout(&M, 0, RFM_MOVE_LAY_DRUM); /* (a note layout: Back stays there too, no Sequencer flip) */
+    CHECKF(!strncmp(logb, "S0:-|", 5), "%s", logb);
+    clear();
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_tk_shown(&M) == -1);
+    press(MR_CC_BACK);
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_slot_layout(&M, 0) == RFM_MOVE_LAY_DRUM && !M.seq.projects);
+    LOG("");
+    tap_track(0);                                       /* (a tap: the note layout still) */
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_tk_shown(&M) == -1);
+    LOG("");
+    tk_enter(0);                                        /* Track 1 held + pad 25 (the one menu): the takeover again */
     LOG("S0:2/0|");
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && rfm_move_tk_shown(&M) == 0);
+    tap_track(0);                                       /* a tap names it */
+    CHECK(rfm_move_tk_shown(&M) == 0 && M.pop == POP_TK);
+    LOG("");
 }
 
 /* 5. the LEDs: the claimed ones the firmware's, the rest FM-1 mode's */

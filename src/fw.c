@@ -1399,8 +1399,18 @@ static void fw_input(rfm_move_t *m, const mr_event_t *ev)
             return;
         }
         bank_ids(m, ids);
-        if (ids[cell] >= 0)
+        if (ids[cell] >= 0) {
+            const uint32_t now = m->in_ms;              /* (the input's clock, as the Track buttons') */
+            const int dbl = m->fw_tap_cell == cell + 1 && f->sel == ids[cell] && (int32_t)(now - m->fw_tap_ms) < RFM_MOVE_DOUBLE_MS;
             f->sel = (int16_t)ids[cell], f->jog = 0, pop_clear(m);
+            m->fw_tap_cell = (uint8_t)(cell + 1), m->fw_tap_ms = now;
+            if (dbl && (!f->catalog || status(m, ids[cell]) == ST_OK)) {
+                m->fw_tap_cell = 0;                     /* (0.9.0, the owner's) a double tap loads it, as the jog's
+                                                         * press (the catalog: only one on the Move and current; a
+                                                         * download is still the jog's); the browser stays */
+                fw_jog_press(m);
+            }
+        }
         return;
     }
     case MR_EV_STEP: {
@@ -3199,13 +3209,56 @@ void rfmv_view_open(rfm_move_t *m, int what)
         rfmv_pop(m, POP_T4, what == VIEW_ROUTING);
     }
 }
+/* (0.9.0) a firmware's solo (one track at a time; its filter as it was kept aside) given back */
+static int solo_end(rfm_move_t *m, int slot)
+{
+    if (!m->fsolo[slot])
+        return 0;
+    m->seq.fx.ffilt[slot] = m->fsolo_save[slot];
+    m->fsolo[slot] = 0;
+    return 1;
+}
 void rfmv_route_toggle(rfm_move_t *m, int slot, int track)
 {
     if (slot < 0 || slot >= RFM_MOVE_FW_SLOTS || track < 0 || track >= RFM_MOVE_SEQ_TRACKS)
         return;
+    solo_end(m, slot);                                  /* (0.9.0: a routing change ends the firmware's solo) */
     m->seq.fx.ffilt[slot] = (uint16_t)(m->seq.fx.ffilt[slot] ^ 1u << track);
     act_route(m);
     rfmv_seq_dirty(m);
+}
+/* (0.9.0) a track selected for a slot reaches it: routed now (a solo on another track there ends) */
+void rfmv_route_on(rfm_move_t *m, int slot, int track)
+{
+    int ch = 0;
+    if (slot < 0 || slot >= RFM_MOVE_FW_SLOTS || track < 0 || track >= RFM_MOVE_SEQ_TRACKS)
+        return;
+    if (m->fsolo[slot] && m->fsolo[slot] != track + 1)
+        ch = solo_end(m, slot);
+    if (!(m->seq.fx.ffilt[slot] >> track & 1))
+        m->seq.fx.ffilt[slot] = (uint16_t)(m->seq.fx.ffilt[slot] | 1u << track), ch = 1;
+    if (ch) {
+        act_route(m);
+        rfmv_seq_dirty(m);
+    }
+}
+/* (0.9.0, the owner's) Track n held + a double tap: only that track reaches firmware n (one solo a firmware: another
+ * there ends); again: off, the filter as it was. 1: soloed now */
+int rfmv_fw_solo(rfm_move_t *m, int slot, int track)
+{
+    if (slot < 0 || slot >= RFM_MOVE_FW_SLOTS || track < 0 || track >= RFM_MOVE_SEQ_TRACKS)
+        return 0;
+    if (m->fsolo[slot] == track + 1)
+        solo_end(m, slot);
+    else {
+        if (!m->fsolo[slot])
+            m->fsolo_save[slot] = m->seq.fx.ffilt[slot];
+        m->seq.fx.ffilt[slot] = (uint16_t)(1u << track);
+        m->fsolo[slot] = (uint8_t)(track + 1);
+    }
+    act_route(m);
+    rfmv_seq_dirty(m);
+    return m->fsolo[slot] != 0;
 }
 
 /* (for the tests) */

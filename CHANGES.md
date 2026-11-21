@@ -3,6 +3,35 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.9.0 (2026-11-20)
+
+Proposal 3, "one main layout" (the owner's board `remoteFM14Move/docs/design/track-buttons-v3.movedesign.json`,
+approved 2026-11-20). New fields at the end of `rfm_move_t`: rebuild everything.
+
+- **A note layout is the sequencer.** Scale, Chroma, Drum and Octave play and edit the slot's selected sequencer track
+  (`settings.lock[slot]`): the pads into the track (live to the slot), the steps its clip, the knobs the TRIG page first
+  (then the CC banks), the buttons the sequencer's, Menu track / session view. Entering it selects the track, routes
+  it to the slot and gives it the slot's layout. The track's channel, key and CC numbers win; the slot keeps its layout
+  and its track. `rfm_move_set_mode(MIDI)` is the slot's note layout (Sequencer mode).
+- **No separate Sequencer mode:** Back with nothing open does nothing (it closes layers, session view too).
+- **Track n held: one menu** in every layout: the pads the layout menu, the steps the 16 tracks for firmware n (a tap
+  selects and routes, a double tap solos on that firmware, a hold unroutes), the jog the root, Up / Down the octave,
+  the scale pads the key the tracks use, the knobs the selected track's CC numbers (in the sequencer).
+- **Per-firmware solo, one at a time** (`m->fsolo[]`): only that track reaches the firmware; another solo there moves
+  it; again: off, the filter as it was. The sequencer's own solo is untouched.
+- **The firmware browser:** a pad double-tapped (300 ms) loads that firmware (as the jog press; the catalog: installed
+  and current only); the browser stays.
+- **Clock out:** the sequencer playing on its own clock sends MIDI Start, clock (24 PPQN) and Stop to every loaded
+  firmware: MIDI actions with `dest` = `RFM_MOVE_DEST_ALL` (255), frame-stamped.
+- **Speech:** "Felucca, Drum layout, Track 2", "Felucca, layouts, Drum, Track 2", "Track 6, selected".
+- **Latch** (the menu's pad 8) holds a note layout's live notes; a recording keeps the length played.
+- **Track 4 held + a step** shows the Shift menu at once (as Shift + step in the sequencer), not after the release.
+- **The Mixer and Routing** take the Shift shortcuts (Shift + a step, the icons lit); a Shift menu opens over them and
+  Back closes it there. **Track 1..3 held** works over the projects view too (the layout menu and the tracks).
+- Fixed on the way: a restart from saved settings plays the slot's note layout; Track n held + a knob sets the CC
+  number of the track selected for firmware n; `rfm_move_set_mode(SEQ)` is the slot's note layout; the browser's
+  double tap is timed on the input's clock; a Mute is said once.
+
 ## 0.8.0 (2026-11-20)
 
 The Track buttons, proposal 2 (the owner's board `remoteFM14Move/docs/design/track-buttons-v2.movedesign.json`,

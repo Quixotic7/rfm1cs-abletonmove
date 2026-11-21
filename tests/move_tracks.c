@@ -142,6 +142,7 @@ static void leds(uint8_t w[RFM_MOVE_NLEDS][3])
         w[i][0] = o[i].r, w[i][1] = o[i].g, w[i][2] = o[i].b;
 }
 static int bright(const uint8_t c[3]) { return c[0] + c[1] + c[2]; }
+static int m_nlat(void) { return M.nlat; }
 
 /* ================================================================ Track 1..3: tap, hold, double click === */
 static void test_tap(void)
@@ -182,64 +183,54 @@ static void test_layout_menu(void)
     const rfm_move_act_t *a;
     uint8_t w[RFM_MOVE_NLEDS][3];
     fresh();
-    hold_track(1);                                      /* Track 2 held: Felucca's layout menu */
+    hold_track(1);                                      /* Track 2 held: the layout menu + the track selector */
     write_pbm("menu_fm1");
     leds(w);
     CHECK(w[L_PAD0 + 24][0] == 255 && w[L_PAD0 + 24][2] == 255);   /* FM-1 white, full */
     CHECK(!bright(w[L_PAD0 + 25]));                     /* no takeover: pad 2 dark */
     CHECK(bright(w[L_PAD0 + 26]) > 0 && bright(w[L_PAD0 + 26]) < bright(w[L_PAD0 + 24]));
-    CHECK(!bright(w[L_RING0]));                         /* the FM-1 layout: no CC knobs */
-    knob(0, 3);                                         /* .. so a knob does nothing */
-    CHECK(M.s.slot[1].cc[0] == 16 && count(RFM_MOVE_ACT_MIDI) == 0);
-    hit(28);                                            /* Drum */
+    CHECK(!bright(w[L_RING0]));                         /* the FM-1 layout: no knobs */
+    CHECK(w[L_STEP0 + 1][1] > 0);                       /* step 2: track 2, selected for Felucca (its colour) */
+    hit(28);                                            /* Drum (Felucca not played: the slot's record, its track's) */
     CHECK(M.s.slot[1].lay == RFM_MOVE_LAY_DRUM && M.fw.active == 0 && M.s.mode == RFM_MOVE_MODE_FM1);
+    CHECK(M.seq.tr[1].layout == RFM_MOVE_LAYOUT_DRUM);
     write_pbm("menu_drum");
-    step(1, 1), step(1, 0);                             /* channel 2 */
-    hit(1);                                             /* scale row 2 pad 2: Minor */
-    CHECK(M.s.slot[1].channel == 1 && M.s.slot[1].scale == rfmv_scale_of_pad(1));
-    write_pbm("menu_scale");
-    knob(0, 58);                                        /* a note layout: knob 1's CC number */
-    CHECK(M.s.slot[1].cc[0] == 74 && M.menu_what == MENU_CC);
-    write_pbm("menu_cc74");
-    jog(2);                                             /* the root */
-    button(MR_CC_UP, 1), button(MR_CC_UP, 0);           /* the octave */
-    CHECK(M.s.slot[1].root == 2 && M.s.slot[1].octave == 1);
-    CHECK(M.s.slot[0].lay == RFM_MOVE_LAY_FM1 && M.s.slot[0].channel == 0 && M.s.slot[0].root == 0 && M.s.slot[0].cc[0] == 16);
+    step(5, 1), step(5, 0);                             /* track 6 selected for Felucca, routed to it */
+    CHECK(M.s.lock[1] == 5 && (M.seq.fx.ffilt[1] >> 5 & 1) && M.lk_word == LK_LOCKED);
+    write_pbm("menu_select");
     track(1, 0);                                        /* used: no tap */
     CHECK(M.fw.active == 0);
     rest(), clear();
-    tap_track(1);                                       /* Felucca in its Drum layout, its own settings */
-    CHECK(M.fw.active == 1 && M.s.mode == RFM_MOVE_MODE_MIDI && M.s.layout == RFM_MOVE_LAYOUT_DRUM);
-    CHECK(M.s.channel == 1 && M.s.root == 2 && M.s.octave == 1 && M.s.scale == rfmv_scale_of_pad(1));
+    tap_track(1);                                       /* Felucca: its note layout IS the sequencer, track 6 */
+    CHECK(M.fw.active == 1 && M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.sel_track == 5 && M.seq.trig && !M.seq.view);
+    CHECK(M.s.layout == RFM_MOVE_LAYOUT_DRUM && M.seq.tr[5].layout == RFM_MOVE_LAYOUT_DRUM);
     write_pbm("tap_drum");
     rest(), clear();
-    pad(0, 100);                                        /* a note on channel 2 */
+    pad(0, 100);                                        /* a note into track 6 (its channel 6), live to the slot played */
     a = find(RFM_MOVE_ACT_MIDI);
-    CHECK(a && a->bytes[0] == 0x91 && a->bytes[1] == M.s.drum[0] + 12);
+    CHECKF(a && a->bytes[0] == 0x95 && a->track == 0 && a->dest == 0, "%02x track %d", a ? a->bytes[0] : 0, a ? a->track : -1);
     pad(0, 0), clear();
-    knob(0, 1);                                         /* knob 1: CC 74 on channel 2 */
-    a = find(RFM_MOVE_ACT_MIDI);
-    CHECK(a && a->bytes[0] == 0xB1 && a->bytes[1] == 74 && a->bytes[2] == 65 && M.pop == POP_CC);
-    clear();
-    button(MR_CC_SHIFT, 1), knob(1, 2), button(MR_CC_SHIFT, 0);   /* Shift + knob 2: its CC number */
-    CHECK(M.s.slot[1].cc[1] == 19 && count(RFM_MOVE_ACT_MIDI) == 0 && M.pop == POP_CCNUM);
-    write_pbm("shift_ccnum");
-    rest(), clear();
-    press(MR_CC_CAPTURE), press(MR_CC_LEFT), press(MR_CC_MUTE);   /* a note layout: no FM-1 buttons */
-    CHECK(count(RFM_MOVE_ACT_BTN) == 0);
-    button(MR_CC_DOWN, 1), button(MR_CC_DOWN, 0);       /* Down: the octave (the slot's) */
-    CHECK(M.s.octave == 0 && M.s.slot[1].octave == 0);
-    press(MR_CC_PLAY);                                  /* Play: the sequencer's transport */
-    CHECK(M.seq.playing || M.seq.start_pending);
-    press(MR_CC_PLAY);
-    CHECK(!M.seq.playing && !M.seq.start_pending);
-    tap_track(0);                                       /* back to ChoralRoot: FM-1, its own settings */
-    CHECK(M.fw.active == 0 && M.s.mode == RFM_MOVE_MODE_FM1 && M.s.channel == 0 && M.s.root == 0);
-    CHECK(M.s.slot[1].lay == RFM_MOVE_LAY_DRUM && M.s.slot[1].channel == 1);
-
+    step(0, 1), step(0, 0);                             /* a step: the track's clip */
+    CHECK(M.seq.nnotes == 1);
+    rest(), hold_track(1);
+    knob(0, 4);                                         /* held in the sequencer: the track's CC number (bank shown) */
+    CHECK(M.menu_what == MENU_CC);
+    jog(2);                                             /* the key's root (the project's: the track is GLOBAL) */
+    CHECK(M.s.root == 2 && M.seq.root == 2);
+    hit(1);                                             /* a scale pad: the project's key */
+    CHECK(M.seq.scale == rfmv_scale_of_pad(1) && M.s.scale == rfmv_scale_of_pad(1));
+    button(MR_CC_UP, 1), button(MR_CC_UP, 0);           /* the octave */
+    CHECK(M.s.octave == 1);
+    hit(26);                                            /* Scale: the track's layout too */
+    CHECK(M.s.layout == RFM_MOVE_LAYOUT_SCALE && M.seq.tr[5].layout == RFM_MOVE_LAYOUT_SCALE && M.s.slot[1].lay == RFM_MOVE_LAY_SCALE);
+    hit(24);                                            /* FM-1: out of the sequencer to the FM-1 layout */
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && M.s.slot[1].lay == RFM_MOVE_LAY_FM1);
+    track(1, 0), rest(), clear();
+    tap_track(0);                                       /* ChoralRoot: FM-1, the FM-1's buttons */
+    CHECK(M.fw.active == 0 && M.s.mode == RFM_MOVE_MODE_FM1);
     rest(), hold_track(0), hit(31), track(0, 0);        /* pad 8: latch */
     CHECK(rfm_move_latch(&M));
-    hold_track(0), hit(31), track(0, 0);
+    rest(), hold_track(0), hit(31), track(0, 0);
     CHECK(!rfm_move_latch(&M));
 }
 
@@ -249,6 +240,12 @@ static void test_double(void)
     dbl_track(1);                                       /* the browser on slot 2 */
     CHECK(M.seq.projects && !M.fw.fx && M.fw.track == 1 && M.fw.active == 1);
     write_pbm("browser");
+    clear(), hit(24);                                   /* (0.9.0) a pad: selected; again at once: loaded, still here */
+    CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 0 && M.fw.sel >= 0);
+    hit(24);
+    CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 1 && find(RFM_MOVE_ACT_FW_LOAD)->slot == 1 && M.seq.projects);
+    clear(), rest(), hit(24), rest(), hit(24);          /* two taps apart: no load */
+    CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 0);
     back(), back(), back();                             /* out, to the slot's layout */
     CHECK(!M.seq.projects && M.s.mode == RFM_MOVE_MODE_FM1 && M.fw.active == 1);
     rest(), clear();
@@ -294,6 +291,35 @@ static void test_track4(void)
     track(3, 0);
     CHECK(M.seq.projects && M.s.fx_page == RFM_MOVE_FX_PAGE_MIX);   /* (used: no flip) */
 
+    /* (0.9.0, the owner's) Track 4 held + a step opens its Shift menu at once, on the screen while still held */
+    back(), rest(), tap_track(0), rest();
+    hold_track(3), step(4, 1), step(4, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_TEMPO);
+    {
+        uint8_t keep[MR_SCREEN_BYTES];
+        screen(), memcpy(keep, SCR, sizeof keep);
+        track(3, 0), screen();
+        CHECK(!memcmp(keep, SCR, sizeof keep));         /* (the same screen held as let go: the menu's) */
+        back(), rest();
+        CHECK(!M.seq.smenu);
+    }
+    /* the Mixer and Routing: Shift + a step, the same shortcuts; Back closes the menu, the Mixer stays */
+    rest(), tap_track(3);
+    CHECK(M.seq.projects && M.fw.fx);
+    button(MR_CC_SHIFT, 1), step(4, 1), step(4, 0), button(MR_CC_SHIFT, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_TEMPO && M.seq.projects);
+    write_pbm("mixer_tempo");
+    back();
+    CHECK(!M.seq.smenu && M.seq.projects && M.fw.fx);
+    /* Track 1 held over the Mixer: its menu (the pads its layouts, the steps its tracks) */
+    rest(), hold_track(0), step(6, 1), step(6, 0);
+    CHECK(M.s.lock[0] == 6 && M.seq.projects);
+    hit(26);
+    CHECK(M.s.slot[0].lay == RFM_MOVE_LAY_SCALE);
+    write_pbm("mixer_track1_menu");
+    track(0, 0);
+    CHECK(M.seq.projects && M.fw.fx);                   /* (used: no tap, the Mixer stays) */
+
     fresh();                                            /* one firmware, no FX: Track 4 is the projects */
     rfm_move_fw_caps(&M, 0);
     tap_track(3);
@@ -304,44 +330,62 @@ static void test_track4(void)
 static void test_seq(void)
 {
     uint8_t w[RFM_MOVE_NLEDS][3];
+    int i, fa = 0, f8 = 0, fc = 0;
     fresh();
-    rfm_move_set_slot_layout(&M, 0, RFM_MOVE_LAY_SCALE);
-    CHECK(M.s.mode == RFM_MOVE_MODE_MIDI);
-    back();                                             /* the Sequencer */
-    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && M.pop == POP_SEQ);
-    rest();
-    back();                                             /* the slot's layout again */
-    CHECK(M.s.mode == RFM_MOVE_MODE_MIDI && M.pop == POP_LAYOUT && M.s.slot[0].lay == RFM_MOVE_LAY_SCALE);
-    rest(), back(), rest(), clear();
-    tap_track(1);                                       /* the Sequencer: Track 2 selects track 2 (locked to it) */
-    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.sel_track == 1 && M.fw.active == 1 && M.pop == POP_LOCK);
-    rest();
-    hold_track(1);                                      /* the lock menu */
+    rfm_move_set_slot_layout(&M, 0, RFM_MOVE_LAY_SCALE);   /* ChoralRoot's Scale: the sequencer, track 1 */
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.sel_track == 0);
+    back();                                             /* Back with nothing open: nothing (no flip) */
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ);
+    press(MR_CC_MENU);                                  /* Menu: session view; Back: the track view */
+    CHECK(M.seq.view);
+    back();
+    CHECK(!M.seq.view);
+    press(MR_CC_MENU), tap_track(0);                    /* a Track tap: the track view too */
+    CHECK(!M.seq.view && M.seq.trig);
+    rest(), hold_track(0);                              /* the merged menu */
     write_pbm("lock_menu");
-    step(5, 1), step(5, 0);                             /* tap: track 6 locked to Felucca, selected */
-    CHECK(M.s.lock[1] == 5 && M.seq.sel_track == 5 && M.lk_word == LK_LOCKED);
-    step(6, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(6, 0);   /* hold: track 7 not routed to Felucca */
-    CHECK(!(M.seq.fx.ffilt[1] >> 6 & 1) && (M.seq.fx.ffilt[0] >> 6 & 1) && M.lk_word == LK_OFF);
+    step(6, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(6, 0);   /* hold: track 7 not routed to ChoralRoot */
+    CHECK(!(M.seq.fx.ffilt[0] >> 6 & 1) && (M.seq.fx.ffilt[1] >> 6 & 1) && M.lk_word == LK_OFF);
     write_pbm("lock_notrouted");
     now_ms += 500;
-    step(2, 1), step(2, 0), step(2, 1), step(2, 0);     /* double tap: track 3 solo (its first tap locked it) */
-    CHECK(M.seq.tr[2].solo && M.lk_word == LK_SOLO && M.s.lock[1] == 2);
-    now_ms += 500;
-    step(5, 1), step(5, 0);                             /* track 6 locked again */
+    step(4, 1), step(4, 0), step(4, 1), step(4, 0);     /* double tap: solo track 5 on ChoralRoot only */
+    CHECK(M.fsolo[0] == 5 && M.seq.fx.ffilt[0] == 1u << 4 && M.seq.fx.ffilt[1] == 0xFFFF && !M.seq.tr[4].solo);
+    CHECK(M.lk_word == LK_SOLO);
+    write_pbm("lock_solo");
     leds(w);
-    CHECK(w[L_STEP0 + 2][2] == 255 && w[L_STEP0 + 2][0] == 40);   /* soloed: blue */
-    CHECK(w[L_STEP0 + 6][0] > 60 && w[L_STEP0 + 6][2] < w[L_STEP0 + 6][0] / 4 && w[L_STEP0 + 6][0] < 255);   /* not
-                                                         * routed: dim red */
-    CHECK(bright(w[L_TRACK0 + 1]) > bright(w[L_TRACK0 + 0]));   /* the held firmware's Track lit */
-    clear(), hit(10);                                   /* the pads do nothing while held */
+    CHECK(w[L_STEP0 + 4][2] == 255 && w[L_STEP0 + 4][0] == 40);   /* soloed: blue */
+    now_ms += 500;
+    step(8, 1), step(8, 0), step(8, 1), step(8, 0);     /* another: one solo a firmware */
+    CHECK(M.fsolo[0] == 9 && M.seq.fx.ffilt[0] == 1u << 8);
+    now_ms += 500;
+    step(8, 1), step(8, 0), step(8, 1), step(8, 0);     /* again: off, the filter as it was (track 7 off, 5 and 9 on) */
+    CHECK(!M.fsolo[0] && !(M.seq.fx.ffilt[0] >> 6 & 1) && (M.seq.fx.ffilt[0] >> 8 & 1));
+    clear(), hit(10);                                   /* the pads: the layout menu (pad 11: a scale) */
     CHECK(count(RFM_MOVE_ACT_MIDI) == 0);
-    track(1, 0);
-    rest(), clear();
-    tap_track(0);                                       /* Track 1: its own locked track (track 1) */
-    CHECK(M.seq.sel_track == 0 && M.fw.active == 0);
-    rest();
-    tap_track(1);                                       /* Track 2: track 6 now */
-    CHECK(M.seq.sel_track == 5);
+    hit(31);                                            /* latch on */
+    track(0, 0), rest(), clear();
+    {                                                   /* a latched live note keeps sounding; pressed again: off */
+        int on = 0, off = 0;
+        hit(0);
+        for (i = 0; i < nact; i++)
+            on += A[i].kind == RFM_MOVE_ACT_MIDI && (A[i].bytes[0] & 0xF0) == 0x90, off += A[i].kind == RFM_MOVE_ACT_MIDI && (A[i].bytes[0] & 0xF0) == 0x80;
+        CHECK(on == 1 && off == 0 && m_nlat() == 1);
+        clear(), hit(0);
+        for (i = 0, off = 0; i < nact; i++)
+            off += A[i].kind == RFM_MOVE_ACT_MIDI && (A[i].bytes[0] & 0xF0) == 0x80;
+        CHECK(off == 1 && m_nlat() == 0);
+    }
+    rfm_move_set_latch(&M, 0), clear();
+    press(MR_CC_PLAY);                                  /* Play: the sequencer, Start + clock to every firmware */
+    adv_ms(600);
+    for (i = 0; i < nact; i++)
+        if (A[i].kind == RFM_MOVE_ACT_MIDI && A[i].n == 1 && A[i].dest == RFM_MOVE_DEST_ALL)
+            fa += A[i].bytes[0] == 0xFA, f8 += A[i].bytes[0] == 0xF8;
+    CHECKF(fa == 1 && f8 >= 27 && f8 <= 31, "FA %d, F8 %d", fa, f8);   /* (120 BPM: 48 a second) */             /* (120 BPM: 24 a beat, 0.6 s) */
+    clear(), press(MR_CC_PLAY);
+    for (i = 0; i < nact; i++)
+        fc += A[i].kind == RFM_MOVE_ACT_MIDI && A[i].bytes[0] == 0xFC && A[i].dest == RFM_MOVE_DEST_ALL;
+    CHECK(fc == 1);
 }
 
 /* ================================================================ the FM-1 layout's knobs and jog === */
@@ -421,7 +465,7 @@ static void test_settings(void)
     CHECK(rfm_move_load(&t, b, RFM_MOVE_SETTINGS_BYTES_V6) == 0);
     CHECK(t.mode == RFM_MOVE_MODE_MIDI && t.slot[2].lay == RFM_MOVE_LAY_DRUM && t.slot[0].channel == 4 && t.slot[1].cc[0] == 24);
     fresh_with(&t, 1);                                  /* loaded: slot 1's Drum played */
-    CHECK(M.s.mode == RFM_MOVE_MODE_MIDI && M.s.layout == RFM_MOVE_LAYOUT_DRUM);
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && M.s.layout == RFM_MOVE_LAYOUT_DRUM);   /* (0.9.0: the sequencer) */
 }
 
 /* ================================================================ speech === */
@@ -433,19 +477,13 @@ static void test_speech(void)
     rfm_move_set_slot_layout(&M, 1, RFM_MOVE_LAY_DRUM);
     clear();
     tap_track(1);
-    CHECKF(strstr(said, "E:Felucca, Drum layout|") != NULL, "said \"%s\"", said);
+    CHECKF(strstr(said, "E:Felucca, Drum layout, Track 2|") != NULL, "said \"%s\"", said);
     rest(), clear();
     hold_track(1);
-    CHECKF(strstr(said, "Felucca, layouts, Drum") != NULL, "said \"%s\"", said);
-    clear(), knob(0, 58);
-    CHECKF(strstr(said, "Knob 1: CC 74") != NULL, "said \"%s\"", said);
+    CHECKF(strstr(said, "Felucca, layouts, Drum, Track 2") != NULL, "said \"%s\"", said);
+    clear(), step(5, 1), step(5, 0);
+    CHECKF(strstr(said, "Track 6, selected") != NULL, "said \"%s\"", said);
     track(1, 0), rest(), clear();
-    back();
-    CHECKF(strstr(said, "Sequencer mode") != NULL, "said \"%s\"", said);
-    rest(), clear();
-    hold_track(0);
-    CHECKF(strstr(said, "lock, Track 1") != NULL, "said \"%s\"", said);
-    track(0, 0), rest(), clear();
     tap_track(3);
     CHECKF(strstr(said, "Mixer") != NULL, "said \"%s\"", said);
 }
