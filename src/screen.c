@@ -1255,6 +1255,11 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
         if (m->pop == POP_TK && rfmv_pop_up(m, POP_TK)) {
             tk_popup(m, &cv);
             mr_gfx_pack(&cv, out);
+        } else if (m->pop == POP_MASTER && rfmv_pop_up(m, POP_MASTER) && !(rfmv_tk_claims(m) & RFM_MOVE_TK_VOLUME)) {
+            mr_gfx_clear(&cv, 0);                       /* (0.8.1) the volume knob (the host's, not claimed): its
+                                                         * level over the firmware's screen, full screen */
+            value_popup(m, &cv);
+            mr_gfx_pack(&cv, out);
         } else
             memcpy(out, m->tk[m->fw.active % RFM_MOVE_FW_SLOTS].screen, MR_SCREEN_BYTES);
         return;
