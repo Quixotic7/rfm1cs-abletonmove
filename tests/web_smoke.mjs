@@ -122,7 +122,7 @@ core.sessStop(5000);
   core.setSpeech(true);
   ok(core.speech() && core.words() === "Alpha, FM-1 layout", `(0.6.0) words(): ${core.words()}`);
   const m = core.setMode(MODE.CONTROL).filter((a) => a.kind === "say");
-  ok(m.length === 1 && m[0].event && m[0].text === "Alpha, Scale layout", `(0.6.0, 0.8.0) a layout change: an event, its name: ${JSON.stringify(m)}`);
+  ok(m.length === 1 && m[0].event && m[0].text === "Alpha, Scale layout, Track 1", `(0.6.0, 0.9.0) a layout change: an event, its name: ${JSON.stringify(m)}`);
   ok(core.slotLayout(0) === 2 && (core.setSlotLayout(1, 4), core.slotLayout(1) === 4), "(0.8.0) slot layouts");
   const p = core.popup("FM-1 linked").filter((a) => a.kind === "say");
   ok(p.length === 1 && !p[0].event && p[0].text === "FM-1 linked", "(0.6.0) popup: a value, its words");

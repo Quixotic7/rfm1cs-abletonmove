@@ -293,6 +293,9 @@ void rfmv_view_open(rfm_move_t *m, int what);           /* the projects view on 
 void rfmv_view_close(rfm_move_t *m);                    /* .. left, as Back leaves it */
 int rfmv_fx_ok(const rfm_move_t *m);                    /* the host has FX setup (the Mixer, Routing) and a list */
 void rfmv_route_toggle(rfm_move_t *m, int slot, int track);   /* a sequencer track to a firmware slot or not */
+void rfmv_route_on(rfm_move_t *m, int slot, int track);       /* (0.9.0) .. routed (selected for the slot) */
+int rfmv_fw_solo(rfm_move_t *m, int slot, int track);         /* (0.9.0) the slot's solo toggled: 1 on */
+rfmv_rgb_t rfmv_lock_rgb(const rfm_move_t *m, int slot, int track);   /* (0.9.0) a track's step in the lock menu */
 int rfmv_t4_page(const rfm_move_t *m);                  /* Track 4's page: 0 the Mixer, 1 Routing */
 enum { POP_LAYOUT = 40, POP_JOG, POP_T4, POP_CCNUM, POP_LOCK, POP_SEQ };   /* (popups, rfm_move_t.pop) */
 enum { LK_LOCKED, LK_SOLO, LK_UNSOLO, LK_OFF, LK_ON, LK_MUTE, LK_UNMUTE, LK_CLEARED };   /* the lock menu's word */

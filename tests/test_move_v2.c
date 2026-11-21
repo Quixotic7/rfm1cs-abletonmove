@@ -329,7 +329,7 @@ static void core_screens(void)
     reset(0), rfm_move_set_master(&C, 511), touch(8, 1), knob(8, 1), knob(8, 127), shot("fm1.master");
     reset(0), hold_track(3), shot("fm1.shift");         /* (0.8.0: Track 4 held is the Shift layer) */
     reset(0), tap_track(0), shot("mode.fm1");           /* (Track 1 tap: slot 0's layout named) */
-    /* MIDI mode */
+    /* MIDI mode ((0.9.0) reset(1): slot 1's note layout, which is the sequencer on track 1; shots only) */
     reset(1), pad(10, 100), pad(4, 100), shot("midi.pads");
     /* (0.8.0: the PADS/NOTES toggle is gone; midi.notes and mode.notes are not shot) */
     reset(1);
@@ -355,8 +355,10 @@ static void core_screens(void)
     step(4, 0), rest();
     button(MR_CC_COPY, 1), step(4, 1), step(4, 0), shot("seq.clip"), button(MR_CC_COPY, 0);
     reset(3), C.seq.rec_mode = RFM_MOVE_RM_RECORD, press(MR_CC_REC), press(MR_CC_PLAY), adv_ms(600), shot("seq.count");
-    reset(0), press(MR_CC_BACK), shot("mode.seq");      /* (0.8.0: Back flips a layout to the Sequencer) */
-    CHECKF(C.s.mode == RFM_MOVE_MODE_SEQ, "Back click from the FM-1 layout: the Sequencer");
+    reset(0), press(MR_CC_BACK);                        /* (0.9.0: Back with nothing open does nothing) */
+    CHECKF(C.s.mode == RFM_MOVE_MODE_FM1, "Back click from the FM-1 layout: stays (no flip)");
+    hold_track(0), pad(24 + RFM_MOVE_LAY_SCALE, 100), pad(24 + RFM_MOVE_LAY_SCALE, 0), track(0, 0), shot("mode.seq");
+    CHECKF(C.s.mode == RFM_MOVE_MODE_SEQ && C.seq.sel_track == 0, "Track 1 held + Scale: the note layout, the sequencer on track 1");
     /* the TRIG page */
     {
         static const char *const TN[6] = { "trig.micro", "trig.ratch", "trig.chance", "trig.cond", "trig.func", "trig.len" };

@@ -26,9 +26,9 @@ extern "C" {
 
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
-#define RFM1CS_VERSION_MINOR 8
+#define RFM1CS_VERSION_MINOR 9
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.8.0"
+#define RFM1CS_VERSION "0.9.0"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -71,10 +71,10 @@ enum {
     RFM_MOVE_E_MASTER = 7,                              /* (labels only: MASTER is not an encoder) */
 };
 
-/* what the controls play now (rfm_move_mode). (0.8.0, the Track buttons' proposal 2) Track 1..3 are the firmware slots
- * and each slot has its own layout (RFM_MOVE_LAY_*): FM1 is the FM-1 layout, MIDI any note layout, TAKEOVER the
- * firmware's own (rfm_move_set_takeover); SEQ the Sequencer (Back flips to it). CONTROL is gone: every note layout has
- * the Control CCs on its knobs (rfm_move_set_mode(m, CONTROL) is MIDI). TAKEOVER is never in the settings */
+/* what the controls play now (rfm_move_mode). (0.8.0, 0.9.0: the Track buttons' proposals 2 and 3) Track 1..3 are the
+ * firmware slots and each slot has its own layout (RFM_MOVE_LAY_*): FM1 is the FM-1 layout, TAKEOVER the firmware's own
+ * (rfm_move_set_takeover), SEQ a note layout: the sequencer on the slot's selected track (settings.lock). MIDI and
+ * CONTROL are no longer entered (rfm_move_set_mode(m, MIDI or CONTROL) is SEQ). TAKEOVER is never in the settings */
 enum { RFM_MOVE_MODE_FM1 = 0, RFM_MOVE_MODE_MIDI = 1, RFM_MOVE_MODE_CONTROL = 2, RFM_MOVE_MODE_SEQ = 3,
        RFM_MOVE_MODE_TAKEOVER = 4 };
 /* (0.8.0) a firmware slot's layout, its Track button's menu's top row (pad 1 FM-1, pad 2 the firmware's own takeover,
@@ -157,6 +157,7 @@ enum {
  * NUL-terminated, len < RFM_MOVE_SAY_MAX; valid during the callback only), param 0. Only while speech is on. A
  * #define (not an enum value) so a host can #ifdef it */
 #define RFM_MOVE_ACT_SAY 30
+#define RFM_MOVE_DEST_ALL 255                           /* (0.9.0) a MIDI action's dest: every loaded firmware */
 /* (0.7.0) the takeover (rfm_move_set_takeover; README "Takeover"). The host calls the slot's firmware with them:
  *  - TK_INPUT: rfm1_tk_input(pkt): slot, pkt[4] (and data / len 4) the raw packet of a claimed control (a release the
  *    core makes up, as the takeover closes: note off 0x80 vel 0, a button's CC value 0);
@@ -187,7 +188,9 @@ typedef struct {
     /* (0.5.4) */
     uint8_t dest;                                       /* MIDI (track 0): 0 the active slot, as always; 1..3 firmware
                                                          * slot dest - 1, whichever is active now (a latched note's
-                                                         * note off: the slot it was played on) */
+                                                         * note off: the slot it was played on); (0.9.0)
+                                                         * RFM_MOVE_DEST_ALL every loaded firmware (the sequencer's
+                                                         * clock: FA, F8 at 24 PPQN, FC; one byte, n 1) */
     /* (0.6.6) */
     uint8_t mroute[3];                                  /* ROUTE: each firmware slot's MIDI routes (rfm_move_fxset_t
                                                          * mroute: bits 0..2 the slots, RFM_MOVE_MROUTE_OUT Out) */
@@ -895,7 +898,14 @@ typedef struct {
     uint8_t lk_word;                                    /* the lock menu's last change (LK_* in move.c) */
     uint8_t fx_route;                                   /* Routing's column page (the Mixer and Routing flip) */
     uint8_t say_hold;
-    uint8_t tbtn_used;                                  /* bits: something else pressed while that Track was held */                                   /* (speech) the held Tracks whose menu showed (said once up) */
+    uint8_t tbtn_used;                                  /* bits: something else pressed while that Track was held */
+    /* (0.9.0) each firmware's solo (proposal 3): the track + 1 alone reaching it (0 none), its filter as it was */
+    uint8_t fsolo[RFM_MOVE_FW_SLOTS];
+    uint16_t fsolo_save[RFM_MOVE_FW_SLOTS];
+    uint32_t fw_tap_ms;                                 /* (0.9.0) the browser: the pad tapped last (a double tap loads) */
+    uint8_t fw_tap_cell;                                /* .. its cell + 1, 0 none */
+    uint8_t clk_on;                                     /* (0.9.0) the clock is going out (Start sent) */
+    uint32_t in_ms;                                     /* (0.9.0) rfm_move_input's now_ms, the latest */                                   /* (speech) the held Tracks whose menu showed (said once up) */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
@@ -914,9 +924,9 @@ void rfm_move_init(rfm_move_t *m, const rfm_move_settings_t *settings, rfm_move_
 void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms);
 /* every held FM-1 key, button and MIDI note let go (ups, pressure 0, note offs); the track buttons forgotten */
 void rfm_move_release_all(rfm_move_t *m);
-/* (releases all on a change) (0.8.0) the active slot's layout: RFM_MOVE_MODE_FM1 the FM-1 layout (out of a takeover),
- * MIDI or CONTROL its note layout (the last one it had, Scale at first), TAKEOVER its takeover (nothing if it has
- * none); SEQ the Sequencer. Out of the Sequencer to a layout as Back's flip does */
+/* (releases all on a change) (0.9.0) the active slot's layout: RFM_MOVE_MODE_FM1 the FM-1 layout (out of a takeover),
+ * SEQ, MIDI or CONTROL its note layout (the last one it had, Scale at first: the sequencer on its track), TAKEOVER its
+ * takeover (nothing if it has none) */
 void rfm_move_set_mode(rfm_move_t *m, int mode);
 int rfm_move_mode(const rfm_move_t *m);                 /* (0.7.0) RFM_MOVE_MODE_* now (TAKEOVER: the active slot's) */
 /* (0.8.0) a slot's layout (RFM_MOVE_LAY_*), as its Track button's menu sets it: the active slot's is played at once

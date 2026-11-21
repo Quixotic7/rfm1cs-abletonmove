@@ -87,37 +87,44 @@ each into a queue the engine drains, and never calls into the engine from the ca
 up: `_advance` takes the frames since its last call). When the engine's thread stops (no firmware running), the
 network thread drives the session alone under the same mutex: `_tick` at `_next_ms`, `_rx`, `_closed`.
 
-## The Track buttons (0.8.0, proposal 2)
+## The Track buttons (0.8.0, proposal 2; 0.9.0, proposal 3: one main layout)
 
-The owner's board (`remoteFM14Move/docs/design/track-buttons-v2.movedesign.json`, layouts A..J): **Track 1, 2, 3 are
-the three firmware slots, always; Track 4 is the sequencer side.** There are no Track-chosen modes any more: each slot
-has its own layout (`settings.slot[]`: FM-1, the firmware's takeover, Scale, Chroma, Drum, Octave) with its own scale,
-root, MIDI channel, octave and 8 CC numbers, and the Sequencer is Back's flip. A tap acts at its release
-(`RFM_MOVE_TAP_MS`, 300 ms, nothing else done); a press within `RFM_MOVE_DOUBLE_MS` (300 ms) of that release is a
-double click (the tap has already acted, nothing waits); held, the button's menu shows after 300 ms (or at once when
-used) and its release does nothing.
+The owner's boards (`remoteFM14Move/docs/design/track-buttons-v2` and `-v3.movedesign.json`): **Track 1, 2, 3 are
+the three firmware slots, always; Track 4 is the sequencer side.** Each slot has its own layout: the FM-1 layout, the
+firmware's takeover, or a note layout (Scale, Chroma, Drum, Octave). **A note layout is the sequencer** (0.9.0): the
+track view of the slot's selected sequencer track (`settings.lock[slot]`, track n + 1 at first) with the sequencer's
+whole feature set; there is no separate Sequencer mode. A tap acts at its release (`RFM_MOVE_TAP_MS`, 300 ms,
+nothing else done); a press within `RFM_MOVE_DOUBLE_MS` (300 ms) of that release is a double click (the tap has
+already acted, nothing waits); held, the button's menu shows after 300 ms (or at once when used) and its release does
+nothing.
 
 | Track | Tap | Held | Double click |
 |---|---|---|---|
-| 1..3 | play that slot in its layout (`FW_ACTIVE`; an empty slot too); in the Sequencer: select the sequencer track locked to it | the slot's layout menu (below); in the Sequencer: the lock menu (below) | the firmware browser on that slot |
+| 1..3 | play that slot in its layout (`FW_ACTIVE`; an empty slot too); a note layout: its track view (the TRIG knob page first) | one menu (below) | the firmware browser on that slot (there a pad's double tap loads it) |
 | 4 | the Mixer or Routing, the one last shown (the Mixer at first); a tap there flips them | pad 1 the Mixer, pad 2 Routing; the steps the Shift shortcuts, Record / Play / Capture / Undo / Loop / Sample their Shift + button, in every layout | the sequencer's projects |
 
-**The layout menu** (Track n held, outside the Sequencer; it edits slot n, played or not): the top row's pads 1..6
-FM-1 (white), the firmware's own takeover (purple; dark when it has none), Scale, Chroma, Drum, Octave (lime), the
-slot's own full, the others at 30 %; pad 8 latch (amber); rows 2..4 the 24 scales (the slot's white, the others
-cyan); the steps the MIDI channel (the slot's white); the jog the root, Up / Down the octave; the knobs the CC numbers
-when the slot is in a note layout (white rings; FM-1 layout, takeover: nothing); the volume the slot's level. The
-screen: the firmware's name, the layout big, six dashes (the one on); a scale, root, channel or octave changed: the
-keys screen; a knob: "Knob 1 / CC 74 / Felucca".
+**A note layout** (the sequencer): the pads play the layout into the selected track (live to the slot, recorded with
+Record), the steps are its clip's steps, the knobs the TRIG page then the CC banks (the jog), the buttons the
+sequencer's (Play, Record, Capture, Loop, Copy, Delete, Undo, Mute, Shift + step), Menu the track view <-> session
+view. Entering it selects the slot's track, routes it to the slot and gives it the slot's layout; the track's channel,
+key and CC numbers are the ones played. Play starts the sequencer and sends MIDI Start, clock (24 PPQN) and Stop to
+every loaded firmware (`RFM_MOVE_DEST_ALL`), so their own sequencers and arps follow.
 
-**The lock menu** (Track n held in the Sequencer): the steps are the 16 tracks: a tap locks that track to firmware n
-and selects it (Track n's tap selects it from then on; the firmware's colour), a double tap solos it (blue), a hold
-stops it reaching firmware n (dim red: firmware n's 16-track filter, as Routing's steps); Copy, Delete and Mute + a
-step copy, clear, mute a track; the knobs the track's CC numbers, the jog its channel, Up / Down its rate; the pads do
-nothing. The screen: the firmware, the locked track big, what changed ("locked", "solo", "not routed").
+**Track n held: one menu** (every layout): the top row's pads 1..6 FM-1 (white), the firmware's own takeover (purple;
+dark when it has none), Scale, Chroma, Drum, Octave (lime), the slot's own full, the others at 30 %; pad 8 latch
+(amber); rows 2..4 the 24 scales (the key the tracks use: the project's, or the selected track's own). The steps are
+the 16 tracks for firmware n: **a tap selects** one (it is routed to firmware n at once; in a note layout it is the
+track edited), **a double tap solos** it on firmware n only (one solo a firmware: another moves it; again: off, the
+routing as it was), **a hold** stops it reaching firmware n (dim red); Copy, Delete and Mute + a step copy, clear,
+mute a track. The jog the root, Up / Down the octave, the knobs (in a note layout) the track's CC numbers, the volume
+the slot's level. The screen: the firmware, the layout big, six dashes; a step: "ChoralRoot / Track 3 / selected".
 
-**Back** with nothing to close flips between the slot's layout and the Sequencer. In the Sequencer only MIDI is
-played (the pads into the selected track, on to the firmwares); the firmware itself is played from its layout.
+**Shift shortcuts** (0.9.0): Track 4 held + a step anywhere (its Shift menu on the screen at once), Shift + a step in
+a note layout and in the Mixer and Routing (a Shift menu opens over them; Back closes it). **Track 1..3 held** works
+over the projects view too.
+
+**Back** closes layers only (a Shift menu, Loop's latch, the clipboard's marks, session view, the projects view's
+levels); with nothing open it does nothing (0.9.0; in 0.8.0 it flipped to a Sequencer mode).
 
 **The LEDs:** Track 1..3 the loaded firmware's colour (an empty slot faint white), full for the one played (on the
 sequencer side, dim; a held one full); Track 4 red, full on the sequencer side (the Sequencer, the Mixer, Routing, the
@@ -878,7 +885,7 @@ short, digits for numbers, note names as the screen has them):
 
 | kind | when | examples |
 |---|---|---|
-| EVENT | the base view changes (not when a popup over it closes) | "FM-1 mode", "MIDI mode, Notes", "Control mode", "Sequencer mode", "Session", "Track 3", "Firmwares, Slot 1, Felucca", "Slot 2, empty", "Catalog", "States, Felucca", "Projects", "FX setup, MIDI FX", "Routing", "Mixer", "Arp, Page 1" |
+| EVENT | the base view changes (not when a popup over it closes) | "FM-1 mode", "MIDI mode, Notes", "Control mode", "Felucca, Drum layout, Track 2" (0.9.0), "Session", "Track 3", "Firmwares, Slot 1, Felucca", "Slot 2, empty", "Catalog", "States, Felucca", "Projects", "FX setup, MIDI FX", "Routing", "Mixer", "Arp, Page 1" |
 | VALUE | a popup's words change, or the selection's | knobs "K1", "K1: +3", "Volume 75%", "CC 16: 65", readouts "Voicing: Wide"; held Track menus "Scale: Dorian", "Root: Db", "Layout: Drum", "Channel: 3", "Knob 1: CC 17", "Track 3, muted", "Rate: 1/16"; "Latch on"; a held label "SEL/KEYS"; host popups "FM-1 linked"; the sequencer "Playing", "Stopped", "Record on", "Step 5", "Chance: 50%", "Loop: 2 bars", "Tempo 120", "Bar 2", "Undo", "Metronome on", "Sync: EXT"; projects "Project 3, 120 BPM, 4 clips"; Down "Melodee, FM-1"; the browser "All firmwares", "Filter Synth", "Bank 2", the firmware selected ("Felucca"; in the catalog "Felucca, not installed"), its description (the jog's first detent, 250 characters at most), "Downloading Felucca 25%", "Felucca installed", "Felucca added to Favorites", "SLOOP, position 3 of 17", "Tagged Synth"; FX setup "MIDI FX 1: Arp", the module list "Arp", "Rate: 1/8", "Slot 1 Level: 100", "MIDI FX 1: track 3" |
 
 (0.6.1) Every FM-1 button press is said at once (its label, else its name, else the panel's word: "Play", "Octave
@@ -915,7 +922,7 @@ play notes (0.6.5: heard, never said).
 | (0.8.0) Track 1..3 tap | layouts | the slot and its layout: "Felucca, Drum layout" (the view), "Felucca, Drum" (the popup) |
 | Track 1..3 held | layouts | shown: "Felucca, layouts, Drum"; then "Layout: Chroma", "Scale: Minor", "Root: Db", "Channel: 3", "Octave 1", "Knob 1: CC 74"; pad 8 "Latch on" |
 | Track 4 tap / held | anywhere | "FX setup, Mixer" / "Routing"; held: "Track 4, Mixer" |
-| Back | layouts, Sequencer | "Sequencer mode"; back: "ChoralRoot, FM-1 layout" |
+| (0.9.0) a note layout | anywhere | "Felucca, Drum layout, Track 2"; held "Felucca, layouts, Drum, Track 2"; a step "Track 6, selected", "Track 5, solo" |
 | jog click | the FM-1 layout | "Jog: Preset" |
 | Shift + knob | a note layout | "Knob 2: CC 19" |
 | Track 1..3 held + step (tap, hold, double), Up / Down, jog | Sequencer | shown "ChoralRoot, lock, Track 3"; "Track 6, locked", "Track 7, not routed", "Track 3, solo", "Rate: 1/16", "Channel: 2"; + Copy / Delete "Copied track 2" |

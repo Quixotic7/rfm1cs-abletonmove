@@ -975,10 +975,24 @@ void rfmv_seq_preview(rfm_move_t *m, int clip, int step)
     }
 }
 
+/* (0.9.0, the owner's) the sequencer's clock to every firmware: Start as it begins, a clock every 4 ticks (24 PPQN)
+ * while it plays, Stop as it stops; never while it follows a firmware's clock. MIDI actions, dest RFM_MOVE_DEST_ALL,
+ * frame-stamped */
+static void clk_out(rfm_move_t *m, uint8_t st)
+{
+    rfm_move_act_t a;
+    memset(&a, 0, sizeof a);
+    a.frame = m->seq.frame;
+    a.kind = RFM_MOVE_ACT_MIDI, a.n = 1, a.bytes[0] = st, a.dest = RFM_MOVE_DEST_ALL;
+    if (m->fn)
+        m->fn(m->ctx, &a);
+}
 static void begin(rfm_move_t *m)
 {
     rfm_move_seq_t *q = &m->seq;
     int t;
+    if (!q->following)
+        clk_out(m, 0xFA), m->clk_on = 1;
     q->playing = 1, q->start_pending = 0, q->T = -1;
     for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++) {
         q->tr[t].t0 = 0, q->tr[t].pos = -1;
@@ -1252,6 +1266,8 @@ static void tick(rfm_move_t *m, uint32_t frame)
     if (q->metro && q->start_pending == 3 && q->count_in > 0 && (q->count_in - 1) % (BAR / 4) == 0)
         rfmv_emit(m, RFM_MOVE_ACT_CLICK, 0, 0, 0, q->count_in - 1 == BAR);   /* (the count-in's beats) */
     arp_tick(m);
+    if (q->playing && m->clk_on && !q->following && (q->T + 1) % 4 == 0)
+        clk_out(m, 0xF8);                               /* (0.9.0: 24 PPQN, the first with Start) */
     if (q->playing)
         play_tick(m, ++q->T);
     q->jr_n = 0;
@@ -1318,6 +1334,8 @@ void rfmv_seq_stop(rfm_move_t *m)
     }
     if (q->arec >= 2)                                   /* (a loop being recorded ends with the transport) */
         rfmv_emit(m, RFM_MOVE_ACT_AUDIO_REC, (int)((q->T - q->arec_T + BAR - 1) / BAR), 0, 0, 0);
+    if (m->clk_on)
+        clk_out(m, 0xFC), m->clk_on = 0;                /* (0.9.0: Stop to every firmware) */
     q->playing = 0, q->start_pending = 0, q->rec = 0, q->srec = 0, q->arec = 0;
     rfmv_seq_release(m, -1);
 }

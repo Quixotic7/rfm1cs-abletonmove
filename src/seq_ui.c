@@ -49,7 +49,7 @@ void rfmv_shift_icons(const rfm_move_t *m, uint8_t icon[16])
     int i;
     memset(icon, 0, 16);
     if (!((m->s.mode == RFM_MOVE_MODE_SEQ && (q->mods & SEQ_M_SHIFT)) || rfmv_t4_menu(m) ||
-          (m->s.mode == RFM_MOVE_MODE_MIDI && m->shift_down && !m->seq.projects)))
+          (m->seq.projects && m->fw.fx && m->shift_down)))
         return;                                         /* (0.8.0: Track 4 held, Shift outside the FM-1 layout) */
     for (i = 0; i < RFM_MOVE_NSTEPS; i++) {
         const int job = i == SH_PROJECTS || i == SH_CLOCK || i == SH_FIXVEL || i == SH_DOUBLE || i == SH_QUANT ||
@@ -667,12 +667,14 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
                 rfmv_route_toggle(m, fw, s), q->tstep_tap = -1;
                 m->lk_word = (uint8_t)(q->fx.ffilt[fw] >> s & 1 ? LK_ON : LK_OFF);
             } else if (q->tstep_tap == s && now - q->tstep_tap_ms < 400) {
-                rfmv_seq_solo(m, s, !q->tr[s].solo), q->tstep_tap = -1;
-                m->lk_word = (uint8_t)(q->tr[s].solo ? LK_SOLO : LK_UNSOLO);
+                q->tstep_tap = -1;                      /* (0.9.0: the firmware's solo, one at a time) */
+                m->lk_word = (uint8_t)(rfmv_fw_solo(m, fw, s) ? LK_SOLO : LK_UNSOLO);
             } else {
                 if (m->s.lock[fw] != s)
                     m->s.lock[fw] = (uint8_t)s, rfmv_changed(m);
-                rfmv_seq_select(m, s);
+                rfmv_route_on(m, fw, s);                /* (0.9.0: selected: it reaches the firmware) */
+                if (fw == (m->fw.active % RFM_MOVE_FW_SLOTS) && m->s.mode == RFM_MOVE_MODE_SEQ)
+                    rfmv_seq_select(m, s);              /* (the slot played: its track view edits it now) */
                 q->tstep_tap = (int8_t)s, q->tstep_tap_ms = now;
                 m->lk_word = LK_LOCKED;
             }
@@ -716,8 +718,9 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         }
         return;
     }
-    if (q->projects) {
-        if ((q->mods & SEQ_M_SHIFT) && s == 0)
+    if (q->projects && !rfmv_seq_trk_held(m) && !((q->mods & SEQ_M_SHIFT) && m->fw.fx)) {
+        if ((q->mods & SEQ_M_SHIFT) && s == 0)          /* (0.9.0: the Mixer / Routing take the Shift shortcuts; a held
+                                                         * Track's tracks work over any view) */
             q->projects = 0, q->mods_used |= SEQ_M_SHIFT;
         return;
     }
@@ -1846,6 +1849,18 @@ static int clip_state(const rfm_move_t *m, int track, int scene)
     return used ? CS_CONTENT : CS_EMPTY;
 }
 
+/* (0.8.0, 0.9.0) the lock menu's steps (the board's colours): the track selected for the firmware in its colour, the
+ * firmware's solo blue, not routed to it dim red, the others by their content */
+rgb_t rfmv_lock_rgb(const rfm_move_t *m, int fw, int i)
+{
+    if (m->fsolo[fw] == i + 1)
+        return (rgb_t){ 40, 110, 255 };
+    if (m->s.lock[fw] == i)
+        return rfmv_fw_rgb(m, fw);
+    if (!(m->seq.fx.ffilt[fw] >> i & 1))
+        return sc((rgb_t){ 255, 40, 40 }, 90);
+    return sc(RFMV_WHITE, rfmv_seq_track_used(m, i) ? 38 : 13);
+}
 void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
 {
     const rfm_move_seq_t *q = &m->seq;
@@ -1912,15 +1927,7 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
         else if (t4 && !(q->mods & SEQ_M_MUTE)) {       /* (0.8.0) the lock menu (the board's colours): the track
                                                          * locked to the held firmware in its colour, soloed blue, not
                                                          * routed to it dim red, the others by their content */
-            const int fw = t4 - 1;
-            if (m->s.lock[fw] == i)
-                v = rfmv_fw_rgb(m, fw);
-            else if (q->tr[i].solo)
-                v = (rgb_t){ 40, 110, 255 };
-            else if (!(q->fx.ffilt[fw] >> i & 1))
-                v = sc((rgb_t){ 255, 40, 40 }, 90);
-            else
-                v = sc(RFMV_WHITE, rfmv_seq_track_used(m, i) ? 38 : 13);
+            v = rfmv_lock_rgb(m, t4 - 1, i);
         } else if (t4 || (q->mods & SEQ_M_MUTE)) {      /* the tracks */
             const int used = rfmv_seq_track_used(m, i);
             if (q->tr[i].solo)
@@ -2704,10 +2711,10 @@ void rfmv_seq_screen(const rfm_move_t *m, mr_canvas_t *cv)
     const rfm_move_seq_t *q = &m->seq;
     if (!q->projects && !q->smenu && !q->view && (q->mods & SEQ_M_LOOP) && !(q->mods & SEQ_M_MUTE))
         rfmv_seq_loop_edit(m, cv);
+    else if (q->smenu)                                  /* (0.9.0: a Shift menu over the Mixer / Routing too) */
+        smenu_screen(m, cv);
     else if (q->projects)
         projects_screen(m, cv);
-    else if (q->smenu)
-        smenu_screen(m, cv);
     else if (q->mods & SEQ_M_MUTE)
         mute_screen(m, cv);
     else if (q->view)
