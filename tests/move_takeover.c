@@ -81,7 +81,9 @@ static void press(int cc) { button(cc, 1), button(cc, 0); }
 static void touch(int k, int on) { raw(on ? 0x90 : 0x80, (uint8_t)k, on ? 127 : 0); }
 static void knob(int k, int d) { raw(0xB0, (uint8_t)(MR_CC_KNOB1 + k), (uint8_t)(d & 127)); }
 static void track(int t, int down) { button(MR_CC_TRACK1 - t, down); }
-static void tap_track(int t) { track(t, 1), track(t, 0); }
+static void adv_ms(uint32_t ms);
+/* a Track tap (0.8.0: a pause first, so two in a row are not a double click) */
+static void tap_track(int t) { adv_ms(RFM_MOVE_DOUBLE_MS + 20), track(t, 1), track(t, 0); }
 static void rest_pop(void) { adv_ms(RFM_MOVE_POPUP_MS + 50); }
 
 static rfm_move_fw_t E[NFW];
@@ -135,21 +137,34 @@ static void leds(uint8_t w[RFM_MOVE_NLEDS][3])
 
 #define NOTRK (RFM_MOVE_TK_ALL & ~RFM_MOVE_TK_TRACKS)
 
-/* 1. Track 1 both ways, the name, the words, the screen */
+/* (0.8.0, proposal 2) a slot's layout menu: its Track held + a top-row pad (24 FM-1, 25 the takeover) */
+static void lay_menu(int t, int p) { adv_ms(RFM_MOVE_DOUBLE_MS + 20), track(t, 1), pad(p, 100), pad(p, 0), track(t, 0); }
+static void tk_enter(int t) { lay_menu(t, 25); }
+static void tk_leave(int t) { lay_menu(t, 24); }
+
+/* 1. in by Track 1 held + pad 2, out by Track 1 held + pad 1; a tap names it; the name, the words, the screen */
 static void test_entry(void)
 {
     fresh(1);
-    tap_track(0);                                       /* (no takeover: Track 1 in FM-1 mode does nothing) */
-    LOG("");
-    CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1 && rfm_move_tk_shown(&M) == -1);
-    rfm_move_set_takeover(&M, 0, NOTRK, "CHORDS");      /* (capable: nothing shown until Track 1) */
+    tap_track(0);                                       /* (a tap: the slot's layout, named; no takeover) */
+    LOG("V:Felucca, FM-1|");
+    CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1 && rfm_move_tk_shown(&M) == -1 && M.pop == POP_LAYOUT);
+    tk_enter(0);                                        /* (no takeover: pad 2 dark, nothing) */
+    CHECK(rfm_move_slot_layout(&M, 0) == RFM_MOVE_LAY_FM1 && rfm_move_tk_shown(&M) == -1);
+    rest_pop();
+    clear();
+    rfm_move_set_takeover(&M, 0, NOTRK, "CHORDS");      /* (capable: nothing shown until chosen) */
     fw_data(0);
     LOG("");
-    tap_track(0);
-    LOG("S0:7f/1|E:Chords, takeover|");
+    tk_enter(0);
+    CHECKF(strstr(logb, "S0:7f/1|") && strstr(logb, "Chords, takeover|"), "%s", logb);
+    clear();
     CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_TAKEOVER && M.s.mode == RFM_MOVE_MODE_FM1 && rfm_move_tk_shown(&M) == 0);
+    CHECK(rfm_move_slot_layout(&M, 0) == RFM_MOVE_LAY_TK);
     CHECK(!strcmp(rfm_move_mode_name(RFM_MOVE_MODE_TAKEOVER), "TAKEOVER"));
-    CHECK(M.pop == POP_TK && !screen_is_fw());          /* (the name over it, a second) */
+    tap_track(0);                                       /* a tap in it (TRACKS free): stays, named and said again */
+    LOG("V:Chords, takeover|");
+    CHECK(rfm_move_tk_shown(&M) == 0 && M.pop == POP_TK && !screen_is_fw());   /* (the name over it, a second) */
     CHECK(rfm_move_screen_timed(&M));
     {
         char w[RFM_MOVE_SAY_MAX];
@@ -162,40 +177,72 @@ static void test_entry(void)
     }
     rest_pop();
     CHECK(screen_is_fw());
-    {                                                   /* (settings: FM-1 mode, never the takeover) */
+    clear();
+    {                                                   /* Track 1 held in it: the layout menu takes the pads (none
+                                                         * to the firmware) and the screen */
+        char w[RFM_MOVE_SAY_MAX];
+        track(0, 1);
+        adv_ms(RFM_MOVE_TAP_MS + 50);
+        CHECK(rfmv_hold_shown(&M, 0) && !screen_is_fw());
+        rfm_move_words(&M, w, sizeof w);
+        CHECKF(strstr(w, "layouts") != NULL, "\"%s\"", w);
+        pad(3, 100), pad(3, 0);                         /* (a scale: slot 0's) */
+        pad(30, 100), pad(30, 0);                       /* (pad 7: nothing) */
+        CHECKF(strstr(logb, "I0") == NULL, "%s", logb);
+        CHECK(rfm_move_tk_shown(&M) == 0 && !screen_is_fw());
+        track(0, 0);
+        clear();
+        rest_pop();
+        CHECK(rfm_move_tk_shown(&M) == 0 && screen_is_fw());
+        pad(3, 100), pad(3, 0);                         /* (let go: the firmware's again) */
+        LOG("I0:9047 64|I0:8047 00|");
+    }
+    {                                                   /* (settings: the slot's layout, the takeover) */
         uint8_t img[RFM_MOVE_SETTINGS_BYTES];
         rfm_move_settings_t s;
         rfm_move_save(&M.s, img);
-        CHECK(rfm_move_load(&s, img, sizeof img) == 0 && s.mode == RFM_MOVE_MODE_FM1);
+        CHECK(rfm_move_load(&s, img, sizeof img) == 0 && s.mode == RFM_MOVE_MODE_FM1 && s.slot[0].lay == RFM_MOVE_LAY_TK);
     }
-    tap_track(0);                                       /* Track 1 in it (TRACKS free): FM-1 mode */
-    LOG("S0:-|E:FM-1 mode|");
-    CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1 && M.pop == POP_MODE && M.pop_i == 0);
+    tk_leave(0);                                        /* Track 1 held + pad 1: the FM-1 layout */
+    CHECKF(!strncmp(logb, "S0:-|", 5), "%s", logb);
+    clear();
+    CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1 && rfm_move_slot_layout(&M, 0) == RFM_MOVE_LAY_FM1);
     rest_pop();
     CHECK(!screen_is_fw());
-    tap_track(0);                                       /* and in again */
-    LOG("S0:7f/1|E:Chords, takeover|");
-    rfm_move_set_mode(&M, RFM_MOVE_MODE_FM1);           /* (the host's: FM-1 mode itself) */
-    LOG("S0:-|E:FM-1 mode|");
+    tap_track(0);                                       /* (a tap: the FM-1 layout still) */
+    CHECK(rfm_move_tk_shown(&M) == -1);
+    clear();
+    tk_enter(0);                                        /* and in again */
+    CHECKF(!strncmp(logb, "S0:7f/1|", 8), "%s", logb);
+    clear();
+    rfm_move_set_mode(&M, RFM_MOVE_MODE_FM1);           /* (the host's: the FM-1 layout itself) */
+    LOG("S0:-|E:Felucca, FM-1 layout|V:Felucca, FM-1|");
     rfm_move_set_mode(&M, RFM_MOVE_MODE_TAKEOVER);
-    LOG("S0:7f/1|E:Chords, takeover|");
+    LOG("S0:7f/1|E:Chords, takeover|V:Felucca, Chords|");
+    rfm_move_set_slot_layout(&M, 0, RFM_MOVE_LAY_FM1);  /* (the host's: the slot's layout) */
+    LOG("S0:-|E:Felucca, FM-1 layout|V:Felucca, FM-1|");
+    rfm_move_set_slot_layout(&M, 0, RFM_MOVE_LAY_TK);
+    LOG("S0:7f/1|E:Chords, takeover|V:Felucca, Chords|");
     rfm_move_set_mode(&M, RFM_MOVE_MODE_MIDI);
-    LOG("S0:-|E:MIDI mode|");
+    CHECKF(!strncmp(logb, "S0:-|", 5), "%s", logb);
+    clear();
+    CHECK(M.s.mode == RFM_MOVE_MODE_MIDI && rfm_move_tk_shown(&M) == -1);
     rfm_move_set_takeover(&M, 1, 0, NULL);
     rfm_move_fw_set_active(&M, 1);
     clear();
     rfm_move_set_mode(&M, RFM_MOVE_MODE_TAKEOVER);      /* (a slot with none: refused) */
-    CHECK(M.s.mode == RFM_MOVE_MODE_MIDI);
+    CHECK(rfm_move_set_slot_layout(&M, 1, RFM_MOVE_LAY_TK) == -1);
+    CHECK(rfm_move_mode(&M) == rfm_move_slot_layout(&M, 1) && rfm_move_tk_shown(&M) == -1);
     LOG("");
 }
 
-/* 2. claimed controls to the firmware only, the rest as in FM-1 mode; releases before TK_STATE off */
+/* 2. claimed controls to the firmware only, the rest as in the FM-1 layout; releases before TK_STATE off */
 static void test_routing(void)
 {
     mr_event_t ev;
     fresh(0);
     rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_PADS | RFM_MOVE_TK_KNOBS | RFM_MOVE_TK_BUTTONS, "Grid");
-    tap_track(0);
+    tk_enter(0);
     LOG("S0:4a/0|");
     pad(0, 100);                                        /* claimed: the firmware's packet, no FM-1 key */
     raw(0xA0, MR_NOTE_PAD0, 40);
@@ -219,22 +266,23 @@ static void test_routing(void)
     raw(0xB0, MR_CC_VOLUME, 1);
     LOG("K0+|K0-|T0:1|M|");
     CHECK(bad_pkt == 0);
-    /* held when the mode changes (Track 2: MIDI mode): every release, then off */
+    /* held when it closes (Track 2: slot 1 played): every release, then off */
     pad(5, 80), step(3, 1), touch(1, 1), button(MR_CC_SHIFT, 1), pad(6, 70);
     clear();
     tap_track(1);
     LOG("K6-|I0:8049 00|I0:804a 00|I0:b031 00|I0:8001 00|S0:-|");
-    CHECK(M.s.mode == RFM_MOVE_MODE_MIDI && M.tk_pad == 0 && M.tk_touch == 0);
+    CHECK(rfm_move_fw_active(&M) == 1 && rfm_move_tk_shown(&M) == -1 && M.tk_pad == 0 && M.tk_touch == 0);
     pad(5, 0), pad(6, 0), touch(1, 0), button(MR_CC_SHIFT, 0);   /* (their releases: nobody's now) */
     step(3, 0);                                         /* (the step was the core's: FM-1's key let go at the switch) */
     CHECK(strstr(logb, "I0") == NULL);
     clear();
-    /* a pad held in FM-1 mode, let go in the takeover: the core's (no stuck key) */
-    tap_track(0);
-    rfm_move_set_mode(&M, RFM_MOVE_MODE_FM1);
+    /* a pad held in the FM-1 layout, let go in the takeover: the core's (no stuck key) */
+    tap_track(0);                                       /* (slot 0 again: its takeover, as it was left) */
+    LOG("S0:4a/0|");
+    tk_leave(0);
     clear();
     pad(0, 100);
-    tap_track(0);
+    tk_enter(0);
     pad(0, 0);
     LOG("K14+|S0:4a/0|K14-|");
     rfm_move_release_all(&M);                           /* (the link lost: the firmware's let go too) */
@@ -244,63 +292,74 @@ static void test_routing(void)
     LOG("I0:8045 00|");
 }
 
-/* 3. from the other modes Track 1 goes back to what the slot was left in; each slot its own */
+/* 3. each slot keeps its layout: a Track tap plays the slot as it was left (its takeover or not) */
 static void test_memory(void)
 {
     fresh(1);
     rfm_move_set_takeover(&M, 0, NOTRK, "CHORDS");
     rfm_move_set_takeover(&M, 1, RFM_MOVE_TK_ALL, "Drums");
-    tap_track(0);
-    tap_track(2);                                       /* Control */
-    tap_track(0);                                       /* back: the takeover */
-    LOG("S0:7f/1|E:Chords, takeover|S0:-|E:Control mode|S0:7f/1|E:Chords, takeover|");
-    tap_track(0);                                       /* FM-1 mode */
+    tk_enter(0);
+    rest_pop();
+    clear();
+    tap_track(3);                                       /* Track 4: the Mixer (the projects view: closed while up) */
+    CHECK(M.seq.projects && rfm_move_tk_shown(&M) == -1);
+    CHECKF(!strncmp(logb, "S0:-|", 5), "%s", logb);
+    clear();
+    tap_track(0);                                       /* Track 1: out of the view, slot 0 as it was left */
+    CHECKF(!strncmp(logb, "S0:7f/1|E:Chords, takeover|", 27), "%s", logb);
+    CHECK(!M.seq.projects && rfm_move_tk_shown(&M) == 0);
+    tk_leave(0);                                        /* the FM-1 layout now */
     tap_track(3);
     rest_pop();
     clear();
-    tap_track(0);                                       /* back: FM-1 mode (as it was left) */
-    LOG("E:FM-1 mode|");
-    CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1 && M.pop == POP_MODE);
-    /* slot 1 left in its takeover, slot 0 in FM-1 mode: the slot switch opens each as it was left */
-    button(MR_CC_BACK, 1), track(1, 1), track(1, 0), button(MR_CC_BACK, 0);   /* Back + Track 2: slot 1 */
+    tap_track(0);                                       /* back: the FM-1 layout (as it was left) */
+    CHECKF(strstr(logb, "S0:") == NULL && strstr(logb, "FM-1 layout|"), "%s", logb);
+    CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1 && M.pop == POP_LAYOUT && !M.seq.projects);
+    /* Track 2 held + pad 2: slot 1's layout (held, not played); slot 0 stays as it is */
+    lay_menu(1, 25);
+    CHECK(rfm_move_slot_layout(&M, 1) == RFM_MOVE_LAY_TK && rfm_move_fw_active(&M) == 0 && rfm_move_tk_shown(&M) == -1);
+    rest_pop();
     clear();
-    tap_track(0);
+    tap_track(1);                                       /* Track 2: slot 1, its takeover */
     LOG("S1:ff/1|E:Drums, takeover|");
     CHECK(rfm_move_tk_shown(&M) == 1);
-    /* slot 1 claims everything: Track 1 is the firmware's; volume touched + Back: out */
+    /* slot 1 claims everything: Track 1 and Back are the firmware's; volume touched + Back: out */
     tap_track(0);
     press(MR_CC_BACK);
     LOG("I1:b02b 7f|I1:b02b 00|I1:b033 7f|I1:b033 00|");
+    CHECK(rfm_move_fw_active(&M) == 1);
     touch(8, 1);
     button(MR_CC_BACK, 1);
-    LOG("I1:9008 7f|I1:8008 00|S1:-|E:FM-1 mode|");
+    LOG("I1:9008 7f|I1:8008 00|S1:-|E:Melodee, FM-1 layout|V:Melodee, FM-1|");
     button(MR_CC_BACK, 0), touch(8, 0);                 /* (Back's release and the touch's: nobody's) */
     LOG("");
-    CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1 && !M.seq.projects && !M.back_down);
-    tap_track(0);                                       /* (in again; then slot 0 by Back + Track 1: FM-1 mode there) */
-    button(MR_CC_BACK, 1), track(0, 1);
-    LOG("S1:ff/1|E:Drums, takeover|I1:b033 7f|I1:b02b 7f|");   /* (claimed: the firmware's, no slot switch) */
-    track(0, 0), button(MR_CC_BACK, 0);
+    CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1 && rfm_move_slot_layout(&M, 1) == RFM_MOVE_LAY_FM1 && !M.seq.projects &&
+          !M.back_down);
+    tk_enter(1);                                        /* (in again; Track 1 now: the firmware's, no slot switch) */
+    clear();
+    track(0, 1);
+    LOG("I1:b02b 7f|");
+    track(0, 0);
     touch(8, 1), press(MR_CC_BACK), touch(8, 0);
     CHECK(rfm_move_fw_active(&M) == 1 && rfm_move_mode(&M) == RFM_MOVE_MODE_FM1);
-    tap_track(0);
+    tk_enter(1);
     clear();
     rfm_move_fw_set_active(&M, 0);                      /* (the host's slot switch: closes it) */
-    LOG("S1:-|E:FM-1 mode|");
+    LOG("S1:-|E:Felucca, FM-1 layout|");
     CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1);
     rfm_move_fw_set_active(&M, 1);                      /* (back: as it was left) */
     LOG("S1:ff/1|E:Drums, takeover|");
-    /* volume + Back with VOLUME and BUTTONS free: out too, Back not the core's (no projects view) */
+    /* volume + Back with VOLUME and BUTTONS free: out too, Back not the core's (no flip to the Sequencer) */
     rfm_move_set_takeover(&M, 1, RFM_MOVE_TK_PADS, "Drums");
     LOG("S1:2/1|");
     touch(8, 1), button(MR_CC_BACK, 1);
-    CHECKF(strstr(logb, "S1:-|E:FM-1 mode|") != NULL, "%s", logb);
+    CHECKF(strstr(logb, "S1:-|E:Melodee, FM-1 layout|") != NULL, "%s", logb);
     clear();
     button(MR_CC_BACK, 0), touch(8, 0);
     rest_pop();
     CHECK(!M.seq.projects && rfm_move_mode(&M) == RFM_MOVE_MODE_FM1);
-    /* Down (FM-1 mode's slot cycle, BUTTONS free) leaves the takeover too */
-    tap_track(0);
+    /* Down (the FM-1 layout's slot cycle, BUTTONS free) leaves the takeover too */
+    tk_enter(1);
     clear();
     press(MR_CC_DOWN);
     CHECK(rfm_move_fw_active(&M) == 2 && rfm_move_tk_shown(&M) == -1);
@@ -313,36 +372,36 @@ static void test_back(void)
     fresh(0);
     rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_BUTTONS, "Keys");
     rfm_move_set_takeover(&M, 2, RFM_MOVE_TK_BUTTONS, "Other");
-    tap_track(0);
+    tk_enter(0);
     LOG("S0:40/0|");
     button(MR_CC_BACK, 1);                              /* held back: nothing yet */
     LOG("");
     button(MR_CC_BACK, 0);                              /* let go, no Track: press and release together */
     LOG("I0:b033 7f|I0:b033 00|");
-    CHECK(!M.seq.projects);
-    button(MR_CC_BACK, 1);                              /* held long: the same (no projects view) */
+    CHECK(!M.seq.projects && M.s.mode != RFM_MOVE_MODE_SEQ);
+    button(MR_CC_BACK, 1);                              /* held long: the same (no flip, no view) */
     adv_ms(800);
     button(MR_CC_BACK, 0);
     LOG("I0:b033 7f|I0:b033 00|");
-    button(MR_CC_BACK, 1), track(2, 1);                 /* Back + Track 3: slot 2 (the takeover of slot 0 closes) */
+    adv_ms(RFM_MOVE_DOUBLE_MS + 20);
+    button(MR_CC_BACK, 1), track(2, 1), track(2, 0);    /* Back held + a Track 3 tap: the tap's (slot 2; the takeover
+                                                         * of slot 0 closes) */
     LOG("S0:-|");
     CHECK(rfm_move_fw_active(&M) == 2 && rfm_move_tk_shown(&M) == -1);
-    track(2, 0), button(MR_CC_BACK, 0);                 /* (nothing for any firmware; no click) */
+    button(MR_CC_BACK, 0);                              /* (Back nothing for any firmware; no click) */
     LOG("");
     CHECK(!M.seq.projects && rfm_move_mode(&M) == RFM_MOVE_MODE_FM1);
-    button(MR_CC_BACK, 1), track(0, 1), track(0, 0), button(MR_CC_BACK, 0);   /* slot 0: as it was left */
+    tap_track(0);                                       /* slot 0: as it was left */
     LOG("S0:40/0|");
-    button(MR_CC_BACK, 1), track(3, 1), track(3, 0), button(MR_CC_BACK, 0);   /* Back + Track 4: no slot, no Back */
-    LOG("");
     CHECK(rfm_move_tk_shown(&M) == 0);
-    /* BUTTONS free: Back is the core's (a click: the projects view, which closes the takeover while up) */
+    /* BUTTONS free: Back is the core's (a click: the Sequencer, which closes the takeover) */
     rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_PADS, "Keys");
     LOG("S0:2/0|");
     press(MR_CC_BACK);
-    CHECK(M.seq.projects);
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && rfm_move_tk_shown(&M) == -1 && !M.seq.projects);
     LOG("S0:-|");
-    press(MR_CC_BACK);                                  /* out of the view: the takeover again, named */
-    CHECK(!M.seq.projects && M.pop == POP_TK);
+    press(MR_CC_BACK);                                  /* back to the slot's layout: the takeover again, named */
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && rfm_move_tk_shown(&M) == 0 && M.pop == POP_TK);
     LOG("S0:2/0|");
 }
 
@@ -355,7 +414,7 @@ static void test_leds(void)
     fresh(0);
     rfm_move_set_takeover(&M, 0, cl, "Lights");
     fw_data(0);
-    tap_track(0);
+    tk_enter(0);
     rest_pop();
     leds(on);
     rfm_move_set_mode(&M, RFM_MOVE_MODE_FM1);
@@ -397,8 +456,8 @@ static void test_screen(void)
     fresh(0);
     rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_PADS, "NoScreen");
     fw_data(0);
-    rfm_move_screen(&M, NULL, a);                       /* FM-1 mode's */
-    tap_track(0);
+    rfm_move_screen(&M, NULL, a);                       /* the FM-1 layout's */
+    tk_enter(0);
     rest_pop();
     rfm_move_screen(&M, NULL, b);
     CHECK(!memcmp(a, b, sizeof a));                     /* (SCREEN not claimed: FM-1 mode's screen) */
@@ -417,16 +476,19 @@ static void test_screen(void)
     FWSCR[100] ^= 0xFF;                                 /* a new frame */
     rfm_move_tk_screen(&M, 0, FWSCR);
     CHECK(screen_is_fw());
-    tap_track(0);                                       /* FM-1 mode: its own again */
+    tk_leave(0);                                        /* the FM-1 layout: its own again */
     rest_pop();
     rfm_move_screen(&M, NULL, b);
     CHECK(!screen_is_fw());
-    {                                                   /* the name popup: two rows at 2x, the whole screen */
+    {                                                   /* the name popup (a tap in it): two rows at 2x, the whole
+                                                         * screen */
         uint8_t n[MR_SCREEN_BYTES], l[MR_SCREEN_BYTES];
-        tap_track(0);
+        tk_enter(0), rest_pop(), tap_track(0);
+        CHECK(M.pop == POP_TK);
         rfm_move_screen(&M, NULL, n);
         rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_PADS, "NoScreen");
-        tap_track(0), rest_pop(), tap_track(0);
+        rest_pop(), tap_track(0);
+        CHECK(M.pop == POP_TK);
         rfm_move_screen(&M, NULL, l);
         CHECK(!memcmp(n, l, sizeof n));                 /* (the same over either screen: the whole screen) */
     }
@@ -440,7 +502,7 @@ static void test_speech(void)
     rfm_move_tk_say(&M, 1, "Chord D minor seven", 1);   /* (not shown: nothing) */
     LOG("");
     rfm_move_fw_set_active(&M, 1);
-    tap_track(0);
+    tk_enter(1);
     clear();
     rfm_move_tk_say(&M, 1, "Chord D minor seven", 1);
     rfm_move_tk_say(&M, 1, "Arp, one eighth", 0);
@@ -470,7 +532,7 @@ static void test_claims(void)
 {
     fresh(0);
     rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_PADS | RFM_MOVE_TK_STEPS, "View");
-    tap_track(0);
+    tk_enter(0);
     pad(2, 99), step(4, 1);
     clear();
     rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_PADS | RFM_MOVE_TK_KNOBS, "View");   /* STEPS dropped: its release */
@@ -481,12 +543,13 @@ static void test_claims(void)
     LOG("K7+|K7-|I0:b047 01|");
     rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_PADS | RFM_MOVE_TK_KNOBS, "View");   /* (the same: nothing) */
     LOG("");
-    rfm_move_set_takeover(&M, 0, 0, "View");            /* none now: closed, FM-1 mode */
+    rfm_move_set_takeover(&M, 0, 0, "View");            /* none now: closed, the FM-1 layout */
     LOG("I0:8046 00|S0:-|");
-    CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1 && M.pop == POP_MODE);
+    CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1 && rfm_move_slot_layout(&M, 0) == RFM_MOVE_LAY_FM1 && M.pop == POP_LAYOUT);
     pad(2, 0);
-    tap_track(0);                                       /* (Track 1 offers nothing) */
+    tk_enter(0);                                        /* (Track 1's pad 2 offers nothing) */
     LOG("");
+    CHECK(rfm_move_slot_layout(&M, 0) == RFM_MOVE_LAY_FM1);
     rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_PADS, "View");   /* (capable again: not opened by itself) */
     LOG("");
     CHECK(rfm_move_mode(&M) == RFM_MOVE_MODE_FM1);
@@ -496,13 +559,13 @@ static void test_claims(void)
     LOG("");
 }
 
-/* 9. a Shift menu (Global Settings) over it: closed while up */
+/* 9. a Shift menu (Global Settings, Track 4 held + step 2) over it: closed while up */
 static void test_menu(void)
 {
     fresh(0);
     rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_PADS, "Menu");
-    tap_track(0);
-    track(0, 1), step(1, 1), step(1, 0), track(0, 0);   /* Track 1 held + step 2: Global Settings */
+    tk_enter(0);
+    track(3, 1), step(1, 1), step(1, 0), track(3, 0);   /* Track 4 held + step 2: Global Settings */
     CHECK(M.seq.smenu == RFM_MOVE_SM_GLOBAL && rfm_move_tk_shown(&M) == -1);
     LOG("S0:2/0|S0:-|");
     press(MR_CC_BACK);

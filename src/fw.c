@@ -742,9 +742,12 @@ void rfm_move_fw_caps(rfm_move_t *m, int caps)
     if (!(f->caps & RFM_MOVE_CAP_SLOTS)) {             /* one slot: the others emptied, slot 0 played */
         for (s = 1; s < RFM_MOVE_FW_SLOTS; s++)
             f->slot_id[s][0] = 0, f->slot_fw[s] = -1, f->st_used[s] = 0, f->st_cur[s] = -1;
+        if (f->active)
+            rfmv_slot_leaving(m);
         f->active = 0, f->voices = 1;
         if (f->track > 0 && f->track < 3)
             f->track = 0;
+        rfmv_slot_changed(m);                           /* (0.8.0: its layout) */
     }
     if (!(f->caps & RFM_MOVE_CAP_FX))
         f->fx = 0, f->browse = -1, f->fx_pages = 0;
@@ -951,6 +954,7 @@ int rfm_move_fw_library(rfm_move_t *m, const uint8_t *b, uint32_t n)
         f->active = 0;
     for (k = nslots(m); k < RFM_MOVE_FW_SLOTS; k++)
         f->slot_id[k][0] = 0;
+    rfmv_slot_changed(m);                               /* (0.8.0: the slot played: its own layout) */
     for (k = 0; k < RFM_MOVE_FW_TAGS; k++)
         memcpy(f->tag[k], b + 112 + k * RFM_MOVE_FW_TAG_NAME, RFM_MOVE_FW_TAG_NAME);
     for (k = 0, p = b + LIB_HDR; k < nr; k++, p += LIB_REC) {
@@ -1137,17 +1141,27 @@ static void leave(rfm_move_t *m)
     rfm_move_fw_flush(m);
     rfmv_proj_back(m);
 }
+/* (0.8.0) the slot the controls play: what is held let go first (to the slot it was played on), FW_ACTIVE, the
+ * library; then its own layout (move.c) */
+static void activate(rfm_move_t *m, int t)
+{
+    rfm_move_fw_state_t *f = F(m);
+    if (t == f->active || t < 0 || t >= RFM_MOVE_FW_SLOTS)
+        return;
+    rfmv_slot_leaving(m);
+    f->active = (uint8_t)t;
+    act_fw(m, RFM_MOVE_ACT_FW_ACTIVE, t, f->slot_fw[t], 0);
+    lib_changed(m);
+    rfmv_slot_changed(m);
+}
 static void show_track(rfm_move_t *m, int t)
 {
     rfm_move_fw_state_t *f = F(m);
     if (t < 3 && t >= nslots(m))
         return;                                         /* (0.5.10: one slot: Tracks 2, 3 do nothing) */
     f->track = (uint8_t)t;
-    if (t < 3 && t != f->active) {                      /* (the firmware the controls play now) */
-        f->active = (uint8_t)t;
-        act_fw(m, RFM_MOVE_ACT_FW_ACTIVE, t, f->slot_fw[t], 0);
-        lib_changed(m);
-    }
+    if (t < 3)
+        activate(m, t);                                 /* (the firmware the controls play now) */
     if (m->s.fw_track != t) {
         m->s.fw_track = (uint8_t)t;
         rfmv_changed(m);
@@ -1609,6 +1623,8 @@ static int page_col(int pg) { return pg == PG_MIDI ? 0 : pg == PG_ROUTE ? 2 : 4;
 static int slot_pad(int pg, int row) { return (3 - row) * 8 + page_col(pg); }   /* (the pad index) */
 static void set_pg(rfm_move_t *m, int p)
 {
+    if (p != PG_MIX)
+        m->fx_route = (uint8_t)p;                       /* (0.8.0: Routing's column, for Track 4's flip) */
     if (m->s.fx_page != p)
         m->s.fx_page = (uint8_t)p, rfmv_changed(m);
 }
@@ -1842,11 +1858,9 @@ static int set_active(rfm_move_t *m, int slot)
     }
     if (slot == f->active)
         return 0;
-    f->active = (uint8_t)slot;
     if (f->track < 3)
         f->track = (uint8_t)slot;                       /* (FX setup left: the firmware track played) */
-    act_fw(m, RFM_MOVE_ACT_FW_ACTIVE, slot, f->slot_fw[slot], 0);
-    lib_changed(m);
+    activate(m, slot);
     return m->seq.projects;
 }
 int rfm_move_fw_set_active(rfm_move_t *m, int slot)
@@ -2083,28 +2097,34 @@ static uint8_t wl(int a256) { return (uint8_t)clampi(a256 * 127 / 256, 0, 127); 
 static int pad_of(int cell) { return (3 - cell / 8) * 8 + cell % 8; }
 #define A(x) ((int)((x) * 256 + 0.5))
 
-static void track_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
+/* (0.8.0) the Track LEDs everywhere (proposal 2): Track 1..3 the loaded firmware's colour (an empty slot faint white),
+ * full for the one played (dim in the Sequencer and on Track 4's side: Track 4 full there), past the host's voices
+ * blinking slowly; one slot: Tracks 2, 3 dark. A firmware Track held: it is full */
+void rfmv_track_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
 {
     const rfm_move_fw_state_t *f = &m->fw;
-    const int snd = rfm_move_fw_sounding(m), slow = rfmv_now_ms(m) % 1000u < 500u;
-    int t;
-    for (t = 0; t < 4; t++) {
-        const int on = f->track == t;
+    const int snd = rfm_move_fw_sounding(m), slow = rfmv_now_ms(m) % 1000u < 500u, ns = rfmv_fw_nslots(m);
+    const int side = m->s.mode == RFM_MOVE_MODE_SEQ || (m->seq.projects && (f->fx || f->track == 3));
+    int t, held = -1;
+    for (t = 0; t < ns; t++)
+        if (rfmv_track_held(m, t))
+            held = t;
+    for (t = 0; t < 3; t++) {
+        const int on = held >= 0 ? t == held : !side && f->active == t;
         rgb_t v;
-        if (f->fx)
-            v = fx_page_ok(m, t) ? lit(FXCOL[t], on || fx_page(m) == t ? 256 : A(0.3)) : OFF;
-        else if (t == 3)
-            v = lit(TRACK4, on ? 256 : A(0.3));
-        else if (t >= nslots(m))
+        if (t >= ns)
             v = OFF;                                    /* (0.5.10: one slot) */
+        else if (!f->host)
+            v = lit(rfmv_mode_rgb[0], on ? 256 : A(0.25));   /* (no list: the one firmware) */
         else if (slot_loaded(m, t)) {
-            v = lit(PAL[color(m, f->slot_fw[t])], on ? 256 : A(0.35));
+            v = lit(PAL[color(m, f->slot_fw[t])], on ? 256 : A(0.25));
             if (!(snd >> t & 1) && !slow)               /* (loaded past the host's voices: silent, blinking slowly) */
                 v = lit(v, 40);
         } else
             v = lit(WHITE, on ? A(0.6) : A(0.1));
         c[L_TRACK0 + t] = v;
     }
+    c[L_TRACK0 + 3] = lit(TRACK4, (side && held < 0) || rfmv_track_held(m, 3) ? 256 : A(0.25));
 }
 
 static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
@@ -2185,12 +2205,12 @@ void rfmv_fw_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
     int i, ids[32];
     if (!f->fx && t == 3) {                             /* Track 4: the projects, as before */
         rfmv_proj_leds(m, c, w);
-        track_leds(m, c);
+        rfmv_track_leds(m, c);
         return;
     }
     memset(c, 0, sizeof(rgb_t) * L_WHITE0);
     memset(w, 0, 13);
-    track_leds(m, c);
+    rfmv_track_leds(m, c);
     if (f->fx) {
         fx_leds(m, c, w);
         return;
@@ -3085,14 +3105,12 @@ int rfmv_fw_switch(rfm_move_t *m, int t)
         return 1;
     }
     if (t != f->active) {
-        f->active = (uint8_t)t;
         if (f->track < 3)
             f->track = (uint8_t)t;
-        act_fw(m, RFM_MOVE_ACT_FW_ACTIVE, t, f->slot_fw[t], 0);
-        lib_changed(m);
+        activate(m, t);
     }
     if (!m->seq.projects)
-        rfmv_pop(m, POP_FW, t);
+        rfmv_pop(m, rfmv_tk_mode(m) ? POP_TK : POP_LAYOUT, t);   /* (0.8.0: the slot and its layout named) */
     return 1;
 }
 /* (0.4.4) Down in FM-1 mode: the next loaded slot after the active one (1 -> 2 -> 3 -> 1, empty ones skipped); with
@@ -3125,6 +3143,69 @@ void rfmv_fw_slot_name(const rfm_move_t *m, int s, char *o, int cap)
         slot_name(m, s, o, cap);
     else if (cap > 0)
         o[0] = 0;
+}
+
+/* ---- (0.8.0) the Track buttons (move.c): the slots they play, the view opened on a slot, the projects, the Mixer or
+ * Routing */
+int rfmv_fw_nslots(const rfm_move_t *m) { return m->fw.host ? nslots(m) : 1; }
+rgb_t rfmv_fw_rgb(const rfm_move_t *m, int slot)        /* a slot's firmware colour (empty, no list: white) */
+{
+    return m->fw.host && slot_loaded(m, slot) ? PAL[color(m, m->fw.slot_fw[slot])] : WHITE;
+}
+int rfmv_fx_ok(const rfm_move_t *m) { return m->fw.host && has_fx(m); }
+int rfmv_t4_page(const rfm_move_t *m) { return m->s.fx_page == PG_MIX ? 0 : 1; }
+int rfmv_fw_activate(rfm_move_t *m, int t)
+{
+    rfm_move_fw_state_t *f = F(m);
+    if (t < 0 || t >= rfmv_fw_nslots(m) || t == f->active)
+        return 0;
+    if (f->track < 3)
+        f->track = (uint8_t)t;
+    activate(m, t);
+    return 1;
+}
+void rfmv_view_close(rfm_move_t *m)
+{
+    if (m->seq.projects)
+        leave(m);
+}
+void rfmv_view_open(rfm_move_t *m, int what)
+{
+    rfm_move_fw_state_t *f = F(m);
+    if (what < VIEW_PROJECTS && (!f->host || what >= nslots(m)))
+        return;
+    if ((what == VIEW_MIXER || what == VIEW_ROUTING) && !rfmv_fx_ok(m))
+        return;
+    if (!m->seq.projects)
+        rfmv_proj_enter(m);
+    f->states = 0, f->capture = 0, f->smods = 0, f->browse = -1, f->catalog = 0, f->sel = -1, f->jog = 0;
+    pop_clear(m);
+    if (what < VIEW_PROJECTS) {                         /* a slot's browser (it is played: its Track popup) */
+        f->fx = 0;
+        show_track(m, what);
+        if (m->pop == POP_MODE)
+            m->pop = POP_NONE;
+    } else if (what == VIEW_PROJECTS) {                 /* the sequencer's projects */
+        f->fx = 0, f->track = 3;
+        if (m->s.fw_track != 3)
+            m->s.fw_track = 3, rfmv_changed(m);
+        rfmv_pop(m, POP_MODE, 20);
+    } else {                                            /* FX setup: the Mixer, or Routing on its column */
+        const int pg = what == VIEW_MIXER ? PG_MIX : fx_page_ok(m, m->fx_route) ? m->fx_route : PG_ROUTE;
+        if (fx_page(m) != PG_MIX)
+            m->fx_route = (uint8_t)fx_page(m);
+        set_pg(m, pg);
+        f->fx = 1, f->fx_pages = 0;
+        rfmv_pop(m, POP_T4, what == VIEW_ROUTING);
+    }
+}
+void rfmv_route_toggle(rfm_move_t *m, int slot, int track)
+{
+    if (slot < 0 || slot >= RFM_MOVE_FW_SLOTS || track < 0 || track >= RFM_MOVE_SEQ_TRACKS)
+        return;
+    m->seq.fx.ffilt[slot] = (uint16_t)(m->seq.fx.ffilt[slot] ^ 1u << track);
+    act_route(m);
+    rfmv_seq_dirty(m);
 }
 
 /* (for the tests) */

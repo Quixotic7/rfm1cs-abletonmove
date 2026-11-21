@@ -87,7 +87,11 @@ static void jog(rfm_move_t *m, int d) { raw(m, 0xB0, MR_CC_JOG, (uint8_t)(d & 12
 static void jog_press(rfm_move_t *m) { raw(m, 0xB0, MR_CC_JOG_CLICK, 127), raw(m, 0xB0, MR_CC_JOG_CLICK, 0); }
 static void track(rfm_move_t *m, int t, int down) { button(m, MR_CC_TRACK1 - t, down); }
 static void tap_track(rfm_move_t *m, int t) { track(m, t, 1), track(m, t, 0); }
+/* (0.8.0) a Track tap that no next tap of it turns into a double click; a double click */
+static void tap1(rfm_move_t *m, int t);
+static void dbl_track(rfm_move_t *m, int t) { tap_track(m, t), tap_track(m, t); }
 static void rest_pop(rfm_move_t *m) { adv_ms(m, RFM_MOVE_POPUP_MS + 50); }
+static void tap1(rfm_move_t *m, int t) { tap_track(m, t), adv_ms(m, RFM_MOVE_DOUBLE_MS + 20); }
 static int pad_of(int cell) { return (3 - cell / 8) * 8 + cell % 8; }
 static int fxpad(int page, int row) { return pad_of(row * 8 + (page == 0 ? 0 : page == 1 ? 2 : 4)); }
 
@@ -133,26 +137,31 @@ static void fresh(rfm_move_t *m, int speech)
     clear();
 }
 
-/* 1. a script through every part (modes, knobs, the browser, FX setup, the sequencer): with speech off no word and
+/* 1. a script through every part (layouts, knobs, the browser, FX setup, the sequencer): with speech off no word and
  * no cost; on, the same other actions and the same screen */
 static void script(rfm_move_t *m)
 {
     int i;
     touch(m, 4, 1), knob(m, 4, 3), knob(m, 4, 2), touch(m, 4, 0), rest_pop(m);
     knob(m, 8, 2), rest_pop(m);
-    tap_track(m, 1), tap_track(m, 1), tap_track(m, 1);
-    track(m, 1, 1), knob(m, 1, 9), knob(m, 0, 9), tap_pad(m, 31), track(m, 1, 0), rest_pop(m);
+    jog_press(m), jog(m, 1), jog(m, -1), rest_pop(m);   /* (the FM-1 layout: the jog on PRESET) */
+    tap1(m, 1);                                         /* slot 2; its layout menu: Drum, a CC number, latch, .. */
+    track(m, 1, 1), knob(m, 1, 9), tap_pad(m, 24 + RFM_MOVE_LAY_DRUM), knob(m, 0, 9), tap_pad(m, 31), tap_step(m, 2);
+    jog(m, 1), press(m, MR_CC_UP), tap_pad(m, 17), track(m, 1, 0), rest_pop(m);
     tap_pad(m, 0), tap_pad(m, 31);
-    tap_track(m, 2), knob(m, 0, 1), track(m, 2, 1), knob(m, 0, 1), track(m, 2, 0), rest_pop(m);
-    tap_track(m, 0), press(m, MR_CC_BACK), tap_track(m, 1), tap_step(m, 1), tap_pad(m, 0), jog(m, 1), jog(m, -1);
-    press(m, MR_CC_MUTE), tap_pad(m, 1), press(m, MR_CC_MUTE), press(m, MR_CC_MENU), touch(m, 0, 1), touch(m, 0, 0);
-    pad(m, fxpad(0, 0), 100), jog(m, 1), pad(m, fxpad(0, 0), 0), knob(m, 0, 6), tap_track(m, 3), knob(m, 0, -3);
-    press(m, MR_CC_MENU), press(m, MR_CC_BACK), press(m, MR_CC_BACK), rest_pop(m);
-    tap_track(m, 3), pad(m, 0, 100), pad(m, 0, 0), tap_step(m, 0), press(m, MR_CC_PLAY), adv_ms(m, 300);
-    press(m, MR_CC_PLAY), press(m, MR_CC_UNDO), track(m, 3, 1), tap_step(m, 2), track(m, 3, 0), press(m, MR_CC_MENU);
+    knob(m, 0, 1), button(m, MR_CC_SHIFT, 1), knob(m, 0, 1), button(m, MR_CC_SHIFT, 0), rest_pop(m);
+    tap1(m, 0), dbl_track(m, 0), tap_step(m, 1), tap_pad(m, 0), jog(m, 1), jog(m, -1);   /* the browser */
+    press(m, MR_CC_MUTE), tap_pad(m, 1), press(m, MR_CC_MUTE), tap1(m, 3), touch(m, 0, 1), touch(m, 0, 0);   /* FX */
+    pad(m, fxpad(0, 0), 100), jog(m, 1), pad(m, fxpad(0, 0), 0), knob(m, 0, 6), tap1(m, 3), knob(m, 0, -3);
+    for (i = 0; i < 6 && m->seq.projects; i++)
+        press(m, MR_CC_BACK);
+    rest_pop(m);
+    press(m, MR_CC_BACK), pad(m, 0, 100), pad(m, 0, 0), tap_step(m, 0), press(m, MR_CC_PLAY), adv_ms(m, 300);
+    press(m, MR_CC_PLAY), press(m, MR_CC_UNDO), track(m, 0, 1), tap_step(m, 2), track(m, 0, 0);   /* (the lock menu) */
+    track(m, 3, 1), tap_step(m, 4), track(m, 3, 0), press(m, MR_CC_BACK), press(m, MR_CC_MENU);   /* (Tempo) */
     for (i = 0; i < 4; i++)
         adv_ms(m, 400);
-    tap_track(m, 0);
+    tap1(m, 1), press(m, MR_CC_BACK);
 }
 static void test_off_on(void)
 {
@@ -179,45 +188,66 @@ static void test_off_on(void)
     clear();
 }
 
-/* 2, 3, 15: the modes; a knob's popup closing says nothing more; the words on demand */
+/* 2, 3, 15: (0.8.0) the Track buttons: a slot and its layout, Back's flip to the Sequencer and back; a knob's popup
+ * closing says nothing more; the words on demand */
 static void test_modes(void)
 {
     char w[RFM_MOVE_SAY_MAX];
     fresh(&M, 1);
-    tap_track(&M, 1);
-    SAID("E:MIDI mode|");
-    CHECK(rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "MIDI mode"));
-    tap_track(&M, 2);
-    SAID("E:Control mode|");
-    tap_track(&M, 3);
+    CHECK(rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "Felucca, FM-1 layout"));
+    tap1(&M, 1);                                        /* Track 2: slot 2, its layout (FM-1 at first) */
+    SAID("E:Melodee, FM-1 layout|V:Melodee, FM-1|");
+    CHECK(M.fw.active == 1 && M.s.mode == RFM_MOVE_MODE_FM1);
+    rfm_move_set_slot_layout(&M, 1, RFM_MOVE_LAY_DRUM); /* (the host's call: the active slot's, played at once) */
+    SAID("E:Melodee, Drum layout|");
+    CHECK(M.s.mode == RFM_MOVE_MODE_MIDI);
+    CHECK(rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "Melodee, Drum layout"));
+    tap1(&M, 2);                                        /* an empty slot: played too */
+    SAID("E:Track 3, FM-1 layout|V:Track 3, FM-1|");
+    press(&M, MR_CC_BACK);                              /* Back, nothing open: the Sequencer */
     SAID("E:Sequencer mode|");
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ);
     CHECK(rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "Sequencer mode"));
-    tap_track(&M, 0);
-    SAID("E:FM-1 mode|");
-    tap_track(&M, 1), tap_track(&M, 1);
-    SAID("E:MIDI mode|E:MIDI mode, Notes|");
-    tap_track(&M, 0);
-    clear();
-    /* a held Track: its menu's item, not the mode */
+    tap1(&M, 1);                                        /* the Sequencer: Track 2 selects its locked track */
+    SAID("V:Melodee, Track 2|");                        /* (fixed in 0.8.0: speech.c watch: "Track 2" said again after it) */
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && M.fw.active == 1 && M.seq.sel_track == 1);
+    press(&M, MR_CC_BACK);                              /* back: the active slot's layout */
+    SAID("E:Melodee, Drum layout|V:Melodee, Drum|");
+    tap1(&M, 0);
+    SAID("E:Felucca, FM-1 layout|V:Felucca, FM-1|");
+    rest_pop(&M), clear();
+    /* a held Track: its menu, not a slot played */
     track(&M, 1, 1);
     adv_ms(&M, 400);
-    CHECK(said[0] == 0);
+    SAID("V:Melodee, layouts, Drum|");
     track(&M, 1, 0);
-    CHECK(said[0] == 0 && M.s.mode == RFM_MOVE_MODE_FM1);
-    /* 3: knob 5 touched in FM-1 mode: its name; released, its popup gone: nothing more */
+    rest_pop(&M);
+    CHECK(said[0] == 0 && M.s.mode == RFM_MOVE_MODE_FM1 && M.fw.active == 0);
+    /* 3: knob 5 touched in the FM-1 layout: its name; released, its popup gone: nothing more */
     touch(&M, 4, 1);
     SAID("V:K1|");
-    CHECK(rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "FM-1 mode, K1"));
+    CHECK(rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "Felucca, FM-1 layout, K1"));
     knob(&M, 4, 2);
     SAID("V:K1: +1|");
     touch(&M, 4, 0);
     rest_pop(&M);
     tap_pad(&M, 5);
     CHECK(said[0] == 0);
-    rfm_move_set_mode(&M, RFM_MOVE_MODE_CONTROL);      /* (the host's call says it too) */
-    SAID("E:Control mode|");
+    rfm_move_set_mode(&M, RFM_MOVE_MODE_CONTROL);      /* (the host's call says it too; Control is MIDI now) */
+    SAID("E:Felucca, Scale layout|");                   /* (fixed in 0.8.0: slot 1 never had a note layout: Scale at first; it
+                                                         * gets slot 2's Drum through the mirror, move.c set_mode) */
+    CHECK(M.s.mode == RFM_MOVE_MODE_MIDI);
     rfm_move_set_mode(&M, RFM_MOVE_MODE_FM1);
-    SAID("E:FM-1 mode|");
+    SAID("E:Felucca, FM-1 layout|");
+    /* no firmware list: one slot, no name; Tracks 2, 3 do nothing */
+    rfm_move_init(&M, NULL, on_act, NULL);
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON);
+    rfm_move_set_speech(&M, 1);
+    clear();
+    CHECK(rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "FM-1 layout"));
+    tap1(&M, 1), tap1(&M, 2);
+    SAID("");
+    CHECK(M.fw.active == 0 && M.s.mode == RFM_MOVE_MODE_FM1);
 }
 
 /* 4, 5, 6, 7: a readout, a held button's label, a host popup, the volume */
@@ -264,7 +294,7 @@ static void test_popups(void)
     /* 6: the host's popup */
     rfm_move_popup(&M, "FM-1 linked");
     SAID("V:FM-1 linked|");
-    CHECK(rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "FM-1 mode, FM-1 linked"));
+    CHECK(rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "Felucca, FM-1 layout, FM-1 linked"));
     rest_pop(&M);
     /* 7: the volume a detent */
     knob(&M, 8, 1);
@@ -276,47 +306,68 @@ static void test_popups(void)
     rest_pop(&M), clear();
 }
 
-/* 8, 9, 14: Control mode's knobs, MIDI's held menu, latch */
+/* 8, 9, 14: (0.8.0) a note layout's knobs (was Control mode's), a slot's held layout menu (was MIDI's), latch */
 static void test_menus(void)
 {
     fresh(&M, 1);
-    tap_track(&M, 2);
-    SAID("E:Control mode|");
-    knob(&M, 0, 1);
+    track(&M, 0, 1), tap_pad(&M, 24 + RFM_MOVE_LAY_SCALE);   /* Track 1 held, pad 3: the Scale layout */
+    SAID("E:Felucca, Scale layout|V:Layout: Scale|");
+    track(&M, 0, 0), rest_pop(&M);
+    CHECK(said[0] == 0 && M.s.mode == RFM_MOVE_MODE_MIDI && M.s.slot[0].lay == RFM_MOVE_LAY_SCALE);
+    knob(&M, 0, 1);                                     /* the Control CCs, the slot's */
     SAID("V:CC 16: 65|");
     rest_pop(&M);
-    track(&M, 2, 1), knob(&M, 0, 1);
+    button(&M, MR_CC_SHIFT, 1), knob(&M, 0, 1);         /* Shift + a knob: its CC number */
     SAID("V:Knob 1: CC 17|");
-    track(&M, 2, 0), rest_pop(&M);
-    CHECK(said[0] == 0);
-    tap_track(&M, 1);
-    SAID("E:MIDI mode|");
-    track(&M, 1, 1);
-    knob(&M, 1, RFM_MOVE_LIST_TICKS);
+    button(&M, MR_CC_SHIFT, 0), rest_pop(&M), clear();
+    track(&M, 0, 1), knob(&M, 0, 1);                    /* Track 1 held + a knob: the same */
+    SAID("V:Knob 1: CC 18|");
+    track(&M, 0, 0), rest_pop(&M);
+    CHECK(said[0] == 0 && M.s.slot[0].cc[0] == 18);
+    knob(&M, 0, 1);
+    SAID("V:CC 18: 66|");                               /* (the knob's value, its new CC) */
+    rest_pop(&M);
+    track(&M, 0, 1);
+    tap_pad(&M, 17);                                    /* (row 3, pad 2: scale 2) */
     SAID("V:Scale: Minor|");
-    knob(&M, 0, RFM_MOVE_LIST_TICKS);
+    jog(&M, 1);
     SAID("V:Root: Db|");
     tap_step(&M, 2);
     SAID("V:Channel: 3|");
+    press(&M, MR_CC_UP);
+    SAID("V:Octave 1|");
     tap_pad(&M, 31);                                    /* 14: latch */
     SAID("V:Latch on|");
+    track(&M, 0, 0), rest_pop(&M);
+    CHECK(said[0] == 0 && M.s.mode == RFM_MOVE_MODE_MIDI && M.s.scale == 1 && M.s.root == 1 && M.s.channel == 2);
+    /* another slot's menu edits that slot, not the one played */
+    track(&M, 1, 1), tap_pad(&M, 24 + RFM_MOVE_LAY_DRUM);
+    SAID("V:Layout: Drum|");
+    knob(&M, 0, 1);
+    SAID("V:Knob 1: CC 17|");
     track(&M, 1, 0), rest_pop(&M);
-    CHECK(said[0] == 0 && M.s.mode == RFM_MOVE_MODE_MIDI);
+    CHECK(said[0] == 0 && M.fw.active == 0 && M.s.slot[1].lay == RFM_MOVE_LAY_DRUM && M.s.slot[1].cc[0] == 17);
+    CHECK(M.s.layout == RFM_MOVE_LAYOUT_SCALE && M.s.slot[0].cc[0] == 18);
+    /* the FM-1 layout's menu: a knob is no CC number */
+    track(&M, 2, 1), knob(&M, 0, 1), track(&M, 2, 0), rest_pop(&M);
+    CHECK(M.s.slot[2].cc[0] == 16);
+    clear();
 }
 
-/* 10, 11, 15, 16: the browser, the catalog, a download; Back + Track */
+/* 10, 11, 15, 16: the browser (0.8.0: a Track's double click), the catalog, a download; a Track tap leaves it */
 static void test_browser(void)
 {
     char want[400], w[RFM_MOVE_SAY_MAX];
     int ids[32], k, i, cell = -1, golf = idx("golf");
     fresh(&M, 1);
-    press(&M, MR_CC_BACK);
-    SAID("E:Firmwares, Slot 1, Felucca|");
+    dbl_track(&M, 0);                                   /* (its first tap acts at once: the slot played, named) */
+    SAID("V:Felucca, FM-1|E:Firmwares, Slot 1, Felucca|");
     CHECK(rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "Firmwares, Slot 1, Felucca"));
-    tap_track(&M, 1);
-    SAID("E:Slot 2, Melodee|");
-    tap_track(&M, 2);
-    SAID("E:Slot 3, empty|");
+    dbl_track(&M, 1);                                   /* (in the view: the tap leaves it, plays slot 2; the double
+                                                         * click its browser) */
+    SAID("E:Melodee, FM-1 layout|V:Melodee, FM-1|E:Firmwares, Slot 2, Melodee|");
+    dbl_track(&M, 2);
+    SAID("E:Track 3, FM-1 layout|V:Track 3, FM-1|E:Firmwares, Slot 3, empty|");
     tap_step(&M, 1);
     SAID("V:All firmwares|");
     rest_pop(&M);
@@ -392,25 +443,38 @@ static void test_browser(void)
     for (i = 0; i < 8 && M.seq.projects; i++)
         press(&M, MR_CC_BACK);
     CHECK(!M.seq.projects);
-    CHECK(strstr(said, "E:FM-1 mode|") != NULL);
+    CHECK(strstr(said, "E:Track 3, FM-1 layout|") != NULL);   /* (out: slot 3's, the one browsed last, played) */
     clear();
-    /* 11: Back + Track 2 in FM-1 mode */
-    button(&M, MR_CC_BACK, 1), tap_track(&M, 1), button(&M, MR_CC_BACK, 0);
-    SAID("V:Playing, Slot 2, Melodee|");
+    /* 11: (was Back + Track 2) a Track tap in the view: out of it, that slot played */
+    dbl_track(&M, 0), adv_ms(&M, RFM_MOVE_DOUBLE_MS + 20), clear();
+    tap1(&M, 1);
+    SAID("E:Melodee, FM-1 layout|V:Melodee, FM-1|");
+    CHECK(!M.seq.projects && M.fw.active == 1);
+    /* Back + a Track: no slot switch any more; the Track's own gesture (a tap) */
+    button(&M, MR_CC_BACK, 1), tap_track(&M, 0), button(&M, MR_CC_BACK, 0);
+    SAID("E:Felucca, FM-1 layout|V:Felucca, FM-1|");
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && !M.seq.projects);
 }
 
-/* 12: FX setup */
+/* 12: FX setup (0.8.0: Track 4's tap, the Mixer <-> Routing, the last one used) */
 static void test_fx(void)
 {
     char w[RFM_MOVE_SAY_MAX];
     fresh(&M, 1);
-    press(&M, MR_CC_BACK);
-    clear();
-    press(&M, MR_CC_MENU);
-    SAID("E:FX setup, MIDI FX|V:MIDI FX 1: empty|");
-    CHECK(rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "FX setup, MIDI FX, MIDI FX 1: empty"));
-    tap_pad(&M, fxpad(0, 1));
-    SAID("V:MIDI FX 2: empty|");
+    tap1(&M, 3);
+    SAID("E:FX setup, Mixer|V:Level|");
+    CHECK(M.seq.projects && rfm_move_words(&M, w, sizeof w) > 0 && !strcmp(w, "FX setup, Mixer, Level"));
+    knob(&M, 0, -1);
+    {
+        char want[64];
+        snprintf(want, sizeof want, "V:Slot 1 Level: %d|", M.fw.level[0]);
+        SAID(want);
+    }
+    rest_pop(&M);
+    tap1(&M, 3);                                        /* Track 4 again: Routing */
+    SAID("E:Routing|V:Slot 1, Felucca|");
+    tap_pad(&M, fxpad(0, 1));                           /* (the MIDI FX column: its pads, as before) */
+    SAID("E:MIDI FX|V:MIDI FX 2: empty|");
     pad(&M, fxpad(0, 0), 100);
     SAID("V:MIDI FX 1: empty|");
     jog(&M, 1);
@@ -427,26 +491,34 @@ static void test_fx(void)
     tap_step(&M, 2);
     SAID("V:MIDI FX 1: track 3|");
     rest_pop(&M);
-    tap_track(&M, 1);
-    SAID("E:Routing|V:Slot 1, Felucca|");
-    tap_track(&M, 3);
+    tap1(&M, 3);                                        /* the Mixer */
     SAID("E:Mixer|V:Level|");
-    knob(&M, 0, -1);
-    {
-        char want[64];
-        snprintf(want, sizeof want, "V:Slot 1 Level: %d|", M.fw.level[0]);
-        SAID(want);
-    }
     rest_pop(&M);
-    press(&M, MR_CC_MENU);
-    SAID("E:Firmwares, Slot 1, Felucca|");
+    tap1(&M, 3);                                        /* and back: Routing, its page kept (MIDI FX) */
+    SAID("E:MIDI FX|V:MIDI FX 1: Arp|");
+    rest_pop(&M), clear();
+    tap1(&M, 0);                                        /* a slot's Track: out of the view, played */
+    SAID("E:Felucca, FM-1 layout|V:Felucca, FM-1|");
+    CHECK(!M.seq.projects);
+    rest_pop(&M);
+    track(&M, 3, 1), tap_pad(&M, 24), track(&M, 3, 0);  /* Track 4 held, pad 1: the Mixer; pad 2: Routing */
+    SAID("E:FX setup, Mixer|V:Level|");
+    CHECK(M.seq.projects && M.fw.fx);
+    tap1(&M, 0), rest_pop(&M), clear();
+    track(&M, 3, 1), tap_pad(&M, 25), track(&M, 3, 0);
+    SAID("E:FX setup, MIDI FX|V:MIDI FX 1: Arp|");
+    CHECK(M.seq.projects && M.fw.fx);
+    tap1(&M, 0), rest_pop(&M), clear();
+    dbl_track(&M, 3);                                   /* Track 4's double click: the projects (its tap: FX setup) */
+    SAID("E:FX setup, MIDI FX|V:MIDI FX 1: Arp|E:Projects|");   /* (the last used: Routing) */
+    CHECK(M.seq.projects && !M.fw.fx && M.fw.track == 3);
 }
 
 /* 13: the sequencer */
 static void test_seq(void)
 {
     fresh(&M, 1);
-    tap_track(&M, 3);
+    press(&M, MR_CC_BACK);                              /* (0.8.0: Back's flip) */
     SAID("E:Sequencer mode|");
     press(&M, MR_CC_PLAY);
     SAID("V:Playing|");
@@ -470,10 +542,12 @@ static void test_seq(void)
     button(&M, MR_CC_SHIFT, 1), press(&M, MR_CC_UNDO), button(&M, MR_CC_SHIFT, 0);
     SAID("V:Shift|V:Redo|");
     rest_pop(&M);
-    track(&M, 3, 1), step(&M, 2, 1);
+    track(&M, 0, 1), step(&M, 2, 1);                    /* (0.8.0) Track 1 held, the lock menu: a step, a track */
     SAID("V:Track 3|");
-    step(&M, 2, 0), track(&M, 3, 0), rest_pop(&M);
-    CHECK(said[0] == 0 && M.seq.sel_track == 2);
+    step(&M, 2, 0);                                     /* (its tap: locked to slot 1, selected) */
+    SAID("V:Track 3, locked|");                         /* (fixed in 0.8.0: speech.c watch: "Track 3" said again after it) */
+    track(&M, 0, 0), rest_pop(&M);
+    CHECK(said[0] == 0 && M.seq.sel_track == 2 && rfm_move_seq_lock(&M, 0) == 2);
     press(&M, MR_CC_MENU);
     SAID("E:Session|");
     press(&M, MR_CC_MENU);
@@ -511,29 +585,34 @@ static void test_buttons(void)
     button(&M, MR_CC_CAPTURE, 1), button(&M, MR_CC_REC, 1);   /* (a second held: its label popup at once, once) */
     SAID("V:FX|V:Record|");
     button(&M, MR_CC_REC, 0), button(&M, MR_CC_CAPTURE, 0), rest_pop(&M), clear();
-    tap_track(&M, 1);                                   /* the MIDI modes: the arrows' octave */
-    clear();
+    jog_press(&M);                                      /* (0.8.0) the jog's click: what it turns */
+    SAID("V:Jog: Preset|");
+    jog_press(&M);
+    SAID("V:Jog: Algo|");
+    jog_press(&M), rest_pop(&M), clear();
+    rfm_move_set_slot_layout(&M, 0, RFM_MOVE_LAY_SCALE), clear();   /* a note layout: the arrows' octave */
     press(&M, MR_CC_UP);
     SAID("V:Octave 1|");
     press(&M, MR_CC_DOWN);
     SAID("V:Octave 0|");
-    tap_track(&M, 2), clear();                          /* Control mode: the jog's bank */
-    jog(&M, 1);
-    SAID("V:Bank 2|");
+    memset(kinds, 0, sizeof kinds);                     /* (0.8.0: no FM-1 buttons there: nothing done, nothing said;
+                                                         * was Control mode's jog bank, gone) */
+    press(&M, MR_CC_CAPTURE), press(&M, MR_CC_MUTE), press(&M, MR_CC_LEFT), jog(&M, 1);
+    SAID("");
+    CHECK(kinds[RFM_MOVE_ACT_BTN] == 0 && kinds[RFM_MOVE_ACT_TURN] == 0);
 }
 static void test_rows(void)
 {
     int i;
     fresh(&M, 1);
-    /* MIDI mode: the drum pad's note (pad held + jog), the held menus' layout, velocity */
-    tap_track(&M, 1), clear();
-    track(&M, 1, 1), tap_pad(&M, 26), track(&M, 1, 0), rest_pop(&M);
+    /* a note layout: the drum pad's note (pad held + jog), the held menus' layout, velocity */
+    track(&M, 0, 1), tap_pad(&M, 24 + RFM_MOVE_LAY_DRUM), track(&M, 0, 0), rest_pop(&M);
     HAS("Layout: Drum");
     pad(&M, 0, 100), jog(&M, 1);
     HAS("V:Pad 1: ");
     pad(&M, 0, 0), rest_pop(&M), clear();
     /* Sequencer mode */
-    tap_track(&M, 3);
+    press(&M, MR_CC_BACK);
     HAS("E:Sequencer mode|");
     button(&M, MR_CC_SHIFT, 1), tap_step(&M, 4), button(&M, MR_CC_SHIFT, 0);   /* Shift + step 5: Tempo */
     HAS("E:Tempo|");
@@ -596,14 +675,20 @@ static void test_rows(void)
     tap_step(&M, 3);
     HAS("V:Step 4 cut|");                               /* (0.6.3: Delete cuts: said so, not "off") */
     button(&M, MR_CC_DELETE, 0), clear();
-    /* the tracks: Track 4 + a step (select), held (mute), a double tap (solo) */
-    track(&M, 3, 1), tap_step(&M, 1);
-    HAS("V:Track 2|");
+    /* (0.8.0) the tracks: Track 1 held (the lock menu) + a step (lock, select), held (not routed), a double tap
+     * (solo); Mute + a step (mute) */
+    track(&M, 0, 1), tap_step(&M, 1);
+    HAS("V:Track 2, locked|");                          /* (the select's "Track 2" again: test_seq's case, fixed) */
+    CHECK(M.seq.sel_track == 1 && rfm_move_seq_lock(&M, 0) == 1);
     step(&M, 2, 1), adv_ms(&M, RFM_MOVE_SEQ_HOLD_MS + 50), step(&M, 2, 0);
-    SAID("V:Track 3|V:Track 3, muted|");               /* (the press picks it; the hold mutes it) */
+    SAID("V:Track 3|V:Track 3, not routed|");          /* (the press picks it; the hold stops it reaching slot 1) */
+    CHECK(!(M.seq.fx.ffilt[0] >> 2 & 1) && M.seq.fx.ffilt[1] == 0xFFFF);
     tap_step(&M, 4), tap_step(&M, 4);
-    SAID("V:Track 5|V:Track 5, solo|");
-    track(&M, 3, 0), rest_pop(&M), clear();
+    HAS("V:Track 5, solo|");
+    CHECK(M.seq.tr[4].solo);
+    button(&M, MR_CC_MUTE, 1), tap_step(&M, 5), button(&M, MR_CC_MUTE, 0);
+    HAS("Track 6, muted");
+    track(&M, 0, 0), rest_pop(&M), clear();
     /* the transport, recording, sampling */
     press(&M, MR_CC_PLAY);
     HAS("V:Playing|");
@@ -636,10 +721,8 @@ static void test_rows(void)
     press(&M, MR_CC_DOWN);
     HAS("V:Scenes 2 to 5|");
     press(&M, MR_CC_MENU), clear();
-    /* the project grid: a project pad */
+    /* the project grid (0.8.0: Shift + step 1): a project pad */
     button(&M, MR_CC_SHIFT, 1), tap_step(&M, 0), button(&M, MR_CC_SHIFT, 0);
-    HAS("E:Firmwares, Slot 1, Felucca|");
-    tap_track(&M, 3);
     HAS("E:Projects|");
     pad(&M, 31, 100);
     SAID("V:Project 8, 120 BPM, 0 clips|");
@@ -651,7 +734,7 @@ static void test_browser_rows(void)
     char want[96];
     int ids[32];
     fresh(&M, 1);
-    press(&M, MR_CC_BACK), clear();
+    dbl_track(&M, 0), clear();
     tap_step(&M, 1), rest_pop(&M), clear();
     tap_step(&M, 2);                                    /* step 3: Synth */
     HAS("V:Filter Synth|");
@@ -672,9 +755,9 @@ static void test_browser_rows(void)
     tap_step(&M, 4);                                    /* (step 5: Chords) */
     HAS("Chords");
     button(&M, MR_CC_CAPTURE, 0), rest_pop(&M), clear();
-    press(&M, MR_CC_MENU);
+    tap1(&M, 3), tap1(&M, 3);                           /* (0.8.0: Track 4: FX setup, Routing; was Menu, Track 1) */
     HAS("E:FX setup, ");
-    tap_track(&M, 0), clear();
+    tap_pad(&M, fxpad(0, 0)), clear();
     pad(&M, fxpad(0, 0), 100), jog(&M, 1), pad(&M, fxpad(0, 0), 0), rest_pop(&M), clear();
     jog_press(&M);                                      /* the module's own pages */
     HAS("E:Arp, Page 1|");
@@ -696,12 +779,14 @@ static void write_pbm(const char *name, const uint8_t *packed)
     }
     fclose(f);
 }
-static void open_global(rfm_move_t *m) { track(m, 0, 1), tap_step(m, 1), track(m, 0, 0); }
+static void open_global(rfm_move_t *m) { track(m, 3, 1), tap_step(m, 1), track(m, 3, 0); }   /* (0.8.0: Track 4) */
 static void test_global(void)
 {
     static uint8_t out[MR_SCREEN_BYTES];
-    int mode, k;
-    for (mode = RFM_MOVE_MODE_FM1; mode <= RFM_MOVE_MODE_CONTROL; mode++) {
+    static const int MODES[3] = { RFM_MOVE_MODE_FM1, RFM_MOVE_MODE_MIDI, RFM_MOVE_MODE_SEQ };   /* (0.8.0: no Control) */
+    int mode, k, mi;
+    for (mi = 0; mi < 3; mi++) {
+        mode = MODES[mi];
         fresh(&M, 1);
         rfm_move_set_mode(&M, mode);
         pad(&M, 5, 100);                                /* (held before it opens: its release must pass) */
@@ -718,7 +803,7 @@ static void test_global(void)
         CHECKF(panel_acts() == 0, "mode %d: %d actions reached the panel", mode, panel_acts());
         CHECK(M.seq.smenu == RFM_MOVE_SM_GLOBAL && M.s.mode == mode && !M.pop);
         pad(&M, 5, 0);                                  /* (the held pad's release passes) */
-        CHECKF(mode == RFM_MOVE_MODE_CONTROL || panel_acts() == 1, "mode %d: %d", mode, panel_acts());
+        CHECKF(panel_acts() == 1, "mode %d: %d", mode, panel_acts());
         press(&M, MR_CC_BACK);
         CHECK(!M.seq.smenu);
         memset(kinds, 0, sizeof kinds);
@@ -755,7 +840,7 @@ static void test_global(void)
     rfm_move_set_battery(&M, 63, 0);
     rfm_move_screen(&M, NULL, out), write_pbm("global_battery.pbm", out);
     press(&M, MR_CC_BACK);
-    SAID("E:FM-1 mode|");
+    SAID("E:Felucca, FM-1 layout|");
     CHECK(!M.seq.smenu);
     open_global(&M);                                    /* (again: the row kept, no edit; the battery said) */
     SAID("E:Global settings, battery 63%|");
@@ -763,21 +848,25 @@ static void test_global(void)
     jog(&M, -3);
     SAID("V:Clock: Internal|");
     open_global(&M);                                    /* (its own toggle closes it) */
-    SAID("E:FM-1 mode|");
+    SAID("E:Felucca, FM-1 layout|");
 }
 
 /* (0.6.3) the input walk: every input in every context; any that changes the screen must say something */
 typedef struct { const char *name; void (*set)(rfm_move_t *m); void (*unset)(rfm_move_t *m); } ctx_t;
+/* (0.8.0) the Track buttons' scheme: a slot's layouts (FM-1, note layouts), its held layout menu, Track 4 held, the
+ * Sequencer's lock menu; the browser by a double click, FX setup by Track 4 (the MIDI modes' PADS/NOTES and Control
+ * mode are gone) */
 static void c_fm1(rfm_move_t *m) { (void)m; }
-static void c_midi(rfm_move_t *m) { tap_track(m, 1); }
-static void c_notes(rfm_move_t *m) { tap_track(m, 1), tap_track(m, 1); }
-static void c_drum(rfm_move_t *m) { tap_track(m, 1), track(m, 1, 1), tap_pad(m, 26), track(m, 1, 0); }
-static void c_ctl(rfm_move_t *m) { tap_track(m, 2); }
+static void c_midi(rfm_move_t *m) { rfm_move_set_mode(m, RFM_MOVE_MODE_MIDI); }
+static void c_drum(rfm_move_t *m) { rfm_move_set_slot_layout(m, 0, RFM_MOVE_LAY_DRUM); }
+static void c_slot2(rfm_move_t *m) { tap1(m, 1); }
+static void c_jogp(rfm_move_t *m) { jog_press(m); }
 static void seq_notes(rfm_move_t *m) { tap_pad(m, 0), tap_step(m, 0), tap_step(m, 4), tap_step(m, 8); }
-static void c_seq(rfm_move_t *m) { tap_track(m, 3), seq_notes(m); }
+static void c_seq(rfm_move_t *m) { press(m, MR_CC_BACK), seq_notes(m); }
 static void c_session(rfm_move_t *m) { c_seq(m), press(m, MR_CC_MENU); }
 static void c_shift(rfm_move_t *m) { c_seq(m), button(m, MR_CC_SHIFT, 1); }
 static void u_shift(rfm_move_t *m) { button(m, MR_CC_SHIFT, 0); }
+static void c_mshift(rfm_move_t *m) { c_midi(m), button(m, MR_CC_SHIFT, 1); }
 static void c_copy(rfm_move_t *m) { c_seq(m), button(m, MR_CC_COPY, 1); }
 static void u_copy(rfm_move_t *m) { button(m, MR_CC_COPY, 0); }
 static void c_delete(rfm_move_t *m) { c_seq(m), button(m, MR_CC_DELETE, 1); }
@@ -788,14 +877,15 @@ static void c_loop(rfm_move_t *m) { c_seq(m), button(m, MR_CC_LOOP, 1); }
 static void u_loop(rfm_move_t *m) { button(m, MR_CC_LOOP, 0); }
 static void c_step(rfm_move_t *m) { c_seq(m), step(m, 4, 1), adv_ms(m, RFM_MOVE_SEQ_HOLD_MS + 20); }
 static void u_step(rfm_move_t *m) { step(m, 4, 0); }
-static void c_t4(rfm_move_t *m) { c_seq(m), track(m, 3, 1); }
+static void c_t4(rfm_move_t *m) { c_seq(m), track(m, 3, 1), adv_ms(m, RFM_MOVE_TAP_MS + 20); }
+static void c_t4f(rfm_move_t *m) { track(m, 3, 1), adv_ms(m, RFM_MOVE_TAP_MS + 20); }
 static void u_t4(rfm_move_t *m) { track(m, 3, 0); }
-static void c_t2(rfm_move_t *m) { c_midi(m), track(m, 1, 1); }
-static void u_t2(rfm_move_t *m) { track(m, 1, 0); }
-static void c_t3(rfm_move_t *m) { c_ctl(m), track(m, 2, 1); }
-static void u_t3(rfm_move_t *m) { track(m, 2, 0); }
-static void c_t1(rfm_move_t *m) { track(m, 0, 1); }
+static void c_lock(rfm_move_t *m) { c_seq(m), track(m, 0, 1), adv_ms(m, RFM_MOVE_TAP_MS + 20); }
+static void c_t1(rfm_move_t *m) { track(m, 0, 1), adv_ms(m, RFM_MOVE_TAP_MS + 20); }
+static void c_t1n(rfm_move_t *m) { c_midi(m), c_t1(m); }
 static void u_t1(rfm_move_t *m) { track(m, 0, 0); }
+static void c_t2(rfm_move_t *m) { track(m, 1, 1), adv_ms(m, RFM_MOVE_TAP_MS + 20); }
+static void u_t2(rfm_move_t *m) { track(m, 1, 0); }
 static void sm(rfm_move_t *m, int s) { c_seq(m), button(m, MR_CC_SHIFT, 1), tap_step(m, s), button(m, MR_CC_SHIFT, 0); }
 static void c_workflow(rfm_move_t *m) { sm(m, 2); }
 static void c_tempo(rfm_move_t *m) { sm(m, 4); }
@@ -805,23 +895,26 @@ static void c_keys(rfm_move_t *m) { sm(m, 8); }
 static void c_vel(rfm_move_t *m) { sm(m, 9); }
 static void c_arp(rfm_move_t *m) { sm(m, 10); }
 static void c_global(rfm_move_t *m) { sm(m, 1); }
-static void c_grid(rfm_move_t *m) { sm(m, 0), tap_track(m, 3); }
-static void c_fw(rfm_move_t *m) { press(m, MR_CC_BACK); }
-static void c_fwsel(rfm_move_t *m) { press(m, MR_CC_BACK), tap_step(m, 1), tap_pad(m, 24); }
-static void c_catalog(rfm_move_t *m) { press(m, MR_CC_BACK), press(m, MR_CC_MUTE); }
-static void c_states(rfm_move_t *m) { press(m, MR_CC_BACK), press(m, MR_CC_LOOP); }
+static void c_grid(rfm_move_t *m) { sm(m, 0); }
+static void c_fw(rfm_move_t *m) { dbl_track(m, 0), adv_ms(m, RFM_MOVE_DOUBLE_MS + 20); }
+static void c_fwsel(rfm_move_t *m) { c_fw(m), tap_step(m, 1), tap_pad(m, 24); }
+static void c_catalog(rfm_move_t *m) { c_fw(m), press(m, MR_CC_MUTE); }
+static void c_states(rfm_move_t *m) { c_fw(m), press(m, MR_CC_LOOP); }
 static void c_capture(rfm_move_t *m) { c_fwsel(m), button(m, MR_CC_CAPTURE, 1); }
 static void u_capture(rfm_move_t *m) { button(m, MR_CC_CAPTURE, 0); }
-static void c_fx(rfm_move_t *m) { press(m, MR_CC_BACK), press(m, MR_CC_MENU); }
-static void c_mixer(rfm_move_t *m) { c_fx(m), tap_track(m, 3); }
-static void c_routing(rfm_move_t *m) { c_fx(m), tap_track(m, 1); }
+static void c_fx(rfm_move_t *m) { tap1(m, 3), tap_pad(m, fxpad(0, 0)); }
+static void c_mixer(rfm_move_t *m) { tap1(m, 3), tap1(m, 3); }
+static void c_routing(rfm_move_t *m) { tap1(m, 3); }
 static const ctx_t CTX[] = {
-    { "FM-1", c_fm1, NULL }, { "MIDI", c_midi, NULL }, { "MIDI notes", c_notes, NULL }, { "MIDI drum", c_drum, NULL },
-    { "Control", c_ctl, NULL }, { "Seq track", c_seq, NULL }, { "Seq session", c_session, NULL },
+    { "FM-1", c_fm1, NULL }, { "Note layout", c_midi, NULL }, { "Drum layout", c_drum, NULL },
+    { "Slot 2 FM-1", c_slot2, NULL }, { "FM-1 jog Preset", c_jogp, NULL },
+    { "Note Shift held", c_mshift, u_shift },          /* (fixed in 0.8.0: Shift's icon comes and goes unsaid in a note layout) */
+    { "Seq track", c_seq, NULL }, { "Seq session", c_session, NULL },
     { "Seq Shift held", c_shift, u_shift }, { "Seq Copy held", c_copy, u_copy }, { "Seq Delete held", c_delete, u_delete },
     { "Seq Mute held", c_mute, u_mute }, { "Seq Loop held", c_loop, u_loop }, { "Seq step held", c_step, u_step },
-    { "Track 4 held", c_t4, u_t4 }, { "Track 2 held", c_t2, u_t2 }, { "Track 3 held", c_t3, u_t3 },
-    { "Track 1 held", c_t1, u_t1 }, { "Workflow", c_workflow, NULL }, { "Tempo", c_tempo, NULL },
+    { "Track 4 held", c_t4, u_t4 }, { "Track 4 held FM-1", c_t4f, u_t4 }, { "Track 1 lock", c_lock, u_t1 },
+    { "Track 1 held", c_t1, u_t1 }, { "Track 1 held notes", c_t1n, u_t1 }, { "Track 2 held", c_t2, u_t2 },
+    { "Workflow", c_workflow, NULL }, { "Tempo", c_tempo, NULL },
     { "Groove", c_groove, NULL }, { "Layout", c_layout, NULL }, { "Keys", c_keys, NULL }, { "Velocity", c_vel, NULL },
     { "Arp", c_arp, NULL }, { "Global", c_global, NULL }, { "Projects grid", c_grid, NULL },
     { "Firmwares", c_fw, NULL }, { "Firmware selected", c_fwsel, NULL }, { "Catalog", c_catalog, NULL },
@@ -876,7 +969,7 @@ static void test_playing(void)
         CHECKF(!said[0], "mode %d: \"%s\"", mode, said);
     }
     fresh(&M, 1);                                       /* recording: the notes land on steps, nothing said */
-    tap_track(&M, 3), press(&M, MR_CC_REC), press(&M, MR_CC_PLAY), adv_ms(&M, 2600), clear();
+    press(&M, MR_CC_BACK), press(&M, MR_CC_REC), press(&M, MR_CC_PLAY), adv_ms(&M, 2600), clear();
     for (i = 0; i < 12; i++)
         pad(&M, i % 8, 100), adv_ms(&M, 60), pad(&M, i % 8, 0), adv_ms(&M, 60);
     CHECKF(!strstr(said, "Step") && M.seq.nnotes > 0, "\"%s\" (%d notes)", said, M.seq.nnotes);
@@ -886,7 +979,7 @@ static void test_playing(void)
 static void test_mroute(void)
 {
     fresh(&M, 1);
-    press(&M, MR_CC_BACK), press(&M, MR_CC_MENU), tap_track(&M, 1), rest_pop(&M), clear();
+    tap1(&M, 3), tap1(&M, 3), rest_pop(&M), clear();   /* (0.8.0: Track 4 twice: Routing) */
     pad(&M, fxpad(1, 0), 100);
     tap_pad(&M, fxpad(1, 1));
     SAID("V:Felucca to Melodee, on|");
@@ -979,36 +1072,36 @@ static void test_knob_pages(void)
 {
     fresh(&M, 1);
     clear();
-    touch(&M, 0, 1);                                    /* (knob 1: PRESETS) */
+    touch(&M, 1, 1);                                    /* (0.8.0: knob 2: PRESETS) */
     SAID("V:Presets|");
-    knob(&M, 0, 2);
+    knob(&M, 1, 2);
     SAID("V:Presets: +1|");                             /* (no readout seen yet from this firmware: the count, once) */
     rd("FM6", "FM BELL");
     SAID("V:FM6: FM BELL|");
     adv_ms(&M, RFM_MOVE_SAY_TURN_MS + 20);
     SAID("");                                           /* (answered: no repeat) */
-    touch(&M, 0, 0), rest_pop(&M), clear();
+    touch(&M, 1, 0), rest_pop(&M), clear();
     button(&M, MR_CC_SHIFT, 1);                         /* (the FM-1's GLO: the firmware's Shift page) */
     SAID("V:Global|");
-    touch(&M, 0, 1);
+    touch(&M, 1, 1);
     SAID("V:Presets|");                                 /* (not the plain page's "FM6: FM BELL") */
-    knob(&M, 0, 2);
+    knob(&M, 1, 2);
     SAID("");
     rd("FM TONE", "EP");
     SAID("V:FM TONE: EP|");
-    knob(&M, 0, 2), rd("FM TONE", "EP");                /* (the range's end: the same readout back) */
+    knob(&M, 1, 2), rd("FM TONE", "EP");                /* (the range's end: the same readout back) */
     SAID("");
     adv_ms(&M, RFM_MOVE_SAY_TURN_MS + 20);
     SAID("V:FM TONE: EP|");
     adv_ms(&M, 600);
     SAID("");
-    touch(&M, 0, 0), rest_pop(&M), clear();
-    touch(&M, 0, 1);                                    /* (Shift still held: this page's own) */
+    touch(&M, 1, 0), rest_pop(&M), clear();
+    touch(&M, 1, 1);                                    /* (Shift still held: this page's own) */
     SAID("V:FM TONE: EP|");
-    touch(&M, 0, 0), button(&M, MR_CC_SHIFT, 0), rest_pop(&M), clear();
-    touch(&M, 0, 1);                                    /* (plain again: the plain page's title) */
+    touch(&M, 1, 0), button(&M, MR_CC_SHIFT, 0), rest_pop(&M), clear();
+    touch(&M, 1, 1);                                    /* (plain again: the plain page's title) */
     SAID("V:FM6|");
-    touch(&M, 0, 0), rest_pop(&M), clear();
+    touch(&M, 1, 0), rest_pop(&M), clear();
     /* a turn with no readout at all on a firmware with readouts: nothing, not the name again */
     touch(&M, 5, 1);
     SAID("V:K2|");
@@ -1023,7 +1116,7 @@ static void test_fav_order(void)
     int ids[32], n;
     char want[96];
     fresh(&M, 1);
-    press(&M, MR_CC_BACK), rest_pop(&M);
+    dbl_track(&M, 0), rest_pop(&M);                     /* (0.8.0: the browser by Track 1's double click) */
     tap_step(&M, 1), rest_pop(&M);                      /* (All) */
     tap_pad(&M, pad_of(0)), press(&M, MR_CC_SAMPLE);   /* (two favourites) */
     tap_pad(&M, pad_of(1)), press(&M, MR_CC_SAMPLE);
@@ -1112,12 +1205,13 @@ static void test_fw_speaks(void)
     snprintf(want, sizeof want, "V:Volume %d%%|", (M.master * 100 + 511) / 1023);
     SAID(want);
     rest_pop(&M), clear();
-    tap_track(&M, 1);
-    SAID("E:MIDI mode|");
-    track(&M, 1, 1), knob(&M, 1, RFM_MOVE_LIST_TICKS), track(&M, 1, 0);
+    tap1(&M, 1);
+    SAID("E:Melodee, FM-1 layout|V:Melodee, FM-1|");
+    rest_pop(&M);                                       /* (its popup gone: not shown again after the menu) */
+    track(&M, 1, 1), tap_pad(&M, 17), track(&M, 1, 0);
     SAID("V:Scale: Minor|");
-    tap_track(&M, 0), rest_pop(&M), clear();
-    track(&M, 0, 1), tap_step(&M, 1), track(&M, 0, 0);
+    tap1(&M, 0), rest_pop(&M), clear();
+    open_global(&M);
     SAID("E:Global settings, battery unknown|");
     press(&M, MR_CC_BACK), rest_pop(&M), clear();
     /* off again: the core's words for them return */
@@ -1140,7 +1234,7 @@ static void test_speech_modes(void)
     rfm_move_set_speech(&M, 1);
     clear();
     CHECK(rfm_move_speech_mode(&M) == RFM_MOVE_SPEECH_OFF && !rfm_move_speech_open(&M) && M.s.speech == 0);
-    tap_track(&M, 1), knob(&M, 8, 1), press(&M, MR_CC_PLAY);
+    tap1(&M, 1), knob(&M, 8, 1), press(&M, MR_CC_PLAY);
     SAID("");                                           /* Off: nothing at all */
     /* the host's default: only while nothing is chosen */
     rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON);
@@ -1151,8 +1245,8 @@ static void test_speech_modes(void)
     M.s.speech = 0;
     CHECK(rfm_move_speech_mode(&M) == RFM_MOVE_SPEECH_OFF);
     /* the Speech row: Off, yet its change is said; the settings saved */
-    tap_track(&M, 0), rest_pop(&M), clear();
-    track(&M, 0, 1), tap_step(&M, 1), track(&M, 0, 0);
+    tap1(&M, 0), rest_pop(&M), clear();
+    open_global(&M);
     SAID("");                                           /* (Off: the menu's name not said) */
     CHECK(M.gl_row == 0);
     jog_press(&M);
@@ -1170,27 +1264,27 @@ static void test_speech_modes(void)
     jog_press(&M);
     SAID("V:Done|");                                    /* (On now: every word again) */
     press(&M, MR_CC_BACK);
-    SAID("E:FM-1 mode|");
+    SAID("E:Felucca, FM-1 layout|");
     /* Jog: silent until the jog is touched; a touch says the screen; while held, every word; let go: silent */
     M.s.speech = 1 + RFM_MOVE_SPEECH_JOG;
-    tap_track(&M, 2);
+    rfm_move_set_slot_layout(&M, 0, RFM_MOVE_LAY_SCALE), rest_pop(&M);
     SAID("");
     CHECK(!rfm_move_speech_open(&M));
     touch(&M, 9, 1);
-    SAID("V:Control mode|");
+    SAID("V:Felucca, Scale layout|");
     CHECK(rfm_move_speech_open(&M));
     knob(&M, 0, 1);
     SAID("V:CC 16: 65|");
     touch(&M, 9, 0);
     CHECK(!rfm_move_speech_open(&M));
-    rest_pop(&M), tap_track(&M, 1);
+    rest_pop(&M), tap1(&M, 1), rest_pop(&M);
     SAID("");
     touch(&M, 9, 1);                                    /* (a new touch: the screen again) */
-    SAID("V:MIDI mode|");
+    SAID("V:Melodee, FM-1 layout|");
     touch(&M, 9, 0), clear();
     /* Jog in Global Settings: the jog's touch passes (the menu owns the rest) */
-    tap_track(&M, 0), rest_pop(&M), clear();
-    track(&M, 0, 1), tap_step(&M, 1), track(&M, 0, 0), clear();
+    tap1(&M, 0), rest_pop(&M), clear();
+    open_global(&M), clear();
     touch(&M, 9, 1);
     snprintf(want, sizeof want, "V:Global settings, battery unknown, Speech: Jog wheel|");
     SAID(want);
@@ -1211,7 +1305,8 @@ static void test_walk(void)
             if (INS[i].kind == 2 && CTX[c].set != c_fw && CTX[c].set != c_fwsel && CTX[c].set != c_catalog &&
                 CTX[c].set != c_states && CTX[c].set != c_capture && CTX[c].set != c_fx && CTX[c].set != c_mixer &&
                 CTX[c].set != c_routing && CTX[c].set != c_grid && CTX[c].set != c_session && CTX[c].set != c_global &&
-                CTX[c].set != c_t2 && CTX[c].set != c_delete)
+                CTX[c].set != c_t1 && CTX[c].set != c_t1n && CTX[c].set != c_t2 && CTX[c].set != c_t4 &&
+                CTX[c].set != c_t4f && CTX[c].set != c_lock && CTX[c].set != c_delete)
                 continue;                               /* (0.6.5: pads play notes: heard, never said) */
             fresh(&M, 1);
             CTX[c].set(&M);
@@ -1242,7 +1337,7 @@ static int all_notes(const rfm_move_t *m) { return m->seq.nnotes; }
 static void seq_three(rfm_move_t *m)                  /* Sequencer mode, a note on steps 1, 2, 5 of track 1 */
 {
     fresh(m, 1);
-    tap_track(m, 3), tap_pad(m, 0), tap_step(m, 0), tap_step(m, 1), tap_step(m, 4), rest_pop(m), clear();
+    press(m, MR_CC_BACK), tap_pad(m, 0), tap_step(m, 0), tap_step(m, 1), tap_step(m, 4), rest_pop(m), clear();
 }
 static void test_delete(void)
 {
@@ -1336,15 +1431,16 @@ static void test_delete(void)
     /* the pasted steps undo one by one */
     press(&M, MR_CC_UNDO);
     CHECK(notes_at(&M, c0, 11) == 0 && notes_at(&M, c0, 10) == 1);
-    /* Track 4 held + Delete: the selected track cleared; + a step: that track */
+    /* (0.8.0: was Track 4) a firmware Track held (the lock menu) + Delete: the selected track cleared; + a step: that
+     * track */
     seq_three(&M);
-    track(&M, 3, 1), button(&M, MR_CC_DELETE, 1), button(&M, MR_CC_DELETE, 0), track(&M, 3, 0);
+    track(&M, 0, 1), button(&M, MR_CC_DELETE, 1), button(&M, MR_CC_DELETE, 0), track(&M, 0, 0);
     CHECK(all_notes(&M) == 0);
     HAS("V:Track 1 cleared|");
     seq_three(&M);
-    track(&M, 3, 1), tap_step(&M, 1), track(&M, 3, 0), tap_pad(&M, 0), tap_step(&M, 0), clear();   /* (track 2: a note) */
+    track(&M, 0, 1), tap_step(&M, 1), track(&M, 0, 0), tap_pad(&M, 0), tap_step(&M, 0), clear();   /* (track 2: a note) */
     CHECK(M.seq.sel_track == 1 && all_notes(&M) == 4);
-    track(&M, 3, 1), button(&M, MR_CC_DELETE, 1), tap_step(&M, 0), button(&M, MR_CC_DELETE, 0), track(&M, 3, 0);
+    track(&M, 0, 1), button(&M, MR_CC_DELETE, 1), tap_step(&M, 0), button(&M, MR_CC_DELETE, 0), track(&M, 0, 0);
     CHECK(all_notes(&M) == 1 && notes_at(&M, SEQ_CLIP(1, 0), 0) == 1);
     HAS("V:Track 1 cleared|");
 }

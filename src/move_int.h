@@ -58,7 +58,8 @@ enum { POP_NONE = 0, POP_ENC, POP_MASTER, POP_CC, POP_SELECT, POP_DRUM, POP_TEMP
        POP_PROJ, POP_TRIG, POP_BAR, POP_TRACK, POP_MODE, POP_FW,
        POP_HOST, POP_LABEL, POP_READ, POP_TK };   /* (POP_TK 0.7.0: a takeover's name, pop_i its slot) */   /* (POP_READ 0.5.7: a readout of its own, rd_pop) */   /* (POP_LABEL 0.5.6: a button's or key's label, pop_i its slot) */   /* (POP_HOST 0.5.4: rfm_move_popup's words) */   /* (POP_FW 0.4.3: Back + Track, a firmware) */
 #define RFM_MOVE_TAP_MS 300                             /* a Track button released this soon: a tap (not its menu) */
-enum { MENU_NONE = 0, MENU_LAYOUT, MENU_SCALE, MENU_ROOT, MENU_CHANNEL, MENU_CC, MENU_TRACK, MENU_TCH, MENU_RATE, MENU_SHIFT };
+enum { MENU_NONE = 0, MENU_LAYOUT, MENU_SCALE, MENU_ROOT, MENU_CHANNEL, MENU_CC, MENU_TRACK, MENU_TCH, MENU_RATE, MENU_SHIFT,
+       MENU_T4, MENU_OCT, MENU_LOCK };   /* (0.8.0: MENU_T4 Track 4 held's page, MENU_OCT a slot's octave, MENU_LOCK) */
 uint32_t rfmv_now_ms(const rfm_move_t *m);             /* the sequencer clock's ms (what popups time out on) */
 void rfmv_pop(rfm_move_t *m, int kind, int i);          /* a popup up (again) now */
 void rfmv_pop_let(rfm_move_t *m, int kind, int i);      /* its control let go: it drops RFM_MOVE_POPUP_MS from now */
@@ -275,5 +276,31 @@ void rfmv_tk_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3]);   /* the c
 /* move.c, project.c for fw.c */
 void rfmv_master_turn(rfm_move_t *m, int d);           /* the volume knob as MASTER */
 void rfmv_proj_back(rfm_move_t *m);                    /* Back in the projects view: out */
+
+/* ---- (0.8.0) the Track buttons, proposal 2 (move.c; fw.c's view opened and closed from them) */
+void rfmv_slot_push(rfm_move_t *m);                    /* the active slot's mirror (s.layout ..) into s.slot[] */
+void rfmv_slot_pull(rfm_move_t *m);                    /* .. and back (a layout played again) */
+int rfmv_slot_lay(const rfm_move_t *m, int slot);
+int rfmv_set_slot_lay(rfm_move_t *m, int slot, int lay);   /* a slot's layout set (its menu's top row) */      /* RFM_MOVE_LAY_* it plays (TK with no takeover: FM1) */
+void rfmv_slot_leaving(rfm_move_t *m);                 /* (fw.c) the active slot changes: what is held let go */
+void rfmv_slot_changed(rfm_move_t *m);                 /* (fw.c) .. it changed: its layout played */
+int rfmv_fw_activate(rfm_move_t *m, int slot);          /* (fw.c) a Track's tap: that slot played (FW_ACTIVE), any
+                                                         * slot the host offers, loaded or not; 1 changed */
+rfmv_rgb_t rfmv_fw_rgb(const rfm_move_t *m, int slot);  /* a slot's firmware colour (empty: white) */
+int rfmv_fw_nslots(const rfm_move_t *m);                /* the slots the Track buttons play (1: no list, one slot) */
+enum { VIEW_SLOT0 = 0, VIEW_PROJECTS = 3, VIEW_MIXER = 4, VIEW_ROUTING = 5 };
+void rfmv_view_open(rfm_move_t *m, int what);           /* the projects view on a slot's browser, the projects, FX */
+void rfmv_view_close(rfm_move_t *m);                    /* .. left, as Back leaves it */
+int rfmv_fx_ok(const rfm_move_t *m);                    /* the host has FX setup (the Mixer, Routing) and a list */
+void rfmv_route_toggle(rfm_move_t *m, int slot, int track);   /* a sequencer track to a firmware slot or not */
+int rfmv_t4_page(const rfm_move_t *m);                  /* Track 4's page: 0 the Mixer, 1 Routing */
+enum { POP_LAYOUT = 40, POP_JOG, POP_T4, POP_CCNUM, POP_LOCK, POP_SEQ };   /* (popups, rfm_move_t.pop) */
+enum { LK_LOCKED, LK_SOLO, LK_UNSOLO, LK_OFF, LK_ON, LK_MUTE, LK_UNMUTE, LK_CLEARED };   /* the lock menu's word */
+void rfmv_pop_screen(mr_canvas_t *cv, const char *top, const char *big, int n, int cur, const char *bottom);
+const char *rfmv_lay_name(const rfm_move_t *m, int slot, int lay);   /* "FM-1", "Chords", "Scale" .. */
+int rfmv_lay_menu(const rfm_move_t *m);                 /* the firmware Track held (its layout menu): slot + 1, 0 */
+int rfmv_t4_menu(const rfm_move_t *m);                  /* Track 4 held, its menu (not the Sequencer's tracks) */
+void rfmv_track_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0]);   /* (fw.c) Track 1..4 everywhere */
+const char *rfmv_jog_name(int i);                       /* "SELECT", "PRESET", "ALGO" */
 
 #endif

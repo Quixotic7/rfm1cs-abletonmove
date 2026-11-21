@@ -161,8 +161,8 @@ static rfm_move_t M, M2;                                /* (150 KB each: not on 
 static void fresh(rfm_move_t *m)
 {
     rfm_move_init(m, NULL, on_act, NULL);
-    track(m, 3, 1), track(m, 3, 0);
-    m->pop = POP_NONE;                                  /* (the tap's "SEQUENCER" popup) */
+    rfm_move_set_mode(m, RFM_MOVE_MODE_SEQ);            /* (0.8.0: Track 4 opens the projects view; the API) */
+    m->pop = POP_NONE;
     base = 0;
     clear();
     reset_sounding();
@@ -348,12 +348,13 @@ static void test_model(void)
     CHECK(m->seq.nnotes == i);
     m->seq.len[0] = 16;
     adv(m, 8 * FPS);                                    /* (held steps were heard: their previews end) */
-    /* Track 4 held + step: the track; + jog: its channel */
-    track(m, 3, 1);
+    /* (0.8.0) Track 1 held (the lock menu) + step: the track, locked to slot 0; + jog: its channel */
+    track(m, 0, 1);
     tap_step(m, 5);
     jog(m, 3);
-    track(m, 3, 0);
+    track(m, 0, 0);
     CHECK(m->seq.sel_track == 5 && m->seq.tr[5].ch == 8 && clip_of(m) == SEQ_CLIP(5, 0));
+    CHECK(rfm_move_seq_lock(m, 0) == 5 && m->s.mode == RFM_MOVE_MODE_SEQ);
     pad(m, 0, 100);
     CHECK(find_midi(0x98, 48, 100, NULL));               /* the pads play the track's channel */
     pad(m, 0, 0);
@@ -673,7 +674,7 @@ static void test_note_offs(void)
     CHECK(stuck() == 0 && !m->seq.playing && rfm_move_project_slot(m) == 3);
     fresh(m);
     play_long(m);
-    track(m, 3, 1), jog(m, 1), track(m, 3, 0);          /* 5 the track's channel changes (Track 4 held) */
+    track(m, 0, 1), jog(m, 1), track(m, 0, 0);          /* 5 the track's channel changes (Track 1 held: lock menu) */
     CHECK(sounding[0][60] == 0);
     for (t = 0; t < 4; t++)                             /* 6 clip changes (stop at the bar) */
         rfmv_seq_launch(m, t, -1);
@@ -685,13 +686,14 @@ static void test_note_offs(void)
     rfmv_seq_note_put(m, 0, 0, 72, 100, 24 * 3, 0);
     rfm_move_seq_play(m, 1);
     adv(m, FPS);
-    track(m, 0, 1), track(m, 0, 0);
+    press(m, MR_CC_BACK);                               /* (0.8.0: Back flips the Sequencer -> the slot's layout) */
     CHECK(m->s.mode == RFM_MOVE_MODE_FM1 && m->seq.playing && sounding[0][72] == 1);
     adv(m, 3 * FPS);
     CHECK(sounding[0][72] == 0);
-    track(m, 3, 1), track(m, 3, 0);
-    track(m, 0, 1), track(m, 0, 0);                   /* a Track 1 tap: FM-1 mode, still playing */
-    CHECK(m->s.mode == RFM_MOVE_MODE_FM1 && m->seq.playing);
+    track(m, 3, 1), track(m, 3, 0);                     /* Track 4 tap: the projects view (no FX: the grid) */
+    CHECK(m->seq.projects && m->seq.playing);
+    track(m, 0, 1), track(m, 0, 0);                   /* a Track 1 tap: out of the view, FM-1 layout, still playing */
+    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_FM1 && m->seq.playing);
     rfm_move_release_all(m);
     CHECK(stuck() == 0);
     /* 8 the same note twice: off before the second on; 64 sounding at most */
@@ -943,12 +945,12 @@ static void test_edits(void)
     CHECK(!rfmv_seq_clip_has(m, SEQ_CLIP(2, 0)) && rfmv_seq_src_clip(m, SEQ_CLIP(2, 0)) == 2);
     button(m, MR_CC_DELETE, 1), pad(m, 19, 100), pad(m, 19, 0), button(m, MR_CC_DELETE, 0);   /* track 4, scene 2 */
     CHECK(nnotes_clip(m, SEQ_CLIP(3, 1)) == nnotes_clip(m, 0) && !m->seq.cut);
-    /* Track 4 held: Copy + steps = a track copy; Delete + step = the track cleared */
-    track(m, 3, 1);
+    /* (0.8.0) Track 1 held (the lock menu): Copy + steps = a track copy; Delete + step = the track cleared */
+    track(m, 0, 1);
     button(m, MR_CC_COPY, 1), tap_step(m, 3), tap_step(m, 9), button(m, MR_CC_COPY, 0);
     CHECK(nnotes_clip(m, SEQ_CLIP(9, 1)) == nnotes_clip(m, 0) && rfmv_seq_track_used(m, 9));
     button(m, MR_CC_DELETE, 1), tap_step(m, 9), button(m, MR_CC_DELETE, 0);
-    track(m, 3, 0);
+    track(m, 0, 0);
     CHECK(!rfmv_seq_track_used(m, 9));
     press(m, MR_CC_UNDO);
     CHECK(rfmv_seq_track_used(m, 9));
@@ -1014,30 +1016,38 @@ static void test_scale_root(void)
     rfm_move_t *m = &M;
     int i;
     fresh(m);
-    track(m, 0, 1), track(m, 0, 0);                   /* (FM-1 mode; the sequencer's Track buttons are its tracks) */
-    track(m, 1, 1);                                     /* Track 2 held (MIDI mode) */
+    press(m, MR_CC_BACK);                               /* (0.8.0: Back flips the Sequencer -> slot 0's FM-1 layout) */
+    CHECK(m->s.mode == RFM_MOVE_MODE_FM1);
+    track(m, 0, 1);                                     /* Track 1 held: slot 0's layout menu */
+    pad(m, 26, 100), pad(m, 26, 0);                     /* top row, pad 3: the Scale layout (a note layout) */
+    CHECK(m->s.mode == RFM_MOVE_MODE_MIDI && m->s.slot[0].lay == RFM_MOVE_LAY_SCALE &&
+          m->s.layout == RFM_MOVE_LAYOUT_SCALE);
     jog(m, 2);                                          /* root D */
     pad(m, 17, 100), pad(m, 17, 0);                     /* row 2, column 2: minor */
     CHECK(m->s.root == 2 && m->s.scale == RFM_MOVE_SCALE_MINOR && count_midi(0x90, -1) == 0);
+    CHECK(m->s.slot[0].root == 2 && m->s.slot[0].scale == RFM_MOVE_SCALE_MINOR);
     jog(m, -3);
     CHECK(m->s.root == 11);
     jog(m, 1);
     pad(m, 22, 100), pad(m, 22, 0);                     /* column 7: harmonic minor */
     CHECK(m->s.root == 0 && m->s.scale == RFM_MOVE_SCALE_HARM_MINOR);
-    pad(m, 25, 100), pad(m, 25, 0);                     /* row 1 still picks the layout */
-    CHECK(m->s.layout == RFM_MOVE_LAYOUT_CHROMATIC);
-    pad(m, 24, 100), pad(m, 24, 0);
-    track(m, 1, 0);
+    pad(m, 27, 100), pad(m, 27, 0);                     /* row 1 still picks the layout: Chroma */
+    CHECK(m->s.layout == RFM_MOVE_LAYOUT_CHROMATIC && m->s.slot[0].lay == RFM_MOVE_LAY_CHROMA);
+    pad(m, 26, 100), pad(m, 26, 0);
+    track(m, 0, 0);
+    CHECK(m->s.mode == RFM_MOVE_MODE_MIDI && m->s.layout == RFM_MOVE_LAYOUT_SCALE);
     CHECK(rfm_move_pad_note(&m->s, 0) == 48 && rfm_move_pad_note(&m->s, 2) == 51 && rfm_move_pad_note(&m->s, 6) == 59);
     for (i = 0; i < RFM_MOVE_NSCALES; i++)
         CHECK(strcmp(rfm_move_scale_name(i), "?") != 0);
     CHECK(!strcmp(rfm_move_scale_name(RFM_MOVE_SCALE_BLUES), "BLUES"));
     /* the Sequencer's pads: the project's key (Global; its own on a Track setting), not MIDI mode's */
-    track(m, 3, 1), track(m, 3, 0);
+    press(m, MR_CC_BACK);                               /* (0.8.0: Back flips a layout -> the Sequencer) */
+    CHECK(m->s.mode == RFM_MOVE_MODE_SEQ);
     clear();
     pad(m, 2, 100), pad(m, 2, 0);
     CHECK(find_midi(0x90, 52, 100, NULL));              /* (C major: the project's) */
-    track(m, 0, 1), track(m, 0, 0);
+    press(m, MR_CC_BACK);
+    CHECK(m->s.mode == RFM_MOVE_MODE_MIDI);
     CHECK(m->s.root == 0 && m->s.scale == RFM_MOVE_SCALE_HARM_MINOR);   /* (MIDI mode's back) */
     /* the settings image keeps scales 6 and 7 */
     {
@@ -1350,7 +1360,7 @@ static void write_pbm(const char *path, const uint8_t *packed)
 #define GOLD_SESSION 0xa247c937u
 #define GOLD_PROJECTS 0x5204a535u
 #define GOLD_PROJECT 0xb8a42ba8u
-#define GOLD_TRACKS 0x56d88463u
+#define GOLD_TRACKS 0x2ca4a966u                     /* (0.8.0: the lock menu, "Track 3" "locked") */
 #define GOLD_COUNT 0x8e572804u
 #define GOLD_MSG 0x418461a1u
 static int px_at(const uint8_t *packed, int x, int y) { return packed[(y >> 3) * 128 + x] >> (y & 7) & 1; }
@@ -1388,7 +1398,7 @@ static void test_screens_leds(void)
     int n, i, steps_lit = 0;
     fresh(m);
     rfm_move_init(m, NULL, on_act, NULL);
-    track(m, 3, 1), track(m, 3, 0);
+    rfm_move_set_mode(m, RFM_MOVE_MODE_SEQ);            /* (0.8.0: Track 4 is the projects view; the API) */
     /* track view: a C-E-G chord on step 1, notes on 5 and 9, playing at bar 1 step 6, step 1 held */
     pad(m, 0, 100), pad(m, 0, 0);
     tap_step(m, 4), tap_step(m, 8);
@@ -1518,25 +1528,31 @@ static void test_screens_leds(void)
         CHECK(!px_at(out, 2, 2) && m->seq.projects);    /* gone a second after; projects mode stays (Back leaves) */
         press(m, MR_CC_BACK);
     }
-    /* Track 4 held: the track menu */
-    track(m, 3, 1);
+    /* (0.8.0) Track 1 held: the lock menu (the tracks) */
+    track(m, 0, 1);
     tap_step(m, 2);
     rfm_move_screen(m, NULL, out);
-    CHECK(m->menu_what == MENU_TRACK && m->seq.sel_track == 2 && px_at(out, 16, 28) && px_at(out, 22, 53) && !px_at(out, 16, 55));
+    CHECK(m->menu_what == MENU_LOCK && m->seq.sel_track == 2 && rfm_move_seq_lock(m, 0) == 2);
+    CHECK(px_at(out, 9, 28) && px_at(out, 3, 20) && px_at(out, 33, 55) && !px_at(out, 9, 14));   /* "Track 3",
+                                                         * "locked" under it */
     {                                                   /* a value changed (the jog: the channel): its popup over the
-                                                         * tracks for a second, then "Track 3" again */
+                                                         * lock menu for a second, then "Track 3" again (as Track 4
+                                                         * held did before 0.8.0) */
         uint8_t o2[MR_SCREEN_BYTES];
         jog(m, 1);
         rfm_move_screen(m, NULL, o2);
-        CHECK(m->menu_what == MENU_TCH && !px_at(o2, 16, 28) && lit(o2) > 100 && rfm_move_screen_timed(m));
+        CHECK(m->menu_what == MENU_TCH && m->seq.tr[2].ch == 3 && rfm_move_screen_timed(m));
+        /* (fixed in 0.8.0) screen.c track_menu (the lock menu, ~line 219) draws only "Track n" / "locked": the channel (and a
+         * knob's CC, the rate) changed in the lock menu is never shown (rfmv_seq_track_menu, seq_ui.c, is unused) */
+        CHECKF(memcmp(o2, out, sizeof o2) != 0 && lit(o2) > 100, "the channel's popup in the lock menu");
         rest(m);
         rfm_move_screen(m, NULL, o2);
-        CHECK(px_at(o2, 16, 28) && px_at(o2, 22, 53));
+        CHECK(px_at(o2, 9, 28) && px_at(o2, 3, 20) && px_at(o2, 33, 55));   /* "Track 3" again */
         jog(m, -1), rest(m);
     }
     gold("tracks", out, GOLD_TRACKS);
     tap_step(m, 0);
-    track(m, 3, 0);
+    track(m, 0, 0);
     /* the count-in (Rec from stopped, Record mode): its beats at 4x */
     m->seq.rec_mode = RFM_MOVE_RM_RECORD;
     press(m, MR_CC_REC), press(m, MR_CC_PLAY);
@@ -1555,7 +1571,9 @@ static void test_screens_leds(void)
     /* other modes while it plays: a small triangle over the FM-1 drawing */
     rfm_move_seq_play(m, 1);
     adv(m, FPS);
-    track(m, 0, 1), track(m, 0, 0), adv(m, RATE * RFM_MOVE_POPUP_MS / 1000 + 256);   /* (its name gone) */
+    press(m, MR_CC_BACK), adv(m, RATE * RFM_MOVE_POPUP_MS / 1000 + 256);   /* (0.8.0: Back -> the FM-1 layout; its
+                                                         * name gone) */
+    CHECK(m->s.mode == RFM_MOVE_MODE_FM1);
     rfm_move_screen(m, NULL, out);
     CHECK(px_at(out, 3, 3) && px_at(out, 7, 7) && !px_at(out, 8, 7) && !px_at(out, 7, 3));
     CHECK(GOLD_TRACK && GOLD_STEP && GOLD_SESSION && GOLD_PROJECTS && GOLD_PROJECT && GOLD_TRACKS && GOLD_COUNT &&
@@ -1920,23 +1938,23 @@ static void test_controls(void)
     button(m, MR_CC_MUTE, 0);
     CHECK(m->seq.tr[1].mute && px_at(out, 8, 28) && px_at(out, 9, 37));   /* (crossed out) */
     write_pbm("move_seq_mute.pbm", out);
-    /* Track 1 held (the selected track's button): knob 3 = its CC number, the top row's pads the layout, Up / Down
-     * the rate */
-    track(m, 3, 1);
+    /* (0.8.0) Track 1 held (the lock menu; slot 0 locked to the selected track 1): knob 3 = its CC number, Up /
+     * Down the rate; the pads do nothing (the old Track 2 + pad layout pick in the Sequencer is gone: Shift + step 8
+     * is the Sequencer's Layout) */
+    track(m, 0, 1);
     knob(m, 2, 4);
     i = m->s.cc[0][2];
     knob(m, 2, -1);
     CHECK(m->s.cc[0][2] == i - 1 && m->menu_what == MENU_CC);
-    pad(m, 25, 100), pad(m, 25, 0);                     /* (0.5.0: the pads do nothing; Track 2's job) */
-    CHECK(m->s.layout != RFM_MOVE_LAYOUT_CHROMATIC);
-    track(m, 1, 1), pad(m, 25, 100), pad(m, 25, 0), track(m, 1, 0);   /* (Track 2 held too: chromatic) */
-    CHECK(m->s.layout == RFM_MOVE_LAYOUT_CHROMATIC && m->s.mode == RFM_MOVE_MODE_SEQ);
+    clear();
+    pad(m, 25, 100), pad(m, 25, 0);
+    CHECK(m->s.layout != RFM_MOVE_LAYOUT_CHROMATIC && count_midi(0x90, -1) == 0 && m->s.mode == RFM_MOVE_MODE_SEQ);
     press(m, MR_CC_DOWN);                               /* 1/16 -> 1/8T: slower */
     CHECK(m->seq.tr[0].rate == RFM_MOVE_SEQ_RATE_16 + 1 && m->menu_what == MENU_RATE);
     press(m, MR_CC_DOWN), press(m, MR_CC_UP), press(m, MR_CC_DOWN);   /* 1/8 */
     rfm_move_screen(m, NULL, out);
     write_pbm("move_seq_trackmenu_rate.pbm", out);
-    track(m, 3, 0);
+    track(m, 0, 0);
     CHECK(m->seq.tr[0].rate == 5 && m->s.mode == RFM_MOVE_MODE_SEQ);
     m->s.layout = RFM_MOVE_LAYOUT_SCALE;
     rfmv_seq_note_put(m, 0, 1, 64, 100, 24, 0);
@@ -2232,9 +2250,10 @@ static void test_blob_v2(void)
     CHECK(!rfmv_seq_clip_has(m2, SEQ_CLIP(1, 3)) && m2->seq.lstart[SEQ_CLIP(1, 2)] == 0);
 }
 
-/* Track 4 held: the steps are the 16 tracks (a tap selects, a double tap solos, a hold mutes), each track its own
- * layout and CC numbers; solo in the engine; Back closes the latest layer; a held step's jog, Left / Right and
- * volume knob with their popups */
+/* (0.8.0) a firmware Track held in the Sequencer (the lock menu): the steps are the 16 tracks (a tap locks the track
+ * to that slot and selects it, a double tap solos, a hold toggles its route to the slot; Mute + step mutes), each
+ * track its own layout and CC numbers; solo in the engine; Back closes the latest layer, then flips the layouts and
+ * the Sequencer; a held step's jog, Left / Right and volume knob with their popups */
 static void test_tracks16(void)
 {
     rfm_move_t *m = &M, *m2 = &M2;
@@ -2242,17 +2261,23 @@ static void test_tracks16(void)
     uint8_t out[MR_SCREEN_BYTES];
     int n, i;
     fresh(m);
-    track(m, 3, 1);
-    tap_step(m, 12);                                    /* a tap: track 13 */
-    CHECK(m->seq.sel_track == 12 && m->s.mode == RFM_MOVE_MODE_SEQ);
+    CHECK(m->seq.fx.ffilt[0] >> 2 & 1);                 /* (every track routed to slot 0 at first) */
+    track(m, 0, 1);
+    tap_step(m, 12);                                    /* a tap: track 13, locked to slot 0 */
+    CHECK(m->seq.sel_track == 12 && m->s.mode == RFM_MOVE_MODE_SEQ && rfm_move_seq_lock(m, 0) == 12);
     rfm_move_screen(m, NULL, out);
     write_pbm("move_seq_tracks_held.pbm", out);
     now_ms += 1000;
-    tap_step(m, 13), tap_step(m, 13);                   /* a double tap: track 14 soloed */
+    tap_step(m, 13), tap_step(m, 13);                   /* a double tap: track 14 soloed (the first tap locked it) */
     CHECK(m->seq.tr[13].solo && m->seq.sel_track == 13);
-    step(m, 2, 1), adv(m, RATE * RFM_MOVE_SEQ_HOLD_MS / 1000 + 256), step(m, 2, 0);   /* a hold: track 3 muted */
+    step(m, 2, 1), adv(m, RATE * RFM_MOVE_SEQ_HOLD_MS / 1000 + 256), step(m, 2, 0);   /* a hold: track 3 not routed */
+    CHECK(!(m->seq.fx.ffilt[0] >> 2 & 1) && !m->seq.tr[2].mute && m->seq.sel_track == 13);
+    button(m, MR_CC_MUTE, 1), tap_step(m, 2), button(m, MR_CC_MUTE, 0);   /* Mute + step: track 3 muted */
     CHECK(m->seq.tr[2].mute && m->seq.sel_track == 13);
-    {   /* the LEDs: soloed blue, muted red */
+    now_ms += 1000;
+    tap_step(m, 12);                                    /* track 13 locked again */
+    CHECK(m->seq.sel_track == 12 && rfm_move_seq_lock(m, 0) == 12);
+    {   /* the LEDs (the lock menu): the locked track in the slot's colour, soloed blue, not routed dim red */
         rfm_move_led_t leds[RFM_MOVE_NLEDS];
         int k;
         rfm_move_leds_invalidate(m);
@@ -2261,13 +2286,13 @@ static void test_tracks16(void)
             if (!leds[i].cc && leds[i].number == MR_NOTE_STEP0 + 13)
                 CHECK(leds[i].b > leds[i].r);
             if (!leds[i].cc && leds[i].number == MR_NOTE_STEP0 + 2)
-                CHECK(leds[i].r > leds[i].g && leds[i].r > leds[i].b);
+                CHECK(leds[i].r > leds[i].g && leds[i].r > leds[i].b && leds[i].r < 255);
         }
     }
-    now_ms += 1000;
-    tap_step(m, 12);
-    track(m, 3, 0);
-    CHECK(m->seq.sel_track == 12);
+    step(m, 2, 1), adv(m, RATE * RFM_MOVE_SEQ_HOLD_MS / 1000 + 256), step(m, 2, 0);   /* held again: routed */
+    CHECK(m->seq.fx.ffilt[0] >> 2 & 1);
+    track(m, 0, 0);
+    CHECK(m->seq.sel_track == 12 && m->s.mode == RFM_MOVE_MODE_SEQ);
     /* solo: only the soloed tracks sound */
     rfmv_seq_note_put(m, SEQ_CLIP(0, 0), 0, 60, 100, 24, 0);
     rfmv_seq_note_put(m, SEQ_CLIP(13, 0), 0, 62, 100, 24, 0);
@@ -2284,20 +2309,25 @@ static void test_tracks16(void)
     clear();
     pad(m, 0, 100), pad(m, 0, 0);
     CHECK(find_midi(0x9C, 48, 100, NULL));              /* (track 13 plays channel 13) */
-    /* each track its own layout and CC numbers (Track 4 held: the knobs, the steps; 0.5.0: Track 2 held the layout) */
-    track(m, 1, 1), pad(m, 26, 100), pad(m, 26, 0), track(m, 1, 0);
-    track(m, 3, 1), knob(m, 0, 5);
+    /* each track its own layout and CC numbers (0.8.0: Shift + step 8, the Layout menu; Track 1 held: the knobs, the
+     * steps) */
+    button(m, MR_CC_SHIFT, 1), tap_step(m, 7), button(m, MR_CC_SHIFT, 0);
+    CHECK(m->seq.smenu == RFM_MOVE_SM_LAYOUT);
+    jog(m, 2);                                          /* Scale -> Drum */
+    press(m, MR_CC_BACK);
+    CHECK(!m->seq.smenu && m->s.mode == RFM_MOVE_MODE_SEQ);
+    track(m, 0, 1), knob(m, 0, 5);
     CHECK(m->s.layout == RFM_MOVE_LAYOUT_DRUM && m->s.cc[0][0] == 21);
     now_ms += 1000;
     tap_step(m, 14);                                    /* track 15: its own (the defaults) */
     CHECK(m->seq.sel_track == 14 && m->s.layout == RFM_MOVE_LAYOUT_SCALE && m->s.cc[0][0] == 16);
     now_ms += 1000;
     tap_step(m, 12);
-    track(m, 3, 0);
+    track(m, 0, 0);
     CHECK(m->s.layout == RFM_MOVE_LAYOUT_DRUM && m->s.cc[0][0] == 21);
-    track(m, 0, 1), track(m, 0, 0);                     /* Track 1: FM-1 mode: MIDI mode's settings back */
+    press(m, MR_CC_BACK);                               /* (0.8.0) Back: slot 0's FM-1 layout: MIDI mode's settings back */
     CHECK(m->s.mode == RFM_MOVE_MODE_FM1 && m->s.layout == RFM_MOVE_LAYOUT_SCALE && m->s.cc[0][0] == 16);
-    track(m, 3, 1), track(m, 3, 0);
+    press(m, MR_CC_BACK);
     CHECK(m->s.mode == RFM_MOVE_MODE_SEQ && m->s.layout == RFM_MOVE_LAYOUT_DRUM);
     /* the key: GLOBAL (the project's) or TRACK (Keys & Scales, knob 3) */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 8), button(m, MR_CC_SHIFT, 0);
@@ -2306,13 +2336,13 @@ static void test_tracks16(void)
     knob(m, 2, RFM_MOVE_LIST_TICKS), jog(m, 2);                           /* TRACK: its own, E */
     CHECK((m->seq.tr[12].own & 2) && m->seq.tr[12].root == 4 && m->seq.root == 2 && m->s.root == 4);
     press(m, MR_CC_BACK);
-    track(m, 3, 1), now_ms += 1000, tap_step(m, 0), track(m, 3, 0);   /* track 1: GLOBAL: D */
+    track(m, 0, 1), now_ms += 1000, tap_step(m, 0), track(m, 0, 0);   /* track 1: GLOBAL: D */
     CHECK(m->s.root == 2);
-    track(m, 3, 1), now_ms += 1000, tap_step(m, 12), track(m, 3, 0);
+    track(m, 0, 1), now_ms += 1000, tap_step(m, 12), track(m, 0, 0);
     CHECK(m->s.root == 4);
     n = rfm_move_project_save(m, blob, sizeof blob);
     rfm_move_init(m2, NULL, on_act, NULL);
-    track(m2, 3, 1), track(m2, 3, 0);
+    rfm_move_set_mode(m2, RFM_MOVE_MODE_SEQ);
     CHECK(rfm_move_project_load(m2, 2, blob, (uint32_t)n) == 0);
     CHECK(m2->seq.sel_track == 12 && m2->s.layout == RFM_MOVE_LAYOUT_DRUM && m2->s.cc[0][0] == 21 && m2->s.root == 4);
     CHECK(m2->seq.tr[14].layout == RFM_MOVE_LAYOUT_SCALE && m2->seq.root == 2 && (m2->seq.tr[12].own & 2));
@@ -2336,11 +2366,10 @@ static void test_tracks16(void)
     CHECK(rfmv_seq_src_step(m, clip_of(m), 3) == 1);
     press(m, MR_CC_BACK);
     CHECK(rfmv_seq_src_step(m, clip_of(m), 3) == 0 && m->s.mode == RFM_MOVE_MODE_SEQ);
-    press(m, MR_CC_BACK);                               /* (0.4.3) nothing on: the projects view; again: back */
-    CHECK(m->s.mode == RFM_MOVE_MODE_SEQ && m->seq.projects);
+    press(m, MR_CC_BACK);                               /* (0.8.0) nothing on: flips to the layout; again: back */
+    CHECK(m->s.mode == RFM_MOVE_MODE_FM1 && !m->seq.projects);
     press(m, MR_CC_BACK);
     CHECK(m->s.mode == RFM_MOVE_MODE_SEQ && !m->seq.projects);
-    track(m, 3, 1), track(m, 3, 0);
     /* a held step: the jog the length (LENGTH's popup), Left / Right the micro timing (MICRO's), the volume knob the
      * velocity (VELO's; MASTER untouched) */
     {
@@ -2573,7 +2602,7 @@ static void test_session2(void)
 }
 
 /* list-type menu knobs: one item every RFM_MOVE_LIST_TICKS ticks (the rest kept; a turn back or a release forgets
- * it); projects mode from FM-1 mode (Track 1 + step 1): its own LEDs, Play plays the selected project */
+ * it); projects mode from FM-1 mode (Track 4 + step 1): its own LEDs, Play plays the selected project */
 static void test_round4(void)
 {
     rfm_move_t *m = &M;
@@ -2594,12 +2623,15 @@ static void test_round4(void)
     jog(m, 1);                                          /* (the jog stays 1:1) */
     CHECK(m->s.root == 3);
     press(m, MR_CC_BACK);
-    /* FM-1 mode, Track 1 + step 1: projects mode; the pads are the projects (no FM-1 key), their LEDs */
+    CHECK(!m->seq.smenu && m->s.mode == RFM_MOVE_MODE_SEQ);
+    /* FM-1 layout (0.8.0: Back flips to it), Track 4 held + step 1 (Shift + step 1): the projects grid; the pads are
+     * the projects (no FM-1 key), their LEDs */
     answer_m = m, answer_sync = 1;
     rfmv_seq_note_put(m, 0, 0, 60, 100, 24, 0);
     rfm_move_project_flush(m);
-    track(m, 0, 1), track(m, 0, 0);
-    track(m, 0, 1), tap_step(m, 0), track(m, 0, 0);
+    press(m, MR_CC_BACK);
+    CHECK(m->s.mode == RFM_MOVE_MODE_FM1);
+    track(m, 3, 1), tap_step(m, 0), track(m, 3, 0);
     CHECK(m->s.mode == RFM_MOVE_MODE_FM1 && m->seq.projects);
     clear();
     pad(m, 16, 100), pad(m, 16, 0);                     /* (slot 9: a new, empty project; no FM-1 key) */
@@ -2671,14 +2703,20 @@ static void test_only_play_starts(void)
             STOPPED("menu knobs");
             pad(m, 3, 100), pad(m, 3, 0), STOPPED("menu pad");
             press(m, MR_CC_BACK), STOPPED("Back");
+            if (m->s.mode != RFM_MOVE_MODE_SEQ)         /* (0.8.0: no menu to close: Back flipped to the layout) */
+                press(m, MR_CC_BACK), STOPPED("Back flip");
+            CHECK(m->s.mode == RFM_MOVE_MODE_SEQ);
         }
         press(m, MR_CC_CAPTURE), STOPPED("Capture");
         press(m, MR_CC_SAMPLE), pad(m, 0, 100), pad(m, 0, 0), press(m, MR_CC_SAMPLE), STOPPED("Sample");
         press(m, MR_CC_REC), pad(m, 2, 100), pad(m, 2, 0), STOPPED("Rec armed (Record)");
         press(m, MR_CC_REC);
         i = 0;
-        for (k = 0; k < 4; k++)
-            track(m, 3, 1), tap_step(m, k), track(m, 3, 0), STOPPED("Track 4 + step");
+        for (k = 0; k < 4; k++) {                       /* (0.8.0) the lock menu: Track 1 + step (a tap, a hold) */
+            now_ms += 1000;
+            track(m, 0, 1), tap_step(m, k), track(m, 0, 0), STOPPED("Track 1 + step");
+            track(m, 0, 1), step(m, k, 1), adv(m, FPS * 4), step(m, k, 0), track(m, 0, 0), STOPPED("Track 1 + step hold");
+        }
         rfm_move_seq_play(m, 0);
     }
     CHECK(ok);

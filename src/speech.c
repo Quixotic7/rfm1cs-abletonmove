@@ -66,6 +66,19 @@ static const char *enc_label(const rfm_move_t *m, int e)
 {
     return e >= 0 && e <= RFM_MOVE_NENC && m->label[e][0] ? m->label[e] : rfm_move_enc_name(e);
 }
+/* (0.8.0) a slot's firmware as said before its layout ("Felucca, "; an empty slot "Track 2, "; no list: nothing) */
+static void slot_words(const rfm_move_t *m, int t, char *o, int cap)
+{
+    char nm[48];
+    o[0] = 0;
+    if (!m->fw.host)
+        return;
+    rfmv_fw_slot_name(m, t, nm, sizeof nm);
+    if (nm[0])
+        snprintf(o, (size_t)cap, "%s, ", nm);
+    else
+        snprintf(o, (size_t)cap, "Track %d, ", t + 1);
+}
 static void track_words(const rfm_move_t *m, int t, char *o, int cap)
 {
     const rfm_move_track_t *tr = &m->seq.tr[t & 15];
@@ -92,14 +105,12 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
         return S_MENU0 + (m->s.mode & 3) * 16 + (m->seq.smenu & 15);   /* (0.6.3: the mode under it too) */
     }
     switch (m->s.mode) {
-    case RFM_MOVE_MODE_MIDI:
-        if (m->mmenu) {
-            snprintf(o, (size_t)cap, "Keys and Scales");
-            return 7;
-        }
-        snprintf(o, (size_t)cap, "MIDI mode%s", m->s.midi_view == RFM_MOVE_MV_NOTES ? ", Notes" : "");
-        return m->s.midi_view == RFM_MOVE_MV_NOTES ? 6 : 2;
-    case RFM_MOVE_MODE_CONTROL: snprintf(o, (size_t)cap, "Control mode"); return 3;
+    case RFM_MOVE_MODE_MIDI: {                          /* (0.8.0) a slot's note layout: "Felucca, Drum layout" */
+        const int t = m->fw.active % RFM_MOVE_FW_SLOTS, l = rfmv_slot_lay(m, t), nv = m->s.midi_view == RFM_MOVE_MV_NOTES;
+        slot_words(m, t, o, cap);
+        snprintf(o + strlen(o), (size_t)cap - strlen(o), "%s layout%s", rfmv_lay_name(m, t, l), nv ? ", Notes" : "");
+        return 0x50 + t * 16 + l + (nv ? 8 : 0);
+    }
     case RFM_MOVE_MODE_SEQ:
         if (m->seq.view) {
             snprintf(o, (size_t)cap, "Session");
@@ -121,8 +132,12 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
             snprintf(o, (size_t)cap, "%s%stakeover", t, t[0] ? ", " : "");
             return 0x40 + m->fw.active % RFM_MOVE_FW_SLOTS;
         }
-        snprintf(o, (size_t)cap, "FM-1 mode");
-        return 1;
+        {                                               /* (0.8.0) a slot's FM-1 layout: "ChoralRoot, FM-1 layout" */
+            const int t = m->fw.active % RFM_MOVE_FW_SLOTS;
+            slot_words(m, t, o, cap);
+            snprintf(o + strlen(o), (size_t)cap - strlen(o), "FM-1 layout");
+            return 0x50 + t * 16;
+        }
     }
 }
 static int in_fw(int s) { return s >= S_FW_TRACK0 && s <= S_FW_LAST; }
@@ -136,7 +151,7 @@ static int base_said(const rfm_move_t *m, int from, char *o, int cap)
     char b[RFM_MOVE_SAY_MAX - 32];                      /* (room for the prefix in o: no truncation) */
     const int s = base_words(m, b, sizeof b);
     if (in_menu(s) && in_menu(from) && (s & 15) == (from & 15)) {   /* (a Track pressed under a menu: the mode) */
-        static const char *const MODE[4] = { "FM-1 mode", "MIDI mode", "Control mode", "Sequencer mode" };
+        static const char *const MODE[4] = { "FM-1 layout", "Note layout", "Note layout", "Sequencer mode" };
         snprintf(o, (size_t)cap, "%s, %s", MODE[(s >> 4) & 3], b);
     } else if (s >= S_FW_TRACK0 && s < S_FW_TRACK0 + 3 && !in_fw(from))
         snprintf(o, (size_t)cap, "Firmwares, %s", b);
@@ -299,19 +314,41 @@ static void step_words(const rfm_move_t *m, char *o, int cap)   /* (0.6.5, the o
 {
     snprintf(o, (size_t)cap, "Step %d", m->pop_i + 1);
 }
-static void menu_words(const rfm_move_t *m, char *o, int cap)
+static void menu_words(const rfm_move_t *m, int t, char *o, int cap)
 {
-    const int i = m->menu_i;
+    static const char *const LK[] = { "locked", "solo", "solo off", "not routed", "routed", "muted", "unmuted", "cleared" };
+    const int i = m->menu_i, sl = t % RFM_MOVE_FW_SLOTS, seq = m->s.mode == RFM_MOVE_MODE_SEQ;
     o[0] = 0;
-    if (rfmv_now_ms(m) - m->menu_ms >= RFM_MOVE_POPUP_MS)
+    if (m->menu_what == MENU_SHIFT)
+        return;                                         /* (a shortcut, a level: their own words) */
+    if (m->menu_what == MENU_NONE) {                    /* (0.8.0) the menu shown, nothing changed yet */
+        if (t == 3)
+            snprintf(o, (size_t)cap, "Track 4, %s", !rfmv_fx_ok(m) ? "Shift" : rfmv_t4_page(m) ? "Routing" : "Mixer");
+        else if (seq) {
+            slot_words(m, sl, o, cap);
+            snprintf(o + strlen(o), (size_t)cap - strlen(o), "lock, Track %d", m->s.lock[sl] + 1);
+        } else {
+            slot_words(m, sl, o, cap);
+            snprintf(o + strlen(o), (size_t)cap - strlen(o), "layouts, %s", rfmv_lay_name(m, sl, rfmv_slot_lay(m, sl)));
+        }
+        return;
+    }
+    if (rfmv_now_ms(m) - m->menu_ms >= RFM_MOVE_POPUP_MS && !(m->menu_what == MENU_CC && m->touched == (i & 7)))
         return;
     switch (m->menu_what) {
-    case MENU_LAYOUT: snprintf(o, (size_t)cap, "Layout: %s", LAYOUT_LONG[i & 3]); break;
+    case MENU_LAYOUT: snprintf(o, (size_t)cap, "Layout: %s", rfmv_lay_name(m, sl, i % RFM_MOVE_LAY_N)); break;
+    case MENU_OCT: snprintf(o, (size_t)cap, "Octave %d", i + RFM_MOVE_OCT_MIN); break;
+    case MENU_T4: snprintf(o, (size_t)cap, "%s", i ? "Routing" : "Mixer"); break;
+    case MENU_LOCK:
+        snprintf(o, (size_t)cap, "Track %d, %s", (i & 15) + 1, m->lk_word < 8 ? LK[m->lk_word] : "locked");
+        break;
     case MENU_SCALE: snprintf(o, (size_t)cap, "Scale: %s", SCALE_LONG[i % RFM_MOVE_NSCALES]); break;
     case MENU_ROOT: snprintf(o, (size_t)cap, "Root: %s", rfmv_note_names[i % 12]); break;
     case MENU_CHANNEL:
     case MENU_TCH: snprintf(o, (size_t)cap, "Channel: %d", i + 1); break;
-    case MENU_CC: snprintf(o, (size_t)cap, "Knob %d: CC %d", (i & 7) + 1, m->s.cc[m->s.bank][i & 7]); break;
+    case MENU_CC:                                       /* (0.8.0: a slot's note layout's, or the locked track's) */
+        snprintf(o, (size_t)cap, "Knob %d: CC %d", (i & 7) + 1, seq ? m->s.cc[m->s.bank][i & 7] : m->s.slot[sl].cc[i & 7]);
+        break;
     case MENU_TRACK: track_words(m, i, o, cap); break;
     case MENU_RATE: snprintf(o, (size_t)cap, "Rate: %s", rfm_move_seq_rate_name(i)); break;
     default: break;
@@ -371,8 +408,9 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
         return;
     }
     case POP_CC: {
-        const int b = m->s.bank, cc = m->s.cc[b][i & 7];
-        int val = m->cc_val[b][i & 7];
+        const int b = m->s.bank, sl = m->fw.active % 3, notes = m->s.mode == RFM_MOVE_MODE_MIDI;
+        const int cc = notes ? m->s.slot[sl].cc[i & 7] : m->s.cc[b][i & 7];   /* (0.8.0: a note layout: the slot's) */
+        int val = notes ? m->slot_ccv[sl][i & 7] : m->cc_val[b][i & 7];
         if (m->s.mode == RFM_MOVE_MODE_SEQ && !q->view && q->step_first >= 0)
             val = rfmv_seq_lock_get(m, SEQ_CLIP(q->sel_track, q->tr[q->sel_track].sel),
                                     q->page * RFM_MOVE_SEQ_PAGE + q->step_first, cc);
@@ -422,6 +460,24 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
             snprintf(o, (size_t)cap, "%s", i == 31 ? "Latch on" : "Latch off");
         return;                                         /* (a mode, a view: the base says it) */
     case POP_HOST: snprintf(o, (size_t)cap, "%s", m->pop_text); return;
+    case POP_LAYOUT:                                    /* (0.8.0) the Track buttons' popups */
+        slot_words(m, i % 3, o, cap);
+        snprintf(o + strlen(o), (size_t)cap - strlen(o), "%s", rfmv_lay_name(m, i % 3, rfmv_slot_lay(m, i % 3)));
+        return;
+    case POP_JOG: rfmv_tcase(rfmv_jog_name(i), l, sizeof l), snprintf(o, (size_t)cap, "Jog: %s", l); return;
+    case POP_T4: snprintf(o, (size_t)cap, "%s", i ? "Routing" : "Mixer"); return;
+    case POP_CCNUM: snprintf(o, (size_t)cap, "Knob %d: CC %d", (i & 7) + 1, m->s.slot[m->fw.active % 3].cc[i & 7]); return;
+    case POP_LOCK:
+        slot_words(m, i % 3, o, cap);
+        snprintf(o + strlen(o), (size_t)cap - strlen(o), "Track %d", m->s.lock[i % 3] + 1);
+        return;
+    case POP_SEQ: return;                               /* (the base says it: "Sequencer mode") */
+    case POP_TK: {                                      /* (0.8.0) a takeover named again (a Track's tap): its name */
+        char t[RFM_MOVE_TK_NAME + 4];
+        snprintf(t, sizeof t, "%s", rfmv_lay_name(m, i % 3, RFM_MOVE_LAY_TK));
+        snprintf(o, (size_t)cap, "%s, takeover", t);
+        return;
+    }
     case POP_LABEL: {
         char t[RFM_MOVE_LABEL_MAX + 1];
         if (!m->fw_speaks && rfmv_half(m) && rfmv_label(m, i, t, sizeof t))   /* (0.6.11: the firmware's own) */
@@ -458,10 +514,10 @@ static int pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint
         *subj = 0x100 | POP_MODE, *stamp = m->pop_t0;
         return 1;
     }
-    for (t = 1; t < 4 && (q->projects || !rfmv_hold_shown(m, t)); t++) {}
-    if (t < 4) {                                        /* a held Track's menu: the item changed */
-        menu_words(m, o, cap);
-        *subj = (uint16_t)(0x200 | m->menu_what);
+    for (t = 0; t < 4 && ((q->projects && t < 3) || !rfmv_hold_shown(m, t)); t++) {}
+    if (t < 4) {                                        /* a held Track's menu: shown, then the item changed */
+        menu_words(m, t, o, cap);
+        *subj = (uint16_t)(0x200 | t << 5 | m->menu_what), *stamp = m->tbtn_clk[t];
         return 1;
     }
     up = m->pop && (m->pop != POP_SELECT || rfmv_half(m)) && rfmv_pop_up(m, m->pop) &&
@@ -594,7 +650,7 @@ static void item_words(const rfm_move_t *m, int i, char *o, int cap)
             snprintf(o, (size_t)cap, "Octave %d", m->s.octave);
         break;
     case I_BANK:
-        if (m->s.mode == RFM_MOVE_MODE_CONTROL || seq)
+        if (seq)
             snprintf(o, (size_t)cap, "Bank %d", m->s.bank + 1);
         break;
     case I_LAYOUT:
@@ -610,7 +666,7 @@ static void item_words(const rfm_move_t *m, int i, char *o, int cap)
             snprintf(o, (size_t)cap, "Scale: %s", SCALE_LONG[m->s.scale % RFM_MOVE_NSCALES]);
         break;
     case I_CHANNEL:
-        if (m->s.mode == RFM_MOVE_MODE_MIDI || m->s.mode == RFM_MOVE_MODE_CONTROL)
+        if (m->s.mode == RFM_MOVE_MODE_MIDI)
             snprintf(o, (size_t)cap, "Channel: %d", m->s.channel + 1);
         break;
     case I_VEL: {
@@ -744,7 +800,17 @@ static void watch(rfm_move_t *m, int silent, said_now_t *sn)
         m->say_h[i] = h;
         if (quiet >> i & 1)
             continue;
-        say_v(m, sn, w);
+        if (i == I_TRACK) {                             /* (0.8.0: a lock popup or the lock menu named it already:
+                                                         * "Melodee, Track 2", "Track 3, locked") */
+            int j, dup = 0;
+            for (j = 0; j < sn->n; j++) {
+                const char *f = strstr(sn->w[j], w);
+                dup |= f && (f[strlen(w)] == 0 || f[strlen(w)] == ',');
+            }
+            if (!dup)
+                say_v(m, sn, w);
+        } else
+            say_v(m, sn, w);
         if (i == I_TRACK)
             quiet |= TRACKSET;                          /* (another track: its own layout, key, CCs follow it) */
         if (i == I_SMJOG)
@@ -839,6 +905,14 @@ void rfmv_say_tick(rfm_move_t *m)
     }
     for (t = 0; t < RFM_MOVE_SEQ_TRACKS && !due; t++)
         due = q->tr[t].active != m->say_act[t] || q->tr[t].queued != m->say_q[t];
+    {                                                   /* (0.8.0) a held Track's menu shown by the clock: said */
+        int hs = 0;
+        for (t = 0; t < 4; t++)
+            hs |= rfmv_hold_shown(m, t) << t;
+        if (hs & ~m->say_hold)
+            due = 1;
+        m->say_hold = (uint8_t)hs;
+    }
     if (m->say_turn && rfmv_now_ms(m) - m->say_turn_ms >= RFM_MOVE_SAY_TURN_MS) {
         m->say_turn = 0;                                /* (0.6.7) a knob turned, no readout (its range's end): its
                                                          * "Name: value" again, once; no readout known: the detents */
@@ -891,6 +965,14 @@ void rfmv_say_check(rfm_move_t *m)
     }
     up = pop_words(m, pw, sizeof pw, &ps, &st);         /* 3. a popup: its words when they change */
     tidy(pw);
+    if (fresh && up && pw[0]) {                         /* (0.8.0) the view just named says the popup's words already
+                                                         * ("Chords, takeover"): taken as said */
+        char bw[RFM_MOVE_SAY_MAX];
+        base_said(m, -1, bw, sizeof bw);
+        tidy(bw);
+        if (!strcmp(bw, pw) || !strcmp(w, pw))
+            snprintf(m->said, sizeof m->said, "%s", pw), m->said_subj = ps, m->said_t0 = st;
+    }
     if (up) {
         const int pressed = ps == (0x100 | POP_LABEL) && m->say_lbl_t0 && st == m->say_lbl_t0;
         if (m->say_rdnew && pw[0] && strcmp(pw, m->said))
@@ -985,6 +1067,8 @@ int rfm_move_words(const rfm_move_t *m, char *out, int cap)
     if (!p[0] && m->seq.smenu == RFM_MOVE_SM_GLOBAL && !m->seq.projects)
         rfmv_global_words(m, p, sizeof p);              /* (0.6.12: Global Settings: its row selected) */
     tidy(p);
+    if (!strcmp(p, b))
+        p[0] = 0;                                       /* (0.8.0: a popup saying the view's own words: once) */
     n = snprintf(out, (size_t)cap, "%s%s%s", b, p[0] ? ", " : "", p);
     return n < cap ? n : cap - 1;
 }

@@ -70,7 +70,8 @@ export const CLOCK = { AUTO: 0, INT: 1, EXT: 2 };
 export const PROJECTS = 32, PROJECT_MAX = 40139;   // (RFM_MOVE_PROJECT_MAX, version 7 blobs (0.6.6); mw_project_max())
 export const FILE_ONE = 1, FILE_SET = 2, FILE_MAX = 8 + PROJECTS * (10 + PROJECT_MAX);   // (store.h RFM1CS_FILE_*)
 export const TONES = ["off", "busy", "on", "bad"];   // (RFM1CS_TONE_*)
-export const MODE = { FM1: 0, MIDI: 1, CONTROL: 2, SEQ: 3 };
+export const MODE = { FM1: 0, MIDI: 1, CONTROL: 2, SEQ: 3, TAKEOVER: 4 };   // (0.8.0: CONTROL is MIDI)
+export const LAY = { FM1: 0, TK: 1, SCALE: 2, CHROMA: 3, DRUM: 4, OCTAVE: 5 };   // (0.8.0) a slot's layout
 export const MODE_NAMES = ["FM-1", "MIDI", "Control", "Sequencer"];
 // the session (session.h)
 export const STATE = { OFF: 0, CONNECTING: 1, CONNECTED: 2, RETRYING: 3, FAILED: 4 };
@@ -80,7 +81,7 @@ export const STORE_PENDING = -2;
 const EV_NAMES = { 1: "send", 2: "open", 3: "close", 4: "action", 5: "released", 6: "lost", 7: "bye", 8: "status", 100: "loaded" };
 const STORE_KINDS = { projectSave: ACT.PROJECT_SAVE, projectLoad: ACT.PROJECT_LOAD, projectDelete: ACT.PROJECT_DELETE,
   projectCut: ACT.PROJECT_CUT, projectCopy: ACT.PROJECT_COPY, projectPaste: ACT.PROJECT_PASTE, projectColor: ACT.PROJECT_COLOR };
-export const SCREEN_BYTES = 1024, SETTINGS_BYTES = 88, NLEDS = 92, POPUP_MS = 1000;   // (RFM_MOVE_POPUP_MS: a popup stays this long)
+export const SCREEN_BYTES = 1024, SETTINGS_BYTES = 130, NLEDS = 92, POPUP_MS = 1000;   // (RFM_MOVE_POPUP_MS: a popup stays this long)
 const ACT_BYTES = 10, ACT_EXT = 24, LED_BYTES = 6;   // (0.6.6: + mroute[3])
 // pressure 0..127 as key_lean 0..100 (move.h rfm_move_lean)
 export const lean = (p) => Math.floor((Math.max(0, Math.min(127, p | 0)) * 100 + 63) / 127);
@@ -222,6 +223,9 @@ export class MoveCore {
   input(packet, frame = 0, nowMs = 0) { return this._acts(this.M._mw_input(this.w, packet >>> 0, frame >>> 0, nowMs >>> 0)); }
   releaseAll() { return this._acts(this.M._mw_release_all(this.w)); }
   setMode(mode) { return this._acts(this.M._mw_set_mode(this.w, mode | 0)); }
+  // (0.8.0) a slot's layout (LAY.*), as its Track button's menu sets it; -1 refused
+  setSlotLayout(slot, lay) { return this._acts(this.M._mw_set_slot_layout(this.w, slot | 0, lay | 0)); }
+  slotLayout(slot) { return this.M._mw_slot_layout(this.w, slot | 0); }
   setScale(scale, root) { return this._acts(this.M._mw_set_scale(this.w, scale | 0, root | 0)); }
   setMaster(v) { this.M._mw_set_master(this.w, v | 0); }
   get master() { return this.M._mw_master(this.w); }

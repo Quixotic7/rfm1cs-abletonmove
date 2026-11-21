@@ -48,8 +48,9 @@ void rfmv_shift_icons(const rfm_move_t *m, uint8_t icon[16])
     const rfm_move_seq_t *q = &m->seq;
     int i;
     memset(icon, 0, 16);
-    if (!((m->s.mode == RFM_MOVE_MODE_SEQ && (q->mods & SEQ_M_SHIFT)) || rfmv_track_held(m, 0)))
-        return;
+    if (!((m->s.mode == RFM_MOVE_MODE_SEQ && (q->mods & SEQ_M_SHIFT)) || rfmv_t4_menu(m) ||
+          (m->s.mode == RFM_MOVE_MODE_MIDI && m->shift_down && !m->seq.projects)))
+        return;                                         /* (0.8.0: Track 4 held, Shift outside the FM-1 layout) */
     for (i = 0; i < RFM_MOVE_NSTEPS; i++) {
         const int job = i == SH_PROJECTS || i == SH_CLOCK || i == SH_FIXVEL || i == SH_DOUBLE || i == SH_QUANT ||
                         i == SH_METRO || i == SH_NEWCLIP || i == SH_CLEAR || sh_menu(i);
@@ -654,17 +655,26 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
     if (!down) {
         if (q->loop_first == s)
             q->loop_first = -1;
-        if (q->tstep_held & (1u << s)) {                /* Track 4 held, a track's step: tap select, double tap
-                                                         * solo, hold mute */
+        if (q->tstep_held & (1u << s)) {                /* (0.8.0) a firmware Track held, a track's step: a tap locks
+                                                         * it to that firmware (and selects it), a double tap solos, a
+                                                         * hold stops it reaching the firmware (its 16-track filter) */
+            const int fw = rfmv_seq_trk_held(m) - 1;
             q->tstep_held &= ~(1u << s);
-            if (rfmv_now_ms(m) - q->step_t[s] >= RFM_MOVE_SEQ_HOLD_MS)
-                rfmv_seq_mute(m, s, !q->tr[s].mute), q->tstep_tap = -1;
-            else if (q->tstep_tap == s && now - q->tstep_tap_ms < 400)
+            if (fw < 0)
+                return;
+            rfmv_menu(m, MENU_LOCK, s);
+            if (rfmv_now_ms(m) - q->step_t[s] >= RFM_MOVE_SEQ_HOLD_MS) {
+                rfmv_route_toggle(m, fw, s), q->tstep_tap = -1;
+                m->lk_word = (uint8_t)(q->fx.ffilt[fw] >> s & 1 ? LK_ON : LK_OFF);
+            } else if (q->tstep_tap == s && now - q->tstep_tap_ms < 400) {
                 rfmv_seq_solo(m, s, !q->tr[s].solo), q->tstep_tap = -1;
-            else {
-                rfmv_menu(m, MENU_TRACK, s);
+                m->lk_word = (uint8_t)(q->tr[s].solo ? LK_SOLO : LK_UNSOLO);
+            } else {
+                if (m->s.lock[fw] != s)
+                    m->s.lock[fw] = (uint8_t)s, rfmv_changed(m);
                 rfmv_seq_select(m, s);
                 q->tstep_tap = (int8_t)s, q->tstep_tap_ms = now;
+                m->lk_word = LK_LOCKED;
             }
             return;
         }
@@ -729,9 +739,11 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             rfmv_seq_track_clear(m, s);
             snprintf(w, sizeof w, "Track %d cleared", s + 1);
             rfmv_say_text(m, w);
+            m->lk_word = LK_CLEARED;
         } else if (q->mods & SEQ_M_MUTE) {
             q->mods_used |= SEQ_M_MUTE;
             rfmv_seq_mute(m, s, !q->tr[s].mute);
+            m->lk_word = (uint8_t)(q->tr[s].mute ? LK_MUTE : LK_UNMUTE);
         } else if (q->paste && q->clip_kind == 3) {
             rfmv_seq_group(m);
             rfmv_seq_track_copy(m, q->clip_src, s);
@@ -781,7 +793,8 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             return;
         }
         switch (s) {
-        case SH_PROJECTS: rfmv_proj_enter(m); break;    /* (projects mode: a mode of its own) */
+        case SH_PROJECTS: rfmv_view_open(m, VIEW_PROJECTS); break;   /* (projects mode: a mode of its own; 0.8.0:
+                                                         * the sequencer's projects, as Track 4's double click) */
         case SH_METRO:
             q->metro = (uint8_t)!q->metro;
             rfmv_seq_msg(m, q->metro ? SEQ_MSG_METRO_ON : SEQ_MSG_METRO_OFF);
@@ -1896,7 +1909,19 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
         rgb_t v = RFMV_OFF;
         if (q->projects)
             v = i == 0 ? sc(RFMV_WHITE, 96) : RFMV_OFF;
-        else if (t4 || (q->mods & SEQ_M_MUTE)) {        /* the tracks */
+        else if (t4 && !(q->mods & SEQ_M_MUTE)) {       /* (0.8.0) the lock menu (the board's colours): the track
+                                                         * locked to the held firmware in its colour, soloed blue, not
+                                                         * routed to it dim red, the others by their content */
+            const int fw = t4 - 1;
+            if (m->s.lock[fw] == i)
+                v = rfmv_fw_rgb(m, fw);
+            else if (q->tr[i].solo)
+                v = (rgb_t){ 40, 110, 255 };
+            else if (!(q->fx.ffilt[fw] >> i & 1))
+                v = sc((rgb_t){ 255, 40, 40 }, 90);
+            else
+                v = sc(RFMV_WHITE, rfmv_seq_track_used(m, i) ? 38 : 13);
+        } else if (t4 || (q->mods & SEQ_M_MUTE)) {      /* the tracks */
             const int used = rfmv_seq_track_used(m, i);
             if (q->tr[i].solo)
                 v = sc((rgb_t){ 40, 90, 255 }, t4 && i == q->sel_track ? 256 : 140);   /* soloed: blue (Move's) */
@@ -2429,11 +2454,12 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
         return 1;
     case MR_EV_BUTTON:
         if (ev->index >= MR_CC_TRACK4 && ev->index <= MR_CC_TRACK1)
-            return 0;                                   /* (the modes, Track 1's Shift layer: its own toggle) */
+            return 0;                                   /* (the Track buttons; Track 4's Shift layer: its own toggle) */
         if (!ev->value)
             return ev->index == MR_CC_BACK || ev->index == MR_CC_MENU;   /* (their press was ours) */
-        if (ev->index == MR_CC_SHIFT && m->s.mode == RFM_MOVE_MODE_SEQ)
-            return 0;                                   /* (Shift + step 2 closes it in Sequencer mode) */
+        if (ev->index == MR_CC_SHIFT && m->s.mode != RFM_MOVE_MODE_FM1)
+            return 0;                                   /* (Shift + step 2 closes it in Sequencer mode and, 0.8.0, a note
+                                                         * layout; in the FM-1 layout Shift is the FM-1's GLO) */
         if (ev->index == MR_CC_BACK || ev->index == MR_CC_MENU) {
             if (m->gl_edit)
                 m->gl_edit = 0, rfmv_say_text(m, "Done");
@@ -2442,7 +2468,7 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
         }
         return 1;
     case MR_EV_STEP:
-        if (!ev->value || rfmv_track_held(m, 0) || (q->mods & SEQ_M_SHIFT))
+        if (!ev->value || rfmv_track_held(m, 3) || (q->mods & SEQ_M_SHIFT) || (m->shift_down && m->s.mode == RFM_MOVE_MODE_MIDI))
             return 0;                                   /* (releases; Shift + step: the menus, this one's toggle) */
         return 1;
     case MR_EV_TOUCH:

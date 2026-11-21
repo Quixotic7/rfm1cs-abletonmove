@@ -3,7 +3,8 @@
 /* (0.7.0) the takeover: a firmware's own Move interface (move.h, rfm_move_set_takeover; README "Takeover"; FM1VST
  * docs/RFM1-TAKEOVER.md, tk1). The host hands the core each slot's claims, name, screen, LEDs and words; the core
  * shows them while the active slot's takeover is up and sends the firmware the claimed controls (TK_INPUT) and what
- * it is granted (TK_STATE). Under it the settings stay in FM-1 mode, so every part not claimed is FM-1 mode's. */
+ * it is granted (TK_STATE). It is a slot's layout (0.8.0, RFM_MOVE_LAY_TK): the settings' mode stays FM-1 under it,
+ * so every part not claimed is the FM-1 layout's. */
 #include <string.h>
 
 #include "move_int.h"
@@ -15,8 +16,8 @@ static int tk_slot(const rfm_move_t *m) { return m->fw.active < RFM_MOVE_FW_SLOT
 /* the active slot was left in its takeover and has one (shown or not: the projects view, a Shift menu over it) */
 int rfmv_tk_mode(const rfm_move_t *m)
 {
-    const int s = tk_slot(m);
-    return m->s.mode == RFM_MOVE_MODE_FM1 && m->tk[s].mode && m->tk[s].claims;
+    const int s = tk_slot(m);                           /* (0.8.0: the slot's layout is its takeover, proposal 2) */
+    return m->s.mode == RFM_MOVE_MODE_FM1 && m->s.slot[s].lay == RFM_MOVE_LAY_TK && m->tk[s].claims;
 }
 /* .. and shown now: the claimed controls are the firmware's */
 int rfmv_tk_on(const rfm_move_t *m) { return rfmv_tk_mode(m) && !m->seq.projects && !m->seq.smenu; }
@@ -40,7 +41,11 @@ void rfmv_tk_set(rfm_move_t *m, int on)
     if (on && !m->tk[s].claims)
         return;
     m->tk[s].mode = (uint8_t)(on != 0);
-    rfmv_tk_mode_pop(m);
+    rfmv_set_slot_lay(m, s, on ? RFM_MOVE_LAY_TK : RFM_MOVE_LAY_FM1);   /* (0.8.0: the slot's layout) */
+    if (on)
+        rfmv_pop(m, POP_TK, s);
+    else
+        rfmv_pop(m, POP_LAYOUT, s);
 }
 
 /* ---- the actions */
@@ -232,6 +237,13 @@ static int route(rfm_move_t *m, const mr_event_t *ev)
     }
     if (!m->tk_sent_on || !rfmv_tk_on(m))               /* (not shown: the core's; the releases went as it closed) */
         return 0;
+    if (ev->value && ev->type != MR_EV_BUTTON && (rfmv_lay_menu(m) || rfmv_t4_menu(m)))
+        return 0;                                       /* (0.8.0: a held Track's menu takes the presses; the
+                                                         * firmware's held controls still get their releases) */
+    if (ev->value && ev->type == MR_EV_BUTTON && (rfmv_lay_menu(m) || rfmv_t4_menu(m)) &&
+        (btn_claim(i) != RFM_MOVE_TK_TRACKS) && (i == MR_CC_UP || i == MR_CC_DOWN || i == MR_CC_REC ||
+        i == MR_CC_PLAY || i == MR_CC_CAPTURE || i == MR_CC_UNDO || i == MR_CC_LOOP || i == MR_CC_SAMPLE))
+        return 0;
     switch (ev->type) {
     case MR_EV_PAD:
         if (i < 0 || i >= RFM_MOVE_NPADS || !held(m, ev, (cl & RFM_MOVE_TK_PADS) != 0, m->tk_pad >> i & 1, &now))
@@ -279,7 +291,8 @@ static int route(rfm_move_t *m, const mr_event_t *ev)
         if (i < 0 || i > 127)
             return 0;
         if (i == MR_CC_BACK && (cl & RFM_MOVE_TK_BUTTONS) && !(cl & RFM_MOVE_TK_TRACKS) && !bit(m->tk_btn, i)) {
-            if (ev->value) {                            /* (held back: Back + Track n still switches slots) */
+            if (ev->value) {                            /* (held back: a Track pressed meanwhile acts and Back is then
+                                                         * nobody's) */
                 m->tk_back = 1, m->tk_back_trk = 0;
                 m->back_down = 1, m->back_used = 1, m->back_ms = 0;   /* (the core's Back + Track; no click) */
                 return 1;
@@ -360,10 +373,13 @@ void rfm_move_set_takeover(rfm_move_t *m, int slot, unsigned claims, const char 
     shown = slot == tk_slot(m) && rfmv_tk_mode(m);
     copy_name(t->name, name);
     t->claims = (uint16_t)(claims & RFM_MOVE_TK_ALL);
-    if (!t->claims && t->mode) {                        /* (no takeover now: the open one closes, FM-1 mode) */
+    if (!t->claims && m->s.slot[slot].lay == RFM_MOVE_LAY_TK) {   /* (no takeover now: the open one closes, the
+                                                         * FM-1 layout) */
         t->mode = 0;
+        m->s.slot[slot].lay = RFM_MOVE_LAY_FM1;
+        rfmv_changed(m);
         if (shown)
-            rfmv_pop(m, POP_MODE, RFM_MOVE_MODE_FM1);
+            rfmv_pop(m, POP_LAYOUT, slot);
     }
     rfmv_tk_sync(m);
     rfmv_say_check(m);

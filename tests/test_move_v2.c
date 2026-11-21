@@ -277,8 +277,8 @@ static void reset(int mode)
     for (y = 0; y < 64; y++)
         for (x = 0; x < 64; x++)
             C.thumb[y][x] = tb.px[y][64 + x];
-    if (mode)
-        tap_track(mode);
+    if (mode)                                           /* (0.8.0: the Track buttons no longer pick modes) */
+        rfm_move_set_mode(&C, mode);
     rest();
 }
 static void seq_notes(int page)                        /* the mockup's NOTES on a page (row 2 the highest) */
@@ -327,27 +327,18 @@ static void core_screens(void)
     reset(0), rfm_move_set_label(&C, RFM_MOVE_E_K1, "CUTOFF"), touch(4, 1), knob(4, 6), shot("fm1.knob");
     reset(0), jog(-1), jog(-1), shot("fm1.jog");
     reset(0), rfm_move_set_master(&C, 511), touch(8, 1), knob(8, 1), knob(8, 127), shot("fm1.master");
-    reset(0), hold_track(0), shot("fm1.shift");
-    reset(1), tap_track(0), shot("mode.fm1");
+    reset(0), hold_track(3), shot("fm1.shift");         /* (0.8.0: Track 4 held is the Shift layer) */
+    reset(0), tap_track(0), shot("mode.fm1");           /* (Track 1 tap: slot 0's layout named) */
     /* MIDI mode */
     reset(1), pad(10, 100), pad(4, 100), shot("midi.pads");
-    reset(1), tap_track(1), rest(), shot("midi.notes");
-    reset(1), tap_track(1), rest();
+    /* (0.8.0: the PADS/NOTES toggle is gone; midi.notes and mode.notes are not shot) */
+    reset(1);
     C.note_count[0][60] = C.note_count[0][63] = C.note_count[0][67] = C.note_count[0][70] = 1, shot("midi.chord");
-    reset(1), tap_track(1), rest(), knob(1, 2), shot("midi.knob");
-    reset(1), C.s.root = 2, C.s.scale = RFM_MOVE_SCALE_MINOR, hold_track(1), shot("midi.hold2");
-    reset(1), C.s.root = 2, C.s.scale = RFM_MOVE_SCALE_DORIAN, hold_track(1), shot("midi.scale");
-    reset(1), tap_track(1), shot("mode.notes");
-    /* Control mode */
-    reset(2), C.s.bank = 1;
-    {
-        static const double v[8] = { 0.7, 0.45, 0.9, 0.2, 0.6, 1, 0.35, 0.55 };
-        for (i = 0; i < 8; i++)
-            C.cc_val[1][i] = (uint8_t)(v[i] * 127 + 0.5);
-    }
-    shot("ctl.rest");
-    C.s.cc[1][0] = 74, C.cc_val[1][0] = 95, knob(0, 1), shot("ctl.knob");
-    rest(), C.s.cc[1][3] = 19, hold_track(2), knob(3, 1), shot("ctl.hold3");
+    reset(1), knob(1, 2), shot("midi.knob");
+    /* (0.8.0: the held slot's layout menu, Track 1 held, replaces Track 2's MIDI menu) */
+    reset(1), rfm_move_set_scale(&C, RFM_MOVE_SCALE_MINOR, 2), hold_track(0), shot("midi.hold2");
+    reset(1), rfm_move_set_scale(&C, RFM_MOVE_SCALE_DORIAN, 2), hold_track(0), shot("midi.scale");
+    /* (0.8.0: Control mode is gone; ctl.* are not shot) */
     /* the sequencer: track view */
     reset(3), rfmv_seq_loop_set(&C, 0, 0, 64), seq_notes(1), C.seq.page = 1;
     rfm_move_seq_play(&C, 1), adv_ms(500 * 21 / 4 + 62), shot("seq.track");
@@ -364,15 +355,18 @@ static void core_screens(void)
     step(4, 0), rest();
     button(MR_CC_COPY, 1), step(4, 1), step(4, 0), shot("seq.clip"), button(MR_CC_COPY, 0);
     reset(3), C.seq.rec_mode = RFM_MOVE_RM_RECORD, press(MR_CC_REC), press(MR_CC_PLAY), adv_ms(600), shot("seq.count");
-    reset(0), tap_track(3), shot("mode.seq");
+    reset(0), press(MR_CC_BACK), shot("mode.seq");      /* (0.8.0: Back flips a layout to the Sequencer) */
+    CHECKF(C.s.mode == RFM_MOVE_MODE_SEQ, "Back click from the FM-1 layout: the Sequencer");
     /* the TRIG page */
     {
         static const char *const TN[6] = { "trig.micro", "trig.ratch", "trig.chance", "trig.cond", "trig.func", "trig.len" };
         static const int TK[6] = { 0, 1, 2, 3, 4, 6 }, TD[6] = { 5, 3, -5, 2, 8, 60 };
         for (i = 0; i < 6; i++) {
+            int n = 0;
             reset(3), rfmv_seq_note_put(&C, 0, 0, 60, 100, 24, 0);
-            while (!C.seq.trig)
+            while (!C.seq.trig && n++ < 64)
                 jog(-1);
+            CHECKF(C.seq.trig, "%s: the jog reaches the TRIG page", TN[i]);
             rest(), step(0, 1), knob(TK[i], TD[i]), shot(TN[i]), step(0, 0);
         }
     }
@@ -410,7 +404,7 @@ static void core_screens(void)
     for (i = 0; i < 11; i++)
         if (i < 7 || i == 8 || i == 10)
             rfmv_seq_note_put(&C, SEQ_CLIP(i, 0), 0, 60, 100, 24, 0);
-    hold_track(3), shot("sess.hold4"), track(3, 0);
+    hold_track(0), shot("sess.hold4"), track(0, 0);     /* (0.8.0: Track 1 held in the Sequencer: the lock menu) */
     /* the Shift menus */
     reset(3), rfm_move_set_battery(&C, 87, 0), C.s.vel_mode = RFM_MOVE_VEL_FIXED, rfm_move_seq_set_clock(&C, RFM_MOVE_CLOCK_INTERNAL);
     shift_step(1), shot("menu.global");

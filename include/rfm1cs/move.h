@@ -26,9 +26,9 @@ extern "C" {
 
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
-#define RFM1CS_VERSION_MINOR 7
+#define RFM1CS_VERSION_MINOR 8
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.7.0"
+#define RFM1CS_VERSION "0.8.0"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -71,11 +71,25 @@ enum {
     RFM_MOVE_E_MASTER = 7,                              /* (labels only: MASTER is not an encoder) */
 };
 
-/* the four modes (Track 1..4) and the MIDI modes' pad layouts. (0.7.0) RFM_MOVE_MODE_TAKEOVER: a firmware's own Move
- * interface (rfm_move_set_takeover; Track 1 from FM-1 mode). It is never in the settings (settings.mode stays FM1
- * under it: what the firmware does not claim keeps FM-1 mode's meaning); rfm_move_mode() names it */
+/* what the controls play now (rfm_move_mode). (0.8.0, the Track buttons' proposal 2) Track 1..3 are the firmware slots
+ * and each slot has its own layout (RFM_MOVE_LAY_*): FM1 is the FM-1 layout, MIDI any note layout, TAKEOVER the
+ * firmware's own (rfm_move_set_takeover); SEQ the Sequencer (Back flips to it). CONTROL is gone: every note layout has
+ * the Control CCs on its knobs (rfm_move_set_mode(m, CONTROL) is MIDI). TAKEOVER is never in the settings */
 enum { RFM_MOVE_MODE_FM1 = 0, RFM_MOVE_MODE_MIDI = 1, RFM_MOVE_MODE_CONTROL = 2, RFM_MOVE_MODE_SEQ = 3,
        RFM_MOVE_MODE_TAKEOVER = 4 };
+/* (0.8.0) a firmware slot's layout, its Track button's menu's top row (pad 1 FM-1, pad 2 the firmware's own takeover,
+ * pads 3..6 the note layouts) */
+enum { RFM_MOVE_LAY_FM1 = 0, RFM_MOVE_LAY_TK = 1, RFM_MOVE_LAY_SCALE = 2, RFM_MOVE_LAY_CHROMA = 3, RFM_MOVE_LAY_DRUM = 4,
+       RFM_MOVE_LAY_OCTAVE = 5, RFM_MOVE_LAY_N = 6 };
+#define RFM_MOVE_FW_SLOTS 3
+#define RFM_MOVE_DOUBLE_MS 300                          /* (0.8.0) a Track button's double click: pressed again this
+                                                         * soon after a tap's release */
+typedef struct {                                        /* (0.8.0) a firmware slot's own settings (Track n held) */
+    uint8_t lay;                                        /* RFM_MOVE_LAY_* */
+    uint8_t scale, root, channel;                       /* the note layouts' scale, root 0..11, MIDI channel 0..15 */
+    int8_t octave;                                      /* RFM_MOVE_OCT_MIN..MAX */
+    uint8_t cc[8];                                      /* the knobs' CC numbers in a note layout (16..23 at first) */
+} rfm_move_slotset_t;
 enum { RFM_MOVE_LAYOUT_SCALE = 0, RFM_MOVE_LAYOUT_CHROMATIC = 1, RFM_MOVE_LAYOUT_DRUM = 2, RFM_MOVE_LAYOUT_OCTAVE = 3 };
 enum {
     RFM_MOVE_SCALE_MAJOR = 0, RFM_MOVE_SCALE_MINOR, RFM_MOVE_SCALE_DORIAN, RFM_MOVE_SCALE_MIXOLYDIAN,
@@ -216,6 +230,11 @@ typedef struct {
     /* (version 6, 0.6.12) */
     uint8_t speech;                                     /* the screen reader: 0 not chosen yet (the host's default,
                                                          * rfm_move_set_speech_default), 1 + RFM_MOVE_SPEECH_* */
+    /* (version 7, 0.8.0: the Track buttons, proposal 2) each firmware slot's layout and note settings (the fields
+     * above, layout to octave, are the active slot's while it is played: a mirror), and the sequencer track locked
+     * to each slot (Track n's tap in the Sequencer selects it) */
+    rfm_move_slotset_t slot[RFM_MOVE_FW_SLOTS];
+    uint8_t lock[RFM_MOVE_FW_SLOTS];                    /* 0..15 (slot n: track n + 1 at first) */
 } rfm_move_settings_t;
 enum { RFM_MOVE_VEL_DYNAMIC, RFM_MOVE_VEL_FIXED, RFM_MOVE_VEL_SOFT, RFM_MOVE_VEL_HARD, RFM_MOVE_VEL_LINEAR, RFM_MOVE_VEL_N };
 /* (the jog's order: Dynamic, Fixed, Soft, Linear, Hard; LINEAR came last, so older settings keep their values) */
@@ -223,11 +242,13 @@ const char *rfm_move_vel_name(int v);                   /* "DYNAMIC", "FIXED", "
 int rfm_move_vel(const rfm_move_settings_t *s, int v);  /* a pad's velocity 1..127 through the setting */
 #define RFM_MOVE_LIST_TICKS 5                           /* a list-type menu knob (scale, root, layout ..): ticks an item */
 #define RFM_MOVE_KNOB_TICKS 2                           /* the Move's knob ticks an FM-1 encoder detent (the jog: 1) */
-#define RFM_MOVE_SETTINGS_VERSION 6                     /* (versions 1..5, 77, 78, 80, 86 and 87 bytes, load too: no
-                                                         * MIDI screen, no velocity setting, no projects view state, no
-                                                         * popup width (full), no speech mode (the host's default)) */
+#define RFM_MOVE_SETTINGS_VERSION 7                     /* (versions 1..6, 77, 78, 80, 86, 87 and 88 bytes, load too:
+                                                         * no MIDI screen, no velocity setting, no projects view state,
+                                                         * no popup width (full), no speech mode (the host's default),
+                                                         * no slots (each slot gets the one mode, layout and bank)) */
 #define RFM_MOVE_SETTINGS_BYTES_V3 (6 + 7 + RFM_MOVE_NBANKS * RFM_MOVE_NKNOBS + RFM_MOVE_NPADS + 3)
-#define RFM_MOVE_SETTINGS_BYTES (RFM_MOVE_SETTINGS_BYTES_V3 + 8)
+#define RFM_MOVE_SETTINGS_BYTES_V6 (RFM_MOVE_SETTINGS_BYTES_V3 + 8)
+#define RFM_MOVE_SETTINGS_BYTES (RFM_MOVE_SETTINGS_BYTES_V6 + RFM_MOVE_FW_SLOTS * 14)   /* (130) */
 enum { RFM_MOVE_MV_PADS, RFM_MOVE_MV_NOTES, RFM_MOVE_MV_N };   /* MIDI mode's screens (a tap on Track 2 turns them) */
 void rfm_move_settings_default(rfm_move_settings_t *s);
 /* "RMV" version8 len16, then the fields; returns RFM_MOVE_SETTINGS_BYTES */
@@ -260,7 +281,6 @@ enum { RFM_MOVE_L_PAD0 = 0, RFM_MOVE_L_STEP0 = 32, RFM_MOVE_L_PLAY = 48, RFM_MOV
  * to, stay valid and unchanged until the next rfm_move_fw_list call (a new list: a new array, then the call; never an
  * edit of the live one). The one exception is the core's own: rfm_move_fw_installed writes entries[i].installed.
  * Entries come in the order the pads show them (A-Z by name, as the catalog lists them). */
-#define RFM_MOVE_FW_SLOTS 3
 #define RFM_MOVE_LATCH_MAX (RFM_MOVE_NPADS * RFM_MOVE_FW_SLOTS)   /* (0.5.4) notes latched at once, all slots */
 #define RFM_MOVE_FW_ID_MAX 32                           /* an id's bytes with its NUL (longer ids are refused) */
 #define RFM_MOVE_FW_THUMB 64                            /* a thumbnail: 64 x 64, 1 bit, rows top first, MSB left */
@@ -866,6 +886,16 @@ typedef struct {
     uint8_t tk_back;                                    /* Back held back (BUTTONS without TRACKS): 1 down, unsent */
     uint8_t tk_back_trk;                                /* .. a Track pressed meanwhile (nothing sent at its release) */
     uint8_t tk_back_eat;                                /* Back's release is nobody's (volume + Back took its press) */
+    /* (0.8.0) the Track buttons, proposal 2 (README "The Track buttons") */
+    uint32_t tbtn_up[4];                                /* a tap's release (input ms; 0 none): a press this soon after is
+                                                         * a double click (RFM_MOVE_DOUBLE_MS) */
+    uint8_t tbtn_dbl;                                   /* bits: this press was a double click (its release: nothing) */
+    uint8_t jog_enc;                                    /* the FM-1 layout's jog: 0 SELECT, 1 PRESETS, 2 ALGO */
+    uint8_t slot_ccv[RFM_MOVE_FW_SLOTS][RFM_MOVE_NKNOBS];   /* each slot's CC values (a note layout's knobs), 64 */
+    uint8_t lk_word;                                    /* the lock menu's last change (LK_* in move.c) */
+    uint8_t fx_route;                                   /* Routing's column page (the Mixer and Routing flip) */
+    uint8_t say_hold;
+    uint8_t tbtn_used;                                  /* bits: something else pressed while that Track was held */                                   /* (speech) the held Tracks whose menu showed (said once up) */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
@@ -884,10 +914,17 @@ void rfm_move_init(rfm_move_t *m, const rfm_move_settings_t *settings, rfm_move_
 void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms);
 /* every held FM-1 key, button and MIDI note let go (ups, pressure 0, note offs); the track buttons forgotten */
 void rfm_move_release_all(rfm_move_t *m);
-/* as a Track button does (releases all on a change). (0.7.0) RFM_MOVE_MODE_FM1 leaves a takeover (FM-1 mode itself);
- * RFM_MOVE_MODE_TAKEOVER opens the active slot's (nothing if it has none) */
+/* (releases all on a change) (0.8.0) the active slot's layout: RFM_MOVE_MODE_FM1 the FM-1 layout (out of a takeover),
+ * MIDI or CONTROL its note layout (the last one it had, Scale at first), TAKEOVER its takeover (nothing if it has
+ * none); SEQ the Sequencer. Out of the Sequencer to a layout as Back's flip does */
 void rfm_move_set_mode(rfm_move_t *m, int mode);
 int rfm_move_mode(const rfm_move_t *m);                 /* (0.7.0) RFM_MOVE_MODE_* now (TAKEOVER: the active slot's) */
+/* (0.8.0) a slot's layout (RFM_MOVE_LAY_*), as its Track button's menu sets it: the active slot's is played at once
+ * (outside the Sequencer). -1 refused (a slot or layout out of range, TK on a slot with no takeover); 0 done or
+ * nothing to change. SETTINGS */
+int rfm_move_set_slot_layout(rfm_move_t *m, int slot, int lay);
+int rfm_move_slot_layout(const rfm_move_t *m, int slot);   /* -1 no such slot */
+int rfm_move_seq_lock(const rfm_move_t *m, int slot);   /* (0.8.0) the sequencer track 0..15 locked to the slot */
 void rfm_move_set_scale(rfm_move_t *m, int scale, int root);
 void rfm_move_set_master(rfm_move_t *m, int value);    /* MASTER as the host has it (the volume knob moves from it) */
 /* the Move's battery from Move Remote's STATUS (battery8, byte 4, as the surface reports it: taken as a percentage,

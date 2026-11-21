@@ -174,7 +174,7 @@ int main(int argc, char **argv)
         return 1;
     CHECK(mr_hello(c)->caps & MR_CAP_SIMULATOR, "it is the simulator");
 
-    /* FM-1 mode: pad-2-1 (pad 16, note 84) = key 0 with velocity and pressure; Play; knob 1 = PRESETS; the
+    /* FM-1 mode: pad-2-1 (pad 16, note 84) = key 0 with velocity and pressure; Play; knob 1 = SELECT (0.8.0); the
      * volume knob = MASTER; the jog wheel = SELECT; step 16 = key 26 */
     inject(fifo, "note 84 100\nat 84 50\nnote 84 0\ncc 85 127\ncc 85 0\ncc 71 6\ncc 71 124\ncc 79 2\ncc 14 1\n"
                  "note 31 127\nnote 31 0\n");
@@ -183,8 +183,8 @@ int main(int argc, char **argv)
     CHECK(find(RFM_MOVE_ACT_PRESS, 0, 0, 50) && find(RFM_MOVE_ACT_PRESS, 0, 0, 0), "its pressure 50, then 0");
     CHECK(find(RFM_MOVE_ACT_KEY, 0, 0, 0), "released: key 0 up");
     CHECK(find(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY, 1, 0) && find(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY, 0, 0), "Play: PLAY");
-    CHECK(find(RFM_MOVE_ACT_TURN, RFM_MOVE_E_PRESETS, 0, 3) && find(RFM_MOVE_ACT_TURN, RFM_MOVE_E_PRESETS, 0, -2),
-          "knob 1: PRESETS +3, -2 (6 ticks, -4: a detent every 2)");
+    CHECK(find(RFM_MOVE_ACT_TURN, RFM_MOVE_E_SELECT, 0, 3) && find(RFM_MOVE_ACT_TURN, RFM_MOVE_E_SELECT, 0, -2),
+          "knob 1: SELECT +3, -2 (6 ticks, -4: a detent every 2)");
     CHECK(find(RFM_MOVE_ACT_MASTER, 0, 0, 768 + 32), "volume knob: MASTER 800");
     CHECK(find(RFM_MOVE_ACT_TURN, RFM_MOVE_E_SELECT, 0, 1), "jog wheel: SELECT +1");
     CHECK(find(RFM_MOVE_ACT_KEY, 26, 1, 0) && find(RFM_MOVE_ACT_KEY, 26, 0, 0), "step 16: key 26 (G5)");
@@ -207,11 +207,12 @@ int main(int argc, char **argv)
     CHECK(state_has(dir, "drew=1") && state_has(dir, "led_pending=0 ") && state_has(dir, "host=rfm_move e2e"),
           "simulator state: our host, the screen drawn, every LED write taken");
 
-    /* Track 2: MIDI mode; pad 1 (bottom left) = C3 on channel 1 */
+    /* (0.8.0) Track 1 held + the top row's pad 3: slot 1's Scale layout (MIDI mode); pad 1 (bottom left) = C3 on
+     * channel 1 */
     g_nact = 0;
-    inject(fifo, "cc 42 127\ncc 42 0\nnote 68 90\nnote 68 0\n");
-    pump(c, 3, 3000);
-    CHECK(g_m.s.mode == RFM_MOVE_MODE_MIDI && find(RFM_MOVE_ACT_SETTINGS, 0, 0, 0), "Track 2: MIDI mode");
+    inject(fifo, "cc 43 127\nnote 94 100\nnote 94 0\ncc 43 0\nnote 68 90\nnote 68 0\n");
+    pump(c, 4, 3000);
+    CHECK(g_m.s.mode == RFM_MOVE_MODE_MIDI && find(RFM_MOVE_ACT_SETTINGS, 0, 0, 0), "Track 1 held + Scale: MIDI mode");
     CHECK(find_midi(0x90, 48, 90) && find_midi(0x80, 48, 0), "the bottom-left pad: C3 on and off, channel 1");
     n = send_leds(c);
     CHECK(n > 0 && n < RFM_MOVE_NLEDS, "the mode change rewrote %d LEDs, not all", n);
@@ -219,7 +220,7 @@ int main(int argc, char **argv)
     mr_display(c, frame);
     CHECK(shot_matches(dir, fifo, c, frame), "the MIDI mode's screen shown");
 
-    /* Track 4: the sequencer. Pad 1 picks C3, steps 1 and 5 get it, then Play starts the transport (only Play does,
+    /* Back: the sequencer (0.8.0: Back's flip). Pad 1 picks C3, steps 1 and 5 get it, then Play starts the transport (only Play does,
      * the owner's); the internal clock (driven here as an audio callback would, 48 kHz in blocks of
      * 128) plays them as MIDI actions and the step LEDs show them */
     {
@@ -228,11 +229,11 @@ int main(int argc, char **argv)
         int ons = 0, offs = 0, lit1 = 0, lit5 = 0, lit2 = 1, frames;
         uint32_t at5 = 0;
         g_nact = 0;
-        inject(fifo, "cc 40 127\ncc 40 0\nnote 68 100\nnote 68 0\nnote 16 127\nnote 16 0\nnote 20 127\nnote 20 0\ncc 85 127\ncc 85 0\n");
+        inject(fifo, "cc 51 127\ncc 51 0\nnote 68 100\nnote 68 0\nnote 16 127\nnote 16 0\nnote 20 127\nnote 20 0\ncc 85 127\ncc 85 0\n");
         for (tries = 0; tries < 300 && g_inputs < before + 10; tries++)
             pump(c, -1, 10);
         CHECK(g_m.s.mode == RFM_MOVE_MODE_SEQ && g_m.seq.nnotes == 2 && g_m.seq.start_pending == 1,
-              "Track 4: two steps set, Play started the transport (%d notes)", g_m.seq.nnotes);
+              "Back: the Sequencer, two steps set, Play started the transport (%d notes)", g_m.seq.nnotes);
         g_nact = 0;
         for (frames = 0; frames < 48000; frames += 128) {
             const int n0 = g_nact;

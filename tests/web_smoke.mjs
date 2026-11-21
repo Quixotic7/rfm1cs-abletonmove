@@ -53,7 +53,7 @@ core.sessStop(5000);
                { id: "beta", name: "Beta", version: "2.0", installed: null, cats: 4, cat: 2 }]);
   core.fwVoices(1);
   const io = (st, d1, d2) => core.input(packet(st, d1, d2), 0, 0);
-  io(0xB0, 43, 127); io(0x90, 16, 127); io(0x80, 16, 0); io(0xB0, 43, 0);   // Track 1 + step 1: the projects view
+  io(0xB0, 43, 127); io(0xB0, 43, 0); io(0xB0, 43, 127); io(0xB0, 43, 0);   // (0.8.0) Track 1's double click: its browser
   io(0x90, 17, 127); io(0x80, 17, 0);                                       // step 2: All (Alpha)
   io(0x90, 92, 100); io(0x80, 92, 0);                                       // the top-left pad: Alpha
   io(0xB0, 118, 127); io(0xB0, 118, 0);                                    // Sampling: a favourite
@@ -73,7 +73,7 @@ core.sessStop(5000);
      sync.some((a) => a.kind === "route" && a.fw[0] === 0xFFFF && a.midiRoute.length === 3 && a.midiRoute[0] === 0),
      "fxSync: fxLoad x6, mix x3, route (0.6.6: midiRoute)");
   io(0xB0, 50, 127); io(0xB0, 50, 0);                                       // Session: FX setup
-  io(0xB0, 41, 127); io(0xB0, 41, 0);                                       // Track 3: Audio FX
+  io(0xB0, 40, 127); io(0xB0, 40, 0);                                       // (0.8.0) Track 4: the Mixer -> Routing
   io(0x90, 96, 100); io(0xB0, 14, 1);                                       // (0.5.0) slot 1's pad held + the jog: the module list
   const fxl = io(0x80, 96, 0).find((a) => a.kind === "fxLoad");             // .. let go: loaded
   ok(fxl && fxl.fx === FX.AUDIO && fxl.slot === 0 && fxl.module === 0, "Audio FX: a module loaded");
@@ -87,7 +87,7 @@ core.sessStop(5000);
   const two = (v) => [{ id: "alpha", name: "Alpha", version: "1.0", installed: "1.0", cats: 1, cat: 0, virt: v },
                       { id: "beta", name: "Beta", version: "2.0", installed: "2.0", cats: 4, cat: 2 }];
   io(0xB0, 51, 127); io(0xB0, 51, 0);                                       // (Back released)
-  io(0xB0, 43, 127); io(0x90, 16, 127); io(0x80, 16, 0); io(0xB0, 43, 0);   // the projects view again
+  io(0xB0, 43, 127); io(0xB0, 43, 0); io(0xB0, 43, 127); io(0xB0, 43, 0);   // the browser again
   io(0x90, 17, 127); io(0x80, 17, 0);                                       // All
   core.fwList(two(0)); core.seqAdvance(48000 * 2, 48000);
   const plain = hashScreen();
@@ -120,9 +120,10 @@ core.sessStop(5000);
   core.setSpeechDefault(1);                                   // (the system's screen reader on: On while none chosen)
   ok(core.speechMode() === 1 && core.speechOpen(), "(0.6.12) setSpeechDefault(On): the mode On, words open");
   core.setSpeech(true);
-  ok(core.speech() && core.words() === "FM-1 mode", `(0.6.0) words(): ${core.words()}`);
+  ok(core.speech() && core.words() === "Alpha, FM-1 layout", `(0.6.0) words(): ${core.words()}`);
   const m = core.setMode(MODE.CONTROL).filter((a) => a.kind === "say");
-  ok(m.length === 1 && m[0].event && m[0].text === "Control mode", "(0.6.0) a mode change: an event, its name");
+  ok(m.length === 1 && m[0].event && m[0].text === "Alpha, Scale layout", `(0.6.0, 0.8.0) a layout change: an event, its name: ${JSON.stringify(m)}`);
+  ok(core.slotLayout(0) === 2 && (core.setSlotLayout(1, 4), core.slotLayout(1) === 4), "(0.8.0) slot layouts");
   const p = core.popup("FM-1 linked").filter((a) => a.kind === "say");
   ok(p.length === 1 && !p[0].event && p[0].text === "FM-1 linked", "(0.6.0) popup: a value, its words");
   core.seqAdvance(48000 * 3, 48000);

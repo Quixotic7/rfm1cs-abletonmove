@@ -78,10 +78,19 @@ static void knob(rfm_move_t *m, int k, int d) { raw(m, 0xB0, (uint8_t)(MR_CC_KNO
 static void jog(rfm_move_t *m, int d) { raw(m, 0xB0, MR_CC_JOG, (uint8_t)(d & 127)); }
 static void jog_press(rfm_move_t *m) { raw(m, 0xB0, MR_CC_JOG_CLICK, 127), raw(m, 0xB0, MR_CC_JOG_CLICK, 0); }
 static void track(rfm_move_t *m, int t, int down) { button(m, MR_CC_TRACK1 - t, down); }
-static void tap_track(rfm_move_t *m, int t) { track(m, t, 1), track(m, t, 0); }
+/* (0.8.0) a Track tap acts at its release; a press within RFM_MOVE_DOUBLE_MS of a tap's release is a double click:
+ * every tap here starts after that window */
+static void tap_track(rfm_move_t *m, int t) { now_ms += RFM_MOVE_DOUBLE_MS + 50, track(m, t, 1), track(m, t, 0); }
+static void dbl_track(rfm_move_t *m, int t)   /* a double click: Tracks 1..3 the browser on that slot, Track 4 the projects */
+{
+    tap_track(m, t), track(m, t, 1), track(m, t, 0);
+    now_ms += RFM_MOVE_DOUBLE_MS + 50;
+}
 static void adv_ms(rfm_move_t *m, uint32_t ms) { while (ms) { const uint32_t k = ms < 10 ? ms : 10; rfm_move_seq_advance(m, k * 48, 48000); ms -= k; } }
 static void rest_pop(rfm_move_t *m) { adv_ms(m, RFM_MOVE_POPUP_MS + 50); }
-static void projects(rfm_move_t *m) { track(m, 0, 1), tap_step(m, 0), track(m, 0, 0); }   /* (Track 1 held + step 1) */
+/* (0.8.0) the projects grid: Track 4 held + step 1 (Shift + step 1, outside the view) */
+static void projects(rfm_move_t *m) { now_ms += RFM_MOVE_DOUBLE_MS + 50, track(m, 3, 1), tap_step(m, 0), track(m, 3, 0); }
+static void browser(rfm_move_t *m, int t) { dbl_track(m, t); }   /* (0.8.0) the browser on slot t: Track t double click */
 static int pad_of(int cell) { return (3 - cell / 8) * 8 + cell % 8; }
 static void write_pbm(const char *name);
 /* (0.5.0) FX setup's one layer: column 1 MIDI FX, 3 the firmwares, 5 audio FX, rows 1..3 from the top */
@@ -209,7 +218,7 @@ static void fixture(rfm_move_t *m)
         x->send[1][0] = 90, x->send[2][0] = 30, x->send[2][1] = 70;
         rfm_move_fx_modules(m, RFM_MOVE_FX_MIDI, MFX, 5), rfm_move_fx_modules(m, RFM_MOVE_FX_AUDIO, AFX, 5);
     }
-    projects(m);
+    browser(m, 0);                                      /* (0.8.0: Track 1's double click; was Shift + step 1) */
     clear();
 }
 static void select_fw(rfm_move_t *m, const char *id) { m->fw.sel = (int16_t)idx(id), m->fw.jog = 0; }
@@ -254,10 +263,15 @@ static void test_nolist(void)
     press(m, MR_CC_MENU);                               /* Menu leaves, as before */
     CHECK(!m->seq.projects && nact == 0);
     projects(m);
-    tap_track(m, 0);                                    /* a firmware track: empty, no crash */
-    CHECK(m->fw.track == 0 && m->seq.projects);
+    clear();
+    tap_track(m, 0);                                    /* (0.8.0) Track 1 in the view: out, slot 0 played (already the
+                                                         * active one: no FW_ACTIVE) */
+    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_FM1 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->pop == POP_LAYOUT);
+    dbl_track(m, 0), dbl_track(m, 1), tap_track(m, 1), tap_track(m, 2);   /* (no list: no browser, Tracks 2/3 nothing) */
+    CHECK(!m->seq.projects && rfm_move_fw_active(m) == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0);
+    projects(m);                                        /* the projects grid: everything pressed, no crash */
     rest_pop(m), screen(m);
-    CHECK(lit_in(0, 0, 128, 64) > 0);
+    CHECK(m->seq.projects && lit_in(0, 0, 128, 64) > 0);
     for (i = 0; i < 32; i++)
         tap_pad(m, i);
     for (i = 0; i < 16; i++)
@@ -267,7 +281,11 @@ static void test_nolist(void)
     button(m, MR_CC_CAPTURE, 0), knob(m, 8, 5);
     screen(m);
     CHECK(count(RFM_MOVE_ACT_FW_LOAD) == 0 && count(RFM_MOVE_ACT_FW_DOWNLOAD) == 0 && count(RFM_MOVE_ACT_FW_UNLOAD) == 0);
-    CHECK(led_of(m, 1, MR_CC_TRACK1, c) && c[0] == c[1] && c[1] == c[2] && c[0] > 0);   /* (an empty slot: faint white) */
+    /* (0.8.0) no list: Track 1 the one firmware (lit), Tracks 2, 3 dark */
+    CHECK(led_of(m, 1, MR_CC_TRACK1, c) && (c[0] || c[1] || c[2]));
+    CHECK(led_of(m, 1, MR_CC_TRACK1 - 1, c) && !c[0] && !c[1] && !c[2] && led_of(m, 1, MR_CC_TRACK1 - 2, c) && !c[0] && !c[1] && !c[2]);
+    if (m->seq.projects && !m->fw.track)                /* (left by a pad: back to the grid) */
+        projects(m);
     press(m, MR_CC_MUTE);
     press(m, MR_CC_MENU);                               /* (no browser: Session leaves, no FX setup) */
     CHECK(!m->seq.projects && !m->fw.fx);
@@ -277,8 +295,8 @@ static void test_nolist(void)
     CHECK(!m->seq.projects);
     /* an empty list (the browser on, nothing installed): the firmware track's empty state */
     rfm_move_fw_list(m, NULL, 0);
-    projects(m);
-    CHECK(m->fw.track == 0);
+    browser(m, 0);                                      /* (0.8.0: Track 1's double click) */
+    CHECK(m->seq.projects && m->fw.track == 0);
     screen(m);
     CHECK(lit_in(0, 0, 128, 64) > 0);
     for (i = 0; i < 32; i++)
@@ -403,9 +421,10 @@ static void test_slots(void)
         }
         CHECK(d1 && !d0 && !strcmp(E[m->fw.slot_fw[0]].id, "sloop"));
     }
-    /* Track 3 (empty): All, the pad of Felucca, a jog press: FW_LOAD(2, felucca); a bar until the host says */
-    tap_track(m, 2);
-    CHECK(m->fw.track == 2 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && a->a.slot == 2 && rfm_move_fw_active(m) == 2);
+    /* Track 3 (empty): All, the pad of Felucca, a jog press: FW_LOAD(2, felucca); a bar until the host says. (0.8.0) Its
+     * browser: Track 3's double click (its tap played the empty slot: FW_ACTIVE) */
+    dbl_track(m, 2);
+    CHECK(m->seq.projects && m->fw.track == 2 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && a->a.slot == 2 && rfm_move_fw_active(m) == 2);
     tap_step(m, 1);
     rfmv_fw_bank(m, ids);
     for (k = 0; k < 32 && ids[k] != felucca; k++) {}
@@ -438,16 +457,21 @@ static void test_slots(void)
     CHECK((a = last(RFM_MOVE_ACT_FW_UNLOAD)) && a->a.slot == 2 && !m->fw.slot_id[2][0] && m->fw.pop == FP_UNLOAD);
     press(m, MR_CC_DELETE);
     CHECK(count(RFM_MOVE_ACT_FW_UNLOAD) == 1);          /* (nothing left to unload) */
-    /* Track 4: the projects; the active slot stays */
+    /* Track 4: the projects (0.8.0: its double click); the active slot stays */
     clear();
-    tap_track(m, 3);
-    CHECK(m->fw.track == 3 && rfm_move_fw_active(m) == 2 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0);
+    dbl_track(m, 3);
+    CHECK(m->seq.projects && m->fw.track == 3 && !m->fw.fx && rfm_move_fw_active(m) == 2 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0);
     /* levels: Track held + volume (the view): FW_LEVEL; the volume alone: MASTER */
-    tap_track(m, 0);
+    browser(m, 0);
     clear();
     track(m, 1, 1), knob(m, 8, -8), track(m, 1, 0);
     CHECK((a = last(RFM_MOVE_ACT_FW_LEVEL)) && a->a.slot == 1 && a->a.value == 72 && m->fw.level[1] == 72);
     CHECK(count(RFM_MOVE_ACT_MASTER) == 0);
+    /* (fixed in 0.8.0: fw.c view input, volume + a held Track): the Track was used, so its release is no tap: still in the
+     * browser on Track 1, slot 0 still the active one (as outside the view, where on_knob marks it used) */
+    CHECK(m->seq.projects && m->fw.track == 0 && rfm_move_fw_active(m) == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0);
+    if (!m->seq.projects)
+        browser(m, 0);                                  /* (to go on as the brief has it) */
     knob(m, 8, 2);
     CHECK(count(RFM_MOVE_ACT_MASTER) == 1);
     screen(m);
@@ -464,7 +488,7 @@ static void test_slots(void)
         const char *const s3[3] = { "sloop", "choralroot", "felucca" };
         int t, differs = 0;
         rfm_move_fw_slots(m, s3);
-        projects(m), tap_track(m, 2), press(m, MR_CC_BACK);   /* (Track 3 the active one) */
+        tap_track(m, 2);                                /* (Track 3 the active one: 0.8.0, its tap) */
         CHECK(rfm_move_fw_active(m) == 2 && !m->seq.projects);
         rfm_move_fw_voices(m, 1);
         CHECK(rfm_move_fw_sounding(m) == 1 << 2);      /* (the active one: Track 3) */
@@ -473,7 +497,7 @@ static void test_slots(void)
         rfm_move_fw_voices(m, 3);
         CHECK(rfm_move_fw_sounding(m) == 7);
         rfm_move_fw_voices(m, 1);
-        projects(m);
+        browser(m, 2);
         for (t = 0; t < 8; t++) {
             led_of(m, 1, MR_CC_TRACK1 - 1, c0), adv_ms(m, 250), led_of(m, 1, MR_CC_TRACK1 - 1, c1);
             differs |= memcmp(c0, c1, 3) != 0;
@@ -487,11 +511,11 @@ static void test_slots(void)
         rfm_move_fw_voices(m, 3);
         press(m, MR_CC_BACK);
     }
-    /* a host with no list: Track held + volume stays MASTER, the release a mode change as before */
+    /* a host with no list: Track held + volume stays MASTER (0.8.0: the release no mode change, Track 2 nothing) */
     rfm_move_init(m, NULL, on_act, NULL);
     clear();
     track(m, 1, 1), knob(m, 8, 5), track(m, 1, 0);
-    CHECK(count(RFM_MOVE_ACT_FW_LEVEL) == 0 && count(RFM_MOVE_ACT_MASTER) == 1);
+    CHECK(count(RFM_MOVE_ACT_FW_LEVEL) == 0 && count(RFM_MOVE_ACT_MASTER) == 1 && m->s.mode == RFM_MOVE_MODE_FM1);
 }
 
 /* ================================================================ the library === */
@@ -666,9 +690,17 @@ static void test_fx(void)
     const act_t *a;
     uint8_t c[3];
     fixture(m);
-    press(m, MR_CC_MENU);                               /* Session: FX setup, page 1 (MIDI FX) */
-    CHECK(m->fw.fx && m->s.fx_page == 0 && m->fw.pop == FP_RPAGE);
-    CHECK(led_of(m, 1, MR_CC_TRACK1, c) && c[1] == 255 && c[2] == 170);
+    press(m, MR_CC_MENU);                               /* Session: FX setup (0.8.0: first on the Mixer) */
+    CHECK(m->fw.fx && m->s.fx_page == 3 && m->fw.pop == FP_RPAGE);
+    tap_track(m, 3);                                    /* (0.8.0) Track 4: Routing; column 1's pad: MIDI FX 1 */
+    CHECK(m->fw.fx && m->s.fx_page == 1 && m->pop == POP_T4 && m->pop_i == 1);
+    tap_pad(m, fxpad(0, 0));
+    CHECK(m->fw.fx && m->s.fx_page == 0 && m->fw.fx_focus == 0);
+    /* (0.8.0: no page on Tracks 1..3 any more) FX setup is the sequencer side: Track 4 bright, Track 1 dim */
+    {
+        uint8_t c4[3];
+        CHECK(led_of(m, 1, MR_CC_TRACK1 - 3, c4) && led_of(m, 1, MR_CC_TRACK1, c) && c4[0] + c4[1] + c4[2] > c[0] + c[1] + c[2]);
+    }
     /* steps: MIDI FX 1 acts on track 7; step 3: track 3 only; step 3 again: all */
     clear();
     tap_step(m, 2);
@@ -717,15 +749,14 @@ static void test_fx(void)
     knob(m, 1, -4);
     CHECK((a = last(RFM_MOVE_ACT_MIX)) && a->a.slot == 1 && m->seq.fx.pan[1] == 60 && m->fw.pop == FP_PARAM);
     knob(m, 1, 4);
-    tap_track(m, 1);
-    CHECK(m->s.fx_page == 1);
+    CHECK(m->s.fx_page == 1);                           /* (0.8.0: Track 2 no page any more) */
     /* Audio FX (column 5; Track 3): a dry / wet parameter's popup says 100 % wet */
     tap_pad(m, fxpad(2, 0));
     CHECK(m->s.fx_page == 2);
     knob(m, 2, -1);                                     /* Freeverb's Mix */
     screen(m);
     CHECK(m->fw.pop == FP_PARAM && lit_in(0, 56, 128, 64) > 20);
-    /* (0.5.0) Mixer (Track 4): knobs 1..3 the slots' level (FW_LEVEL); the right-hand pads pick Pan, Send 1..3 (MIX) */
+    /* (0.5.0) Mixer (0.8.0: Track 4's tap, from Routing's Audio FX column): knobs 1..3 the slots' level (FW_LEVEL); the right-hand pads pick Pan, Send 1..3 (MIX) */
     tap_track(m, 3);
     CHECK(m->fw.mix_par == RFM_MOVE_MIXP_LEVEL);
     clear();
@@ -777,8 +808,9 @@ static void test_fx(void)
             CHECK(rfm_move_project_check(blob, (uint32_t)n) < 0);
         }
     }
-    /* the host refuses a module: Too busy, the slot empty */
-    tap_track(m, 2);
+    /* the host refuses a module: Too busy, the slot empty. (0.8.0) Track 4 again: Routing, on its column (Audio FX) */
+    tap_track(m, 3);
+    CHECK(m->fw.fx && m->s.fx_page == 2);
     rfm_move_fx_refused(m, RFM_MOVE_FX_AUDIO, 0);
     CHECK(m->seq.fx.afx[0].mod == -1 && m->fw.pop == FP_RLOADED);
     screen(m);
@@ -786,15 +818,15 @@ static void test_fx(void)
     rfm_move_fx_modules(m, RFM_MOVE_FX_MIDI, NULL, 0);
     rfm_move_fx_modules(m, RFM_MOVE_FX_AUDIO, NULL, 0);
     CHECK(m->s.fx_page == 1);
-    tap_track(m, 0), tap_track(m, 2);
-    CHECK(m->s.fx_page == 1 && led_of(m, 1, MR_CC_TRACK1, c) && !c[0] && !c[1] && !c[2]);
-    tap_track(m, 3);
-    CHECK(m->s.fx_page == 3);
+    tap_pad(m, fxpad(0, 0)), tap_pad(m, fxpad(2, 0));   /* (0.8.0: the columns of no page: nothing) */
+    CHECK(m->s.fx_page == 1 && m->fw.fx);
+    tap_track(m, 3);                                    /* Track 4: Routing -> the Mixer */
+    CHECK(m->s.fx_page == 3 && m->pop == POP_T4 && m->pop_i == 0);   /* (named: Mixer) */
     press(m, MR_CC_MENU);
     CHECK(!m->fw.fx && m->seq.projects);
     press(m, MR_CC_MENU), press(m, MR_CC_BACK);       /* (0.4.5: Back leaves the view, FX setup remembered) */
     CHECK(!m->fw.fx && !m->seq.projects && m->s.fw_fx);
-    press(m, MR_CC_BACK);
+    tap_track(m, 3);                                    /* (0.8.0: Track 4 back in, on the Mixer last used) */
     CHECK(m->fw.fx && m->seq.projects && m->s.fx_page == 3);
     press(m, MR_CC_MENU);
     CHECK(!m->fw.fx && m->seq.projects);
@@ -817,7 +849,8 @@ static void test_mroute(void)
     uint32_t h;
     fixture(m);
     rfm_move_fw_slots(m, (const char *const[3]){ "sloop", "choralroot", "golf" });
-    press(m, MR_CC_MENU), tap_track(m, 1), rest_pop(m), clear();   /* FX setup, the Routing page */
+    press(m, MR_CC_MENU), tap_track(m, 3), rest_pop(m), clear();   /* FX setup, the Routing page (0.8.0: Session opens
+                                                         * the Mixer, Track 4's tap flips to Routing) */
     CHECK(m->fw.fx && m->s.fx_page == 1 && m->fw.fx_focus == 0);
     /* at rest: the Out pad dark */
     CHECK(led_of(m, 0, MR_NOTE_PAD0 + fxpad(1, 3), c) && !c[0] && !c[1] && !c[2]);
@@ -905,7 +938,7 @@ static void test_fav_order(void)
     int ids[32], n0, k, a, b, c;
     const char *fv[64];
     fixture(m);
-    tap_track(m, 0), rest_pop(m);
+    browser(m, 0), rest_pop(m);                         /* (0.8.0: Track 1's double click) */
     CHECK(!m->fw.catalog && !m->s.fw_scope && !m->s.fw_filter);
     n0 = rfmv_fw_bank(m, ids);
     CHECK(n0 >= 3);
@@ -988,10 +1021,11 @@ static void test_states(void)
     rfm_move_t *m = &M;
     const act_t *a;
     fixture(m);
-    tap_track(m, 2);                                    /* (empty: Loop does nothing) */
+    browser(m, 2);                                      /* (empty: Loop does nothing; 0.8.0: Track 3's double click) */
     press(m, MR_CC_LOOP);
-    CHECK(!m->fw.states);
-    tap_track(m, 0);
+    CHECK(m->seq.projects && m->fw.track == 2 && !m->fw.states);
+    browser(m, 0);
+    CHECK(m->seq.projects && m->fw.track == 0);
     rfm_move_fw_states(m, 0, 1u << 4);                  /* state 5 stored */
     press(m, MR_CC_LOOP);
     CHECK(m->fw.states);
@@ -1040,7 +1074,9 @@ static void test_midi_track(void)
     CHECK(tagged >= 5 && other == 0);                   /* (on, off, the CC lock: each with its track) */
     rfm_move_seq_play(m, 0);
     clear();
-    tap_track(m, 1);                                    /* MIDI mode: a pad played live: no track */
+    track(m, 0, 1), tap_pad(m, 24 + RFM_MOVE_LAY_SCALE), track(m, 0, 0);   /* (0.8.0) Track 1 held + Scale: a note layout */
+    CHECK(m->s.mode == RFM_MOVE_MODE_MIDI && rfm_move_slot_layout(m, 0) == RFM_MOVE_LAY_SCALE);
+    clear();                                            /* a pad played live: no track */
     pad(m, 0, 100), pad(m, 0, 0);
     CHECK(last(RFM_MOVE_ACT_MIDI) && last(RFM_MOVE_ACT_MIDI)->a.track == 0);
 }
@@ -1103,13 +1139,9 @@ static void three(rfm_move_t *m) { rfm_move_fw_slots(m, (const char *const[3]){ 
 static void fxs(rfm_move_t *m, int page, int slot)       /* the mockup's FXS */
 {
     three(m);
-    press(m, MR_CC_MENU);
-    if (page)
-        tap_track(m, page);
-    else
-        tap_track(m, 0);
+    press(m, MR_CC_MENU);                               /* (0.8.0: Session opens the Mixer; Track 4's tap: Routing) */
     if (page < 3)                                       /* (0.5.0: the slot's pad in its column) */
-        tap_pad(m, fxpad(page, slot));
+        tap_track(m, 3), tap_pad(m, fxpad(page, slot));
 }
 static void popset(rfm_move_t *m, int kind, int a, int b) { m->fw.pop = (uint8_t)kind, m->fw.pop_a = (int16_t)a, m->fw.pop_b = (int16_t)b, m->fw.pop_ms = rfmv_now_ms(m); }
 static int setup(rfm_move_t *m, const char *n)
@@ -1131,13 +1163,15 @@ static int setup(rfm_move_t *m, const char *n)
     if (IS("track_tap")) return popset(m, FP_TRACK, 1, 0), 1;
     if (IS("track_tap_an_empty_track")) return popset(m, FP_TRACK, 2, 0), 1;
     if (IS("loading_into_track_3")) {
-        tap_track(m, 2), tap_step(m, 1), select_fw(m, "felucca"), jog_press(m);
+        browser(m, 2), tap_step(m, 1), select_fw(m, "felucca"), jog_press(m);
         return rfm_move_fw_progress(m, "felucca", 55), 1;
     }
-    if (IS("loaded")) return tap_track(m, 2), select_fw(m, "felucca"), jog_press(m), rfm_move_fw_progress(m, "felucca", 100), 1;
+    if (IS("loaded")) return browser(m, 2), select_fw(m, "felucca"), jog_press(m), rfm_move_fw_progress(m, "felucca", 100), 1;
     if (IS("track_held_volume_level")) {
         three(m);
-        track(m, 2, 1), knob(m, 8, 10), track(m, 2, 0);
+        track(m, 2, 1), knob(m, 8, 10), track(m, 2, 0);   /* (fixed in 0.8.0: fw.c view volume): this release is taken for a
+                                                         * tap (out of the view, slot 3 played): this screen then
+                                                         * differs; held 400 ms it matches the mockup */
         return track(m, 1, 1), knob(m, 8, -8), 1;
     }
     if (IS("delete_unload")) return press(m, MR_CC_DELETE), 1;
@@ -1154,7 +1188,8 @@ static int setup(rfm_move_t *m, const char *n)
     if (IS("audio_fx_a_module_s_knob")) return fxs(m, 2, 0), knob(m, 0, 1), knob(m, 0, -1), 1;
     if (IS("mixer_track_4")) return fxs(m, 3, 1), rest_pop(m), 1;
     if (IS("mixer_a_send_knob")) return fxs(m, 3, 2), knob(m, 3, 1), knob(m, 3, -1), 1;
-    if (IS("session_the_page_s_name")) return fxs(m, 3, 0), tap_track(m, 3), 1;
+    if (IS("session_the_page_s_name")) return fxs(m, 3, 0), rest_pop(m), popset(m, FP_RPAGE, 3, 0), 1;   /* (0.8.0: no
+                                                         * Track press names a page now: the page's popup itself) */
     if (IS("bank_changed_left_right")) return tap_step(m, 1), press(m, MR_CC_RIGHT), 1;
     if (IS("sampling_favourite")) return select_fw(m, "golf"), press(m, MR_CC_SAMPLE), press(m, MR_CC_SAMPLE), 1;
     if (IS("no_favorites_yet")) return rfm_move_fw_library(m, NULL, 0), rfm_move_fw_list(m, E, NFW), 1;
@@ -1186,7 +1221,7 @@ static void test_screens(void)
     printf("move_fw: %d of %d screens as the mockup's, pixel for pixel (1 redrawn in 0.4.2, 2 in 0.5.0, 2 in 0.5.4)\n", same,
            (int)(sizeof FWB_REF / sizeof FWB_REF[0]));
     /* two of the core's own (not in the mockup): Track 4 in the view, States */
-    fixture(m), tap_track(m, 3), rest_pop(m), screen(m), write_pbm("track4_projects");
+    fixture(m), dbl_track(m, 3), rest_pop(m), screen(m), write_pbm("track4_projects");
     fixture(m), rfm_move_fw_states(m, 0, 0x8013), press(m, MR_CC_LOOP), tap_pad(m, pad_of(1)), rest_pop(m), screen(m), write_pbm("states");
     fixture(m), rfm_move_fw_list(m, NULL, 0), rest_pop(m), screen(m), write_pbm("no_firmwares");
 }
@@ -1211,8 +1246,8 @@ static void test_host_edits(void)
     CHECK(rfm_move_fw_set_active(m, 1) == 1);
     CHECK(m->fw.active == 1 && m->fw.track == 1 && m->fw.pop == FP_TRACK && m->fw.lib_dirty && !m->seq.dirty);
     CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && a->a.slot == 1 && !strcmp(a->id, "choralroot"));
-    tap_track(&M2, 1);
-    CHECK(same_screens(m, &M2));
+    browser(&M2, 1);                                    /* (0.8.0: the Move's own: Track 2's double click) */
+    CHECK(M2.fw.active == 1 && M2.fw.track == 1 && M2.seq.projects && same_screens(m, &M2));
     rest_pop(m), rest_pop(&M2);
     CHECK(same_screens(m, &M2));
     CHECK(rfm_move_fw_set_active(m, 3) == -1 && rfm_move_fw_set_active(m, -1) == -1 && m->fw.active == 1);
@@ -1252,7 +1287,8 @@ static void test_host_edits(void)
     CHECK(rfm_move_mix_set(m, 2, -2, -1, NULL) == -1 && rfm_move_mix_set(m, 0, -1, -1, (const int[3]){ 0, 128, 0 }) == -1 &&
           rfm_move_mix_set(m, 3, -1, -1, NULL) == -1 && nact == 0);
     /* .. the same as the Move's own Mixer */
-    fixture(&M2), press(&M2, MR_CC_MENU), tap_track(&M2, 3);
+    fixture(&M2), press(&M2, MR_CC_MENU);              /* (0.8.0: Session opens on the Mixer) */
+    CHECK(M2.fw.fx && M2.s.fx_page == 3);
     knob(&M2, 2, -10), tap_pad(&M2, pad_of(5)), knob(&M2, 2, -34), tap_pad(&M2, pad_of(12)), knob(&M2, 2, -20);   /* (send 1: 30 -> 10) */
     CHECK(!memcmp(&m->seq.fx, &M2.seq.fx, sizeof m->seq.fx) && M2.fw.level[2] == m->fw.level[2]);
 
@@ -1266,7 +1302,8 @@ static void test_host_edits(void)
     clear(), undirty(m);
     CHECK(rfm_move_route_set(m, (const int[3]){ 0x3, -1, 0 }, NULL) == 0 && nact == 0 && !m->seq.dirty);
     CHECK(rfm_move_route_set(m, fwf_bad, NULL) == -1 && m->seq.fx.ffilt[0] == 3);
-    press(m, MR_CC_MENU), tap_track(m, 1), rest_pop(m);    /* FX setup's Routing on screen */
+    press(m, MR_CC_MENU), tap_track(m, 3), rest_pop(m);    /* FX setup's Routing on screen (0.8.0: Track 4 flips) */
+    CHECK(m->fw.fx && m->s.fx_page == 1);
     screen(m), h0 = hash_scr();
     CHECK(rfm_move_route_set(m, (const int[3]){ 0xFFFF, -1, -1 }, NULL) == 1);
     screen(m);
@@ -1274,8 +1311,9 @@ static void test_host_edits(void)
 
     /* a module: fx_load's defaults, FX_LOAD (no FX_PARAM), the project; as the jog's press */
     fixture(m), fixture(&M2);
-    press(m, MR_CC_MENU), tap_pad(m, fxpad(0, 2)), rest_pop(m);
-    press(&M2, MR_CC_MENU), pad(&M2, fxpad(0, 2), 100), jog(&M2, 1), pad(&M2, fxpad(0, 2), 0), rest_pop(&M2);
+    press(m, MR_CC_MENU), tap_track(m, 3), tap_pad(m, fxpad(0, 2)), rest_pop(m);   /* (0.8.0: via Routing's columns) */
+    CHECK(m->fw.fx && m->s.fx_page == 0 && m->fw.fx_focus == 2);
+    press(&M2, MR_CC_MENU), tap_track(&M2, 3), pad(&M2, fxpad(0, 2), 100), jog(&M2, 1), pad(&M2, fxpad(0, 2), 0), rest_pop(&M2);
     clear(), undirty(m);
     screen(m), h0 = hash_scr();
     CHECK(rfm_move_fx_set_module(m, RFM_MOVE_FX_MIDI, 2, 0) == 1);
@@ -1301,7 +1339,7 @@ static void test_host_edits(void)
     CHECK(rfm_move_fx_set_module(m, RFM_MOVE_FX_MIDI, 2, 0) == 1 && m->seq.fx.mfx[2].val[0] == 0 && m->seq.fx.mfx[2].val[3] == 64);
     CHECK(rfm_move_fx_set_module(m, RFM_MOVE_FX_MIDI, 2, -1) == 1 && m->seq.fx.mfx[2].mod == -1 && !m->seq.fx.mfx[2].name[0] &&
           (a = last(RFM_MOVE_ACT_FX_LOAD)) && a->a.value == -1);
-    /* the page: SETTINGS, as a Track press in FX setup */
+    /* the page: SETTINGS, as a column's pad in FX setup */
     clear();
     screen(m), h0 = hash_scr();
     CHECK(rfm_move_fx_set_page(m, RFM_MOVE_FX_PAGE_AUDIO) == 1 && m->s.fx_page == 2 && count(RFM_MOVE_ACT_SETTINGS) == 1);
@@ -1318,13 +1356,14 @@ static void test_host_edits(void)
     CHECK(!m->seq.projects);
     clear();
     CHECK(rfm_move_fw_set_level(m, 0, 10) == 0 && rfm_move_fx_set_module(m, RFM_MOVE_FX_AUDIO, 2, 1) == 0 &&
-          rfm_move_fx_set_page(m, RFM_MOVE_FX_PAGE_MIX) == 0 && rfm_move_fw_set_active(m, 2) == 0);
+          rfm_move_fx_set_page(m, RFM_MOVE_FX_PAGE_AUDIO) == 0 && rfm_move_fw_set_active(m, 2) == 0);
     CHECK(count(RFM_MOVE_ACT_FW_LEVEL) == 1 && count(RFM_MOVE_ACT_FX_LOAD) == 1 && count(RFM_MOVE_ACT_SETTINGS) == 1 &&
-          count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && m->fw.active == 2 && m->s.fx_page == 3);
+          count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && m->fw.active == 2 && m->s.fx_page == 2);   /* (0.8.0: the Mixer is the
+                                                         * default page now: Audio FX a change) */
 }
 
 /* ---- (0.4.1) no favourites: the view shows All; the setting keeps the user's choice */
-static void reenter(rfm_move_t *m) { press(m, MR_CC_BACK), projects(m); }
+static void reenter(rfm_move_t *m) { press(m, MR_CC_BACK), browser(m, 0); }   /* (0.8.0: Track 1's double click) */
 static void test_no_favs(void)
 {
     rfm_move_t *m = &M;
@@ -1341,8 +1380,8 @@ static void test_no_favs(void)
     /* step 1 pressed: the user's choice holds (an empty Favorites) */
     tap_step(m, 0);
     CHECK(!m->fw.all_auto && rfmv_fw_list_len(m) == 0);
-    /* .. until the next entry, or another firmware track */
-    tap_track(m, 1);
+    /* .. until the next entry, or another firmware track (0.8.0: Track 2's double click) */
+    browser(m, 1);
     CHECK(m->fw.all_auto && rfmv_fw_list_len(m) == n_installed());
     /* the last favourite removed (Sampling): All at once; one added again: All stays until the next entry */
     fixture(m);
@@ -1457,7 +1496,7 @@ static void test_download_load(void)
     int other;
     CHECK(nf >= 0 && !FWB[nf].installed);
     /* not on the Move: the jog downloads; done and still selected: the popup offers the load; the jog loads */
-    fixture(m), tap_track(m, 1), press(m, MR_CC_MUTE), rest_pop(m), select_fw(m, FWB_NEWFW);
+    fixture(m), browser(m, 1), press(m, MR_CC_MUTE), rest_pop(m), select_fw(m, FWB_NEWFW);   /* (0.8.0: Track 2 double) */
     clear();
     jog_press(m);
     CHECK((a = last(RFM_MOVE_ACT_FW_DOWNLOAD)) && !strcmp(a->id, FWB_NEWFW) && count(RFM_MOVE_ACT_FW_LOAD) == 0);
@@ -1512,12 +1551,16 @@ static void test_back(void)
     const act_t *a;
     uint8_t base[MR_SCREEN_BYTES];
     const int mode0 = (fixture(m), m->s.mode);
-    /* the view at its root: a click flips back to the mode; another flips to the view */
+    /* the view at its root: a click flips back to the mode. (0.8.0) Another (nothing open): the layouts <-> the
+     * Sequencer (no longer into the view) */
     CHECK(m->seq.projects && m->fw.track == 0 && m->fw.sel < 0);
     press(m, MR_CC_BACK);
     CHECK(!m->seq.projects && m->s.mode == mode0 && count(RFM_MOVE_ACT_BTN) == 0);
     press(m, MR_CC_BACK);
-    CHECK(m->seq.projects && m->s.mode == mode0 && count(RFM_MOVE_ACT_BTN) == 0);
+    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ && m->pop == POP_SEQ && count(RFM_MOVE_ACT_BTN) == 0);
+    press(m, MR_CC_BACK);
+    CHECK(!m->seq.projects && m->s.mode == mode0 && m->pop == POP_LAYOUT && count(RFM_MOVE_ACT_BTN) == 0);
+    browser(m, 0);
     /* not at its root: one level up first (the description, the selection; FX setup) */
     select_fw(m, "golf"), jog(m, 1);
     press(m, MR_CC_BACK);
@@ -1528,37 +1571,34 @@ static void test_back(void)
     CHECK(m->fw.fx);
     press(m, MR_CC_BACK);                               /* (0.4.5: FX setup is no layer: out at once) */
     CHECK(!m->seq.projects && !m->fw.fx && m->s.fw_fx);
-    press(m, MR_CC_BACK), press(m, MR_CC_MENU), press(m, MR_CC_BACK);   /* (in on FX setup, Menu off it, out) */
-    CHECK(!m->seq.projects && !m->s.fw_fx);
+    tap_track(m, 3), press(m, MR_CC_MENU), press(m, MR_CC_BACK);   /* (0.8.0: in on FX setup by Track 4, Menu off it, out) */
+    CHECK(!m->seq.projects && !m->s.fw_fx && m->s.mode == mode0);
     /* a long hold, alone: nothing; a Track held meanwhile: no click */
     button(m, MR_CC_BACK, 1), now_ms += RFM_MOVE_TAP_MS + 50, button(m, MR_CC_BACK, 0);
-    CHECK(!m->seq.projects);
+    CHECK(!m->seq.projects && m->s.mode == mode0);
     track(m, 3, 1), press(m, MR_CC_BACK), now_ms += 400, track(m, 3, 0);
     CHECK(!m->seq.projects && m->s.mode == mode0);
-    /* Back held + Track 2: that slot's firmware played, no flip, no mode change; its popup */
+    /* (0.8.0: Back + Track is gone) Track 2's tap: that slot's firmware played, no mode change; its popup */
     rest_pop(m);
     clear();
-    button(m, MR_CC_BACK, 1), track(m, 1, 1), track(m, 1, 0), button(m, MR_CC_BACK, 0);
+    tap_track(m, 1);
     CHECK(m->fw.active == 1 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && a->a.slot == 1 && !strcmp(a->id, "choralroot") &&
-          !m->seq.projects && m->s.mode == mode0 && m->pop == POP_FW && m->fw.lib_dirty);
+          !m->seq.projects && m->s.mode == mode0 && m->pop == POP_LAYOUT && m->pop_i == 1 && m->fw.lib_dirty);
     screen(m), write_pbm("back_track_firmware");
     CHECK(lit_in(0, 0, 128, 64) > 0);
-    /* .. Track let go after Back: nothing either; Track 3 (empty) and Track 4: nothing */
+    /* .. Back held over a Track's tap: Back no click (no flip), the tap as ever */
     clear();
+    now_ms += RFM_MOVE_DOUBLE_MS + 50;
     button(m, MR_CC_BACK, 1), track(m, 0, 1), button(m, MR_CC_BACK, 0), track(m, 0, 0);
     CHECK(m->fw.active == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && !m->seq.projects && m->s.mode == mode0);
+    /* .. in the view: a Track's tap leaves it and plays that slot */
+    browser(m, 0);
     clear();
-    button(m, MR_CC_BACK, 1), track(m, 2, 1), track(m, 2, 0), track(m, 3, 1), track(m, 3, 0), button(m, MR_CC_BACK, 0);
-    CHECK(nact == 0 && m->fw.active == 0 && !m->seq.projects && m->s.mode == mode0);
-    /* .. in the view: as that Track's press there */
+    tap_track(m, 1);
+    CHECK(!m->seq.projects && m->fw.active == 1 && count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && m->s.mode == mode0);
+    /* the sequencer: Back ends Loop's latch first (not a flip), the sequencer's screen at once; then (0.8.0) the
+     * layout, and back. (The Sequencer: Back's click, 0.8.0) */
     press(m, MR_CC_BACK);
-    clear();
-    button(m, MR_CC_BACK, 1), track(m, 1, 1), track(m, 1, 0), button(m, MR_CC_BACK, 0);
-    CHECK(m->seq.projects && m->fw.active == 1 && m->fw.track == 1 && count(RFM_MOVE_ACT_FW_ACTIVE) == 1);
-    press(m, MR_CC_BACK);
-    CHECK(!m->seq.projects);
-    /* the sequencer: Back ends Loop's latch first (not a flip), the sequencer's screen at once; then the view */
-    tap_track(m, 3);
     CHECK(m->s.mode == RFM_MOVE_MODE_SEQ);
     rest_pop(m), screen(m), memcpy(base, scr, sizeof base);
     press(m, MR_CC_LOOP);
@@ -1579,9 +1619,9 @@ static void test_back(void)
     CHECK(!rfmv_pop_up(m, POP_LOOP));
     jog(m, -1), rest_pop(m), screen(m), memcpy(base, scr, sizeof base);
     press(m, MR_CC_BACK);
-    CHECK(m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ);
+    CHECK(!m->seq.projects && m->s.mode == mode0 && m->pop == POP_LAYOUT);
     press(m, MR_CC_BACK);
-    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ && m->pop == POP_MODE && m->pop_i == RFM_MOVE_MODE_SEQ);
+    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ && m->pop == POP_SEQ);
     rest_pop(m), screen(m);                             /* (0.4.5: the mode named first, then the sequencer's screen) */
     CHECK(!memcmp(scr, base, sizeof base));
     /* Shift + step 1 still opens the view */
@@ -1605,7 +1645,8 @@ static void test_down(void)
     rest_pop(m), clear();
     button(m, MR_CC_DOWN, 1);
     CHECK(m->fw.active == 1 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && a->a.slot == 1 && !strcmp(a->id, "choralroot") &&
-          m->pop == POP_FW && !m->seq.projects && m->s.mode == RFM_MOVE_MODE_FM1 && count(RFM_MOVE_ACT_BTN) == 0);
+          m->pop == POP_LAYOUT && m->pop_i == 1 && !m->seq.projects && m->s.mode == RFM_MOVE_MODE_FM1 &&
+          count(RFM_MOVE_ACT_BTN) == 0);                /* (0.8.0: named as a Track tap names it) */
     adv_ms(m, 1500);                                    /* (held: no repeat) */
     button(m, MR_CC_DOWN, 0);
     CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && m->s.octave == 0);
@@ -1620,7 +1661,7 @@ static void test_down(void)
     rfm_move_fw_slots(m, (const char *const[3]){ "sloop", NULL, NULL });
     rest_pop(m), clear();
     press(m, MR_CC_DOWN);
-    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.active == 0 && m->pop == POP_FW);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.active == 0 && m->pop == POP_LAYOUT && m->pop_i == 0);
     CHECK(led_of(m, 1, MR_CC_DOWN, rgb) && rgb[0] == 0);
     /* the MIDI modes: the octave; Sequencer mode: its own (no firmware) */
     rfm_move_fw_slots(m, (const char *const[3]){ "sloop", "choralroot", NULL });
@@ -1641,7 +1682,8 @@ static void test_down(void)
 }
 
 /* (0.4.5) the Back flip names where it goes (as a Track tap does); FX setup is no layer Back closes, and is
- * remembered across the flip (and in the settings) */
+ * remembered (and in the settings). (0.8.0) Back no longer flips into the view: Track 4 opens FX setup again, its
+ * double click the projects */
 static void test_flip_fx(void)
 {
     rfm_move_t *m = &M;
@@ -1649,31 +1691,28 @@ static void test_flip_fx(void)
     rfm_move_settings_t s2;
     const int mode0 = (fixture(m), m->s.mode);
     CHECK(m->seq.projects && !m->fw.fx && m->fw.track == 0);
-    press(m, MR_CC_BACK);                               /* out: the mode named */
-    CHECK(!m->seq.projects && m->pop == POP_MODE && m->pop_i == mode0 && rfmv_pop_up(m, POP_MODE));
+    press(m, MR_CC_BACK);                               /* out: the slot and its layout named (0.8.0) */
+    CHECK(!m->seq.projects && m->s.mode == mode0 && m->pop == POP_LAYOUT && m->pop_i == 0 && rfmv_pop_up(m, POP_LAYOUT));
     screen(m), write_pbm("flip_out_mode");
     CHECK(lit_in(0, 0, 128, 64) > 0);
     rest_pop(m);
-    CHECK(!rfmv_pop_up(m, POP_MODE));
-    press(m, MR_CC_BACK);                               /* in: Firmwares */
-    CHECK(m->seq.projects && m->pop == POP_MODE && m->pop_i == 21 && rfmv_pop_up(m, POP_MODE));
-    screen(m), write_pbm("flip_in_firmwares");
+    CHECK(!rfmv_pop_up(m, POP_LAYOUT));
+    dbl_track(m, 3);                                    /* in (0.8.0: Track 4's double click): Projects, named */
+    CHECK(m->seq.projects && m->fw.track == 3 && m->pop == POP_MODE && m->pop_i == 20 && rfmv_pop_up(m, POP_MODE));
+    screen(m), write_pbm("flip_in_projects");
     CHECK(lit_in(30, 20, 98, 40) > 0 && lit_in(0, 50, 128, 64) == 0);   /* (the name alone, full screen) */
     jog(m, 1);                                          /* (a press or turn there: the name goes) */
     CHECK(m->pop != POP_MODE);
     jog(m, -1), rest_pop(m);
-    tap_track(m, 3), press(m, MR_CC_BACK), press(m, MR_CC_BACK);   /* Track 4's page: Projects */
-    CHECK(m->seq.projects && m->fw.track == 3 && m->pop == POP_MODE && m->pop_i == 20);
-    /* FX setup (Menu), on the Mix page: Back flips out at once; Back in: FX setup again, on its page, named */
-    press(m, MR_CC_MENU), tap_track(m, 3);
+    /* FX setup (Menu), on the Mix page: Back flips out at once; (0.8.0) Track 4 in: FX setup again, on its page, named */
+    press(m, MR_CC_MENU);
     CHECK(m->fw.fx && m->s.fx_page == 3);
     rest_pop(m);
     press(m, MR_CC_BACK);
-    CHECK(!m->seq.projects && !m->fw.fx && m->s.fw_fx && m->pop == POP_MODE && m->pop_i == mode0);
+    CHECK(!m->seq.projects && !m->fw.fx && m->s.fw_fx && m->pop == POP_LAYOUT && m->s.mode == mode0);
     rest_pop(m);
-    press(m, MR_CC_BACK);
-    CHECK(m->seq.projects && m->fw.fx && m->s.fx_page == 3 && m->pop == POP_MODE && m->pop_i == 23);   /* (0.5.2: on
-                                                         * the Mixer: "Mixer") */
+    tap_track(m, 3);
+    CHECK(m->seq.projects && m->fw.fx && m->s.fx_page == 3 && m->pop == POP_T4 && m->pop_i == 0);   /* ("Mixer") */
     screen(m), write_pbm("flip_in_fx");
     /* .. kept in the settings image */
     CHECK(rfm_move_save(&m->s, blob) == RFM_MOVE_SETTINGS_BYTES && rfm_move_load(&s2, blob, sizeof blob) == 0 &&
@@ -1681,7 +1720,7 @@ static void test_flip_fx(void)
     /* Menu still toggles; a module list closes first */
     press(m, MR_CC_MENU);
     CHECK(m->seq.projects && !m->fw.fx);
-    press(m, MR_CC_MENU), tap_track(m, 0);
+    press(m, MR_CC_MENU), tap_track(m, 3), tap_pad(m, fxpad(0, 0));   /* (0.8.0: Routing, MIDI FX's column) */
     CHECK(m->fw.fx && m->s.fx_page == 0);
     pad(m, fxpad(0, 2), 100), jog(m, 2);              /* (0.5.0: slot 3 held + the jog) */
     CHECK(m->fw.browse == 2);
@@ -1691,15 +1730,15 @@ static void test_flip_fx(void)
     CHECK(count(RFM_MOVE_ACT_FX_LOAD) == 0);
     press(m, MR_CC_BACK);
     CHECK(!m->seq.projects && m->s.fw_fx);
-    /* Track 1 held + step 1 opens the view as it was left too (FX setup) */
-    projects(m);                                        /* (Track 1 held + step 1) */
-    CHECK(m->seq.projects && m->fw.fx);
+    /* (0.8.0) Track 4 opens FX setup on the side last used (Routing's: MIDI FX, as left) */
+    tap_track(m, 3);
+    CHECK(m->seq.projects && m->fw.fx && m->s.fx_page == 0);
     press(m, MR_CC_MENU), press(m, MR_CC_BACK);         /* (left on the firmwares: forgotten) */
     CHECK(!m->seq.projects && !m->s.fw_fx);
-    /* MIDI mode: out names MIDI */
+    /* a note layout: out names it */
     rfm_move_set_mode(m, RFM_MOVE_MODE_MIDI);
-    press(m, MR_CC_BACK), rest_pop(m), press(m, MR_CC_BACK);
-    CHECK(!m->seq.projects && m->pop == POP_MODE && m->pop_i == RFM_MOVE_MODE_MIDI);
+    browser(m, 0), rest_pop(m), press(m, MR_CC_BACK);
+    CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_MIDI && m->pop == POP_LAYOUT && m->pop_i == 0);
     rfm_move_set_mode(m, RFM_MOVE_MODE_FM1);
 }
 
@@ -1710,7 +1749,8 @@ static void test_fx_touch(void)
     rfm_move_t *m = &M;
     uint8_t img[MR_SCREEN_BYTES];
     fixture(m);
-    press(m, MR_CC_MENU);                               /* FX setup, MIDI FX, slot 1: Arp */
+    press(m, MR_CC_MENU), tap_track(m, 3), tap_pad(m, fxpad(0, 0));   /* FX setup, MIDI FX, slot 1: Arp (0.8.0: Session
+                                                         * opens the Mixer; Track 4: Routing; column 1's pad) */
     CHECK(m->fw.fx && m->s.fx_page == 0 && m->seq.fx.mfx[0].mod >= 0);
     rest_pop(m);
     touch(m, 0, 1);
@@ -1786,7 +1826,7 @@ static void test_fx_pages(void)
     int n, n5, k, body;
     uint32_t h;
     fixture(m), fx6(m);
-    press(m, MR_CC_MENU), tap_pad(m, fxpad(2, 0));
+    press(m, MR_CC_MENU), tap_track(m, 3), tap_pad(m, fxpad(2, 0));   /* (0.8.0: via Routing) */
     CHECK(m->fw.fx && m->s.fx_page == RFM_MOVE_FX_PAGE_AUDIO && m->fw.fx_focus == 0);
     CHECK(rfm_move_fx_set_module(m, RFM_MOVE_FX_AUDIO, 0, 5) >= 0 && sl->mod == 5 && sl->val[0] == 38 && sl->val[15] == 77);
     rest_pop(m);
@@ -1906,26 +1946,33 @@ static void test_fx_pages(void)
 }
 
 /* (0.5.2) Menu's toggle in the projects view is named, as the Back flip: FX & Mix (Mixer on its page) one way,
- * Firmwares (Projects on Track 4) the other */
+ * Firmwares (Projects on Track 4) the other. (0.8.0: FX setup starts on the Mixer; Track 4 flips Mixer <-> Routing) */
 static void test_menu_names(void)
 {
     rfm_move_t *m = &M;
     fixture(m);
     rest_pop(m);
     CHECK(m->seq.projects && !m->fw.fx && m->fw.track == 0);
-    press(m, MR_CC_MENU);
-    CHECK(m->fw.fx && m->pop == POP_MODE && m->pop_i == 22 && rfmv_pop_up(m, POP_MODE));
-    screen(m), write_pbm("menu_to_fx");
-    CHECK(lit_in(30, 20, 98, 40) > 0 && lit_in(0, 50, 128, 64) == 0);   /* (the name alone, full screen) */
+    press(m, MR_CC_MENU);                               /* in, on the Mixer (the default page): Mixer */
+    CHECK(m->fw.fx && m->s.fx_page == 3 && m->pop == POP_MODE && m->pop_i == 23 && rfmv_pop_up(m, POP_MODE));
     rest_pop(m);
     CHECK(!rfmv_pop_up(m, POP_MODE));
     press(m, MR_CC_MENU);
     CHECK(!m->fw.fx && m->seq.projects && m->pop == POP_MODE && m->pop_i == 21);
     screen(m), write_pbm("menu_to_firmwares");
-    tap_track(m, 3);                                    /* (a press there: the name goes) */
-    CHECK(m->pop != POP_MODE || m->pop_i != 21);
+    tap_track(m, 3);                                    /* (a press there: the name goes; 0.8.0: Track 4 opens the Mixer) */
+    CHECK((m->pop != POP_MODE || m->pop_i != 21) && m->fw.fx && m->s.fx_page == 3);
+    tap_track(m, 3);                                    /* (Routing) */
+    CHECK(m->fw.fx && m->s.fx_page == 1);
+    press(m, MR_CC_MENU), rest_pop(m), press(m, MR_CC_MENU);   /* out and in again, on Routing: FX & Mix */
+    CHECK(m->fw.fx && m->pop == POP_MODE && m->pop_i == 22 && rfmv_pop_up(m, POP_MODE));
+    screen(m), write_pbm("menu_to_fx");
+    CHECK(lit_in(30, 20, 98, 40) > 0 && lit_in(0, 50, 128, 64) == 0);   /* (the name alone, full screen) */
     rest_pop(m);
-    press(m, MR_CC_MENU), tap_track(m, 3);              /* FX setup, its Mixer */
+    dbl_track(m, 3);                                    /* (0.8.0) the projects (Track 4) */
+    CHECK(m->seq.projects && !m->fw.fx && m->fw.track == 3);
+    CHECK(m->s.fx_page == 3);                           /* (its tap first: Routing -> the Mixer) */
+    press(m, MR_CC_MENU);                               /* FX setup, its Mixer */
     CHECK(m->fw.fx && m->s.fx_page == 3);
     press(m, MR_CC_MENU);                               /* out, on Track 4: Projects */
     CHECK(!m->fw.fx && m->fw.track == 3 && m->pop == POP_MODE && m->pop_i == 20);
@@ -2020,16 +2067,19 @@ static void test_single(void)
           rfm_move_fw_sounding(m) == 1 && rfmv_fw_loaded(m) == 1);
     m->s.fw_fx = 1;                                     /* (FX setup left showing on the Move: not here) */
     clear();
-    projects(m), rest_pop(m);
-    CHECK(m->seq.projects && m->fw.track == 0 && !m->fw.fx);
+    browser(m, 0), rest_pop(m);                         /* (0.8.0: Track 1's double click) */
+    CHECK(m->seq.projects && m->fw.track == 0 && !m->fw.fx && count(RFM_MOVE_ACT_FW_ACTIVE) == 0);
     screen(m), write_pbm("single_at_rest");
     CHECK(led_of(m, 1, MR_CC_TRACK1, rgb) && (rgb[0] | rgb[1] | rgb[2]));
     CHECK(led_of(m, 1, MR_CC_TRACK1 - 1, rgb) && !(rgb[0] | rgb[1] | rgb[2]));
     CHECK(led_of(m, 1, MR_CC_TRACK1 - 2, rgb) && !(rgb[0] | rgb[1] | rgb[2]));
     CHECK(led_of(m, 1, MR_CC_TRACK1 - 3, rgb) && (rgb[0] | rgb[1] | rgb[2]));   /* (Track 4: the projects) */
-    /* Tracks 2, 3: nothing */
-    tap_track(m, 1), tap_track(m, 2);
-    CHECK(m->fw.track == 0 && m->fw.active == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && !m->fw.pop);
+    /* Tracks 2, 3: nothing (no new popup: the entry's Track name had its time) */
+    {
+        const uint32_t pms = m->fw.pop_ms;
+        tap_track(m, 1), tap_track(m, 2), dbl_track(m, 1);
+        CHECK(m->seq.projects && m->fw.track == 0 && m->fw.active == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.pop_ms == pms);
+    }
     track(m, 1, 1), knob(m, 8, 10), track(m, 1, 0);    /* (Track 2 held + volume: no level) */
     CHECK(count(RFM_MOVE_ACT_FW_LEVEL) == 0);
     track(m, 0, 1), knob(m, 8, -8);                     /* Track 1 held + volume: slot 0's level */
@@ -2037,6 +2087,10 @@ static void test_single(void)
     screen(m), write_pbm("single_level");
     CHECK(lit_in(0, 59, 128, 64) > 0 && lit_in(110, 59, 128, 64) == 0);   /* (one bar, the screen's width at most) */
     track(m, 0, 0), rest_pop(m);
+    CHECK(m->seq.projects && m->fw.track == 0);         /* (fixed in 0.8.0: as in test_slots: the Track used by the volume, its
+                                                         * release is no tap: still in the browser) */
+    if (!m->seq.projects)
+        browser(m, 0);                                  /* (to go on) */
     /* the browser as ever: All, Felucca, the jog's press loads it into slot 0 */
     tap_step(m, 1);
     rfmv_fw_bank(m, ids);
@@ -2059,15 +2113,17 @@ static void test_single(void)
     press(m, MR_CC_MENU);
     CHECK(!m->fw.fx && !m->seq.projects);
     screen(m), write_pbm("single_menu_out");
-    rest_pop(m), projects(m), rest_pop(m);
+    rest_pop(m), browser(m, 0), rest_pop(m);
     CHECK(m->seq.projects && !m->fw.fx && m->fw.track == 0);
-    tap_track(m, 3), rest_pop(m), press(m, MR_CC_MENU);   /* (Track 4: out as before the browser) */
+    tap_track(m, 3), rest_pop(m);                       /* (0.8.0) Track 4, no FX: the projects grid */
+    CHECK(m->seq.projects && !m->fw.fx && m->fw.track == 3);
+    press(m, MR_CC_MENU);                               /* (out as before the browser) */
     CHECK(!m->fw.fx && !m->seq.projects);
     CHECK(count(RFM_MOVE_ACT_FX_LOAD) == 0 && count(RFM_MOVE_ACT_FX_PARAM) == 0 && count(RFM_MOVE_ACT_MIX) == 0 &&
           count(RFM_MOVE_ACT_ROUTE) == 0);
-    /* FM-1 mode: Back + Track 2 and Down switch nothing */
+    /* FM-1 mode: Track 2 (0.8.0: no Back + Track) and Down switch nothing */
     rfm_move_set_mode(m, RFM_MOVE_MODE_FM1), rest_pop(m), clear();
-    button(m, MR_CC_BACK, 1), tap_track(m, 1), button(m, MR_CC_BACK, 0);
+    tap_track(m, 1), dbl_track(m, 2);
     press(m, MR_CC_DOWN), press(m, MR_CC_DOWN);
     CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.active == 0 && m->s.octave == 0);
     /* the host's edits: other slots and FX refused, slot 0's level taken */

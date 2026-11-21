@@ -448,15 +448,18 @@ static void test_leds_screen_input(void)
     rfm1cs_session_closed(s, t + 310, g_att, 0);
     CHECKF(g_nacts > k && g_acts[k].kind == RFM_MOVE_ACT_KEY && !g_acts[k].down && g_released == 1,
            "the link lost with a pad held: its key let go, RELEASED");
-    /* settings: Track 2 (MIDI mode) asks for them to be kept, with the image */
+    /* settings: (0.8.0) Track 1 held + pad 27 (the Scale layout) gives MIDI mode and asks for them to be kept, with
+     * the image */
     rfm1cs_session_stop(s);
     connect(s, t + 400);
     clear();
-    input(s, t + 400, 0xB0, MR_CC_TRACK1 - 1, 127);
-    input(s, t + 401, 0xB0, MR_CC_TRACK1 - 1, 0);
+    input(s, t + 400, 0xB0, MR_CC_TRACK1, 127);
+    input(s, t + 402, 0x90, MR_NOTE_PAD0 + 24 + RFM_MOVE_LAY_SCALE, 100);
+    input(s, t + 403, 0x80, MR_NOTE_PAD0 + 24 + RFM_MOVE_LAY_SCALE, 0);
+    input(s, t + 404, 0xB0, MR_CC_TRACK1, 0);
     CHECKF(s->st.mode == RFM_MOVE_MODE_MIDI && (g_changed & RFM1CS_CH_MODE) && find_act(RFM_MOVE_ACT_SETTINGS, 0, 0) >= 0 &&
-               g_settings_len == RFM_MOVE_SETTINGS_BYTES,
-           "Track 2: MIDI mode, SETTINGS with its image (%u)", g_settings_len);
+               g_settings_len == RFM_MOVE_SETTINGS_BYTES && rfm_move_slot_layout(&s->core, 0) == RFM_MOVE_LAY_SCALE,
+           "Track 1 held + Scale: MIDI mode, SETTINGS with its image (%u)", g_settings_len);
     input(s, t + 410, 0x90, MR_NOTE_PAD0, 90);
     i = find_act(RFM_MOVE_ACT_MIDI, 0, 0);
     CHECKF(i >= 0 && g_acts[i].bytes[0] == 0x90 && g_acts[i].bytes[1] == 48 && s->st.midi >= 1, "MIDI mode: the pad is C3");
@@ -479,14 +482,14 @@ static void test_sequencer_projects(void)
     CHECK(rfm1cs_store_scan(&st, 0, &used) == 0 && used == 0);
     CHECK(rfm1cs_session_projects_init(s, t, used, 0, NULL, 0) == 0 && s->st.project == 0);
     connect(s, t);
-    /* Track 4, pad 1 (C3), steps 1 and 5, Play */
+    /* (0.8.0) Back (a layout -> the Sequencer), pad 1 (C3), steps 1 and 5, Play */
     clear();
-    input(s, t, 0xB0, MR_CC_TRACK4, 127), input(s, t, 0xB0, MR_CC_TRACK4, 0);
+    input(s, t, 0xB0, MR_CC_BACK, 127), input(s, t, 0xB0, MR_CC_BACK, 0);
     input(s, t, 0x90, MR_NOTE_PAD0, 100), input(s, t, 0x80, MR_NOTE_PAD0, 0);
     input(s, t, 0x90, MR_NOTE_STEP0, 127), input(s, t, 0x80, MR_NOTE_STEP0, 0);
     input(s, t, 0x90, MR_NOTE_STEP0 + 4, 127), input(s, t, 0x80, MR_NOTE_STEP0 + 4, 0);
     input(s, t, 0xB0, MR_CC_PLAY, 127), input(s, t, 0xB0, MR_CC_PLAY, 0);
-    CHECKF(s->st.mode == RFM_MOVE_MODE_SEQ && s->core.seq.nnotes == 2, "Track 4: two steps (%d)", s->core.seq.nnotes);
+    CHECKF(s->st.mode == RFM_MOVE_MODE_SEQ && s->core.seq.nnotes == 2, "Back: the Sequencer, two steps (%d)", s->core.seq.nnotes);
     clear();
     for (frames = 0; frames < 48000; frames += 128) {
         const int n0 = g_nacts;
@@ -865,17 +868,23 @@ static void test_firmware_actions(void)
     connect(s, 100);
     clear();
     g_lib_len = 0;
-    input(s, 200, 0xB0, MR_CC_TRACK1, 127), input(s, 205, 0x90, MR_NOTE_STEP0, 127);   /* Track 1 + step 1 */
-    input(s, 210, 0x80, MR_NOTE_STEP0, 0), input(s, 215, 0xB0, MR_CC_TRACK1, 0);
+    input(s, 200, 0xB0, MR_CC_TRACK1, 127), input(s, 205, 0xB0, MR_CC_TRACK1, 0);      /* (0.8.0) Track 1 double */
+    input(s, 210, 0xB0, MR_CC_TRACK1, 127), input(s, 215, 0xB0, MR_CC_TRACK1, 0);      /* click: slot 1's browser */
+    CHECK(s->core.seq.projects);
     input(s, 220, 0x90, MR_NOTE_STEP0 + 1, 127), input(s, 225, 0x80, MR_NOTE_STEP0 + 1, 0);   /* step 2: All */
     input(s, 230, 0x90, MR_NOTE_PAD0 + 24, 100), input(s, 235, 0x80, MR_NOTE_PAD0 + 24, 0);   /* Alpha */
     input(s, 240, 0xB0, MR_CC_SAMPLE, 127), input(s, 245, 0xB0, MR_CC_SAMPLE, 0);      /* a favourite */
     input(s, 250, 0xB0, MR_CC_JOG_CLICK, 127), input(s, 255, 0xB0, MR_CC_JOG_CLICK, 0);   /* load it */
-    input(s, 260, 0xB0, MR_CC_TRACK1 - 1, 127), input(s, 265, 0xB0, MR_CC_TRACK1 - 1, 0);   /* Track 2 */
+    input(s, 260, 0xB0, MR_CC_TRACK1 - 1, 127), input(s, 265, 0xB0, MR_CC_TRACK1 - 1, 0);   /* Track 2 tap: out, slot 2 */
     for (i = 0; i < g_nacts; i++)
         loads += g_acts[i].kind == RFM_MOVE_ACT_FW_LOAD && g_acts[i].slot == 0 && g_acts[i].value == 0,
         active += g_acts[i].kind == RFM_MOVE_ACT_FW_ACTIVE && g_acts[i].slot == 1;
-    CHECK(loads == 1 && active == 1 && g_lib_len == 0);
+    /* (0.8.0: the tap leaves the view, and leaving it writes the library at once; activating slot 2 dirties it
+     * again, for the flush) */
+    CHECKF(loads == 1 && active == 1 && g_lib_len > 256, "loaded, slot 2 active, the library written on leaving (%u)",
+           g_lib_len);
+    CHECK(!s->core.seq.projects && s->core.fw.active == 1);
+    g_lib_len = 0;
     rfm1cs_session_flush(s);
     CHECK(g_lib_len > 256);
     rfm1cs_session_stop(s);

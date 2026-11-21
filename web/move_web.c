@@ -320,6 +320,14 @@ EMSCRIPTEN_KEEPALIVE const uint8_t *mw_save(mw_t *w)
     return w->settings;
 }
 EMSCRIPTEN_KEEPALIVE int mw_settings_bytes(void) { return RFM_MOVE_SETTINGS_BYTES; }
+/* (0.8.0) a slot's layout */
+EMSCRIPTEN_KEEPALIVE int mw_set_slot_layout(mw_t *w, int slot, int lay)
+{
+    BEGIN(w);
+    rfm_move_set_slot_layout(&w->s.core, slot, lay);
+    return w->nacts;
+}
+EMSCRIPTEN_KEEPALIVE int mw_slot_layout(mw_t *w, int slot) { return rfm_move_slot_layout(&w->s.core, slot); }
 
 /* the sequencer: the clock (call every audio block, playing or not), the firmware's MIDI clock in, the transport */
 EMSCRIPTEN_KEEPALIVE int mw_seq_advance(mw_t *w, uint32_t frames, uint32_t rate)

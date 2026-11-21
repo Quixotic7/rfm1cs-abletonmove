@@ -200,9 +200,9 @@ int main(int argc, char **argv)
         run(10, -1);
     CHECK(S.st.state == RFM1CS_CONNECTED && S.st.connects == 2 && g_opens == 2, "reconnected (%u connects)", S.st.connects);
     g_nact = 0;
-    inject(fifo, "cc 42 127\ncc 42 0\nnote 68 90\nnote 68 0\n");
-    run(3000, 3);
-    CHECK(S.st.mode == RFM_MOVE_MODE_MIDI && find(RFM_MOVE_ACT_SETTINGS, 0, 0, 0), "Track 2: MIDI mode");
+    inject(fifo, "cc 43 127\nnote 94 100\nnote 94 0\ncc 43 0\nnote 68 90\nnote 68 0\n");
+    run(3000, 4);
+    CHECK(S.st.mode == RFM_MOVE_MODE_MIDI && find(RFM_MOVE_ACT_SETTINGS, 0, 0, 0), "Track 1 held + Scale: MIDI mode");
     rfm1cs_session_stop(&S);
     CHECK(S.st.state == RFM1CS_OFF && g_fd < 0, "stopped: closed");
     printf("session_e2e: %d checks, %d failed\n", g_checks, g_fail);

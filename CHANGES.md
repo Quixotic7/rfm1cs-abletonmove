@@ -3,6 +3,48 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.8.0 (2026-11-20)
+
+The Track buttons, proposal 2 (the owner's board `remoteFM14Move/docs/design/track-buttons-v2.movedesign.json`,
+approved 2026-11-20: "Yes, build it"). Includes 0.7.0's takeover. New fields in `rfm_move_settings_t` and at the end
+of `rfm_move_t`: rebuild everything.
+
+- **Track 1..3 are the firmware slots, always.** A tap plays that slot in its own layout (FW_ACTIVE; empty slots too);
+  held: the slot's layout menu (top row FM-1, the firmware's takeover (dark with none), Scale, Chroma, Drum, Octave,
+  pad 8 latch; rows 2..4 the 24 scales; steps the MIDI channel; the jog the root; Up / Down the octave; knobs the CC
+  numbers in a note layout); a double click (pressed again within `RFM_MOVE_DOUBLE_MS`, 300 ms, of a tap's release):
+  the firmware browser on that slot. The first tap acts at once.
+- **Each slot keeps its own layout, scale, root, channel, octave and 8 CC numbers** (`settings.slot[]`,
+  `rfm_move_slotset_t`, `RFM_MOVE_LAY_*`; `rfm_move_set_slot_layout`, `rfm_move_slot_layout`). Settings version 7
+  (130 bytes); version 6 and older load with every slot as the one mode was.
+- **Control mode is gone:** every note layout sends the Control CCs on its knobs (CC 16..23 at first, per slot);
+  Shift + a knob (or Track n held + a knob) sets its CC number. In a note layout the buttons are RemoteFM1's own (no
+  FM-1 buttons): Up / Down the octave, Play the sequencer's transport, Shift + a step the Shift shortcuts. Only the
+  FM-1 layout reaches the FM-1's buttons and knobs.
+- **The FM-1 layout:** knob 1 SELECT, 2 PRESETS, 3 ALGO, 4 nothing, 5..8 K1..K4 (`rfm_move_knob_enc`); the jog turns
+  SELECT, PRESETS or ALGO and its click cycles them (a popup "Jog / PRESET" with three dashes).
+- **Track 4, the sequencer side:** a tap opens the Mixer or Routing (the last one; the Mixer at first), a tap there
+  flips them; held: pad 1 the Mixer, pad 2 Routing, the steps the Shift shortcuts (was Track 1 held), Record, Play,
+  Capture, Undo, Loop, Sample their Shift + button; a double click: the sequencer's projects. Without FX (one firmware,
+  no FX hosts) a tap opens the projects.
+- **Back** with nothing to close flips between the slot's layout and the Sequencer (was: the projects view). Back +
+  Track no longer switches slots (Track does).
+- **The Sequencer:** Track n's tap selects the track locked to firmware n (`settings.lock[]`, `rfm_move_seq_lock`;
+  track n at first); Track n held: the lock menu, the steps the 16 tracks: a tap locks one (its colour), a double tap
+  solos it (blue), a hold stops it reaching that firmware (dim red: the firmware's 16-track filter, ROUTE); Copy /
+  Delete / Mute + a step, the knobs, the jog and Up / Down as Track 4 held did.
+- **Screens** (the board's, `rfmv_pop_screen`): the layout ("Felucca / Drum", six dashes), the Track 4 page, "Knob 1 /
+  CC 74 / Felucca", the lock ("ChoralRoot / Track 3 / not routed"), "Jog / PRESET". **LEDs:** the board's colours; the
+  Track LEDs everywhere the slots' firmware colours (the one played full), Track 4 red on the sequencer side.
+- **Speech:** "Felucca, Drum layout", "ChoralRoot, FM-1 layout"; held menus "Felucca, layouts, Drum", "Track 4,
+  Mixer", "ChoralRoot, lock, Track 3"; "Knob 1: CC 74", "Track 7, not routed", "Jog: Preset".
+- **The takeover** is pad 2 of its slot's layout menu (was Track 1's tap); while a Track is held its menu takes the
+  pads, steps and knobs from the takeover. A firmware that loses its takeover puts its slot back on FM-1.
+- `rfm_move_set_mode`: FM1 / MIDI / TAKEOVER set the active slot's layout, SEQ the Sequencer, CONTROL is MIDI.
+  `settings.fx_page` defaults to the Mixer.
+
+**Tests:** `move_tracks` (new); the other suites moved to the new gestures.
+
 ## 0.7.0 (2026-11-20)
 
 The takeover (FM1VST `docs/RFM1-TAKEOVER.md`, `tk1`): a firmware's own Move interface beside FM-1, MIDI, Control and
