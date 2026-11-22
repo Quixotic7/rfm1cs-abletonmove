@@ -796,6 +796,14 @@ typedef struct {
     uint32_t msg_ms, ui_ms;
     rfm_move_proj_info_t info[RFM_MOVE_PROJECTS];       /* what the project grid draws of each slot */
     rfm_move_fxset_t fx;                                /* (saved, version 5) FX setup: the routing, the modules, the mix */
+    /* (0.12.x, the owner's 2026-11-22) the FM-1 knob page of a note layout (second: TRIG, FM-1, banks 1..4; not saved,
+     * s.bank keeps the CC bank): fwp the page shown (with trig 0); fwp_full its level 2 (the jog's click): the
+     * firmware's buttons and the steps too, kept while another page is shown */
+    uint8_t fwp, fwp_full;
+    /* (0.12.x, the owner's) a Track 1..3 tap into a note layout: the steps show the 16 tracks a moment (tflash_ms: since
+     * when, the sequencer clock's ms; tflash: on) */
+    uint8_t tflash;
+    uint32_t tflash_ms;
 } rfm_move_seq_t;
 
 /* ---- the state */
@@ -1264,6 +1272,9 @@ void rfm_move_tk_leds(rfm_move_t *m, int slot, const uint8_t rgb[RFM_MOVE_NLEDS]
  * 0: SAY_EVENT (after it). Printable ASCII, RFM_MOVE_SAY_MAX - 1 kept */
 void rfm_move_tk_say(rfm_move_t *m, int slot, const char *words, int interrupt);
 int rfm_move_tk_shown(const rfm_move_t *m);             /* the slot whose takeover is shown now, -1 none */
+/* (0.12.x) a note layout's FM-1 knob page shown now: 0 no, 1 its knobs reach the firmware, 2 its buttons and steps too
+ * (the screen then the FM-1's). For a host's information only: it passes labels, readouts and frames as ever */
+int rfm_move_fwp_level(const rfm_move_t *m);
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */

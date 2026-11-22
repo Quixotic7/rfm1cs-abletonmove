@@ -279,7 +279,7 @@ static void trig_words(const rfm_move_t *m, char *o, int cap)
         snprintf(o, (size_t)cap, "Transposed: %s", b);
         return;
     }
-    if (!q->trig) {
+    if (!rfmv_seq_trig_on(m)) {
         if (k == 0)
             snprintf(o, (size_t)cap, "Nudge: %+d%%", v * 100 / RFM_MOVE_SEQ_TPS);
         else if (k == 6)
@@ -444,6 +444,9 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
     case POP_BANK:
         if (m->s.mode == RFM_MOVE_MODE_SEQ && q->trig)
             snprintf(o, (size_t)cap, "Trig knobs");
+        else if (m->s.mode == RFM_MOVE_MODE_SEQ && q->fwp)   /* (0.12.x) the FM-1 page */
+            snprintf(o, (size_t)cap, "%s", !rfmv_fwp_live(m) ? "FM-1 knobs, no firmware"
+                                           : rfmv_fwp_full(m) ? "FM-1 knobs and keys" : "FM-1 knobs");
         else
             snprintf(o, (size_t)cap, "Bank %d", m->s.bank + 1);
         return;
@@ -502,6 +505,7 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
         snprintf(o, (size_t)cap, "%s", i ? "Session" : m->seq.smenu ? "Sequencer" : "");
         return;
     case POP_ARPW: snprintf(o, (size_t)cap, "Arp %s", rfmv_seq_arp_mode_name(i)); return;   /* (0.12.0) */
+    case POP_FWLV: snprintf(o, (size_t)cap, "%s", i ? "Knobs and keys" : "Knobs"); return;   /* (0.12.x) the FM-1 page */
     case POP_OCT: {                                     /* (0.12.0) the octave, the pads' notes */
         char r[24], *d;
         rfmv_seq_oct_range(m, r, sizeof r);

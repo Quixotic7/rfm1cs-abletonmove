@@ -2487,8 +2487,8 @@ static void test_knob_lights(void)
     CHECK(!rfmv_pop_up(&M, POP_TRIG));
     touch(7, 0), rest();
     /* bank 1 (the CC page), a step held, one lock: the locked knob bright, the others dim (not dark) */
-    jog(1), rest();
-    CHECK(!M.seq.trig);
+    jog(2), rest();                                     /* (0.12.x: past the FM-1 page) */
+    CHECK(!M.seq.trig && !M.seq.fwp && M.s.bank == 0);
     clip = SEQ_CLIP(M.seq.sel_track, M.seq.tr[M.seq.sel_track].sel);
     rfmv_seq_note_put(&M, clip, 0, 60, 100, 24, 0);
     rfmv_seq_lock_set(&M, clip, 0, M.s.cc[M.s.bank][2], 127);
@@ -2496,7 +2496,7 @@ static void test_knob_lights(void)
     leds(w);
     CHECK(lit(w[L_RING0 + 0]) && bright(w[L_RING0 + 2]) > 3 * bright(w[L_RING0 + 0]));
     write_pbm("cc_locks_dim");
-    step(0, 0), jog(-1), rest();
+    step(0, 0), jog(-2), rest();
     /* the project grid: knob 1 dark, lit while a project's pad is held; touched: its colour by name */
     press(MR_CC_UNDO), rest();
     button(MR_CC_SHIFT, 1), step(0, 1), step(0, 0), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
@@ -2880,6 +2880,254 @@ static void test_fwp_tkclick(void)
     press(MR_CC_MENU), rest();
 }
 
+/* item 2: a note layout's FM-1 knob page (second: TRIG, FM-1, banks 1..4); level 1 the knobs, level 2 (the jog's
+ * click) the buttons and steps too; the pads the note layout's, the jog ours */
+static int acts_of(int kind, int index)
+{
+    int i, n = 0;
+    for (i = 0; i < nact; i++)
+        n += A[i].kind == kind && A[i].index == index;
+    return n;
+}
+static void fwp_png_labels(void)
+{
+    static const char *lbl[RFM_MOVE_LBL_N];
+    int i;
+    for (i = 0; i < RFM_MOVE_LBL_N; i++)
+        lbl[i] = NULL;
+    lbl[rfmv_enc_slot(RFM_MOVE_E_K1)] = "Cutoff";
+    lbl[rfmv_enc_slot(RFM_MOVE_E_K4)] = "";         /* (no job: dark, dead) */
+    rfm_move_set_labels(&M, lbl);
+}
+static int step_has(int clip, int s)
+{
+    int lo;
+    return rfmv_seq_range(&M, clip, M.seq.page * RFM_MOVE_SEQ_PAGE + s, &lo) > lo;
+}
+static void test_fwp_page(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3], lv[RFM_MOVE_NLEVELS];
+    int i, clip, oct;
+    const rfm_move_act_t *a;
+    track_view();
+    fwp_png_labels();
+    clip = edit_clip_now();
+    CHECK(M.seq.trig && !M.seq.fwp && M.s.bank == 0);
+    /* the page order: TRIG, FM-1, bank 1 .. 4; the stored bank keeps its meaning */
+    jog(1);
+    CHECK(!M.seq.trig && M.seq.fwp && M.s.bank == 0 && M.pop == POP_BANK && rfmv_fwp_page(&M) && rfmv_fwp_live(&M));
+    CHECKF(strstr(said, "FM-1 knobs") != NULL, "said \"%s\"", said);
+    screen();
+    CHECK(lit_rows(60, 64) > 0 && lit_rows(0, 56) > 0);  /* (the words, the page strip under them) */
+    write_pbm("fwp_page");
+    jog(1);
+    CHECK(!M.seq.fwp && !M.seq.trig && M.s.bank == 0);
+    jog(3);
+    CHECK(M.s.bank == 3);
+    jog(5);
+    CHECK(M.s.bank == 3);                               /* (the last page: clamped) */
+    M.s.bank = 2;                                       /* (a stored bank 3: still bank 3) */
+    jog(-1);
+    CHECK(M.s.bank == 1 && !M.seq.fwp);
+    jog(-1);
+    CHECK(M.s.bank == 0 && !M.seq.fwp);
+    M.s.bank = 2, jog(-3);                              /* (bank 3 -> FM-1 in one turn: the bank stays as it was) */
+    CHECK(M.seq.fwp && !M.seq.trig && M.s.bank == 2);
+    M.s.bank = 2;
+    jog(-1);
+    CHECK(M.seq.trig && M.s.bank == 2);
+    jog(1), rest(), clear();
+    CHECK(M.seq.fwp && M.s.bank == 2);
+    /* level 1: the knobs reach the firmware as in the FM-1 layout (an FM-1 detent every 2 ticks); knob 4 none */
+    knob(4, 2);
+    a = find(RFM_MOVE_ACT_TURN);
+    CHECK(a && a->index == RFM_MOVE_E_K1 && a->value == 1 && count(RFM_MOVE_ACT_MIDI) == 0);
+    knob(0, 2), knob(1, 2), knob(2, 2), knob(7, 2);
+    CHECK(acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_SELECT) == 1 && acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_PRESETS) == 1 &&
+          acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_ALGO) == 1 && acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_K4) == 1);
+    clear(), knob(3, 4);
+    CHECK(nact == 0);
+    rest();
+    leds(w);                                            /* (R4: the knobs with a job lit; 4 and K4 ("") dark) */
+    for (i = 0; i < 8; i++)
+        CHECKF(lit(w[L_RING0 + i]) == (i != 3 && i != 7), "knob %d", i + 1);
+    /* a touch: the knob's name (R5), its readout's value once it comes, full screen (Popup Full) */
+    clear(), touch(4, 1);
+    CHECK(M.pop == POP_ENC && M.pop_i == 4 && M.pop_blank && rfmv_pop_up(&M, POP_ENC));
+    CHECKF(strstr(said, "Cutoff") != NULL, "said \"%s\"", said);
+    leds(w);
+    CHECK(bright(w[L_RING0 + 4]) > bright(w[L_RING0 + 5]));
+    write_pbm("fwp_l1_touch");
+    knob(4, 2);
+    rfm_move_readout(&M, -1, RFM_MOVE_RD_PARAM, "Cutoff", "1.2k", 400, 0, 0);
+    screen();
+    CHECK(M.pop == POP_ENC && M.rd[rfmv_enc_slot(RFM_MOVE_E_K1)].on);
+    write_pbm("fwp_l1_value");
+    M.s.pop_half = 1;
+    write_pbm("fwp_l1_half");
+    M.s.pop_half = 0;
+    touch(4, 0);
+    CHECK(!rfmv_pop_up(&M, POP_ENC));                   /* (as the FM-1 layout: the release ends it) */
+    touch(3, 1);
+    CHECK(!rfmv_pop_up(&M, POP_ENC));                   /* (knob 4: no job, no popup) */
+    touch(3, 0), rest();
+    /* the rest is the sequencer's: the pads play the track, the steps edit the clip, Play its transport */
+    clear(), hit(0);
+    CHECK(count(RFM_MOVE_ACT_MIDI) == 2 && count(RFM_MOVE_ACT_KEY) == 0);
+    step(2, 1), step(2, 0);
+    CHECK(rfmv_seq_clip_used(&M, clip) && count(RFM_MOVE_ACT_KEY) == 0);
+    /* a held step: its knobs are the TRIG page's (lit as there), not the firmware's */
+    step(2, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), clear();
+    knob(1, 1);
+    CHECK(count(RFM_MOVE_ACT_TURN) == 0 && rfmv_seq_trig(&M, clip, 2, RFM_MOVE_TRIG_RATCHET) == 2);
+    step(2, 0), rest();
+    /* the jog's click: level 2 at the press, named a second ("Knobs+Keys") */
+    clear();
+    raw(0xB0, MR_CC_JOG_CLICK, 127);
+    CHECK(M.seq.fwp_full && rfmv_fwp_full(&M) && M.pop == POP_FWLV && M.pop_i == 1 && rfmv_pop_up(&M, POP_FWLV));
+    CHECKF(strstr(said, "Knobs and keys") != NULL, "said \"%s\"", said);
+    write_pbm("fwp_level2_pop");
+    raw(0xB0, MR_CC_JOG_CLICK, 0), rest();
+    /* level 2: the FM-1's screen, its LEDs on the steps and taken buttons, the step icons dark */
+    memset(lv, 0, sizeof lv);
+    for (i = 0; i < RFM_MOVE_NLEVELS; i++)
+        lv[i] = (uint8_t)(i * 37 % 256);
+    rfm_move_panel(&M, lv, 0);
+    leds(w);
+    for (i = 0; i < 16; i++)
+        CHECK(!w[L_ICON0 + i][0]);
+    for (i = 0; i < 16; i++)                            /* (the FM-1's key levels: white, never the clip's colours) */
+        CHECK(lit(w[L_STEP0 + i]) && w[L_STEP0 + i][0] == w[L_STEP0 + i][1] && w[L_STEP0 + i][1] == w[L_STEP0 + i][2]);
+    CHECK(lit(w[L_PLAY]) || lit(w[L_REC]) || lit(w[L_SAMPLE]));
+    CHECK(rfmv_half(&M) && rfm_move_fwp_level(&M) == 2);
+    write_pbm("fwp_level2");
+    /* a step: the FM-1's key, not the clip; a mapped button: the FM-1's; Play the firmware's PLAY, not the transport */
+    clear();
+    step(5, 1);
+    a = find(RFM_MOVE_ACT_KEY);
+    CHECK(a && a->index == rfm_move_step_key(5) && a->down && a->vel == 100 && !step_has(clip, 5));
+    leds(w);
+    CHECK(lit(w[L_STEP0 + 5]) && !white(w[L_STEP0 + 5]));   /* (pressed: the FM-1 layout's colour) */
+    step(5, 0);
+    CHECK(count(RFM_MOVE_ACT_KEY) == 2 && !step_has(clip, 5));
+    clear(), press(MR_CC_CAPTURE), press(MR_CC_PLAY), press(MR_CC_SHIFT), press(MR_CC_MENU);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_FX) == 2 && acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY) == 2 &&
+          acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_GLO) == 2 && acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_HOME) == 2);
+    CHECK(!M.seq.playing && !M.seq.view && M.s.mode == RFM_MOVE_MODE_SEQ);
+    /* a mapped button held: a key's label at once (the FM-1 layout's) */
+    button(MR_CC_SHIFT, 1), step(0, 1);
+    CHECK(M.pop == POP_LABEL);
+    step(0, 0), button(MR_CC_SHIFT, 0), rest();
+    /* the pads still play the track; Up / Down the octave; the knobs still the firmware's */
+    clear(), hit(0);
+    CHECK(count(RFM_MOVE_ACT_MIDI) == 2 && count(RFM_MOVE_ACT_KEY) == 0);
+    oct = M.s.octave, press(MR_CC_UP);
+    CHECK(M.s.octave == oct + 1 && count(RFM_MOVE_ACT_BTN) == 0);
+    press(MR_CC_DOWN), clear(), knob(5, 2);
+    CHECK(acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_K2) == 1);
+    rest();
+    /* Back's click: as in the FM-1 layout (nothing open: nothing); Back held + Left: no shortcut */
+    clear(), back();
+    CHECK(rfmv_fwp_full(&M) && count(RFM_MOVE_ACT_BTN) == 0);
+    /* the jog's turn is ours: another page ends the takeover of the steps and buttons; back: level 2 again */
+    step(7, 1);                                          /* (a key held: let go when level 2 ends) */
+    clear(), jog(1);
+    CHECK(!rfmv_fwp_full(&M) && M.seq.fwp_full && M.s.bank == 0 && acts_of(RFM_MOVE_ACT_KEY, rfm_move_step_key(7)) == 1);
+    step(7, 0), step(9, 1), step(9, 0);
+    CHECK(step_has(clip, 9) && count(RFM_MOVE_ACT_KEY) == 1);   /* (the key let go; step 10 the clip's again) */
+    clear(), press(MR_CC_CAPTURE);
+    CHECK(count(RFM_MOVE_ACT_BTN) == 0);
+    rest(), jog(-1);
+    CHECK(rfmv_fwp_full(&M));
+    rest();
+    /* the click again: level 1 ("Knobs") */
+    clear(), jog_click();
+    CHECK(!M.seq.fwp_full && M.pop == POP_FWLV && M.pop_i == 0 && rfm_move_fwp_level(&M) == 1);
+    CHECKF(strstr(said, "Knobs") != NULL, "said \"%s\"", said);
+    write_pbm("fwp_level1_pop");
+    rest();
+    /* a held Track: its menu over the page (the steps its tracks); Track 4 held: its layer */
+    jog_click(), rest();
+    hold_track(1), clear(), step(3, 1);
+    CHECK(M.s.lock[1] == 3 && count(RFM_MOVE_ACT_KEY) == 0);
+    step(3, 0), track(1, 0), rest();
+    /* a Track tap: the slot's layout again, the TRIG page first (level 2 kept for the next visit) */
+    tap_track(1), rest();
+    CHECK(M.seq.trig && !M.seq.fwp && !rfmv_fwp_full(&M) && M.seq.fwp_full);
+    M.seq.fwp_full = 0;
+    /* an empty slot (Track 3: nothing loaded): the page is there, its knobs dark and dead, its click nothing */
+    hold_track(2), hit(26), track(2, 0), rest();
+    tap_track(2), rest();
+    CHECK(M.fw.active == 2 && M.s.mode == RFM_MOVE_MODE_SEQ);
+    clear(), jog(1);
+    CHECK(M.seq.fwp && rfmv_fwp_page(&M) && !rfmv_fwp_live(&M));
+    CHECKF(strstr(said, "no firmware") != NULL, "said \"%s\"", said);
+    write_pbm("fwp_empty");
+    clear(), knob(4, 4), touch(5, 1), jog_click();
+    CHECK(count(RFM_MOVE_ACT_TURN) == 0 && !M.seq.fwp_full && M.pop != POP_ENC);
+    leds(w);
+    for (i = 0; i < 8; i++)
+        CHECK(!lit(w[L_RING0 + i]));
+    touch(5, 0), rest();
+    rfm_move_set_labels(&M, NULL);
+    tap_track(1), rest();
+}
+
+/* item 3: a Track 1..3 tap into a note layout: the steps show the 16 tracks a moment (the selected one blinking),
+ * then the clip's steps; a step press ends it and is a clip step at once */
+static void test_fwp_trackflash(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3], w0[RFM_MOVE_NLEDS][3];
+    int i, st = 0, pd = 0, clip;
+    track_view();
+    rfm_move_set_speech(&M, 0);
+    clip = edit_clip_now();
+    rfmv_seq_note_put(&M, clip, 0, 60, 100, 24, 0);
+    M.seq.fx.ffilt[1] = (uint16_t)(M.seq.fx.ffilt[1] & ~(1u << 9));   /* (track 10 not routed to slot 2) */
+    rest();
+    leds(w0);                                           /* (the clip's steps) */
+    led_flush();
+    tap_track(1);                                       /* (the slot already played: which track am I on) */
+    CHECK(M.seq.tflash && rfmv_seq_tflash_on(&M) && M.pop == POP_LAYOUT);
+    leds(w);
+    CHECK(white(w[L_STEP0 + 1]) && !lit(w[L_STEP0 + 9]) && lit(w[L_STEP0 + 4]) && !white(w[L_STEP0 + 4]));
+    for (i = 0; i < 16; i++)
+        CHECK(!w[L_ICON0 + i][0]);
+    write_pbm("fwp_trackflash");
+    led_flush();
+    for (i = 0; i < 70; i++)                            /* (10 ms frames: the writes counted) */
+        adv_ms(10), led_msgs(&st, &pd);
+    CHECKF(st <= 16 + 8 && pd == 0, "%d step writes, %d pad writes", st, pd);
+    CHECK(!rfmv_seq_tflash_on(&M));
+    leds(w);
+    for (i = 0; i < 16; i++)
+        CHECK(!memcmp(w[L_STEP0 + i], w0[L_STEP0 + i], 3) || i == 0);
+    CHECK(!memcmp(w[L_STEP0 + 9], w0[L_STEP0 + 9], 3));
+    rest();
+    /* a step press during it: a clip step at once, the flash ends */
+    tap_track(1);
+    CHECK(rfmv_seq_tflash_on(&M));
+    step(5, 1);
+    CHECK(!rfmv_seq_tflash_on(&M));
+    step(5, 0);
+    CHECK(step_has(clip, 5));
+    rest();
+    /* from the FM-1 layout into a note layout: shown; into the FM-1 layout, or in session view: not */
+    tap_track(0), rest();
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && !rfmv_seq_tflash_on(&M));
+    tap_track(1);
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && rfmv_seq_tflash_on(&M));
+    rest();
+    press(MR_CC_MENU), rest();
+    tap_track(1);
+    CHECK(M.seq.view && !rfmv_seq_tflash_on(&M));
+    rest(), press(MR_CC_MENU), rest();
+    /* a double click: the browser, no flash over it */
+    dbl_track(1);
+    CHECK(M.seq.projects && !rfmv_seq_tflash_on(&M));
+    back(), rest();
+}
+
 int main(void)
 {
     test_scenes();
@@ -2921,6 +3169,8 @@ int main(void)
     test_back_play();
     test_back_delete();
     test_fwp_tkclick();
+    test_fwp_page();
+    test_fwp_trackflash();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

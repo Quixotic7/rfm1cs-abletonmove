@@ -591,7 +591,7 @@ static void test_control(void)
     clear();
     knob(&m, 0, 3);                                     /* (the TRIG page first: no CC) */
     CHECK(count(RFM_MOVE_ACT_MIDI) == 0);
-    jog(&m, 1);                                         /* the jog: the next knob page, bank 1 (16..23) */
+    jog(&m, 2);                                         /* the jog: TRIG, (0.12.x) FM-1, bank 1 (16..23) */
     CHECK(!m.seq.trig && m.s.bank == 0);
     clear();
     knob(&m, 0, 3);
@@ -624,7 +624,7 @@ static void test_control(void)
     CHECK(m.s.cc[0][1] == 22 && m.seq.tr[0].cc[0][1] == 22);   /* (kept in the track) */
     /* the channel is the track's; the volume knob is still MASTER; the pads still play notes */
     m.seq.tr[0].ch = 3;
-    jog(&m, 1);
+    jog(&m, 2);
     CHECK(!m.seq.trig);
     clear();
     knob(&m, 1, 1);
@@ -650,14 +650,14 @@ static void test_control(void)
     tap(&m, 1);
     CHECK(rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_SEQ && m.s.layout == RFM_MOVE_LAYOUT_DRUM &&
           m.seq.sel_track == 1 && m.seq.trig);
-    jog(&m, 1);
+    jog(&m, 2);
     clear();
     knob(&m, 0, 1);
     CHECKF(nact >= 1 && acts[0].bytes[0] == 0xB1 && acts[0].bytes[1] == 26, "%d: %02x %d", nact, nact ? acts[0].bytes[0] : 0,
            nact ? acts[0].bytes[1] : 0);               /* (fixed in 0.9.0: track 2's own CC number) */
     tap(&m, 0);
     CHECK(rfm_move_fw_active(&m) == 0 && m.s.layout == RFM_MOVE_LAYOUT_SCALE && m.seq.sel_track == 0);
-    jog(&m, 1);
+    jog(&m, 2);
     clear();
     knob(&m, 0, 1);
     CHECKF(nact == 1 && acts[0].bytes[0] == 0xB3 && acts[0].bytes[1] == 16, "%02x %d %d", nact ? acts[0].bytes[0] : 0,
@@ -769,7 +769,7 @@ static void write_pbm(const char *path, const uint8_t *packed)
 #define GOLD_MASTER 0x7ac52bc1u
 #define GOLD_MIDI 0x6bbd6df5u                           /* (0.9.0: the sequencer's track view) */
 #define GOLD_MIDI_HIT GOLD_MIDI                         /* (0.9.0: a live note draws nothing) */
-#define GOLD_CC 0xb28a5e1cu                             /* (0.9.0: the sequencer's CC popup, its page strip) */
+#define GOLD_CC 0x0921b91cu                             /* (0.9.0: the sequencer's CC popup, its page strip; 0.12.x: 6 pages) */
 #define GOLD_MENU_MIDI 0x91e1fc98u
 #define GOLD_MENU_CC 0x4ce8d36du                        /* (0.9.0: the sequencer's "Knob 3 CC", "20") */
 
@@ -1028,7 +1028,7 @@ static void test_screen(void)
     lay(&m, 0, RFM_MOVE_LAY_SCALE);
 
     /* (0.9.0) the note layout's knobs: the sequencer's; the jog to bank 1: the track's CCs (the slot's are gone) */
-    jog(&m, 1);
+    jog(&m, 2);
     CHECK(!m.seq.trig && m.s.bank == 0);
     knob(&m, 1, 36);                                    /* knob 2: 100 */
     ms(&m, RFM_MOVE_POPUP_MS);

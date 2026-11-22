@@ -368,4 +368,19 @@ void rfmv_seq_back_key(rfm_move_t *m, int cc);          /* a button pressed with
 int rfmv_seq_back_lit(const rfm_move_t *m, int cc);     /* .. a shortcut there now (lit while Back is held) */
 void rfmv_seq_back_pop(const rfm_move_t *m, mr_canvas_t *cv);   /* POP_BACK's screen */
 
+/* (0.12.x, the owner's 2026-11-22) a note layout's FM-1 knob page (move.c): the page shown (track view); the slot has a
+ * firmware (or no host list); level 2 (the firmware's buttons and steps too); its knobs are the FM-1's now (no menu, no
+ * held step). POP_FWLV: the level toggled (pop_i 0 / 1) */
+enum { POP_FWLV = 70 };
+int rfmv_fwp_page(const rfm_move_t *m);
+int rfmv_fwp_live(const rfm_move_t *m);
+int rfmv_fwp_full(const rfm_move_t *m);
+int rfmv_fwp_knobs(const rfm_move_t *m);
+int rfmv_seq_trig_on(const rfm_move_t *m);              /* the knobs do the TRIG page's (TRIG, or a step held on FM-1) */
+/* (0.12.x) a Track tap's flash: the steps show the 16 tracks (seq_ui.c); RFM_MOVE_TFLASH_MS in all */
+#define RFM_MOVE_TFLASH_MS 600
+int rfmv_seq_tflash_on(const rfm_move_t *m);
+void rfmv_seq_tflash_start(rfm_move_t *m);
+void rfmv_seq_tflash_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0]);
+
 #endif

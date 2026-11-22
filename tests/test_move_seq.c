@@ -1880,7 +1880,7 @@ static void test_trig(void)
     rfmv_seq_note_put(m, 0, 0, 60, 100, 24, 0);
     rfmv_seq_note_put(m, 0, 4, 62, 100, 24, 0);
     rfmv_seq_note_put(m, 0, 8, 64, 100, 24, 0);
-    jog(m, -1);
+    jog(m, -2);                                         /* (bank 1 -> (0.12.x) FM-1 -> TRIG) */
     CHECK(m->seq.trig && m->pop == POP_BANK);
     step(m, 4, 1);
     knob(m, 1, 3);                                      /* ratchet x4 */
