@@ -711,6 +711,8 @@ typedef struct {
     int8_t tk_pend;                                     /* the track whose click waits, -1 none */
     uint8_t tk_pend_kind, tk_pend_fw;                   /* .. 0 select (a step), 1 routed / not (a pad); its firmware */
     uint32_t tk_pend_clk;                               /* .. since when (the sequencer clock's ms) */
+    uint32_t tstep_rt0;                                 /* (0.12.x) bits: that track was routed before its step's press
+                                                         * (the click routes at the press; the hold toggles from this) */
     /* (0.12.0) session view's clip and scene buffers. The clip buffer is the clipboard (clip_kind 2); armed: the last
      * clip function was a copy or a delete, so Copy + a clip pastes over it (cleared by a paste, Back) */
     uint8_t sv_armed;

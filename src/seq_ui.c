@@ -866,7 +866,9 @@ void rfmv_seq_tk_flush(rfm_move_t *m)                   /* the click that waits 
     if (track < 0)
         return;
     q->tk_pend = -1;
-    tk_act(m, q->tk_pend_fw, track, q->tk_pend_kind);
+    if (q->tk_pend_kind)                                /* (0.12.x: a step's click acted at its press: only the double
+                                                         * click's window waited) */
+        tk_act(m, q->tk_pend_fw, track, q->tk_pend_kind);
 }
 static int tk_press(rfm_move_t *m, int fw, int track, int kind)   /* a press: 1 it was the double click (done) */
 {
@@ -942,7 +944,8 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
                                                          * selects it for that firmware, a double click solos it there,
                                                          * a hold routes it to the firmware or not; (0.11.0) gated: the
                                                          * hold and the double click have acted by now (tk_press, the
-                                                         * poll), the click waits out the double click's time */
+                                                         * poll); (0.12.x) the click acted at the press: its release
+                                                         * only opens the double click's window (nothing shows) */
             const int fw = rfmv_seq_trk_held(m) - 1, fired = (int)(q->tstep_fired >> s & 1);
             q->tstep_held &= ~(1u << s), q->tstep_fired &= ~(1u << s);
             if (fw >= 0 && !fired)
@@ -1022,9 +1025,21 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             q->paste = 0, q->clip_kind = 0;
         } else {                                        /* (a click selects, a double click solos, a hold routes or
                                                          * not: tk_press, the poll, the release above) */
+            const int fw = rfmv_seq_trk_held(m) - 1;
             q->tstep_fired &= ~(1u << s);
-            if (tk_press(m, rfmv_seq_trk_held(m) - 1, s, 0))
+            if (tk_press(m, fw, s, 0))
                 q->tstep_fired |= 1u << s;
+            else {                                      /* (0.12.x, the owner's: "Clicking a step should instantly show
+                                                         * selected, not wait the 300ms") the click's selection at the
+                                                         * press (routed too, as the click did); the hold toggles from
+                                                         * the routing before it, the double click solos at its second
+                                                         * press. UX-RULES R2's "the same thing sooner" kind */
+                if ((m->fsolo[fw] && m->fsolo[fw] != s + 1 ? m->fsolo_save[fw] : q->fx.ffilt[fw]) >> s & 1)
+                    q->tstep_rt0 |= 1u << s;            /* (under another track's solo: its routing kept for after) */
+                else
+                    q->tstep_rt0 &= ~(1u << s);
+                tk_act(m, fw, s, 0);
+            }
             q->tstep_held |= 1u << s;
             q->step_t[s] = rfmv_now_ms(m);
         }
@@ -1418,8 +1433,13 @@ void rfmv_seq_ui_poll(rfm_move_t *m)
             if ((q->tstep_held >> s & 1) && !(q->tstep_fired >> s & 1) &&
                 rfmv_now_ms(m) - q->step_t[s] >= RFM_MOVE_SEQ_HOLD_MS) {
                 q->tstep_fired |= 1u << s;
-                if (fw >= 0)
-                    tk_act(m, fw, s, 1);
+                if (fw >= 0 && (q->tstep_rt0 >> s & 1))
+                    tk_act(m, fw, s, 1);                /* (routed before the press: not routed now) */
+                else if (fw >= 0) {                     /* (0.12.x) not routed before: the press routed it, the hold
+                                                         * leaves it so (named) */
+                    rfmv_menu(m, MENU_LOCK, s);
+                    m->lk_word = LK_ON;
+                }
             }
     }
     if (q->tk_pend >= 0 && rfmv_now_ms(m) - q->tk_pend_clk >= RFM_MOVE_DOUBLE_MS)
@@ -2693,8 +2713,8 @@ static rgb_t route_rgb(const rfm_move_t *m, int fw, int i)
     const rfm_move_seq_t *q = &m->seq;
     const int on = q->fx.ffilt[fw] >> i & 1, sel = m->s.lock[fw] == i, ph = rfmv_now_ms(m) % 500u < 250u;
     const rgb_t fc = rfmv_fw_rgb(m, fw), blue = RFMV_SOLO_RGB;   /* (0.12.0, q1: the solo purple) */
-    if (q->tk_pend == i && q->tk_pend_fw == fw)
-        return sc(RFMV_WHITE, 150);
+    if (q->tk_pend == i && q->tk_pend_fw == fw && q->tk_pend_kind)
+        return sc(RFMV_WHITE, 150);                     /* (0.12.x: a pad's click waits; a step's acted at its press) */
     if (m->fsolo[fw] == i + 1)
         return sel && !ph ? sc(blue, 70) : blue;
     if (sel)

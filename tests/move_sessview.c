@@ -804,15 +804,15 @@ static void test_route(void)
     hit(PAD(2, 0)), track(1, 0);
     CHECK(M.seq.fx.ffilt[1] == f0 && M.seq.view && M.seq.tr[2].queued == SEQ_NONE && M.seq.sel_track == 1 && M.fw.active == 1);
     rest();
-    /* track view, Track 2 held, a track's step: a click selects it once the double click's time has passed */
+    /* track view, Track 2 held, a track's step: (0.12.x, the owner's) a click selects it at its press */
     press(MR_CC_MENU);
     CHECK(!M.seq.view);
     hold_track(1);
     step(5, 1);
     leds(w);
     CHECK(white(w[L_STEP0 + 5]));                       /* (pressed: white at once) */
+    CHECK(M.s.lock[1] == 5 && M.seq.sel_track == 5 && M.lk_word == LK_LOCKED);
     step(5, 0);
-    CHECK(M.s.lock[1] != 5 && M.seq.sel_track != 5);
     adv_ms(RFM_MOVE_DOUBLE_MS + 30);
     CHECK(M.s.lock[1] == 5 && M.seq.sel_track == 5 && M.lk_word == LK_LOCKED);
     /* a hold: not routed once held long enough, while still down (the LED and the screen then); its release: nothing */
@@ -824,12 +824,13 @@ static void test_route(void)
     write_pbm("hold_notrouted");
     step(6, 0), adv_ms(RFM_MOVE_DOUBLE_MS + 100);
     leds(w);
-    CHECK(!(M.seq.fx.ffilt[1] >> 6 & 1) && M.s.lock[1] == 5 && !lit(w[L_STEP0 + 6]) && lit(w[L_STEP0 + 7]));
-    /* a double click: the solo; no select from it */
+    CHECK(!(M.seq.fx.ffilt[1] >> 6 & 1) && M.s.lock[1] == 6 && lit(w[L_STEP0 + 7]));   /* (0.12.x: the press selected it;
+                                                         * not routed, it stays selected: blinking dim) */
+    /* a double click: the solo; its first press selected it */
     step(8, 1), step(8, 0), step(8, 1), step(8, 0);
     CHECK(M.fsolo[1] == 9 && M.lk_word == LK_SOLO);
     adv_ms(RFM_MOVE_DOUBLE_MS + 100);
-    CHECK(M.fsolo[1] == 9 && M.s.lock[1] == 5);
+    CHECK(M.fsolo[1] == 9 && M.s.lock[1] == 8);
     /* the owner's: the solo stays when another track is selected (that track is routed once the solo ends) */
     step(9, 1), step(9, 0), adv_ms(RFM_MOVE_DOUBLE_MS + 30);
     CHECK(M.s.lock[1] == 9 && M.seq.sel_track == 9 && M.fsolo[1] == 9 && M.seq.fx.ffilt[1] == 1u << 8 && (M.fsolo_save[1] >> 9 & 1));
@@ -2804,6 +2805,81 @@ static void test_back_delete(void)
     tap_track(1), rest();
 }
 
+/* ================================================================ (0.12.x) the owner's 2026-11-22 items === */
+/* item 1: a held Track's step selects its track at the press (routed too); the double click solos at its second press,
+ * the track stays selected; a hold flips the routing from what it was before the press; nothing more at 300 ms or at
+ * the release */
+static void test_fwp_tkclick(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    track_view();
+    CHECK(M.fw.active == 1 && M.seq.sel_track == 1 && (M.seq.fx.ffilt[1] >> 6 & 1));
+    rfm_move_set_speech(&M, 0);
+    M.seq.fx.ffilt[1] = (uint16_t)(M.seq.fx.ffilt[1] & ~(1u << 9));   /* (track 10: not routed to slot 2) */
+    hold_track(1), clear();
+    /* a click on a routed track: selected at the press: the screen's words, the track edited */
+    step(6, 1);
+    screen();
+    CHECK(M.s.lock[1] == 6 && M.seq.sel_track == 6 && M.lk_word == LK_LOCKED && M.menu_what == MENU_LOCK && M.menu_i == 6);
+    leds(w);
+    CHECK(white(w[L_STEP0 + 6]));                       /* (pressed: white) */
+    write_pbm("fwp_tk_press");
+    step(6, 0);
+    leds(w);
+    CHECK(!white(w[L_STEP0 + 6]) && M.seq.tk_pend == 6);   /* (let go: the selected track's blink, no wait shown) */
+    adv_ms(RFM_MOVE_DOUBLE_MS + 30);
+    CHECK(M.s.lock[1] == 6 && M.lk_word == LK_LOCKED && M.seq.tk_pend < 0);
+    /* a click on a not-routed track: selected and routed at the press */
+    step(9, 1);
+    CHECK(M.s.lock[1] == 9 && M.seq.sel_track == 9 && (M.seq.fx.ffilt[1] >> 9 & 1));
+    step(9, 0), adv_ms(RFM_MOVE_DOUBLE_MS + 30);
+    CHECK(M.s.lock[1] == 9 && (M.seq.fx.ffilt[1] >> 9 & 1));
+    /* a double click: the first press selects, the second solos; the track stays selected */
+    now_ms += 500;
+    step(4, 1), step(4, 0);
+    CHECK(M.s.lock[1] == 4 && !M.fsolo[1]);
+    step(4, 1);
+    CHECK(M.fsolo[1] == 5 && M.s.lock[1] == 4 && M.lk_word == LK_SOLO);
+    step(4, 0), adv_ms(RFM_MOVE_DOUBLE_MS + 100);
+    CHECK(M.fsolo[1] == 5 && M.s.lock[1] == 4 && M.seq.sel_track == 4);
+    step(4, 1), step(4, 0), step(4, 1), step(4, 0);     /* (the solo off again) */
+    CHECK(!M.fsolo[1]);
+    adv_ms(RFM_MOVE_DOUBLE_MS + 100);
+    /* a hold on a routed track: selected at the press, not routed at 300 ms (still selected), its release nothing */
+    now_ms += 500;
+    step(11, 1);
+    CHECK(M.s.lock[1] == 11 && (M.seq.fx.ffilt[1] >> 11 & 1));
+    adv_ms(RFM_MOVE_SEQ_HOLD_MS - 50);
+    CHECK(M.seq.fx.ffilt[1] >> 11 & 1);
+    adv_ms(70);
+    CHECK(!(M.seq.fx.ffilt[1] >> 11 & 1) && M.lk_word == LK_OFF && M.s.lock[1] == 11);
+    step(11, 0), adv_ms(RFM_MOVE_DOUBLE_MS + 100);
+    CHECK(!(M.seq.fx.ffilt[1] >> 11 & 1) && M.s.lock[1] == 11);
+    /* a hold on a not-routed track: routed at the press, still routed at 300 ms */
+    now_ms += 500;
+    M.seq.fx.ffilt[1] = (uint16_t)(M.seq.fx.ffilt[1] & ~(1u << 13));
+    step(13, 1);
+    CHECK(M.seq.fx.ffilt[1] >> 13 & 1);
+    adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20);
+    CHECK((M.seq.fx.ffilt[1] >> 13 & 1) && M.lk_word == LK_ON && M.s.lock[1] == 13);
+    step(13, 0), adv_ms(RFM_MOVE_DOUBLE_MS + 100);
+    CHECK(M.seq.fx.ffilt[1] >> 13 & 1);
+    /* the Track let go right after a click: nothing more */
+    now_ms += 500;
+    step(2, 1), step(2, 0);
+    CHECK(M.s.lock[1] == 2);
+    track(1, 0);
+    CHECK(M.s.lock[1] == 2 && M.seq.sel_track == 2 && M.s.mode == RFM_MOVE_MODE_SEQ && !M.seq.view);
+    rest();
+    /* session view: the steps under a held Track follow the same rule */
+    press(MR_CC_MENU), rest();
+    CHECK(M.seq.view);
+    hold_track(1), step(5, 1);
+    CHECK(M.s.lock[1] == 5);
+    step(5, 0), track(1, 0), rest();
+    press(MR_CC_MENU), rest();
+}
+
 int main(void)
 {
     test_scenes();
@@ -2844,6 +2920,7 @@ int main(void)
     test_back_loop();
     test_back_play();
     test_back_delete();
+    test_fwp_tkclick();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

@@ -195,9 +195,9 @@ static void test_layout_menu(void)
     CHECK(M.s.slot[1].lay == RFM_MOVE_LAY_DRUM && M.fw.active == 0 && M.s.mode == RFM_MOVE_MODE_FM1);
     CHECK(M.seq.tr[1].layout == RFM_MOVE_LAYOUT_DRUM);
     write_pbm("menu_drum");
-    step(5, 1), step(5, 0);                             /* track 6 selected for Felucca, routed to it (0.11.0: a click:
-                                                         * once the double click's time has passed) */
-    CHECK(M.s.lock[1] != 5);
+    step(5, 1), step(5, 0);                             /* track 6 selected for Felucca, routed to it (0.12.x, the
+                                                         * owner's: at the press) */
+    CHECK(M.s.lock[1] == 5);
     adv_ms(RFM_MOVE_DOUBLE_MS + 30);
     CHECK(M.s.lock[1] == 5 && (M.seq.fx.ffilt[1] >> 5 & 1) && M.lk_word == LK_LOCKED);
     write_pbm("menu_select");
@@ -361,7 +361,9 @@ static void test_seq(void)
     CHECK(M.lk_word == LK_SOLO);
     write_pbm("lock_solo");
     leds(w);
-    CHECK(w[L_STEP0 + 4][2] == 255 && w[L_STEP0 + 4][0] == 170);  /* soloed: purple (0.12.0, q1: blue is slot 2) */
+    CHECKF(w[L_STEP0 + 4][2] > w[L_STEP0 + 4][0] && w[L_STEP0 + 4][0] > 0, "%d %d %d", w[L_STEP0 + 4][0], w[L_STEP0 + 4][1], w[L_STEP0 + 4][2]);   /* soloed: purple
+                                                         * (0.12.0, q1: blue is slot 2; 0.12.x: also selected by the
+                                                         * double click's first press: blinking) */
     now_ms += 500;
     step(8, 1), step(8, 0), step(8, 1), step(8, 0);     /* another: one solo a firmware */
     CHECK(M.fsolo[0] == 9 && M.seq.fx.ffilt[0] == 1u << 8);
@@ -490,9 +492,9 @@ static void test_speech(void)
     hold_track(1);
     CHECKF(strstr(said, "Felucca, layouts, Drum, Track 2") != NULL, "said \"%s\"", said);
     clear(), step(5, 1), step(5, 0);
-    CHECKF(strstr(said, "selected") == NULL, "said \"%s\"", said);   /* (0.11.0: not before the click is one) */
-    adv_ms(RFM_MOVE_DOUBLE_MS + 30);
-    CHECKF(strstr(said, "Track 6, selected") != NULL, "said \"%s\"", said);
+    CHECKF(strstr(said, "Track 6, selected") != NULL, "said \"%s\"", said);   /* (0.12.x: at the press) */
+    clear(), adv_ms(RFM_MOVE_DOUBLE_MS + 30);
+    CHECKF(strstr(said, "selected") == NULL, "said \"%s\"", said);   /* (nothing more after) */
     track(1, 0), rest(), clear();
     tap_track(3);
     CHECKF(strstr(said, "Mixer") != NULL, "said \"%s\"", said);

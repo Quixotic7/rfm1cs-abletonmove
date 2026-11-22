@@ -118,8 +118,10 @@ the 16 tracks for firmware n: **a click selects** one (it is routed to firmware 
 edited), **a double click solos** it on firmware n only (one solo a firmware: another moves it; again: off, the
 routing as it was; (0.11.0) the solo stays when another track is selected), **a hold** routes it to firmware n or not;
 Copy, Delete and Mute + a step copy, clear, mute a track. (0.11.0, `design/UX-RULES.md`) the three are gated: the hold
-acts once held 300 ms, while still down; the click acts once the double click's 300 ms have passed with no second
-press (or the Track button is let go, or something else is pressed); the double click acts at its second press. The
+acts once held 300 ms, while still down; the double click acts at its second press. (0.12.x, the owner's) the click
+acts at the press: the track selected (routed to firmware n if it was not) at once, the double click and the hold
+start from it (the double click's track stays selected; the hold un-routes a track that was routed before the press,
+which stays selected, and leaves a not-routed one routed); the window and the release show nothing more. The
 steps' lights: a track not routed is **dark**, a routed one the slot's colour, the selected one **blinks**, the
 solo purple (0.12.0), a pressed one white. The jog the root, Up / Down the octave, the knobs (in a note layout) the track's CC
 numbers, the volume the slot's level. The screen (0.11.0): the slot at a glance: the firmware, its layout (a padlock:
@@ -295,8 +297,8 @@ so). Back closes layers, and with none flips back to
 the slot's layout (0.8.0, proposal 2).
 
 **Tracks: a firmware Track held** (0.8.0; was Track 4 held): the lock menu (see "The Track buttons"). The 16 steps are
-the 16 tracks: **a click selects** one for that firmware, **a double click solos** it (on / off), **a hold**
-(300 ms) routes it to that firmware or not (gated, 0.11.0: see "The Track buttons"). Solo: while any track is soloed only the soloed tracks sound.
+the 16 tracks: **a click selects** one for that firmware (0.12.x: at the press), **a double click solos** it (on /
+off), **a hold** (300 ms) routes it to that firmware or not (see "The Track buttons"). Solo: while any track is soloed only the soloed tracks sound.
 While it is held the knobs set the bank's CC numbers ("K3 CC74"), Up / Down the rate, the jog the MIDI channel; Copy /
 Delete + a step copy / clear a track; Mute + step mutes. The pads do nothing while it is held. The track view shows which of the 16 (a 4 x
 4 in the top-right corner: tracks 1-4 the first column, the selected one filled). Session view's Left / Right move
