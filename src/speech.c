@@ -23,7 +23,7 @@ static const char *const LAYOUT_LONG[4] = { "Scale", "Chromatic", "Drum", "Octav
 static const char *const MSG_WORDS[] = {
     "", "No empty clip", "Full", "Load failed", "Captured", "Undo", "Redo", "Copied", "Pasted", "", "Quantized",
     "Loop doubled", "External tempo", "Duplicated", "Cleared", "Capture cleared", "Sync: AUTO", "Sync: INT",
-    "Sync: EXT", "Full velocity", "Pad velocity", "Metronome on", "Metronome off", "New clip", "Clip cleared" };
+    "Sync: EXT", "Full velocity", "Pad velocity", "Metronome on", "Metronome off", "New clip", "Clip cleared", "Not routed" };
 static const char *const FN_WORDS[RFM_MOVE_FN_N] = { "None", "Restart", "Reverse", "Forward", "Flip", "Random",
                                                      "Random function", "Leap", "Jump", "Repeat" };
 
@@ -956,6 +956,8 @@ void rfmv_say_tick(rfm_move_t *m)
             due = 1;
         m->say_hold = (uint8_t)hs;
     }
+    if (m->say_now[0])
+        due = 1;                                        /* (0.12.0: words the clock's poll gave, a select step's hold) */
     if (m->say_turn && rfmv_now_ms(m) - m->say_turn_ms >= RFM_MOVE_SAY_TURN_MS) {
         m->say_turn = 0;                                /* (0.6.7) a knob turned, no readout (its range's end): its
                                                          * "Name: value" again, once; no readout known: the detents */

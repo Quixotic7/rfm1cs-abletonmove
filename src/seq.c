@@ -669,7 +669,7 @@ void rfmv_seq_init(rfm_move_t *m)
     q->nlast = 0;
     q->step_first = -1;
     q->loop_first = -1, q->loop_tap = -1, q->tstep_tap = -1, q->pad_tap = -1, q->proj_held = -1;
-    q->tk_pend = -1, q->sm_k = -1;
+    q->tk_pend = -1, q->sm_k = -1, q->cs_step = -1, q->cs_k = -1;
     q->rng = 0x9E3779B9u;
     q->qstrength = 100;
     q->group = 1;

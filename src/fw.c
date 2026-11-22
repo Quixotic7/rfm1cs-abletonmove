@@ -1181,6 +1181,19 @@ static void set_level(rfm_move_t *m, int t, int d)
     act_fw(m, RFM_MOVE_ACT_FW_LEVEL, t, f->slot_fw[t], v);
     lib_changed(m);
 }
+/* (0.12.0) a slot's level from elsewhere (session view, a select step held + volume): 1 done (its popup up) */
+int rfmv_fw_level_turn(rfm_move_t *m, int slot, int d)
+{
+    if (slot < 0) {                                     /* (-1: the level popup goes) */
+        if (pop_up(m, FP_LEVEL))
+            pop_clear(m);
+        return 0;
+    }
+    if (!m->fw.host || slot >= nslots(m) || !slot_loaded(m, slot))
+        return 0;
+    set_level(m, slot, d);
+    return 1;
+}
 /* the volume knob with Track 1..3 held (the browser on, any mode): that slot's level. 1 taken */
 int rfmv_fw_volume(rfm_move_t *m, int d)
 {

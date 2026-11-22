@@ -1484,6 +1484,9 @@ static void on_touch(rfm_move_t *m, int k, int on)
     }
     if (rfmv_t4_menu(m))
         return;
+    if (k <= 8 && rfmv_seq_cs_touch(m, k))
+        return;                                         /* (0.12.0) a select step held: its clip's settings take the
+                                                         * knobs (no track popup, no select) */
     if (rfmv_sess_on(m) && !m->seq.smenu && k < 8) {    /* (0.11.0: an open Shift menu has the knobs there too) */
         if (k < RFM_MOVE_SV_COLS)                       /* (session: a knob touched selects the track in its column;
                                                          * 0.10.0: and shows its popup while touched) */
@@ -1812,6 +1815,8 @@ int rfmv_menu_knobs(const rfm_move_t *m)
                 return rfmv_slot_lay(m, t) >= RFM_MOVE_LAY_SCALE ? 0xFF : 0;
             }
     }
+    if (rfmv_seq_cs_knobs(m) >= 0)
+        return rfmv_seq_cs_knobs(m);                    /* (0.12.0) a select step held: Launch, After */
     if (m->seq.smenu)
         return rfmv_seq_menu_knobs(m);
     return -1;

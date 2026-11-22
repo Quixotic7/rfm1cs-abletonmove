@@ -190,7 +190,8 @@ enum { SEQ_M_SHIFT = 1, SEQ_M_COPY = 2, SEQ_M_DELETE = 4, SEQ_M_MUTE = 8, SEQ_M_
 enum { SEQ_MSG_NONE = 0, SEQ_MSG_NOCLIP, SEQ_MSG_FULL, SEQ_MSG_LOADFAIL, SEQ_MSG_CAPTURED, SEQ_MSG_UNDO,
        SEQ_MSG_REDO, SEQ_MSG_COPIED, SEQ_MSG_PASTED, SEQ_MSG_CUT, SEQ_MSG_QUANT, SEQ_MSG_DOUBLE, SEQ_MSG_EXTTAP,
        SEQ_MSG_DUP, SEQ_MSG_CLEARED, SEQ_MSG_CAPCLEAR, SEQ_MSG_CLK_AUTO, SEQ_MSG_CLK_INT, SEQ_MSG_CLK_EXT,
-       SEQ_MSG_FULLVEL_ON, SEQ_MSG_FULLVEL_OFF, SEQ_MSG_METRO_ON, SEQ_MSG_METRO_OFF, SEQ_MSG_NEWCLIP, SEQ_MSG_CLIPCLEAR };
+       SEQ_MSG_FULLVEL_ON, SEQ_MSG_FULLVEL_OFF, SEQ_MSG_METRO_ON, SEQ_MSG_METRO_OFF, SEQ_MSG_NEWCLIP, SEQ_MSG_CLIPCLEAR,
+       SEQ_MSG_NOTROUTED };                             /* (0.12.0: a select step held + volume, a track that reaches none) */
 void rfmv_seq_ui_release(rfm_move_t *m);
 void rfmv_seq_srec_now(rfm_move_t *m);                 /* Capture, playing, the clip empty: Rec records at once */
 #define RFM_MOVE_TRIG_NLENS 17                         /* the TRIG page's lengths (seq_ui.c LENS) */
@@ -214,7 +215,12 @@ void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now);
 void rfmv_shift_icons(const rfm_move_t *m, uint8_t icon[16]);   /* the Shift layer's icon LEDs (0 off) */
 void rfmv_seq_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0], uint8_t white[13]);
 void rfmv_seq_screen(const rfm_move_t *m, mr_canvas_t *cv);
-int rfmv_seq_held_icon(const rfm_move_t *m);            /* (0.12.0) Delete held: 1 (scissors), Copy: 2 */
+int rfmv_seq_held_icon(const rfm_move_t *m);
+int rfmv_seq_cs_on(const rfm_move_t *m);                /* (0.12.0) a select step held: its clip's settings shown */
+int rfmv_seq_cs_touch(rfm_move_t *m, int k);
+int rfmv_seq_cs_knobs(const rfm_move_t *m);             /* .. its knobs lit (bits), -1 not shown */            /* .. a knob touched while it is held: 1 taken */
+void rfmv_seq_cs_words(const rfm_move_t *m, int k, char *o, int cap);   /* .. words (k -1: the whole screen) */
+int rfmv_fw_level_turn(rfm_move_t *m, int slot, int d); /* (0.12.0) a slot's level (the Mixer's), its popup; 0 empty */            /* (0.12.0) Delete held: 1 (scissors), Copy: 2 */
 void rfmv_seq_track_menu(const rfm_move_t *m, mr_canvas_t *cv);   /* Track 4 held */
 void rfmv_seq_msg(rfm_move_t *m, int msg);
 const char *rfmv_seq_msg_text(const rfm_move_t *m);    /* the message up now, NULL none */

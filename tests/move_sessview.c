@@ -1381,6 +1381,101 @@ static void test_sv_launch_q(void)
     CHECK(!M.seq.cset[SEQ_CLIP(6, 7)] && !clip_has(6, 7));
 }
 
+/* ================================================================ (0.12.0) a select step held: the clip's settings, the level === */
+static int has_text(int y0, int y1) { return lit_rows(y0, y1) > 20; }
+static void test_sv_clipset(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    static uint8_t g[MR_SCREEN_BYTES];
+    int i, l1, l0;
+    session_view();
+    owners_grid();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    rest(), clear();
+    screen(), memcpy(g, SCR, sizeof g);
+    /* a quick click on column 2's select step: it selects, nothing else shows (before, while, after) */
+    step(2, 1), adv_ms(100);
+    CHECK(M.seq.sel_track == 1 && !rfmv_seq_cs_on(&M));
+    step(2, 0), adv_ms(400);
+    screen();
+    CHECK(!rfmv_seq_cs_on(&M) && !memcmp(g, SCR, sizeof g) && !strstr(said, "Launch"));
+    /* held 300 ms: track 2's selected clip's settings while it is down; knobs 1, 2 lit, 3..8 dark; said */
+    clear();
+    step(2, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS - 60);
+    CHECK(!rfmv_seq_cs_on(&M));
+    adv_ms(100);
+    CHECK(rfmv_seq_cs_on(&M));
+    CHECKF(strstr(said, "Track 2 clip 1, Launch: Global, After: Loop") != NULL, "said \"%s\"", said);
+    screen(), leds(w);
+    write_pbm("clipset");
+    CHECK(lit(w[L_RING0 + 0]) && lit(w[L_RING0 + 1]) && !lit(w[L_RING0 + 2]) && !lit(w[L_RING0 + 7]));
+    CHECK(has_text(0, 16) && has_text(18, 64) && memcmp(g, SCR, sizeof g));
+    /* knob 1 touched: its name and value (the header's tick long, the row underlined); turned: Instant, then 1 Bar */
+    clear(), raw(0x90, 0, 127);
+    CHECKF(strstr(said, "Launch: Global") != NULL, "said \"%s\"", said);
+    screen();
+    write_pbm("clipset_launch");
+    CHECK(px(3, 11) && px(12, 11) && !px(19, 12) && px(22, 11));
+    clear(), knob(0, RFM_MOVE_LIST_TICKS);
+    CHECKF(M.seq.cset[SEQ_CLIP(1, 0)] == RFM_MOVE_LQ_INSTANT + 1 && strstr(said, "Launch: Instant") != NULL, "said \"%s\"", said);
+    knob(0, 2 * RFM_MOVE_LIST_TICKS);
+    CHECK(M.seq.cset[SEQ_CLIP(1, 0)] == RFM_MOVE_LQ_BAR + 1);
+    raw(0x80, 0, 0);
+    /* knob 2: After Next; knobs 3..8: dead (no popup, no select, nothing) */
+    clear(), knob(1, RFM_MOVE_LIST_TICKS);
+    CHECKF((M.seq.cset[SEQ_CLIP(1, 0)] & RFM_MOVE_CS_AFTER_NEXT) && strstr(said, "After: Next") != NULL, "said \"%s\"", said);
+    screen();
+    write_pbm("clipset_after");
+    raw(0x90, 4, 127), knob(4, 5), raw(0x80, 4, 0);
+    CHECK(M.seq.sel_track == 1 && M.pop != POP_TRKINFO && M.pop != POP_CC && M.seq.cset[SEQ_CLIP(1, 0)] == (RFM_MOVE_LQ_BAR + 1 | RFM_MOVE_CS_AFTER_NEXT));
+    /* the pads still work while it is held */
+    now_ms += 1000, hit(PAD(0, 1));
+    CHECK(M.seq.sel_track == 0 && rfmv_seq_cs_on(&M));
+    /* let go: the grid again; nothing at the release */
+    step(2, 0), adv_ms(20);
+    CHECK(!rfmv_seq_cs_on(&M) && M.seq.cset[SEQ_CLIP(1, 0)] == (RFM_MOVE_LQ_BAR + 1 | RFM_MOVE_CS_AFTER_NEXT));
+    leds(w);
+    CHECK(lit(w[L_RING0 + 3]));                         /* (the knobs as session view's again) */
+    press(MR_CC_UNDO);
+    CHECK(M.seq.cset[SEQ_CLIP(1, 0)] == RFM_MOVE_LQ_BAR + 1);   /* (one undo a change) */
+    rest();
+    /* a knob touched before the 300 ms: shown at once */
+    step(6, 1), raw(0x90, 1, 127);
+    CHECK(rfmv_seq_cs_on(&M) && M.seq.sel_track == 3);
+    raw(0x80, 1, 0), step(6, 0), rest();
+    /* an empty selected slot: "No clip", the knobs dark and dead */
+    step(8, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 50);
+    screen(), leds(w);
+    write_pbm("clipset_empty");
+    CHECK(rfmv_seq_cs_on(&M) && M.seq.sel_track == 4 && !lit(w[L_RING0 + 0]) && !lit(w[L_RING0 + 1]) && has_text(24, 48));
+    knob(0, 3 * RFM_MOVE_LIST_TICKS);
+    CHECK(!M.seq.cset[SEQ_CLIP(4, 0)] && !clip_has(4, 0));
+    step(8, 0), rest();
+    /* the volume knob: the level of the firmware the track plays: the one played (felucca, slot 2) when it reaches it,
+     * named in the level popup; else the lowest slot it reaches; none: "Not routed", nothing changes */
+    step(2, 1);
+    l1 = M.fw.level[1], l0 = M.fw.level[0];
+    clear(), knob(8, -6);
+    CHECK(M.fw.level[1] == l1 - 6 && M.fw.level[0] == l0 && rfmv_seq_cs_on(&M) && find(RFM_MOVE_ACT_FW_LEVEL) && !count(RFM_MOVE_ACT_MASTER));
+    screen();
+    write_pbm("clipset_level");
+    M.seq.fx.ffilt[1] &= (uint16_t)~(1u << 1);
+    knob(8, -3);
+    CHECK(M.fw.level[0] == l0 - 3 && M.fw.level[1] == l1 - 6);
+    for (i = 0; i < RFM_MOVE_FW_SLOTS; i++)
+        M.seq.fx.ffilt[i] &= (uint16_t)~(1u << 1);
+    clear(), knob(8, -3);
+    screen();
+    write_pbm("clipset_notrouted");
+    CHECKF(M.fw.level[0] == l0 - 3 && M.fw.level[1] == l1 - 6 && !count(RFM_MOVE_ACT_MASTER) && strstr(said, "Not routed"), "said \"%s\"", said);
+    step(2, 0);
+    for (i = 0; i < RFM_MOVE_FW_SLOTS; i++)
+        M.seq.fx.ffilt[i] |= (uint16_t)(1u << 1);
+    /* the volume alone (no step held): MASTER, as before */
+    rest(), clear(), knob(8, 1);
+    CHECK(count(RFM_MOVE_ACT_MASTER) == 1);
+}
+
 int main(void)
 {
     test_scenes();
@@ -1398,6 +1493,7 @@ int main(void)
     test_sv_anywhere();
     test_sv_scenes();
     test_sv_launch_q();
+    test_sv_clipset();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }
