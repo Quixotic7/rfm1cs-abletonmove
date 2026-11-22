@@ -41,6 +41,10 @@ once. Its effect is what the double click would do anyway, so nothing wrong show
   it has no job for are dark and dead.
 - What a layer does not touch at all stays with the layer under it (a menu on the knobs and the jog leaves the pads
   playing).
+- A held control (a step, Loop, Copy, Delete, Mute, Shift) takes over an open menu for as long as it is held, with
+  its screen and the controls it uses; the menu is back at its release. A tap that shows a popup (a Track button)
+  shows it over the menu and returns.
+- Menu never closes a menu: in a note layout it flips the view under it, in the FM-1 layout it is the firmware's key.
 
 ## R4. A knob in use is lit
 
@@ -58,6 +62,10 @@ Touching a knob in use shows its name; turning it shows its value.
 
 - The step is **a function** here (a toggle, a shortcut, it opens a menu): its icon is lit.
 - The step is **a step, a track, a page or a length**: its icon is dark.
+- A function goes on the step whose printed icon means it (the Shift layer follows the Move's own icons); a function
+  with no matching icon does not go on a Shift step.
+- At rest (no Shift, no Track held) no icon is lit in session view or track view.
+- The browser's filter steps light their icon only for a filter that is on.
 
 ## Layers
 
@@ -67,11 +75,17 @@ From the top (what takes an input first) down. A layer lists what it takes; ever
 2. **A firmware's takeover**: what the firmware claims.
 3. **Back**, **the Track buttons**: always their own (a click, a double click, a hold's menu).
 4. **A held Track's menu**: pads, steps, knobs, jog, Up / Down. In session view: pads and steps only (the routing).
-5. **A Shift menu** (Workflow, Tempo, Groove, Layout, Keys, Velocity, Arp, Record): knobs, jog, jog click, the
-   screen; the arp's lanes also the step keys. Back closes it.
+5. **A held Track 4** (0.12.0): the whole layer once held 300 ms (or something pressed meanwhile): the step keys (the
+   Shift shortcuts), pads 1 and 2, Record, Play, Capture, Undo, Loop, Sample; everything else dark and dead. A menu
+   it opened owns the knobs and the jog.
 6. **The Shift layer** (Shift held or latched): the step keys (shortcuts, icons lit).
-7. **A held modifier** (Loop, Copy, Delete, Mute): the step keys, some pads.
-8. **The view**: the projects view (browser, Mixer, Routing, project grid), or session view, or the track view.
-9. **The layout**: the FM-1 layout or a note layout.
+7. **A held modifier** (Loop, Copy, Delete, Mute; Loop and Mute also latched by a quick click): the step keys, some
+   pads, the screen; Loop the jog.
+8. **A held step** (track view: its popups, the knobs, the jog, the volume knob, the arrows; an arp lane step: the
+   pads; a session select step: the clip's settings).
+9. **A Shift menu** (Workflow, Tempo, Groove, Layout, Keys, Velocity, Arp, Record): knobs, jog, jog click, the
+   screen; the arp's lanes also the step keys. Back closes it.
+10. **The view**: the projects view (browser, Mixer, Routing, project grid), or session view, or the track view.
+11. **The layout**: the FM-1 layout or a note layout.
 
 The lights and the screen follow the same order: the layer that takes a control lights it and names it.

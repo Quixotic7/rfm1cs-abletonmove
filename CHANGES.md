@@ -75,6 +75,57 @@ everything. The project blob is version 8 (versions 1..7 load, with the defaults
   than span - 1 steps and at most span. Step 1 held + step 2 again and again gives 2, 1, 2.
 - New `rfm_move_seq_t` fields after `arp_was`.
 
+**Buttons, menus and the audit** (l2, l3, a2, a5..a8, a10, a12..a16, a17, q1, q2)
+- **Held controls take over an open Shift menu** (l3, a17): a held step has the knobs, the jog, the volume knob and the
+  arrows over it (its popups drawn over the menu; `rfmv_seq_held_takes`); Loop held shows its pages and has the jog,
+  latched after the menu was opened the same until Back (`rfmv_seq_loop_over`, by the layers' order); Copy, Delete,
+  Mute held show their pictures (`rfmv_seq_mod_over`); Shift's shortcuts as ever (the arp's lane pages give the step
+  keys to any held modifier). The menu keeps its knobs, lit, under all but a held step, and is back at the release. A
+  Track 1..3 tap under a menu: the slot changes, its popup a second, the menu stays (tested now).
+- **Menu never closes a menu** (l2): in the FM-1 layout Menu is the FM-1's HOME with a menu open; Global settings
+  lets Menu pass too (the view flips under it). Only Back (and Shift + the menu's own step) closes one.
+- **Loop and Mute** (a2): a quick click (let go within `RFM_MOVE_SEQ_HOLD_MS`, nothing else pressed: `mods_other`)
+  latches the layer, a click again or Back ends it; a hold is the layer until the release (held longer and let go
+  unused: no latch). Mute's latch is a layer of its own (`LY_MUTE`, `mute_latch`; Back's list and light); Mute's tap
+  no longer mutes the selected track. Said "Mute on" / "Mute off".
+- **Every Shift menu names its knobs** (a5): the arp's header generalised (`smenu_hk`, `smenu_head`, `smenu_top`):
+  the touched or just turned knob's name and value on top (the jog's when it turned), a tick a knob in use at y 17,
+  the active one long; at rest the menu's own top. Workflow, Tempo, Groove, Layout, Keys & Scales (its own screen now:
+  the key on top, the root row, the layouts' icons, Global / Track), Velocity, Record laid out for it (Groove's amount
+  no longer runs into Global / Track). A turn at a range's end says the header's words.
+- **A menu over the Mixer, Routing, the FM-1 layout** (a6, a7): an open menu owns the knob lights (`rfmv_menu_knobs`
+  asks for it first), the touch (its header; no FM-1, CC or track popup) and the turns (never the firmware). Global
+  settings has its jog over the projects view (it went to the clock source). Its knobs' jobs from before 0.6.2 (clock,
+  velocity, level, popups) were a leftover: removed, dark and dead.
+- **Track 4 held is a whole layer** (a8): nothing of the hold before its 300 ms but its own light (the icons waited no
+  more); then everything at once, or at once when anything is pressed meanwhile (`rfmv_hold_shown`). Up, Down, Left,
+  Right, Menu, Copy, Delete, Mute, Shift, the other pads, the knobs and the jog are dark and dead in it (`t4_menu_white`;
+  Copy, Delete, Mute had no Track 4 job in the code: README's "Track 4 held + Delete / Copy" rows were the lock menu's,
+  Tracks 1..3 since 0.8.0, and say so now). A menu a Track 4 shortcut opened owns the knobs and jog while it is down
+  (`t4_opened`).
+- **FILL shows** (a10): the Loop light blinks every 100 ms, "Fill" on the whole screen, and a diagonal of pads in the
+  track's colour travels across the pads (`rfmv_seq_fill_on`; some 60 pad LED writes a second, 8 at most at once);
+  pads still play; all back at once.
+- **Knob lights that match** (a12): the TRIG page's knob 8 has no popup; a held step's unlocked CC knobs dim; the
+  project grid's knob 1 only while a project's pad is held, its touch "Colour" and the colour's name
+  (`rfmv_proj_colour_name`); the FM-1 layout's knobs with a "" label (no job) dark.
+- **Dead presses** (a13): Undo / Redo with nothing: "None" a second, spoken (`SEQ_MSG_NOUNDO`); Back's light only
+  while its click has a layer to close (`rfmv_back_has`), full at its press; Shift + Sample's light dark.
+- **The browser's filter icons** (a14): lit only for a filter that is on (Capture held: the firmware's tags;
+  `rfmv_fw_step_icons`); a step white at its press (`fw.steps_down`).
+- **Knob popups over a takeover's screen** (a15): an unclaimed knob's popup over the firmware's screen, in Global
+  settings' popup place (whole screen or the left half). README: a firmware that sends readouts shows its values;
+  without, the detents (a16).
+- **A colour per firmware slot** (q1): orange, blue, yellow (`RFMV_SLOT_RGB`; `rfmv_fw_rgb` is the slot's now) on the
+  Track buttons, the routing lights, session view's knobs, the Mixer's meters, Routing's slot pads; session view's
+  columns the lowest slot their track reaches (none: grey; no host: the track colours). The browser keeps the
+  firmware's colour. Solo purple (was blue).
+- **Step 13 and clearing a clip** (q2): Shift + step 13 has no job (dark, dead); Delete held + Play clears the selected
+  clip (what step 13 did), the transport as it was, in track and session view.
+- `design/UX-RULES.md`: R3 and R6 additions, the layers reordered (held controls above the Shift menus).
+- New `rfm_move_seq_t` fields after `oct_ms` (`mute_latch`, `mute_end`, `loop_ms`, `mute_ms`, `fill_ms`, `t4_opened`,
+  `mods_other`), `rfm_move_fw_state_t.steps_down` at its end: rebuild everything.
+
 ## 0.11.0 (2026-11-21, not released)
 
 The owner's feedback on the arp, the held Track buttons and session view, and their UX rules (`design/UX-RULES.md`:

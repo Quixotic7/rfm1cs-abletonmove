@@ -120,8 +120,8 @@ routing as it was; (0.11.0) the solo stays when another track is selected), **a 
 Copy, Delete and Mute + a step copy, clear, mute a track. (0.11.0, `design/UX-RULES.md`) the three are gated: the hold
 acts once held 300 ms, while still down; the click acts once the double click's 300 ms have passed with no second
 press (or the Track button is let go, or something else is pressed); the double click acts at its second press. The
-steps' lights: a track not routed is **dark**, a routed one the firmware's colour, the selected one **blinks**, the
-solo blue, a pressed one white. The jog the root, Up / Down the octave, the knobs (in a note layout) the track's CC
+steps' lights: a track not routed is **dark**, a routed one the slot's colour, the selected one **blinks**, the
+solo purple (0.12.0), a pressed one white. The jog the root, Up / Down the octave, the knobs (in a note layout) the track's CC
 numbers, the volume the slot's level. The screen (0.11.0): the slot at a glance: the firmware, its layout (a padlock:
 latch on), the key, and the 16 tracks (a block: routed, a dot: not, underlined: the selected one, a bar over it: the
 solo); a step acted: "Felucca / Track 3 / Not Routed" over the same 16 tracks. **In session view** the held Track is
@@ -144,7 +144,10 @@ Back's click does not come either (a takeover that has Back: neither Back nor Me
 Menu, alone or with any of them, returns to the active slot's own layout: a note layout's track view, or the FM-1
 layout (its takeover). Both ways are named (`POP_VIEW` "Session" / "Sequencer"; the FM-1 layout: its layout popup).
 
-**The LEDs:** Track 1..3 the loaded firmware's colour (an empty slot faint white), full for the one played (on the
+**The LEDs:** Track 1..3 (0.12.0, q1, the owner's) the slot's own colour: Track 1 orange, Track 2 blue, Track 3
+yellow, on everything that means that slot (its Track button, the routing lights under a held Track, session view's
+knobs and columns, the Mixer's meters and Routing's slot pads; the browser keeps each firmware's own colour; a solo
+is purple). An empty slot faint white, full for the one played (on the
 sequencer side, dim; a held one full); Track 4 red, full on the sequencer side (the Sequencer, the Mixer, Routing, the
 projects). A host with no firmware list (or `RFM_MOVE_CAP_SLOTS` off) has one slot: Tracks 2 and 3 are dark and do
 nothing; with no FX (`RFM_MOVE_CAP_FX` off) Track 4's tap opens the projects.
@@ -166,10 +169,14 @@ Layout, Keys & Scales, the arp, Full Velocity, New Clip, Double Loop, Quantize; 
 Play, Capture, Undo, Loop and Sample their Shift + button (Shift + Record: the record settings). A menu opened this way
 stays open after Track 4 is let go (full width; the jog, the knobs and, where it uses them, the pads and steps are
 the menu's) until Back, which closes it. While Track 4 is held its menu is on the screen (pad 1 the Mixer, pad 2
-Routing) and the icons under the steps light.
+Routing) and the icons under the steps light. (0.12.0, a8) **Track 4 held is a whole layer**: nothing of the hold
+shows before its 300 ms but the button's own light; then the screen, the icons, the step colours and pads 1 and 2 all
+at once (or at once when anything is pressed meanwhile: that press is the hold). Up, Down, Left, Right, Menu, Copy,
+Delete, Mute, Shift, the other pads, the knobs and the jog have no job in it: dark and dead (their releases pass).
+A menu a Track 4 shortcut opened owns the knobs and the jog, lit and named, while Track 4 is still down.
 **Popup width (0.5.9, the owner's).** FM-1 mode's knob, label and readout popups (and MIDI's NOTES view's) cover
 the whole screen by default, with bigger words: the name on a 2x row, the value at 4x or 3x, a 3-pixel bar. Global
-Settings' knob 4 (`Popup Full` / `Popup Half`, the setting `pop_half`) gives today's left half back, the FM-1's
+Settings' Popup size row (`Popup Full` / `Popup Half`, the setting `pop_half`; 0.12.0: its knob 4 was a leftover, gone) gives today's left half back, the FM-1's
 screen staying on the right. Where the text below says the left half, it is the popup's place, either width.
 
 A knob touched shows its name (the firmware's label, else its printed one) in the left half, with no value yet
@@ -195,6 +202,15 @@ title, else the knob's label), then the value, whatever the readout's kind. A re
 its own, for the time the firmware gives (else a second). Left half: the title on the first row, the value at 4x or
 3x when it fits (else up to two 2x rows), a 2-pixel bar at the bottom when it has one (bipolar: from the middle). The jog wheel (SELECT) has the same popup
 while it turns (the firmware's SELECT label, its detents), gone and counted from 0 again a second after it stops.
+
+**For firmware authors (0.12.0, a16).** In the FM-1 layout a knob's turn shows the firmware's own value only when the
+firmware sends readouts (rd1, `rfm_move_readout`): a firmware that sends them gets its real values on the Move; one
+that does not shows the detents turned ("K1 +3"). A label "" (`rfm_move_set_labels`) says the knob has no job: its
+light is dark and it shows nothing (0.12.0; without labels every mapped knob stays lit).
+
+**Over a takeover's screen (0.12.0, a15, the owner's).** A knob the takeover leaves to the FM-1 (not claimed) shows
+the same popup over the takeover's screen while touched and its second after a turn, in the popups' place (Global
+settings' Popup size: the whole screen, or the left half with the firmware's screen on the right).
 
 | Move | FM-1 |
 |---|---|
@@ -325,7 +341,9 @@ its 8 columns through the 16 tracks.
 
 **Pages and the loop.** A clip's loop is a start and a length (`lstart`, `len`: any pages of the 16).
 
-- **Loop held, or latched: page edit** (a tap on Loop latches it, its LED glowing, until a tap on Loop or Back): the
+- **Loop held, or latched: page edit** (0.12.0, a2, the owner's: a quick click on Loop (let go within 300 ms,
+  nothing else pressed) latches it, its LED glowing, until a click on Loop or Back; held, the same from the press,
+  ending at the release: a hold let go unused does not latch): the
   steps are the 16 pages: the loop's in the track's colour, the one shown white, the playing one pulsing, the clip's
   others (outside the loop) dim, past the clip off. A step: show that page. Two steps held: the loop is those pages and
   the ones between (the page shown moves into it). A double tap (400 ms): the loop is that page alone. The jog:
@@ -342,7 +360,9 @@ its 8 columns through the 16 tracks.
   in the popup's page strip), Copy + one copies it (dashed); Delete or Copy + an empty page pastes there (a pasted cut
   empties the clipboard). A page clipboard of its own, apart from the steps'. Back clears its mark.
 - **Shift + step 15**: double the loop (its content copied into the new pages). **Shift + Loop held: FILL** (FILL
-  conditions pass while it is held; the jog wheel held does nothing).
+  conditions pass while it is held; the jog wheel held does nothing). (0.12.0, a10) While it is on the Loop light
+  blinks fast, the screen says "Fill" (said once), and a diagonal of pads in the track's colour travels across the
+  pads (a diagonal every 100 ms, some 60 LED writes a second); the pads still play; all back at once when it ends.
 
 **The TRIG page** (the jog left of bank 1; its popup at 2x with a picture). Per held step, or with no step held
 every step with notes in the clip:
@@ -424,9 +444,10 @@ pasted over ("Step 9 replaced"); press C again: cut.
 | Delete or Copy held (track view and session view) | (0.12.0, the owner's) at the press an icon says so: Delete scissors, Copy two sheets (track view: the roll's top right; session view: the scene column, a row each). The roll over the 16 step cells as ever (copied dashed, cut crossed) | |
 | Copy tapped alone | nothing, in every view (0.12.0: it duplicated the clip, and dropped a waiting copy: Back does that; Shift + step 14 / 15 make and double clips) | |
 | Delete held + a pad (track view) | that note out of the clip | "Deleted C3" |
-| Track 4 held + Delete (let go) | the selected track cleared (no clipboard) | "Track 1 cleared" |
-| Track 4 held + Delete held + a step | that track cleared | "Track 3 cleared" |
-| Track 4 held + Copy held + a step, then another step | a track copied onto another | "Copied track 2" |
+| Track 1..3 held + Delete (let go) | the selected track cleared (no clipboard) (0.12.0: these three were written "Track 4 held" since the lock menu moved to Tracks 1..3 in 0.8.0; Track 4's hold has no Copy, Delete or Mute) | "Track 1 cleared" |
+| Track 1..3 held + Delete held + a step | that track cleared | "Track 3 cleared" |
+| Track 1..3 held + Copy held + a step, then another step | a track copied onto another | "Copied track 2" |
+| Delete held + Play | (0.12.0, q2) the selected clip cleared, the transport as it was | "Clip cleared" |
 
 - **Copy held**: a step (or clip) with content is copied; an empty step (or slot) gets the clipboard pasted (a copy
   or a cut). Copy never overwrites a full step: pressing one copies it again (a group in the same hold).
@@ -471,34 +492,50 @@ the screen's corner while it records. (Tap tempo: Shift + step 5.)
 | Capture | Capture (above) |
 | Sample | the audio loop (above) |
 | Loop | held or latched: pages and the loop (above). Shift + Loop held: FILL |
-| Copy, Delete | copy, cut, paste (above) |
-| Undo | undo (multi-level); Shift + Undo: redo |
-| Mute | held: the screen shows the 16 tracks (with notes filled, muted crossed out); + step n or + clip: mute track n; alone: the selected track |
+| Copy, Delete | copy, cut, paste (above). Delete held + Play: the clip cleared (below) |
+| Undo | undo (multi-level); Shift + Undo: redo. (0.12.0, a13) Nothing to undo or redo: "None" a second |
+| Play with Delete held | (0.12.0, q2, the owner's) the selected track's selected clip cleared (its steps, locks, trigs; its length kept), "Clip Cleared", one undo; the transport as it was (track and session view) |
+| Mute | held: the screen shows the 16 tracks (with notes filled, muted crossed out); + step n or + clip: mute track n. (0.12.0, a2, the owner's) A quick click (let go within 300 ms, nothing else pressed) latches that layer (its light on) until Mute's click again or Back; a hold is the layer until its release. The tap no longer mutes the selected track |
 | Shift (the icons) | while Shift is held or locked (and in FM-1 mode while Track 1 is held), the white icon LEDs under the steps (CC 16..31) light every step with a shortcut: dim, full where it is on (a toggle on, its menu open); off otherwise and in MIDI and Control mode. Written on change only, like every LED; the step pads' own LEDs are separate |
-| Shift | double-tap (a tap, then a press within 300 ms): latched (its LED lit, every Shift combination without holding it); a press unlatches it. Shift + Sample: nothing (the Move has none) |
+| Shift | double-tap (a tap, then a press within 300 ms): latched (its LED lit, every Shift combination without holding it); a press unlatches it. Shift + Sample: nothing (the Move has none; 0.12.0: its light dark while Shift is held) |
 | Menu | Track <-> Session view (or out of the project grid). (0.11.0) An open Shift menu stays (Back closes it): the view flips under it, named a second. (0.12.0) Shift + Menu, Back held + Menu, Track 1..3 held + Menu: the same, from every layout (above); out of session view: the slot's own layout |
-| Back | the universal escape: closes the latest layer still on, one a click (a Shift menu, the project grid, Loop's latch, Shift's lock, the step / clip clipboard's marks, the page clipboard's); with none: (0.4.3) the projects view (never a mode change). Leaving Loop shows the sequencer at once |
+| Back | the universal escape: closes the latest layer still on, one a click (a Shift menu, the project grid, Loop's latch, Mute's latch, Shift's lock, the step / clip clipboard's marks, the page clipboard's); with none: nothing (never a mode change). Leaving Loop shows the sequencer at once. (0.12.0, a13) Its light: on only while there is a layer for its click to close, full at its press, else dark |
 | Track 1..4 | the modes (FM-1, MIDI, Control, Sequencer); Track 4 held in the sequencer: the tracks and the track's settings (above; the screen: layout, scale, what changed at 2x, the channel and the rate as strips) |
 
 **Shift + step** (the Move's printed functions, its manual's numbers; a menu opens on the screen, the same Shift +
 step or Back closes it):
 
-**The Shift menus** (all but Projects) take only the screen, the knobs (the volume knob where it uses it), the jog,
-Back and Session (Menu), which close them; the pads and steps keep doing what the mode under them does, so you can
-play while one is open (the owner's). Projects mode keeps its pad grid. The held-Track menus are not Shift menus:
-their pads and steps stay as they are.
+**The Shift menus** (all but Projects) take only the screen, the knobs (the volume knob where it uses it) and the
+jog; Back closes them (0.12.0, l2: Menu never does: in a note layout and session view it flips the view under the
+menu, in the FM-1 layout it is the firmware's HOME; Shift + the menu's own step closes it too). The pads and steps
+keep doing what the mode under them does, so you can play while one is open (the owner's). Projects mode keeps its
+pad grid. The held-Track menus are not Shift menus: their pads and steps stay as they are. (0.12.0, l3 + a17, the
+owner's) **Held controls take over an open menu while held**: a held step (its popups over the menu; the knobs, the
+jog, the volume knob and the arrows its own), Loop held (its pages and the jog; latched after the menu was opened:
+the same until Back), Copy, Delete and Mute (their pictures), Shift (its shortcuts on the steps; Shift + another
+menu's step switches to it). Except a held step they leave the menu its knobs, lit. At the release the menu is back
+with its knobs, jog and screen. A Track 1..3 tap under a menu: the slot changes, its popup a second, the menu stays.
+**Every menu names its knobs** (0.12.0, a5, as the arp's): the touched knob's (or the one turned last, for a second;
+or the jog's value when it turned) name and value in the top line, 2x where it fits ("Channel 2", "Scale Dorian");
+under it a tick at the place of each knob the menu uses, the active one long; at rest the top line is the menu's own
+(its title, its main value). A knob a menu does not use: dark, dead, no header. (0.12.0, a6, a7) An open menu owns
+the knob lights, the touch's header (no FM-1, CC or track popup), the turns and the jog in every view: over the
+Mixer, Routing, the browser, session view, the FM-1 layout. Global settings has its jog over the projects view too.
 
 **Knob LEDs in a menu**: while a held Track's menu or layer is shown, or a Shift menu or projects mode is open, only
 the knobs it uses are lit, in the menu colour (deep orange, 255 72 0, which no mode or bank uses; full while touched),
 the others off; the knobs' own colours come back when it ends. Each menu declares its knobs (`rfmv_menu_knobs`,
 `rfmv_seq_menu_knobs`): Track 2 knobs 1-2, Track 3 and Track 4 all 8, Track 1's Shift layer none, projects knob 1,
 Workflow 1-3, Tempo 1-2 (none while following), Groove 1-2, Layout 1, Keys & Scales 1-4, the arp all 8 (its lanes
-1-4), Record 1-2, Velocity 1, Global Settings none (0.6.2: the jog's list).
+1-4), Record 1-2, Velocity 1, Global Settings none (0.6.2: the jog's list; 0.12.0: its knobs' old jobs from before
+0.6.2 removed: dark and dead everywhere). (0.12.0, a12) The project grid's knob 1 only while a project's pad is held
+(its touch: "Colour" and the colour's name); the TRIG page's knob 8 dark with no popup; a held step's CC knobs with no
+lock dim (a turn writes one), locked ones by their value.
 
 | Step | Function |
 |---|---|
 | 1 Set Overview | the project grid |
-| 2 Global Settings | (0.6.2) a list on the jog wheel, sticky (Shift + step 2 again, or Back when not editing, or Session closes it). (0.6.10, the owner's direction A) On top the Move's battery: an icon filled to the charge and the percentage at 2x ("--" until the first STATUS: Move Remote's STATUS byte 4 as the surface reports it, taken as 0..100 %, clamped; the host passes it with `rfm_move_set_battery`), "GLOBAL" on the right, a rule under them. Rows (0.6.12: Speech first, then the others; four show, the list scrolls): Speech (Off, On, Jog: see Speech modes), Clock (Auto, Int, Ext; Int is the default (0.5.5); Auto follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), Velocity (the option, as the Velocity menu), Fixed level, Popup size (FM-1 mode's popups: Full, the default, or Half, 0.5.9), (0.12.0) Launch (when a clicked
+| 2 Global Settings | (0.6.2) a list on the jog wheel, sticky (Shift + step 2 again, or Back when not editing, closes it; 0.12.0, l2: Menu no longer does, and it has its jog over the Mixer and Routing too). (0.6.10, the owner's direction A) On top the Move's battery: an icon filled to the charge and the percentage at 2x ("--" until the first STATUS: Move Remote's STATUS byte 4 as the surface reports it, taken as 0..100 %, clamped; the host passes it with `rfm_move_set_battery`), "GLOBAL" on the right, a rule under them. Rows (0.6.12: Speech first, then the others; four show, the list scrolls): Speech (Off, On, Jog: see Speech modes), Clock (Auto, Int, Ext; Int is the default (0.5.5); Auto follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), Velocity (the option, as the Velocity menu), Fixed level, Popup size (FM-1 mode's popups: Full, the default, or Half, 0.5.9), (0.12.0) Launch (when a clicked
 clip, scene or stop takes effect: Instant, 1 Beat, 1 Bar (the default), 2 Bars, 4 Bars, Clip: the end of the loop the
 track plays; saved with the project, version 8; a clip's own Launch wins). Turn the jog: the selected row (inverted) moves; click: edit its value (the row framed, the value inverted between small arrows), the jog changes it; click again or Back: done. While it is open it owns the controls: no knob, pad, step or button reaches the FM-1, the firmware or the sequencer (the knobs do nothing; their touches show nothing); releases pass, so a pad held before it opened lets go; the Track buttons and Shift + step 2 pass |
 | 3 Workflow Settings | menu: the jog the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent) |
@@ -509,7 +546,7 @@ track plays; saved with the project, version 8; a clip's own Launch wins). Turn 
 | 9 Keys & Scales | menu: the jog or knob 1 the root, knob 2 the scale, knob 4 the layout. Knob 3: GLOBAL (the project's key and scale, the default; a new project starts with MIDI mode's) or TRACK (the track's own) |
 | 10 Velocity | menu, sticky (Back or Shift + step 10 closes it): the jog the option, DYNAMIC (as played), FIXED (every pad at the level; switching to it from another option sets the level to the last velocity played), SOFT (a light touch plays louder), LINEAR (the straight line: as played), HARD (it takes a firmer one); knob 1 the level 1..127 (FIXED's). The screen: the name big, the curve (played in, out), the level big with its bar (dotted while not FIXED). Every pad that plays goes through it, in every mode (MIDI notes, FM-1 keys, the sequencer's live notes, recordings and step entry). A setting (saved with the others), not the project's; its icon LED is full while FIXED |
 | 11 Repeat (arp) | menu: the track's arp, FIZZ's ARP (its defaults: 1/8, two octaves, QUANT 1/16). The jog turns its pages. Page 1: knobs PATTERN (UP .. AS PLAYED, 17), RATE (1/1 .. 1/64 of a bar, named as said: 1/16, triplets 1/16T, quintuplets 1/16Q), RANGE (octaves), CHANCE, MODE (OFF, ON, 1-ST, ONCE, HOLD), GATE, OCT DIST, QUANT (when a run starts: at once, or the next 1/n of the song's bars); the pattern's walk drawn. Pages 2 and 3: the MOD lane (x as played, . rest, - tie, R repeat, < lowest -oct, > highest +oct, " power chord, # every held note, 1..6 the n-th played) and the TRANSPOSE lane (-48..+48). (0.11.0) **The 16 step keys are the lane's 16 steps** (a press picks one; none reaches the clip while the lane is open); knob 1 its function or semitones, knob 2 the lane's length, knob 3 RESET (NORM, NOTE: a new note restarts it, MPAT / TPAT: as that lane comes round); knobs 4..8 dark and dead. The MOD lane is drawn as a sign a step (play a block, rest a low dash, tie a line, repeat a hollow block, lowest an arrow down, highest an arrow up, power chord two bars, chord three, a played note its number). **The header** names the touched knob and its value ("Gate 95%", 2x where it fits), or the one turned last for a second; at rest "Arp On" / "Arp Off" .. , "Mod", "Transpose". **The jog's click turns the arp off and on again** (as it was). Step 11's icon is full while the arp is on. (0.12.0, the owner's) **Shift + step 11 is gated**: the press turns the step white and nothing else; a click (let go before 300 ms) opens the menu at the release (open: closes it); held 300 ms it turns the arp off / on as the jog's click does, still down, and the menu stays as it was (its release: nothing). The hold and the jog's click show "Arp" over "On" / "Off" (or the mode it came back to) the whole screen for a second. **Off, the pictures are dimmed** (a 50 % checker over the walk and the lane; the header plain). **The lanes take the step keys** (the main page leaves them to the clip): on entering a lane page they flash white and a wave settles them left to right into the lane's lights (360 ms, 32 LED writes; a step pressed meanwhile works at once and ends it); back on the main page the clip's lights at once. A step past the lane's length is dark and dead. **Step 1 held + step n**: the lane's length n at that press (n again: 1; step n is not picked). **A lane step held** 300 ms (or a pad pressed while it is down) **takes the pads** as its shortcuts, none plays: MOD, the bottom row play, rest, tie, repeat, lowest, highest, power chord, chord (orange), the row above the played notes 1..6 (blue), the rest dark and dead; TRANSPOSE, the semitones -16..+15 from the bottom-left (rows -16..-9, -8..-1, 0..+7, +8..+15; 0 and the octaves green, the others dim blue). The step's value white; a pad sets it at the press, the header names it ("5 Tie", "3 +7"). Let go: the pads back at once; a quick click only picks. Notes held on the pads when it begins play on until let go. On, the track's pads play through it; recording, its notes go into the clip with their timing and length |
-| 13 Clear Clip | the clip cleared: its steps, locks and trigs (its length kept); "Clip Cleared"; one undo (the owner's; the Move's manual has nothing on step 13) |
+| 13 | (0.12.0, q2, the owner's) nothing: its icon dark (the clip is cleared with Delete held + Play; Clear Clip was here) |
 | 14 New Clip | the track's next empty slot gets a new clip, selected |
 | 15 Double Loop | double the loop |
 | 16 Quantize | the clip's micro timing quantized by the Workflow amount (100 %: on the grid) |
@@ -622,7 +659,7 @@ an empty slot faint white, a slot past the host's voices blinking slowly; in FX 
 |---|---|
 | Pads | a bank of up to 32 (A-Z; Favorites in their order); a pad selects; this track's firmware breathes, on the screen a white cell; one on another track a dotted cell |
 | Jog press / turn | load into this track (`FW_LOAD`; a bar until the host says) / the description, a row a detent (0: the name view) |
-| Steps 1 / 2, 3..7, 8..15, 16 | Favorites / All (installed); the catalog's five categories, eight user tags and (0.5.4) Fantasy (magenta: the Fantasy CFWs, virtual firmwares such as Elasticat and Ripple, `rfm_move_fw_t.virt`; built in, never a tag; a ninth user tag from an older library moves to a free step 8..15): (0.4.2) one at a time, radio-style (a step shows just that one; the lit one again: all categories), within Favorites / All (AND). (0.4.1) No favourites: All is shown on entering the view or a firmware track, and when the last one is removed; step 1 / 2 is still the user's choice, kept in the settings. (0.4.2) A tap acts on release; the popup names the step big, its state, and what the list shows (2 lines); holding a step shows that without changing it |
+| Steps 1 / 2, 3..7, 8..15, 16 | Favorites / All (installed); the catalog's five categories, eight user tags and (0.5.4) Fantasy (magenta: the Fantasy CFWs, virtual firmwares such as Elasticat and Ripple, `rfm_move_fw_t.virt`; built in, never a tag; a ninth user tag from an older library moves to a free step 8..15): (0.4.2) one at a time, radio-style (a step shows just that one; the lit one again: all categories), within Favorites / All (AND). (0.4.1) No favourites: All is shown on entering the view or a firmware track, and when the last one is removed; step 1 / 2 is still the user's choice, kept in the settings. (0.4.2) A tap acts on release; the popup names the step big, its state, and what the list shows (2 lines); holding a step shows that without changing it. (0.12.0, a14, the owner's) A step is white at its press (the toggle still at the release, the hold's popup at 300 ms); the icon under a step is lit only for a filter that is on (with Capture held: the tags the selected firmware has), dark for the others |
 | Sampling, knob 1, Capture held + step | favourite, pad colour (16), tag (a free step makes "Tag N"; step 16, Fantasy, only shows) |
 | knob 1, knob 2: touched; their LEDs | (0.6.13) a knob with a job is lit (knob 1 the selected firmware's colour; knob 2 the favourites' pink while a favourite is selected in Favorites) and a touch shows its popup at once (the colour; "SLOOP / position 3 of 17"; speech "Colour: Red", "Move SLOOP, 3 of 17"); without a job: dark, a touch nothing |
 | knob 2 (Favorites, no filter) | (0.6.9) the selected favourite moves up (left) or down the list, a place every few ticks; the pads follow, the selection stays on it, the bank shown follows it; the popup "SLOOP / position 3 of 17" (the favourite popup's layout); kept in the library (FW_LIBRARY). Nothing in All, the catalog or a filtered list |
@@ -905,14 +942,15 @@ midi.knob), so the FM-1's screen stays in view.
 | count-in | Play with Rec armed (seq.count) | a record dot, the beats to go at 4x, the strip filling beat by beat |
 | track | a track change | "Track n" |
 
-**The Shift menus** (V2Menus, V2Arp, V2Global): the knob legend (rings over the knobs a menu uses, the touched one
-filled; the same knobs glow) where the design has it. Workflow: "Ch 3", "Rate 1/16", "Quant 50%". Tempo: the tap icon
+**The Shift menus** (V2Menus, V2Arp, V2Global): (0.12.0, a5) every one the arp's header: the top line its title or
+main value at rest, the touched knob's name and value while touched or just turned; a tick at y 17 a knob in use, the
+active one long; the content from y 20. Workflow: "Workflow", then "Ch 3", "Rate 1/16", "Quant 50%". Tempo: the tap icon
 (following: a padlock), "Tempo", the BPM at 4x, the taps on the strip. Groove: two 16ths (the second late by the
-amount, the straight place dashed), "Groove" and the amount, Global / Track as icons (the chosen one underlined).
-Layout: Move's four layout icons, the chosen one underlined and named. Keys & Scales and Track 2 held: the build's
-key / scale screen, kept as the owner asked (the layouts as tabs on top, "D DOR" at 4x, the root on a 12-key row;
-the 16 channels below, or Global / Track with its icon). Velocity: the curve as a graph, the option and the level
-with a bar. Arp: the pattern's walk (outlined while off), its name, rate and octaves, the page on the strip; the lanes:
+amount, the straight place dashed), "Groove" on top and the amount at 3x, Global / Track as icons (the chosen one
+underlined). Layout: Move's four layout icons on top, the chosen one underlined and named. Keys & Scales (0.12.0):
+"D Dorian" on top, the root on a 12-key row, the four layouts' icons (the chosen one underlined), Global / Track with
+its icon; Track 2 held keeps the build's key / scale screen. Velocity: the option on top, the curve as a graph, the
+level at 3x with a bar. Arp: the pattern's walk (outlined while off), its name, rate and octaves, the page on the strip; the lanes:
 the 16 steps as bars from a line, the edited one underlined. Record: the three modes as icons (the chosen underlined
 and named), the style with its icon. Global Settings (0.6.10, direction A): the battery header (an 18 x 12 icon with a nub, filled 14 x 8 to the charge;
 the percentage at 2x; "GLOBAL" small on the right), a rule at y 17, four rows of 11 px from y 19 (the name left, the
@@ -991,7 +1029,7 @@ play notes (0.6.5: heard, never said).
 | Copy / Delete / Mute / Shift held | Sequencer | "Copy", "Delete", "Mute", "Shift" |
 | Copy + step / clip; Delete + step / clip; + an empty one | Sequencer | "Step 5 copied", "Step 5 cut", "Cut track 1 clip 2"; "Pasted to step 9", "Step 9 replaced", "Pasted" |
 | Delete alone, Copy alone | Sequencer | "Delete: hold and press a step, pad or clip" (nothing changes); "Duplicated" |
-| Track 4 held + Delete; + a step | Sequencer | "Track 1 cleared"; "Track 3 cleared" |
+| Track 1..3 held + Delete; + a step | Sequencer | "Track 1 cleared"; "Track 3 cleared" |
 | Undo, Shift + Undo | Sequencer | "Undo", "Redo", and the steps that changed |
 | Play, Record, Sample, Capture | Sequencer | "Playing", "Stopped", "Record on", "Audio loop armed", "Recording audio loop", "Captured", "No empty clip" |
 | Loop held, tapped | Sequencer | "Loop: 2 bars"; "Loop edit on" / "off" |
