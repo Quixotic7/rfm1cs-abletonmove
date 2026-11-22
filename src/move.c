@@ -1729,9 +1729,15 @@ static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
         return;
     if (rfmv_tk_route(m, ev))                           /* (0.7.0) a takeover: its claimed controls, volume + Back */
         return;
+    if (m->s.mode == RFM_MOVE_MODE_SEQ && ev->value &&
+        (ev->type == MR_EV_BUTTON || ev->type == MR_EV_PAD || ev->type == MR_EV_STEP || ev->type == MR_EV_JOG_CLICK) &&
+        !(ev->type == MR_EV_BUTTON && (ev->index == MR_CC_LOOP || ev->index == MR_CC_MUTE)))
+        m->seq.mods_other |= (uint8_t)((m->btn[MR_CC_LOOP].kind != H_NONE ? SEQ_M_LOOP : 0) |
+                                      (m->btn[MR_CC_MUTE].kind != H_NONE ? SEQ_M_MUTE : 0));   /* (0.12.0, a2: Loop or
+                                                         * Mute held and something else pressed: not a click) */
     if (back_input(m, ev, now_ms))
         return;
-    if (track_input(m, ev, now_ms))                     /* (0.8.0) the Track buttons, in every mode and the view */
+    if (track_input(m, ev, now_ms))                   /* (0.8.0) the Track buttons, in every mode and the view */
         return;
     if (m->seq.tk_pend >= 0 && ev->value && ev->type != MR_EV_TOUCH && ev->type != MR_EV_PAD_PRESSURE &&
         ev->type != MR_EV_STEP && !(ev->type == MR_EV_PAD && rfmv_sess_on(m)))

@@ -701,6 +701,7 @@ typedef struct {
     uint32_t loop_ms, mute_ms;                          /* Loop, Mute pressed (the sequencer clock's ms) */
     uint32_t fill_ms;                                   /* FILL on since (its light, its pads' wave) */
     uint8_t t4_opened;                                  /* Track 4 held opened a Shift menu (it owns the knobs then) */
+    uint8_t mods_other;                                 /* Loop, Mute (SEQ_M_*) held and something else pressed: no click */
     /* a held Track's track (a step, or in session view a column's pad): the press's verdict, gated. A hold acts once
      * held RFM_MOVE_SEQ_HOLD_MS (not at the release); a click acts once RFM_MOVE_DOUBLE_MS have passed with no second
      * press (or the Track button is let go); a second press in that time is the double click, at once */

@@ -644,9 +644,10 @@ static void test_buttons(void)
     SAID("V:Octave 0, C2 to E4|");
     memset(kinds, 0, sizeof kinds);                     /* (0.9.0: the buttons are the sequencer's: none reaches the
                                                          * FM-1; Capture with nothing played, Mute alone: the track) */
-    press(&M, MR_CC_CAPTURE), press(&M, MR_CC_MUTE), press(&M, MR_CC_LEFT), jog(&M, 1);
+    press(&M, MR_CC_CAPTURE), press(&M, MR_CC_MUTE), tap_step(&M, 0), press(&M, MR_CC_MUTE), press(&M, MR_CC_LEFT), jog(&M, 1);
     CHECK(kinds[RFM_MOVE_ACT_BTN] == 0 && kinds[RFM_MOVE_ACT_TURN] == 0);
-    CHECK(M.seq.tr[0].mute);
+    CHECK(M.seq.tr[0].mute);                            /* (0.12.0, a2: Mute's click latches its layer; step 1: track
+                                                         * 1; Mute's click again: the latch ends) */
     CHECKF(strstr(said, "V:No empty clip|") && strstr(said, "V:Mute|"), "%s", said);
     {                                                   /* the mute said once */
         const char *f = strstr(said, "muted"), *g = f ? strstr(f + 1, "muted") : NULL;
@@ -1372,9 +1373,11 @@ static void test_walk(void)
                 continue;                               /* (the held Track pressed again: its release, no input) */
             if (CTX[c].set == c_step && !strcmp(INS[i].name, "step 5"))
                 continue;                               /* (the held step again: its release) */
-            if ((CTX[c].set == c_copy && !strcmp(INS[i].name, "Copy")) || (CTX[c].set == c_delete && !strcmp(INS[i].name, "Delete")))
+            if ((CTX[c].set == c_copy && !strcmp(INS[i].name, "Copy")) || (CTX[c].set == c_delete && !strcmp(INS[i].name, "Delete")) ||
+                (CTX[c].set == c_mute && !strcmp(INS[i].name, "Mute")) || (CTX[c].set == c_loop && !strcmp(INS[i].name, "Loop")))
                 continue;                               /* (0.12.0: the held Copy / Delete again: its release, the held
-                                                         * icon gone) */
+                                                         * icon gone; Mute, Loop held past 300 ms: their release ends the
+                                                         * layer, a2) */
             if (INS[i].kind == 2 && CTX[c].set != c_fw && CTX[c].set != c_fwsel && CTX[c].set != c_catalog &&
                 CTX[c].set != c_states && CTX[c].set != c_capture && CTX[c].set != c_fx && CTX[c].set != c_mixer &&
                 CTX[c].set != c_routing && CTX[c].set != c_grid && CTX[c].set != c_session && CTX[c].set != c_global &&

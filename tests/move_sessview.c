@@ -2280,6 +2280,105 @@ static void test_t4_layer(void)
     CHECK(!M.seq.smenu);
 }
 
+/* a2: Loop and Mute: a quick click latches the layer (a click again or Back ends it), a hold is the same layer until
+ * the release (a long hold let go unused: no latch); shown at the press. Mute's tap no longer mutes the track */
+static void test_loop_mute_taps(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int sel;
+    track_view();
+    rest(), scr_save();
+    /* Loop: the press shows the layer at once; a quick click latches */
+    button(MR_CC_LOOP, 1);
+    leds(w);
+    CHECK(!scr_same() && w[L_WHITE0 + W_LOOP][0] == 127);
+    adv_ms(120), button(MR_CC_LOOP, 0);
+    CHECK(M.seq.loop_latch && !scr_same());
+    write_pbm("loop_latched");
+    press(MR_CC_LOOP);                                  /* (a click again: off) */
+    CHECK(!M.seq.loop_latch);
+    rest();
+    CHECK(scr_same());
+    press(MR_CC_LOOP), back();                          /* (Back closes it) */
+    CHECK(!M.seq.loop_latch && scr_same());
+    button(MR_CC_LOOP, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 100), button(MR_CC_LOOP, 0);   /* (a long hold, unused) */
+    CHECK(!M.seq.loop_latch && scr_same());
+    button(MR_CC_LOOP, 1), step(3, 1), step(3, 0), button(MR_CC_LOOP, 0);   /* (quick, but used: no latch) */
+    CHECK(!M.seq.loop_latch && M.seq.page == 3);
+    press(MR_CC_LEFT), press(MR_CC_LEFT), press(MR_CC_LEFT), rest();
+    button(MR_CC_LOOP, 1), press(MR_CC_UP), button(MR_CC_LOOP, 0);   /* (something else pressed: no latch) */
+    CHECK(!M.seq.loop_latch);
+    rest(), scr_save();
+    /* Mute: the same; its click latches the 16 tracks on the steps; the selected track not muted */
+    sel = M.seq.sel_track;
+    button(MR_CC_MUTE, 1);
+    leds(w);
+    CHECK(!scr_same() && w[L_WHITE0 + W_MUTE][0] == 127);
+    adv_ms(100), button(MR_CC_MUTE, 0);
+    leds(w);
+    CHECK(M.seq.mute_latch && !M.seq.tr[sel].mute && !scr_same() && w[L_WHITE0 + W_MUTE][0] == 127 && icons_lit() == 0);
+    write_pbm("mute_latched");
+    step(4, 1), step(4, 0);
+    CHECK(M.seq.tr[4].mute && M.seq.mute_latch);
+    step(4, 1), step(4, 0);
+    CHECK(!M.seq.tr[4].mute);
+    press(MR_CC_MUTE);
+    CHECK(!M.seq.mute_latch);
+    rest();
+    CHECK(scr_same());
+    press(MR_CC_MUTE), back();
+    CHECK(!M.seq.mute_latch && scr_same());
+    button(MR_CC_MUTE, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 100), button(MR_CC_MUTE, 0);
+    CHECK(!M.seq.mute_latch && !M.seq.tr[sel].mute && scr_same());
+    button(MR_CC_MUTE, 1), step(6, 1), step(6, 0), button(MR_CC_MUTE, 0);   /* (a hold used: track 7 muted) */
+    CHECK(!M.seq.mute_latch && M.seq.tr[6].mute);
+    rfmv_seq_mute(&M, 6, 0);
+    /* session view: latched, a clip pad mutes its track */
+    press(MR_CC_MENU), rest();
+    CHECK(M.seq.view);
+    press(MR_CC_MUTE);
+    CHECK(M.seq.mute_latch);
+    hit(PAD(2, 1));
+    CHECK(M.seq.tr[M.seq.track_page + 2].mute);
+    write_pbm("mute_latched_session");
+    hit(PAD(2, 1));
+    back();
+    CHECK(!M.seq.mute_latch && !M.seq.tr[M.seq.track_page + 2].mute);
+    press(MR_CC_MENU), rest();
+}
+
+/* q2: Shift + step 13 has no job (dark, dead); Delete held + Play clears the selected clip, in both views */
+static void test_clear_clip(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int clip, lo;
+    track_view();
+    clip = SEQ_CLIP(M.seq.sel_track, M.seq.tr[M.seq.sel_track].sel);
+    rfmv_seq_note_put(&M, clip, 2, 60, 100, 24, 0);
+    rfmv_seq_note_put(&M, clip, 9, 62, 100, 24, 0);
+    button(MR_CC_SHIFT, 1);
+    leds(w);
+    CHECK(w[L_ICON0 + 12][0] == 0 && w[L_ICON0 + 13][0] == 24);
+    step(12, 1), step(12, 0);
+    button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    CHECK(rfmv_seq_clip_range(&M, clip, &lo) == lo + 2);
+    clear();
+    button(MR_CC_DELETE, 1), press(MR_CC_PLAY);
+    CHECK(rfmv_seq_clip_range(&M, clip, &lo) == lo && !M.seq.playing && !M.seq.start_pending && rfmv_seq_clip_has(&M, clip));
+    button(MR_CC_DELETE, 0);
+    CHECK(!strstr(said, "Delete: hold"));
+    screen();
+    write_pbm("clip_cleared");
+    press(MR_CC_UNDO);
+    CHECK(rfmv_seq_clip_range(&M, clip, &lo) == lo + 2);
+    press(MR_CC_PLAY);                                  /* (playing: Delete + Play clears, the transport plays on) */
+    CHECK(M.seq.playing || M.seq.start_pending);
+    press(MR_CC_MENU), rest();
+    button(MR_CC_DELETE, 1), press(MR_CC_PLAY), button(MR_CC_DELETE, 0);
+    CHECK(M.seq.view && rfmv_seq_clip_range(&M, clip, &lo) == lo && (M.seq.playing || M.seq.start_pending));
+    press(MR_CC_PLAY), press(MR_CC_MENU), rest();
+}
+
 int main(void)
 {
     test_scenes();
@@ -2308,6 +2407,8 @@ int main(void)
     test_menu_heads();
     test_menu_over_views();
     test_t4_layer();
+    test_loop_mute_taps();
+    test_clear_clip();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

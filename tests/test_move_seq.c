@@ -637,11 +637,16 @@ static void test_launch(void)
     clear();
     adv(m, 16 * FPS);
     CHECK(!find_midi(0x91, 64, -1, NULL));
-    press(m, MR_CC_MUTE);                               /* Mute alone: the selected track (track 1) */
+    press(m, MR_CC_MUTE);                               /* (0.12.0, a2) Mute's click: its layer latched, no track muted */
+    CHECK(!m->seq.tr[0].mute && m->seq.mute_latch);
+    tap_step(m, 0);
     CHECK(m->seq.tr[0].mute);
-    press(m, MR_CC_MUTE);
-    button(m, MR_CC_MUTE, 1), tap_step(m, 1), button(m, MR_CC_MUTE, 0);
-    CHECK(!m->seq.tr[0].mute && !m->seq.tr[1].mute);
+    press(m, MR_CC_MUTE);                               /* (again: the latch ends) */
+    CHECK(!m->seq.mute_latch);
+    tap_step(m, 0);
+    CHECK(m->seq.tr[0].mute);                           /* (a plain step now) */
+    button(m, MR_CC_MUTE, 1), tap_step(m, 0), tap_step(m, 1), button(m, MR_CC_MUTE, 0);
+    CHECK(!m->seq.tr[0].mute && !m->seq.tr[1].mute && !m->seq.mute_latch);
     /* stopped, a clip press makes it the track's clip at once (no start: Play, the owner's); an empty slot, stopped:
      * selected, the track plays nothing */
     rfm_move_seq_play(m, 0);
@@ -2891,7 +2896,8 @@ static void test_capture_playing(void)
     CHECK(rfmv_seq_range(m, 0, 25, &lo) > lo && count_midi(0x90, 70) == 0);   /* (playing: no preview) */
     step(m, 9, 0);
     rfm_move_seq_play(m, 0);
-    /* Shift + step 13: the clip cleared (steps, locks; the length kept), "Clip Cleared", one undo */
+    /* (0.12.0, q2) Delete held + Play: the clip cleared (steps, locks; the length kept), "Clip Cleared", one undo;
+     * the transport as it was. Shift + step 13: nothing (its icon dark) */
     fresh(m);
     rfmv_seq_loop_set(m, 0, 0, 32);
     rfmv_seq_note_put(m, 0, 3, 60, 100, 24, 0), rfmv_seq_note_put(m, 0, 20, 62, 100, 24, 0);
@@ -2899,8 +2905,10 @@ static void test_capture_playing(void)
     {
         uint8_t ic[16];
         button(m, MR_CC_SHIFT, 1), rfmv_shift_icons(m, ic), tap_step(m, 12), button(m, MR_CC_SHIFT, 0);
-        CHECK(ic[12] == 24);                            /* (its icon among the shortcuts) */
+        CHECK(ic[12] == 0 && nnotes_clip(m, 0) == 2);  /* (no shortcut: dark, dead) */
     }
+    button(m, MR_CC_DELETE, 1), press(m, MR_CC_PLAY), button(m, MR_CC_DELETE, 0);
+    CHECK(!m->seq.playing && !m->seq.start_pending);
     CHECK(nnotes_clip(m, 0) == 0 && rfmv_seq_trig(m, 0, 3, RFM_MOVE_TRIG_CHANCE) < 0 && m->seq.len[0] == 32);
     CHECK(m->seq.msg == SEQ_MSG_CLIPCLEAR && !strcmp(rfmv_seq_msg_text(m), "Clip"));
     press(m, MR_CC_UNDO);

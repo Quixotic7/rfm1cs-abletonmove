@@ -32,7 +32,7 @@ static int touched_knob(const rfm_move_t *m);
  * source), 3 Workflow Settings, 5 Tempo, 6 Metronome, 7 Groove, 8 Layout, 9 Keys & Scales, 10 Full Velocity (our Velocity menu),
  * 11 Repeat (our arp), 14 New Clip, 15 Double Loop, 16 Quantize */
 enum { SH_PROJECTS = 0, SH_CLOCK = 1, SH_WORKFLOW = 2, SH_TEMPO = 4, SH_METRO = 5, SH_GROOVE = 6, SH_LAYOUT = 7,
-       SH_KEYS = 8, SH_FIXVEL = 9, SH_ARP = 10, SH_CLEAR = 12, SH_NEWCLIP = 13, SH_DOUBLE = 14, SH_QUANT = 15 };
+       SH_KEYS = 8, SH_FIXVEL = 9, SH_ARP = 10, SH_NEWCLIP = 13, SH_DOUBLE = 14, SH_QUANT = 15 };
 static int sh_menu(int s)                               /* the menu a Shift + step opens, 0 none */
 {
     switch (s) {
@@ -63,7 +63,7 @@ void rfmv_shift_icons(const rfm_move_t *m, uint8_t icon[16])
     }
     for (i = 0; i < RFM_MOVE_NSTEPS; i++) {
         const int job = i == SH_PROJECTS || i == SH_CLOCK || i == SH_FIXVEL || i == SH_DOUBLE || i == SH_QUANT ||
-                        i == SH_METRO || i == SH_NEWCLIP || i == SH_CLEAR || sh_menu(i);
+                        i == SH_METRO || i == SH_NEWCLIP || sh_menu(i);   /* (0.12.0, q2: step 13 none) */
         const int on = (i == SH_FIXVEL && m->s.vel_mode == RFM_MOVE_VEL_FIXED) || (i == SH_METRO && q->metro) || (i == SH_CLOCK && q->following) ||
                        (i == SH_PROJECTS && q->projects) || (sh_menu(i) && sh_menu(i) == q->smenu) ||
                        (i == SH_ARP && q->tr[q->sel_track].arp.mode != RFM_MOVE_AM_OFF);   /* (0.11.0: the arp on) */
@@ -209,7 +209,7 @@ void rfmv_seq_ui_release(rfm_move_t *m)
             rfmv_seq_pad_off(m, p, q->recn[p].note);
     q->mods = q->mods_used = 0, q->copy_src = 0, q->copy_pasted = 0, q->chord = 0;
     q->step_held = q->step_add = q->step_edit = 0, q->step_first = -1, q->step_popped = 0;
-    q->loop_first = -1, q->fill = 0, q->steps_chord = 0, q->loop_latch = 0;
+    q->loop_first = -1, q->fill = 0, q->steps_chord = 0, q->loop_latch = 0, q->mute_latch = 0, q->mute_end = 0;
     q->cs_step = -1, q->cs_shown = 0, q->cs_k = -1;
     q->arp_sh = 0, q->al_down = 0, q->al_hold = 0, q->al_pads = 0, q->al_lenset = 0;   /* (0.12.0) */
     rfmv_seq_arp_stop(m);
@@ -284,6 +284,24 @@ static void delete_alone(rfm_move_t *m)                 /* (0.6.3, the owner's) 
     rfmv_say_text(m, "Delete: hold and press a step, pad or clip");
 }
 
+/* (0.12.0, q2, the owner's: "clearing shortcut by holding delete and pressing play"; was Shift + step 13) the
+ * selected track's selected clip cleared: its steps, locks and trigs gone, its length kept; one undo */
+static void clip_clear_sel(rfm_move_t *m)
+{
+    rfm_move_seq_t *q = Q(m);
+    const int clip = edit_clip(m);
+    int lo, hi;
+    rfmv_seq_group(m);
+    rfmv_seq_release(m, q->sel_track);
+    hi = rfmv_seq_clip_range(m, clip, &lo);
+    while (hi-- > lo)
+        rfmv_seq_note_del(m, clip, q->notes[hi].step, q->notes[hi].note);
+    hi = rfmv_seq_clip_lock_range(m, clip, &lo);
+    while (hi-- > lo)
+        rfmv_seq_lock_set(m, clip, q->locks[hi].step, q->locks[hi].cc, -1);
+    rfmv_seq_dirty(m);
+    rfmv_seq_msg(m, SEQ_MSG_CLIPCLEAR);
+}
 /* a clip deleted: its notes and locks, and the clip itself (the slot empty again) */
 void rfmv_seq_clip_delete(rfm_move_t *m, int clip)
 {
@@ -1087,21 +1105,6 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
                 rfmv_seq_msg(m, SEQ_MSG_NOCLIP);
             break;
         }
-        case SH_CLEAR: {                                /* Shift + step 13 (the owner's): the clip cleared (steps,
-                                                         * locks, trigs), its length kept; one undo */
-            int lo, hi;
-            rfmv_seq_group(m);
-            rfmv_seq_release(m, q->sel_track);
-            hi = rfmv_seq_clip_range(m, clip, &lo);
-            while (hi-- > lo)
-                rfmv_seq_note_del(m, clip, q->notes[hi].step, q->notes[hi].note);
-            hi = rfmv_seq_clip_lock_range(m, clip, &lo);
-            while (hi-- > lo)
-                rfmv_seq_lock_set(m, clip, q->locks[hi].step, q->locks[hi].cc, -1);
-            rfmv_seq_dirty(m);
-            rfmv_seq_msg(m, SEQ_MSG_CLIPCLEAR);
-            break;
-        }
         case SH_QUANT:
             rfmv_seq_group(m);
             rfmv_seq_clip_quantize(m, clip);
@@ -1555,7 +1558,17 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
                 q->loop_end = 1;                        /* (its release: nothing) */
                 return 1;
             }
-            q->mods |= (uint8_t)mb, q->mods_used &= (uint8_t)~mb;
+            if (mb == SEQ_M_MUTE && q->mute_latch) {   /* (0.12.0, a2) Mute latched: this press ends it, at once */
+                layer_close(m, LY_MUTE);
+                q->mute_end = 1;
+                rfmv_say_text(m, "Mute off");
+                return 1;
+            }
+            if (mb == SEQ_M_LOOP)
+                q->loop_ms = rfmv_now_ms(m);
+            if (mb == SEQ_M_MUTE)
+                q->mute_ms = rfmv_now_ms(m);
+            q->mods |= (uint8_t)mb, q->mods_used &= (uint8_t)~mb, q->mods_other &= (uint8_t)~mb;
             if (mb == SEQ_M_LOOP && !q->view && !q->projects)
                 rfmv_pop(m, POP_LOOP, 0);               /* Loop held: the clip's length */
             if (mb == SEQ_M_COPY)
@@ -1566,10 +1579,23 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
             ;                                           /* (latched: it stays down) */
         } else if (mb == SEQ_M_LOOP && q->loop_end) {
             q->loop_end = 0, q->fill = 0;               /* (the press that ended the latch, or FILL's) */
-        } else if (mb == SEQ_M_LOOP && !(q->mods_used & SEQ_M_LOOP) && !q->loop_latch && !q->view && !q->projects) {
-            q->loop_latch = 1, layer(q, LY_LOOP);       /* a tap on Loop: latched (the jog sets the length) until
-                                                         * Loop or Back again */
+        } else if (mb == SEQ_M_MUTE && q->mute_end) {
+            q->mute_end = 0;                            /* (the press that ended the latch) */
+        } else if (mb == SEQ_M_LOOP && !((q->mods_used | q->mods_other) & SEQ_M_LOOP) && !q->loop_latch && !q->view &&
+                   !q->projects &&
+                   rfmv_now_ms(m) - q->loop_ms < RFM_MOVE_SEQ_HOLD_MS) {
+            q->loop_latch = 1, layer(q, LY_LOOP);       /* a quick click on Loop (0.12.0, a2: let go within 300 ms,
+                                                         * nothing else pressed): latched (the jog sets the length)
+                                                         * until Loop or Back again; held: the same layer until the
+                                                         * release */
             rfmv_pop(m, POP_LOOP, 0);
+        } else if (mb == SEQ_M_MUTE && !((q->mods_used | q->mods_other) & SEQ_M_MUTE) && !q->mute_latch && !q->projects &&
+                   rfmv_now_ms(m) - q->mute_ms < RFM_MOVE_SEQ_HOLD_MS) {
+            rfmv_say_text(m, "Mute on");
+            q->mute_latch = 1, layer(q, LY_MUTE);       /* (0.12.0, a2, the owner's: "Quick click mute to sticky, hold
+                                                         * mute to temp activate") the Mute layer latched: the steps
+                                                         * (and session view's clips) mute tracks until Mute's click
+                                                         * again or Back */
         } else if (q->mods & mb) {
             const int used = q->mods_used & mb;
             if (mb == SEQ_M_SHIFT)
@@ -1579,8 +1605,7 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
             const int alone = !used && !q->projects && !(q->mods & SEQ_M_SHIFT) && !q->step_held &&
                               !rfmv_seq_trk_held(m);
             q->mods &= (uint8_t)~mb;
-            if (mb == SEQ_M_MUTE && alone)
-                rfmv_seq_mute(m, q->sel_track, !q->tr[q->sel_track].mute);   /* Mute alone: the selected track */
+            /* (0.12.0, a2: Mute alone no longer mutes the selected track: its click latches the layer) */
             if (mb == SEQ_M_COPY) {
                 if (used)                               /* a source and no paste yet: the next press pastes (Move) */
                     q->paste = (uint8_t)(q->copy_src && !q->copy_pasted && q->clip_kind != 2);   /* (0.12.0: not a
@@ -1672,6 +1697,12 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
         return 1;                                       /* (nothing to close: nothing. Only a Track tap changes the
                                                          * mode, the owner's) */
     case MR_CC_PLAY:
+        if ((q->mods & SEQ_M_DELETE) && !q->projects) { /* (0.12.0, q2) Delete held + Play: the selected clip cleared;
+                                                         * the transport as it was */
+            q->mods_used |= SEQ_M_DELETE;
+            clip_clear_sel(m);
+            return 1;
+        }
         q->ncap = 0;                                    /* (Move: the transport clears the capture) */
         if (q->mods & SEQ_M_SHIFT) {                    /* Shift + Play: every clip from its start (Move); (0.10.0) in
                                                          * session view too (there it stopped every clip: step 16 now) */
@@ -2697,7 +2728,7 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 v = rfmv_seq_src_page(m, clip, i) == 2 ? sc(RFMV_RED, bl ? 220 : 60) : sc(RFMV_WHITE, bl ? 256 : 30);
         } else if (q->mods & SEQ_M_SHIFT) {             /* the shortcuts */
             if (i == SH_PROJECTS || i == SH_CLOCK || i == SH_FIXVEL || i == SH_DOUBLE || i == SH_QUANT || sh_menu(i) ||
-                i == SH_METRO || i == SH_NEWCLIP || i == SH_CLEAR)
+                i == SH_METRO || i == SH_NEWCLIP)
                 v = sc(RFMV_WHITE, 96);
             if (sh_menu(i) && sh_menu(i) == q->smenu)
                 v = rfmv_mode_rgb[RFM_MOVE_MODE_SEQ];
