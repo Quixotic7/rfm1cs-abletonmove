@@ -491,6 +491,7 @@ typedef struct {
     uint32_t sl_pop_ms;
     uint8_t sb_kind;                                    /* the host's state buffer: 0 none, 1 copied, 2 deleted */
     int8_t sb_src;                                      /* .. the state it came from */
+    uint8_t sb_xshow;                                   /* (0.13.0) a deleted state's X: until Delete is let go */
     uint8_t sb_armed;                                   /* .. the last state function a copy or a delete (marks shown;
                                                          * Copy + a stored state pastes over it) */
     char sb_id[RFM_MOVE_FW_ID_MAX];                     /* .. the firmware it belongs to */
@@ -736,6 +737,8 @@ typedef struct {
     uint32_t pad_tap_ms;
     /* (0.11.0, the owner's UX rules) */
     uint8_t pad_tap_shift;                              /* .. that tap was with Shift (a scene: stop) */
+    uint8_t pad_tap_play;                               /* (0.13.0) .. that tap was on the clip its track was playing
+                                                         * (its double click stops it) */
     int8_t sm_k;                                        /* a Shift menu's knob turned last (-1 the jog / a step), for
                                                          * its header: shown RFM_MOVE_POPUP_MS from sm_ms */
     uint32_t sm_ms;
@@ -774,6 +777,9 @@ typedef struct {
     /* (0.12.0) session view's clip and scene buffers. The clip buffer is the clipboard (clip_kind 2); armed: the last
      * clip function was a copy or a delete, so Copy + a clip pastes over it (cleared by a paste, Back) */
     uint8_t sv_armed;
+    uint8_t sv_xshow, sc_xshow;                         /* (0.13.0, the owner's: "Deleting a clip from session leaves a X
+                                                         * box hanging out") a deleted clip's / scene's X shows only
+                                                         * until Delete is let go */
     uint8_t sc_kind, sc_src, sc_armed;                  /* the scene buffer: 0 empty, 1 copied, 2 deleted; its row; armed */
     uint16_t sb_has;                                    /* .. bits: the tracks with a clip in it */
     uint16_t sb_nn, sb_nl;

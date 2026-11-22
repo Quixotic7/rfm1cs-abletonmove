@@ -3814,6 +3814,64 @@ static void test_fwp_trackflash(void)
     back(), rest();
 }
 
+/* ---- (0.13.0, the owner's, 2026-11-22, on 0.12.0 on the Move) "Deleting a clip from session leaves a X box hanging
+ * out": the X (screen and pad) shows only until Delete is let go; the buffer stays (Copy held + an empty slot pastes
+ * it). "While a clip is playing if you double click on it it should stop": now, not at the bar; a double click on a
+ * clip that was not playing still plays it now, with Launch on Instant too */
+static void test_x_gone_dbl_stop(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int k;
+    session_view(), owners_grid();
+    button(MR_CC_DELETE, 1), hit(PAD(0, 0));
+    screen(), leds(w);
+    CHECK(!clip_has(0, 0) && rfmv_seq_src_clip(&M, SEQ_CLIP(0, 0)) == 2 && lit(w[L_PAD0 + PAD(0, 0)]) && !cell_dot(0, 0));
+    button(MR_CC_DELETE, 0);
+    screen(), leds(w);
+    CHECK(rfmv_seq_src_clip(&M, SEQ_CLIP(0, 0)) == 0 && cell_dot(0, 0) && !lit(w[L_PAD0 + PAD(0, 0)]));   /* an empty slot */
+    write_pbm("x_gone");
+    button(MR_CC_DELETE, 1);                            /* Delete held again: no X comes back */
+    screen();
+    CHECK(cell_dot(0, 0));
+    button(MR_CC_DELETE, 0);
+    button(MR_CC_COPY, 1), hit(PAD(4, 0)), button(MR_CC_COPY, 0);   /* the buffer is still there: pasted */
+    CHECK(clip_has(4, 0) && clip_note(4, 0, 60));
+    rest();
+    /* scenes: the row's X the same */
+    button(MR_CC_DELETE, 1), hit(PAD(7, 1));
+    CHECK(rfmv_seq_src_clip(&M, SEQ_CLIP(0, 1)) == 2);
+    button(MR_CC_DELETE, 0);
+    CHECK(rfmv_seq_src_clip(&M, SEQ_CLIP(0, 1)) == 0);
+    button(MR_CC_COPY, 1);
+    CHECK(rfmv_seq_src_clip(&M, SEQ_CLIP(0, 1)) == 0);   /* (nor while Copy is held later) */
+    button(MR_CC_COPY, 0), rest();
+
+    /* the double click */
+    for (k = 0; k < 2; k++) {                           /* Launch: 1 Bar, then Instant */
+        session_view(), owners_grid();
+        M.seq.launch_q = (uint8_t)(k ? RFM_MOVE_LQ_INSTANT : RFM_MOVE_LQ_BAR);
+        hit(PAD(1, 0)), rest();
+        press(MR_CC_PLAY), bar_start(), adv_ms(600);
+        CHECK(M.seq.playing && M.seq.tr[1].active == 0);
+        now_ms += 1000;
+        hit(PAD(1, 0));                                 /* the playing clip, a click: it plays on */
+        CHECK(M.seq.tr[1].active == 0 && M.seq.tr[1].queued == SEQ_NONE);
+        now_ms += 50;
+        hit(PAD(1, 0));                                 /* .. again within the double click's time: it stops now */
+        CHECK(M.seq.tr[1].active == -1 && M.seq.tr[1].queued == SEQ_NONE && M.seq.playing);
+        screen();
+        if (!k)
+            write_pbm("dbl_stopped");
+        now_ms += 1000;
+        hit(PAD(1, 1)), now_ms += 50, hit(PAD(1, 1));   /* a clip that was not playing: a double click plays it now */
+        CHECK(M.seq.tr[1].active == 1 && M.seq.tr[1].queued == SEQ_NONE);
+        now_ms += 1000;
+        hit(PAD(1, 0)), now_ms += 50, hit(PAD(1, 0));   /* .. and the other one of that track: it takes over, not a stop */
+        CHECK(M.seq.tr[1].active == 0 && M.seq.tr[1].queued == SEQ_NONE);
+        press(MR_CC_PLAY), rest();
+    }
+}
+
 int main(void)
 {
     test_scenes();
@@ -3868,6 +3926,7 @@ int main(void)
     test_fwp_tkclick();
     test_fwp_page();
     test_fwp_trackflash();
+    test_x_gone_dbl_stop();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

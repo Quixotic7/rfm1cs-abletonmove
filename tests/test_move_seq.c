@@ -981,8 +981,10 @@ static void test_edits(void)
     pad(m, 26, 100), pad(m, 26, 0), button(m, MR_CC_COPY, 0);
     CHECK(nnotes_clip(m, SEQ_CLIP(2, 0)) == nnotes_clip(m, 0) && rfmv_seq_lock_get(m, SEQ_CLIP(2, 0), 8, 16) == 67);
     CHECK(rfmv_seq_src_clip(m, 0) == 0);
-    button(m, MR_CC_DELETE, 1), pad(m, 26, 100), pad(m, 26, 0), button(m, MR_CC_DELETE, 0);
+    button(m, MR_CC_DELETE, 1), pad(m, 26, 100), pad(m, 26, 0);
     CHECK(!rfmv_seq_clip_has(m, SEQ_CLIP(2, 0)) && rfmv_seq_src_clip(m, SEQ_CLIP(2, 0)) == 2);
+    button(m, MR_CC_DELETE, 0);                         /* (0.13.0, the owner's: the X goes when Delete is let go) */
+    CHECK(rfmv_seq_src_clip(m, SEQ_CLIP(2, 0)) == 0 && m->seq.cut);
     button(m, MR_CC_DELETE, 1), pad(m, 19, 100), pad(m, 19, 0), button(m, MR_CC_DELETE, 0);   /* track 4, scene 2 */
     CHECK(nnotes_clip(m, SEQ_CLIP(3, 1)) == 0 && !rfmv_seq_clip_has(m, SEQ_CLIP(3, 1)) && m->seq.cut);
     /* Track 1 held (0.9.0: the merged menu): Copy + steps = a track copy; Delete + step = the track cleared */
@@ -2665,11 +2667,19 @@ static void test_session2(void)
     clear();
     adv(m, 16 * FPS);
     CHECK(m->seq.tr[0].active == 1 && find_midi(0x90, 62, 100, NULL) && !find_midi(0x90, 60, -1, NULL));
-    /* (0.11.0) a double click on the playing clip: it plays on (now, in the bar's phase); its stop step stops it at
-     * the next bar */
+    /* (0.13.0, the owner's: "While a clip is playing if you double click on it it should stop") a double click on
+     * the playing clip: it stops now (0.11.0 played it on); a click launches it again at the bar; its stop step
+     * stops it at the next bar */
     now_ms += 1000;
-    pad(m, 16, 100), pad(m, 16, 0), pad(m, 16, 100), pad(m, 16, 0);
+    pad(m, 16, 100), pad(m, 16, 0);
+    CHECK(m->seq.tr[0].queued == SEQ_NONE && m->seq.tr[0].active == 1);   /* (the first click: it plays on) */
+    pad(m, 16, 100), pad(m, 16, 0);
+    CHECK(m->seq.tr[0].queued == SEQ_NONE && m->seq.tr[0].active == -1);
+    now_ms += 1000;
+    pad(m, 16, 100), pad(m, 16, 0);
+    adv(m, 16 * FPS);
     CHECK(m->seq.tr[0].queued == SEQ_NONE && m->seq.tr[0].active == 1);
+    now_ms += 1000;
     tap_step(m, 1);
     CHECK(m->seq.tr[0].queued == SEQ_STOP && m->seq.tr[0].active == 1);
     adv(m, 16 * FPS);

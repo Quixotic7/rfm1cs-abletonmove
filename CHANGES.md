@@ -120,6 +120,15 @@ host carries the firmware state files with the project buffer; tested.
   session view, the FM-1 page's level 2, under the held Track's menu or the browser. At most 24 step writes in all.
   (seq_ui.c rfmv_seq_tflash_*, move.c track_tap)
 
+### Session view: no X left behind, a double click stops the playing clip (the owner's, 2026-11-22, on 0.12.0)
+- "Deleting a clip from session leaves a X box hanging out": a deleted clip's X (screen and pad), a deleted scene
+  row's and a deleted state's show only until Delete is let go; then the slot is an empty one. The buffer and the
+  armed state stay as they were (Copy held + an empty slot pastes; Back still ends the armed state).
+  (seq.sv_xshow, sc_xshow, fw.sb_xshow; rfmv_seq_src_clip, projfw.c)
+- "While a clip is playing if you double click on it it should stop": a double click on the clip its track was
+  playing before the first click stops it now (0.11.0 played it on). A clip that was not playing: played now, as
+  before, with Launch on Instant too. (seq.pad_tap_play)
+
 ## 0.12.0 (2026-11-22, not released)
 
 The owner's answers on the review page, card by card. New fields in `rfm_move_seq_t` (after `tk_pend_clk`): rebuild

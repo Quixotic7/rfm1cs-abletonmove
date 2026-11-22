@@ -206,7 +206,7 @@ static void layer_close(rfm_move_t *m, int id)
         break;
     case LY_SHIFT: q->shift_lock = 0, q->mods &= (uint8_t)~SEQ_M_SHIFT; break;
     case LY_CLIP:                                       /* (0.12.0: a clip or scene buffer stays, its marks go) */
-        q->paste = 0, q->cut = 0, q->sv_armed = 0, q->sc_armed = 0;
+        q->paste = 0, q->cut = 0, q->sv_armed = 0, q->sc_armed = 0, q->sv_xshow = 0, q->sc_xshow = 0;
         if (q->clip_kind != 2)
             q->clip_kind = 0;
         break;
@@ -453,7 +453,7 @@ static void scene_edit(rfm_move_t *m, int scene, int del)
         for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++)
             if (rfmv_seq_clip_has(m, SEQ_CLIP(t, scene)))
                 rfmv_seq_clip_delete(m, SEQ_CLIP(t, scene));
-        q->sc_kind = 2, q->sc_armed = 1, layer(q, LY_CLIP);
+        q->sc_kind = 2, q->sc_armed = 1, q->sc_xshow = 1, layer(q, LY_CLIP);
         snprintf(w, sizeof w, "Scene %d deleted", scene + 1);
     } else if (has && !(q->sc_armed && q->sc_kind && !(q->sc_src == scene && q->sc_kind == 1))) {
         rfmv_seq_scene_copy(m, scene);
@@ -554,6 +554,8 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
         const int clip = SEQ_CLIP(track, scene);
         rfm_move_track_t *t = &q->tr[track];
         const int dbl = q->pad_tap == p && !q->pad_tap_shift && now - q->pad_tap_ms < RFM_MOVE_DOUBLE_MS;
+        if (!dbl)                                       /* (0.13.0) what this slot was before the first click */
+            q->pad_tap_play = (uint8_t)(t->active == scene && t->queued == SEQ_NONE && running(q) && rfmv_seq_clip_has(m, clip));
         q->pad_tap = (int8_t)p, q->pad_tap_ms = now, q->pad_tap_shift = 0;
         if (q->mods & SEQ_M_SHIFT) {                    /* (0.10.0, as Control Live) Shift + a slot: selected for
                                                          * editing; nothing launched or stopped (the scenes: column 8) */
@@ -569,7 +571,11 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
             /* (0.11.0, the owner's) a double click: now, not at the bar: the clip plays (an empty slot: the track
              * stops). The first click queued the same thing, so nothing wrong showed meanwhile */
             rfmv_seq_select(m, track);
-            if (rfmv_seq_clip_has(m, clip))
+            if (rfmv_seq_clip_has(m, clip) && q->pad_tap_play)
+                rfmv_seq_launch_now(m, track, -1);      /* (0.13.0, the owner's: "While a clip is playing if you double
+                                                         * click on it it should stop") the clip its track was playing
+                                                         * before the first click: it stops now */
+            else if (rfmv_seq_clip_has(m, clip))
                 rfmv_seq_launch_now(m, track, scene);
             else if ((t->active >= 0 && running(q)) || t->queued != SEQ_NONE)
                 rfmv_seq_launch_now(m, track, -1);      /* (0.12.0, r2: an empty slot stops its track at once only when
@@ -601,7 +607,7 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
             if (rfmv_seq_clip_has(m, clip)) {
                 rfmv_seq_group(m);
                 rfmv_seq_copy_clip(m, clip);
-                q->cut = 1, q->paste = 0, q->clip_src = (uint8_t)clip, q->sv_armed = 1, layer(q, LY_CLIP);
+                q->cut = 1, q->paste = 0, q->clip_src = (uint8_t)clip, q->sv_armed = 1, q->sv_xshow = 1, layer(q, LY_CLIP);
                 rfmv_seq_clip_delete(m, clip);
             }
         } else {
@@ -790,9 +796,13 @@ int rfmv_seq_src_clip(const rfm_move_t *m, int clip)
 {
     const rfm_move_seq_t *q = &m->seq;
     if (q->sc_armed && q->sc_kind && (q->mods & (SEQ_M_COPY | SEQ_M_DELETE)) && clip % RFM_MOVE_SEQ_SCENES == q->sc_src &&
-        (q->sb_has >> (clip / RFM_MOVE_SEQ_SCENES) & 1))
-        return q->sc_kind;                              /* (0.12.0) the scene buffer's row, while Copy or Delete is held */
-    return q->clip_kind == 2 && q->sv_armed && q->clip_src == clip ? 1 + q->cut : 0;   /* (0.12.0: while armed) */
+        (q->sb_has >> (clip / RFM_MOVE_SEQ_SCENES) & 1) && (q->sc_kind != 2 || q->sc_xshow))
+        return q->sc_kind;                              /* (0.12.0) the scene buffer's row, while Copy or Delete is held
+                                                         * (0.13.0: a deleted row's X only until Delete is let go) */
+    if (q->clip_kind == 2 && q->sv_armed && q->clip_src == clip)   /* (0.12.0: while armed; 0.13.0: a deleted clip's
+                                                         * X only until Delete is let go: then the slot is empty) */
+        return q->cut ? (q->sv_xshow ? 2 : 0) : 1;
+    return 0;
 }
 
 /* the clipboard's step at (clip, abs); a cut (already gone from its source) is pasted once */
@@ -1661,6 +1671,8 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
             }
             if (mb == SEQ_M_DELETE)
                 m->del_src = 0;                         /* (0.6.3: the last action forgotten; the clipboard stays) */
+            if (mb == SEQ_M_DELETE)
+                q->sv_xshow = 0, q->sc_xshow = 0;       /* (0.13.0) the deleted clip's / row's X goes with the button */
             if (mb == SEQ_M_DELETE && alone)
                 delete_alone(m);
             else if (mb == SEQ_M_DELETE && !used && !q->projects && rfmv_seq_trk_held(m)) {

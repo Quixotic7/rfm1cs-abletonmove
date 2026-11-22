@@ -583,7 +583,7 @@ static void st_pad(rfm_move_t *m, int k)
         f->st_used[t] &= ~(1u << k);
         if (f->st_cur[t] == k)
             f->st_cur[t] = -1;                          /* (the firmware keeps what it holds; none active) */
-        f->sb_kind = 2, f->sb_src = (int8_t)k, f->sb_armed = 1;
+        f->sb_kind = 2, f->sb_src = (int8_t)k, f->sb_armed = 1, f->sb_xshow = 1;
         snprintf(f->sb_id, sizeof f->sb_id, "%s", f->slot_id[t]);
         f->undo = 0;
         st_say(m, k, SW_DELETED);
@@ -694,7 +694,7 @@ int rfmv_st_input(rfm_move_t *m, const mr_event_t *ev)
             if (cc == MR_CC_COPY)
                 f->sl_mods &= (uint8_t)~1u;
             else if (cc == MR_CC_DELETE)
-                f->sl_mods &= (uint8_t)~2u;
+                f->sl_mods &= (uint8_t)~2u, f->sb_xshow = 0;   /* (0.13.0: the X goes with Delete) */
             return 1;
         }
         if (!open || cc == MR_CC_PLAY || cc == MR_CC_BACK || (cc >= MR_CC_TRACK4 && cc <= MR_CC_TRACK1))
@@ -836,7 +836,7 @@ int rfmv_st_screen(const rfm_move_t *m, mr_canvas_t *cv)
         for (i = 0; i < RFM_MOVE_FW_STATES; i++) {
             const int x = (i % 8) * 16 + 1, y = 16 + (i / 8) * 12, cur = f->st_cur[t] == i, used = f->st_used[t] >> i & 1;
             const int src = marks && i == f->sb_src;
-            if (src && f->sb_kind == 2 && !used) {
+            if (src && f->sb_kind == 2 && !used && f->sb_xshow) {
                 v2_X(cv, x, y, 14, 11);
                 continue;
             }
