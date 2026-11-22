@@ -51,6 +51,30 @@ everything. The project blob is version 8 (versions 1..7 load, with the defaults
 - A clip's "made" bit is journaled (`OP_MADE`): an undone paste or delete leaves the slot as it was (it left a clip
   with no notes).
 
+**The arp, octaves and held steps** (n2, n3, a9, a11)
+- **Shift + step 11 is gated**: the press turns the step white and nothing else. A click (let go before 300 ms) opens
+  the arp menu at the release, or closes it. A hold of 300 ms turns the arp off or back on as it was, while still
+  down; the menu stays as it was and the release does nothing.
+- The hold and the jog's click show "Arp" over "On" / "Off" (or the mode it came back to) on the whole screen for a
+  second, spoken (`POP_ARPW`, `rfmv_seq_arp_mode_name`). While the arp is off the menu's pictures (the walk, the
+  lanes) are dimmed with a 50 % checker; the header stays plain.
+- **The lane pages take the step keys, the main page does not.** On entering a lane page the 16 steps flash white
+  and a wave settles them left to right (360 ms, 30 LED writes; a step pressed meanwhile works at once and ends it).
+  Back on the main page the clip's lights come back at once. A step past the lane's length is dark and dead.
+- **Step 1 held + step n** sets the lane's length to n ("Length 12"); pressing n again gives 1. Step n is not picked.
+- **A lane step held 300 ms** (or a pad pressed while it is down) takes the pads as its shortcuts, and none plays
+  (`rfmv_seq_al_take`, `rfmv_seq_al_holding`). MOD: the bottom row play, rest, tie, repeat, lowest, highest, power
+  chord, chord; the row above the played notes 1..6. TRANSPOSE: -16..+15 from the bottom-left, 0 and the octaves
+  marked. The step's value is white; a pad sets it at the press ("5 Tie", "3 +7"). Letting go gives the pads back at
+  once; a quick click only picks the step. Notes already held play on until let go.
+- **Up / Down in track view** show "Octave +2" with the pads' note range ("C4 - E6") for a second, spoken, and a
+  white row sweeps the pads the way the octave went (a row every 50 ms; 64 pad writes). At the range's end the popup
+  shows the unchanged octave and there is no sweep (`POP_OCT`, `rfmv_seq_oct_range`).
+- **A held step's Up / Down** shows its notes after the move ("B2 Eb3 Gb3"; `POP_TRIG` 8, `rfmv_seq_held_names`).
+- **A held step + a later step is a toggle**: the span's length, or 1 step when the held step already lasts more
+  than span - 1 steps and at most span. Step 1 held + step 2 again and again gives 2, 1, 2.
+- New `rfm_move_seq_t` fields after `arp_was`.
+
 ## 0.11.0 (2026-11-21, not released)
 
 The owner's feedback on the arp, the held Track buttons and session view, and their UX rules (`design/UX-RULES.md`:
