@@ -893,7 +893,9 @@ int rfmv_track_held(const rfm_move_t *m, int t) { return (m->track_held >> t) & 
 /* a held Track button's screen (its menu) shows once it has been held RFM_MOVE_TAP_MS, or used, not on a tap */
 int rfmv_hold_shown(const rfm_move_t *m, int t)
 {
-    return rfmv_track_held(m, t) && (m->menu_what != MENU_NONE || rfmv_now_ms(m) - m->tbtn_clk[t] >= RFM_MOVE_TAP_MS);
+    return rfmv_track_held(m, t) && (m->menu_what != MENU_NONE || rfmv_now_ms(m) - m->tbtn_clk[t] >= RFM_MOVE_TAP_MS ||
+                                     (t == 3 && (m->tbtn_used >> 3 & 1)));   /* (0.12.0, a8: Track 4: anything pressed
+                                                         * while it is down is the hold: its layer at once) */
 }
 /* a list-type menu knob (scale, root, layout, rate, a pattern ..): one item every RFM_MOVE_LIST_TICKS of the Move's
  * ticks, the rest kept; a turn back or the knob let go forgets it. k: the knob (0..7; -1 the jog: 1:1) */
@@ -1194,6 +1196,12 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
         if (down)                                       /* Track 4 held: Shift + Record (the record settings), Shift +
                                                          * Play, Capture, Undo (redo), Loop (double) on the sequencer */
             fm1_shift(m, 0, cc, 1, now);
+        return;
+    }
+    if (rfmv_t4_menu(m) && down && cc != MR_CC_BACK) {  /* (0.12.0, a8) Track 4's hold layer: Up, Down, Left, Right,
+                                                         * Menu, Copy, Delete, Mute, Shift have no job in it: dead (and
+                                                         * dark); their releases pass */
+        rfmv_menu(m, MENU_T4, rfmv_t4_page(m));
         return;
     }
     if ((t = rfmv_lay_menu(m)) != 0 && (cc == MR_CC_UP || cc == MR_CC_DOWN)) {
@@ -1960,17 +1968,29 @@ static void t4_menu_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
         c[L_PAD0 + 25] = sc((rgb_t){ 255, 120, 0 }, rfmv_t4_page(m) == 1 ? 256 : 77);
     }
     rfmv_shift_icons(m, ic);
-    for (i = 0; i < RFM_MOVE_NSTEPS; i++)
-        c[L_STEP0 + i] = ic[i] ? sc(WHITE, ic[i] > 64 ? 256 : 90) : OFF;
+    for (i = 0; i < RFM_MOVE_NSTEPS; i++)               /* (0.12.0: a pressed step white, R1) */
+        c[L_STEP0 + i] = m->step[i].kind != H_NONE && ic[i] ? WHITE : ic[i] ? sc(WHITE, ic[i] > 64 ? 256 : 90) : OFF;
     for (i = 0; i < RFM_MOVE_NKNOBS; i++)
         c[L_RING0 + i] = OFF;
+}
+/* (0.12.0, a8) Track 4's hold layer: the buttons it has no job for dark; Capture, Undo, Loop (Shift + them) lit */
+static void t4_menu_white(uint8_t wv[13])
+{
+    static const uint8_t DEAD[] = { W_SHIFT, W_MENU, W_DOWN, W_UP, W_COPY, W_LEFT, W_RIGHT, W_MUTE, W_DELETE };
+    int i;
+    for (i = 0; i < (int)sizeof DEAD; i++)
+        wv[DEAD[i]] = 0;
+    wv[W_CAPTURE] = wv[W_CAPTURE] > 60 ? wv[W_CAPTURE] : 60;
+    wv[W_UNDO] = wv[W_UNDO] > 60 ? wv[W_UNDO] : 60;
+    wv[W_LOOP] = wv[W_LOOP] > 60 ? wv[W_LOOP] : 60;
 }
 
 static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
 {
     const rgb_t mode = MODE_RGB[m->s.mode & 3];
     const int fm1 = !midi_mode(m), lm = rfmv_lay_menu(m) && rfmv_hold_shown(m, rfmv_lay_menu(m) - 1);
-    const int t4m = rfmv_t4_menu(m) && rfmv_hold_shown(m, 3) && !m->seq.smenu;   /* (0.9.0: a Shift menu opened: it shows) */
+    const int t4m = rfmv_t4_menu(m) && rfmv_hold_shown(m, 3);   /* (0.12.0, a8: its layer whole, with a menu it opened
+                                                         * on the knobs) */
     rgb_t c[L_WHITE0];
     uint8_t wv[13];
     int i;
@@ -2032,9 +2052,10 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
     if (lm)
         lay_menu_leds(m, rfmv_lay_menu(m) - 1, c);
     else if (t4m)
-        t4_menu_leds(m, c);
+        t4_menu_leds(m, c), t4_menu_white(wv);
     {
-        const int mk = lm || t4m ? -1 : rfmv_menu_knobs(m);   /* a menu or a held Track: only its knobs, its colour */
+        const int mk = lm || (t4m && !(m->seq.smenu && m->seq.t4_opened)) ? -1 : rfmv_menu_knobs(m);   /* a menu or a
+                                                         * held Track: only its knobs, its colour */
         if (mk >= 0)
             for (i = 0; i < RFM_MOVE_NKNOBS; i++)
                 c[L_RING0 + i] = !(mk >> i & 1) ? OFF : sc(MENU_KNOB, m->touched == i ? 256 : 110);

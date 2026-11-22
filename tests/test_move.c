@@ -1418,6 +1418,9 @@ static void test_track1_anywhere(void)
     track(&m, 3, 1);                                    /* Track 4 down: still the note layout, the Shift layer */
     CHECK(m.s.mode == RFM_MOVE_MODE_SEQ);
     rfmv_shift_icons(&m, ic);
+    CHECK(ic[5] == 0 && ic[3] == 0);                    /* (0.12.0, a8: nothing of the hold before its 300 ms) */
+    ms(&m, RFM_MOVE_TAP_MS + 10);
+    rfmv_shift_icons(&m, ic);
     CHECK(ic[5] == 24 && ic[3] == 0);                   /* (the icons under the steps) */
     clear();
     pad(&m, 0, 100), pad(&m, 0, 0);                     /* (the pads: its menu's, no note) */
@@ -1515,7 +1518,9 @@ static void test_mode_only_by_tap(void)
         for (i = 0; i < (int)(sizeof CC / sizeof CC[0]); i++) {
             button(&m, CC[i], 1), button(&m, CC[i], 0);
             button(&m, MR_CC_SHIFT, 1), button(&m, CC[i], 1), button(&m, CC[i], 0), button(&m, MR_CC_SHIFT, 0);
-            track(&m, 0, 1), button(&m, CC[i], 1), button(&m, CC[i], 0), now_ms += 400, track(&m, 0, 0);
+            if (CC[i] != MR_CC_MENU)                    /* (Track 1 held + Menu: session view, a Track gesture; 0.12.0:
+                                                         * Track 4 held + Menu no longer flips it back) */
+                track(&m, 0, 1), button(&m, CC[i], 1), button(&m, CC[i], 0), now_ms += 400, track(&m, 0, 0);
             track(&m, 3, 1), button(&m, CC[i], 1), button(&m, CC[i], 0), now_ms += 400, track(&m, 3, 0);
             close_all(&m);
             CHECK(!m.seq.projects);

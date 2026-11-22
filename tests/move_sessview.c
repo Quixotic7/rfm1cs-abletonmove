@@ -2204,6 +2204,82 @@ static void test_menu_over_views(void)
     back(), tap_track(1), rest();
 }
 
+/* a8: Track 4 held is a whole layer: nothing of it before 300 ms (its own light only), all of it at 300 ms or at once
+ * when something is pressed meanwhile; its dead controls dark and dead; a menu it opened owns the knobs */
+static int icons_lit(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int i, n = 0;
+    leds(w);
+    for (i = 0; i < 16; i++)
+        n += w[L_ICON0 + i][0] > 0;
+    return n;
+}
+static void test_t4_layer(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3], w0[RFM_MOVE_NLEDS][3];
+    int i, ok, oct, cv;
+    track_view();
+    rest(), scr_save(), leds(w0);
+    /* down: only its own light; no icons, the screen and the pads as they were */
+    track(3, 1);
+    leds(w);
+    CHECK(icons_lit() == 0 && scr_same() && bright(w[L_TRACK0 + 3]) >= bright(w0[L_TRACK0 + 3]));
+    for (i = 0, ok = 1; i < 32; i++)
+        ok &= !memcmp(w[L_PAD0 + i], w0[L_PAD0 + i], 3);
+    CHECK(ok);
+    adv_ms(150);
+    CHECK(icons_lit() == 0 && scr_same());
+    /* 300 ms: the whole layer at once: the screen, the icons, pads 1 and 2 only, the knobs and dead buttons dark */
+    adv_ms(170);
+    leds(w);
+    CHECK(icons_lit() > 0 && !scr_same() && lit(w[L_PAD0 + 24]) && lit(w[L_PAD0 + 25]));
+    for (i = 0, ok = 1; i < 32; i++)
+        ok &= i == 24 || i == 25 || !lit(w[L_PAD0 + i]);
+    for (i = 0; i < 8; i++)
+        ok &= !lit(w[L_RING0 + i]);
+    CHECK(ok);
+    CHECK(!w[L_WHITE0 + W_UP][0] && !w[L_WHITE0 + W_DOWN][0] && !w[L_WHITE0 + W_LEFT][0] && !w[L_WHITE0 + W_RIGHT][0] &&
+          !w[L_WHITE0 + W_MENU][0] && !w[L_WHITE0 + W_COPY][0] && !w[L_WHITE0 + W_DELETE][0] && !w[L_WHITE0 + W_MUTE][0] &&
+          w[L_WHITE0 + W_LOOP][0] && w[L_WHITE0 + W_UNDO][0]);
+    write_pbm("t4_layer");
+    /* dead: Up, Left, Menu, Mute, Copy, a knob, the jog */
+    oct = M.s.octave, cv = M.seq.page;
+    press(MR_CC_UP), press(MR_CC_RIGHT), press(MR_CC_MENU), press(MR_CC_MUTE), press(MR_CC_COPY);
+    CHECK(M.s.octave == oct && M.seq.page == cv && !M.seq.view && !(M.seq.mods & (SEQ_M_MUTE | SEQ_M_COPY)) && !M.seq.mute_latch);
+    cv = M.cc_val[M.s.bank][0];
+    knob(0, 5), jog(1);
+    CHECK(M.cc_val[M.s.bank][0] == cv && !M.seq.trig == !M.seq.trig);
+    track(3, 0), rest();
+    CHECK(!M.seq.projects && icons_lit() == 0 && scr_same());   /* (a hold: no tap) */
+    /* a press before 300 ms is the hold: it acts (dead here) and the layer shows at once */
+    track(3, 1), adv_ms(50);
+    press(MR_CC_UP);
+    CHECK(M.s.octave == oct && icons_lit() > 0 && !scr_same());
+    track(3, 0), rest();
+    CHECK(!M.seq.projects);
+    /* a menu it opened owns the knobs, lit, while Track 4 is still down */
+    track(3, 1), adv_ms(50);
+    step(4, 1), step(4, 0);                             /* (Tempo) */
+    CHECK(M.seq.smenu == RFM_MOVE_SM_TEMPO && rings_menu(0x03));
+    write_pbm("t4_menu_opened");
+    knob(0, 1);
+    CHECK(rfm_move_seq_bpm10(&M) == 1210);
+    jog(-1);
+    CHECK(rfm_move_seq_bpm10(&M) == 1200);
+    track(3, 0), rest();
+    CHECK(M.seq.smenu == RFM_MOVE_SM_TEMPO && rings_menu(0x03));
+    /* a menu open before Track 4: under its hold layer the knobs are dead and dark */
+    track(3, 1), adv_ms(320);
+    CHECK(rings_menu(0) && !scr_same());
+    knob(0, 1);
+    CHECK(rfm_move_seq_bpm10(&M) == 1200);
+    track(3, 0), rest();
+    CHECK(rings_menu(0x03));
+    back();
+    CHECK(!M.seq.smenu);
+}
+
 int main(void)
 {
     test_scenes();
@@ -2231,6 +2307,7 @@ int main(void)
     test_menu_stays();
     test_menu_heads();
     test_menu_over_views();
+    test_t4_layer();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

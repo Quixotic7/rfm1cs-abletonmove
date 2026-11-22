@@ -54,7 +54,7 @@ void rfmv_shift_icons(const rfm_move_t *m, uint8_t icon[16])
     const rfm_move_seq_t *q = &m->seq;
     int i;
     memset(icon, 0, 16);
-    if (!((m->s.mode == RFM_MOVE_MODE_SEQ && (q->mods & SEQ_M_SHIFT)) || rfmv_t4_menu(m) ||
+    if (!((m->s.mode == RFM_MOVE_MODE_SEQ && (q->mods & SEQ_M_SHIFT)) || (rfmv_t4_menu(m) && rfmv_hold_shown(m, 3)) ||
           (m->seq.projects && m->fw.fx && m->shift_down))) {
         /* (0.12.0, the owner's: "Icons should not be lit in session view or for the track sequencer steps. They get
          * lit up for shortcuts like holding shift or if you're holding the track button") session view at rest: dark

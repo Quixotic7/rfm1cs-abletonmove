@@ -1312,7 +1312,7 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
         return;
     }
     if (!(m->pop == POP_MODE && (m->pop_i == 30 || m->pop_i == 31) && rfmv_pop_up(m, POP_MODE))) {
-        for (t = 0; t < 4 && (!rfmv_hold_shown(m, t) || (t == 3 && m->seq.smenu) ||
+        for (t = 0; t < 4 && (!rfmv_hold_shown(m, t) || (t == 3 && m->seq.smenu && m->seq.t4_opened) ||
                               (t < 3 && m->seq.projects && m->fw.pop == FP_LEVEL)); t++) {}   /* (a slot's level set in the
                                                          * view: its popup) */   /* (0.9.0: over the view
                                                          * too; Track 4's gives way to a Shift menu it opened) */   /* (0.8.0) a held Track's menu: over any layout, a

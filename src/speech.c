@@ -559,7 +559,7 @@ static int pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint
         *subj = 0x100 | POP_MODE, *stamp = m->pop_t0;
         return 1;
     }
-    for (t = 0; t < 4 && (!rfmv_hold_shown(m, t) || (t == 3 && q->smenu)); t++) {}
+    for (t = 0; t < 4 && (!rfmv_hold_shown(m, t) || (t == 3 && q->smenu && q->t4_opened)); t++) {}
     if (t < 4) {                                        /* (0.9.0: over the view too) a held Track's menu: shown, then the item changed */
         menu_words(m, t, o, cap);
         *subj = (uint16_t)(0x200 | t << 5 | m->menu_what), *stamp = m->tbtn_clk[t];
