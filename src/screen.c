@@ -655,6 +655,14 @@ static void trig_popup(const rfm_move_t *m, mr_canvas_t *cv)
                                                          * the defaults for new steps) */
     mr_gfx_clear(cv, 0);
     g_full = 1;
+    if (k == 8) {                                       /* (0.12.0) a held step transposed (Up / Down): its notes now */
+        char nm[48];
+        rfmv_seq_held_names(m, nm, sizeof nm, 124);
+        v2_TC(cv, 64, 3, "Transpose", 2, 1);
+        v2_TC(cv, 64, v2_tw(nm, 4) <= 124 ? 21 : 27, nm, v2_tw(nm, 4) <= 124 ? 4 : 2, 1);
+        rfmv_seq_page_strip(m, cv, abs);
+        return;
+    }
     if (!q->trig) {                                     /* a held step's edit popup (V2Track's seq.micro / len / vel) */
         if (k == 0)
             snprintf(l, sizeof l, "Nudge"), snprintf(b, sizeof b, v ? "%+d%%" : "0%%", v * 100 / RFM_MOVE_SEQ_TPS);
@@ -1006,6 +1014,16 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
         } else if (m->pop == POP_VIEW) {                /* (0.11.0) Menu under an open Shift menu: the view named */
             mr_gfx_clear(cv, 0);
             v2_modeName(cv, m->pop_i ? "Session" : "Sequencer", 2, m->pop_i != 0);
+            g_full = 1;
+        } else if (m->pop == POP_ARPW) {                /* (0.12.0, the owner's) the arp switched: "Arp" over its mode
+                                                         * at 4x, the whole screen */
+            rfmv_pop_screen(cv, "Arp", rfmv_seq_arp_mode_name(m->pop_i), 0, 0, NULL);
+            g_full = 1;
+        } else if (m->pop == POP_OCT) {                 /* (0.12.0) Up / Down: the octave at 4x, the pads' notes under */
+            char o[8], r[24];
+            snprintf(o, sizeof o, m->s.octave ? "%+d" : "0", m->s.octave);
+            rfmv_seq_oct_range(m, r, sizeof r);
+            rfmv_pop_screen(cv, "Octave", o, 0, 0, r);
             g_full = 1;
         } else if (m->pop >= POP_LAYOUT && m->pop <= POP_SEQ) {   /* (0.8.0) the Track buttons' popups (the board) */
             char nm[24], a[16], b[16];

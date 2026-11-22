@@ -14,6 +14,7 @@
 typedef rfmv_rgb_t rgb_t;
 
 #define NUDGE 2                                         /* ticks a Left / Right with a step held (~10 % of a step) */
+#define OCT_FRAME 50                                    /* (0.12.0) the octave sweep's frame, ms (4 rows: 200 ms) */
 #define LEN_FINE 2                                      /* ticks a jog detent with a step held (~10 % of a step) */
 
 /* the tracks' colours */
@@ -88,7 +89,7 @@ static int vel_of(const rfm_move_t *m, int v) { (void)m; return clampi(v, 1, 127
 static int running(const rfm_move_seq_t *q) { return q->playing || q->start_pending; }
 static int root_note(const rfm_move_t *m) { return clampi(48 + m->s.root + 12 * m->s.octave, 0, 127); }
 
-
+static void al_pad(rfm_move_t *m, int p);
 
 /* the layers Back closes, the latest first */
 enum { LY_MENU = 1, LY_PROJ, LY_LOOP, LY_SHIFT, LY_CLIP, LY_PAGE };
@@ -172,6 +173,7 @@ void rfmv_seq_ui_release(rfm_move_t *m)
     q->step_held = q->step_add = q->step_edit = 0, q->step_first = -1, q->step_popped = 0;
     q->loop_first = -1, q->fill = 0, q->steps_chord = 0, q->loop_latch = 0;
     q->cs_step = -1, q->cs_shown = 0, q->cs_k = -1;
+    q->arp_sh = 0, q->al_down = 0, q->al_hold = 0, q->al_pads = 0, q->al_lenset = 0;   /* (0.12.0) */
     rfmv_seq_arp_stop(m);
 }
 
@@ -408,6 +410,11 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
         return;
     }
     h->kind = H_MENU;
+    if (rfmv_seq_al_holding(m)) {                       /* (0.12.0) an arp lane's step held: the pads are its
+                                                         * shortcuts (none plays) */
+        al_pad(m, p);
+        return;
+    }
     if (q->projects) {                                  /* the grid: top-left = project 1 */
         const int slot = (3 - p / 8) * 8 + p % 8;
         if (q->mods & SEQ_M_DELETE) {
@@ -818,6 +825,34 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
     const uint16_t bit = (uint16_t)(1u << s);
     const int clip = edit_clip(m), abs = q->page * RFM_MOVE_SEQ_PAGE + s;
     if (!down) {
+        if (s == SH_ARP && q->arp_sh) {                 /* (0.12.0) Shift + step 11 let go: a click opens (closes) the
+                                                         * arp menu now; after a hold (it toggled): nothing */
+            const int held = q->arp_sh == 2;
+            q->arp_sh = 0;
+            if (!held) {
+                q->smenu = (uint8_t)(q->smenu == RFM_MOVE_SM_ARP ? 0 : RFM_MOVE_SM_ARP);
+                q->arp_page = 0, m->gl_edit = 0;
+                if (q->smenu)
+                    layer(q, LY_MENU);
+                rfmv_menu(m, MENU_NONE, 0);
+            }
+            return;
+        }
+        if (q->al_down & bit) {                         /* (0.12.0) an arp lane's step let go: its pads back */
+            q->al_down &= (uint16_t)~bit;
+            if (q->al_hold == s + 1) {                  /* (another still down: the pads its; none: back at once) */
+                int k;
+                q->al_hold = 0;
+                for (k = 0; k < RFM_MOVE_NSTEPS && !q->al_hold; k++)
+                    if (q->al_down >> k & 1)
+                        q->al_hold = (uint8_t)(k + 1), q->arp_sel = (uint8_t)k;
+                if (!q->al_hold)
+                    q->al_pads = 0;
+            }
+            if (s == 0)
+                q->al_lenset = 0;
+            return;
+        }
         if (q->loop_first == s)
             q->loop_first = -1;
         if (q->cs_step == s)                            /* (0.12.0) a select step let go: its settings go (a hold's
@@ -917,14 +952,32 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
     }
     if (q->smenu == RFM_MOVE_SM_ARP && q->arp_page && !(q->mods & SEQ_M_SHIFT)) {
         /* (0.11.0, the owner's) an arp lane's page: the 16 step keys are the lane's 16 steps: a press picks one (knob 1
-         * its function or semitones). The menu has the steps while it is open: none reaches the clip under it */
-        q->arp_sel = (uint8_t)s;
-        q->sm_k = 0, q->sm_ms = rfmv_now_ms(m);
-        {
-            char w[40];
-            rfmv_seq_smenu_words(m, 0, w, sizeof w);
+         * its function or semitones). The menu has the steps while it is open: none reaches the clip under it.
+         * (0.12.0) a step past the lane's length: dark and dead; step 1 held + step n: the lane's length n (n again:
+         * 1); a step held 300 ms (or a pad pressed meanwhile): the pads are its shortcuts (rfmv_seq_al_take) */
+        rfm_move_arp_t *a = &q->tr[q->sel_track].arp;
+        uint8_t *len = q->arp_page == 2 ? &a->tlen : &a->mlen;
+        char w[40];
+        q->al_wave = 0;                                 /* (a press ends the wave: the lane's lights at once) */
+        if ((q->al_down & 1) && s) {
+            *len = (uint8_t)(*len == s + 1 ? 1 : s + 1);
+            q->al_lenset = 1;
+            q->sm_k = 1, q->sm_ms = rfmv_now_ms(m);
+            rfmv_seq_smenu_words(m, 1, w, sizeof w);
             rfmv_say_text(m, w);
+            rfmv_seq_dirty(m);
+            return;
         }
+        if (s >= clampi(*len, 1, 16))
+            return;
+        q->arp_sel = (uint8_t)s;
+        q->al_down |= bit;
+        if (!q->al_hold)
+            q->al_hold_ms = rfmv_now_ms(m), q->al_pads = 0;
+        q->al_hold = (uint8_t)(s + 1);                  /* (the latest pressed: the pads' step) */
+        q->sm_k = 0, q->sm_ms = rfmv_now_ms(m);
+        rfmv_seq_smenu_words(m, 0, w, sizeof w);
+        rfmv_say_text(m, w);
         return;
     }
     if ((q->mods & SEQ_M_LOOP) && (q->mods & (SEQ_M_DELETE | SEQ_M_COPY)) && !q->view) {   /* Loop on: Delete / Copy
@@ -954,6 +1007,12 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             rfmv_seq_tap(m, now);
             q->smenu = RFM_MOVE_SM_TEMPO;
             layer(q, LY_MENU);
+            return;
+        }
+        if (s == SH_ARP) {                              /* (0.12.0, the owner's, gated) Shift + step 11: white now; a
+                                                         * click opens the menu (or closes it) at the release, a hold
+                                                         * turns the arp off / on at 300 ms (rfmv_seq_ui_poll) */
+            q->arp_sh = 1, q->arp_sh_ms = rfmv_now_ms(m);
             return;
         }
         if (sh_menu(s)) {                               /* a menu: open (again: closed) */
@@ -1103,15 +1162,20 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
     }
     if (q->step_first >= 0 && !(q->step_held & bit)) { /* a second step: the first's notes reach to it */
         const int first = q->page * RFM_MOVE_SEQ_PAGE + q->step_first;
-        if (abs > first) {
+        if (abs > first) {                              /* (0.12.0, the owner's) the span's length, or, when the
+                                                         * held step already reaches the pressed one (more than span - 1
+                                                         * steps, at most span): back to 1 step. Pressed again: toggles */
             int lo, hi = rfmv_seq_range(m, clip, first, &lo), i;
+            const int span = abs - first + 1, cur = hi > lo ? m->seq.notes[lo].len : RFM_MOVE_SEQ_TPS;
+            const int L = cur > (span - 1) * RFM_MOVE_SEQ_TPS && cur <= span * RFM_MOVE_SEQ_TPS ? RFM_MOVE_SEQ_TPS
+                                                                                            : span * RFM_MOVE_SEQ_TPS;
             for (i = lo; i < hi; i++) {
                 const rfm_move_note_t n = m->seq.notes[i];
-                rfmv_seq_note_put(m, clip, n.step, n.note, n.vel, (abs - first + 1) * RFM_MOVE_SEQ_TPS, n.micro);
+                rfmv_seq_note_put(m, clip, n.step, n.note, n.vel, L, n.micro);
             }
             q->step_edit |= (uint16_t)(1u << q->step_first);
-        }
-        {
+            rfmv_pop(m, POP_TRIG, 6);                   /* (its LENGTH popup, at the press) */
+        } else {
             char w[24];                                 /* (0.6.5: speech: just the step) */
             snprintf(w, sizeof w, "Step %d", s + 1);
             rfmv_say_text(m, w);
@@ -1295,6 +1359,14 @@ void rfmv_seq_ui_poll(rfm_move_t *m)
         rfmv_seq_tk_flush(m);                           /* (no second press: the click) */
     if (q->cs_step >= 0 && !q->cs_shown && rfmv_sess_on(m) && rfmv_now_ms(m) - q->cs_clk >= RFM_MOVE_SEQ_HOLD_MS)
         cs_show(m);                                     /* (0.12.0) a select step held: its clip's settings, while down */
+    if (q->arp_sh == 1 && rfmv_now_ms(m) - q->arp_sh_ms >= RFM_MOVE_SEQ_HOLD_MS) {
+        q->arp_sh = 2;                                  /* (0.12.0) Shift + step 11 held: the arp off / on, now; the
+                                                         * menu stays as it is */
+        rfmv_seq_arp_toggle(m);
+    }
+    if (q->al_hold && !q->al_pads && !q->al_lenset && q->smenu == RFM_MOVE_SM_ARP && q->arp_page &&
+        rfmv_now_ms(m) - q->al_hold_ms >= RFM_MOVE_SEQ_HOLD_MS)
+        rfmv_seq_al_take(m);                            /* (0.12.0) a lane's step held: the pads are its shortcuts */
 }
 /* ================================================================ held steps: nudge, transpose, velocity === */
 static int held_view(const rfm_move_t *m) { return !m->seq.view && !m->seq.projects && m->seq.step_held; }
@@ -1336,6 +1408,39 @@ static void held_transpose(rfm_move_t *m, int d)
                 rfmv_seq_note_put(m, clip, abs, n[i].note + d, n[i].vel, n[i].len, n[i].micro);
             q->step_edit |= (uint16_t)(1u << s);
         }
+}
+/* (0.12.0) the held step's notes by name, after a transpose: the ones that fit px at 2x and "+n" for the rest */
+void rfmv_seq_held_names(const rfm_move_t *m, char *o, int cap, int px)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const int clip = edit_clip(m), abs = q->page * RFM_MOVE_SEQ_PAGE + (q->step_first >= 0 ? q->step_first : 0);
+    int lo, hi = rfmv_seq_range(m, clip, abs, &lo), n = hi - lo, i;
+    char t[64], nb[8];
+    o[0] = 0;
+    for (i = 0; i < n; i++) {
+        snprintf(t, sizeof t, "%s%s%s", o, i ? " " : "", rfmv_note_name(q->notes[lo + i].note, nb, sizeof nb));
+        if (px && i && v2_tw(t, 2) > px - (i + 1 < n ? 30 : 0)) {
+            snprintf(t, sizeof t, "%s +%d", o, n - i);
+            snprintf(o, (size_t)cap, "%s", t);
+            return;
+        }
+        snprintf(o, (size_t)cap, "%s", t);
+    }
+}
+/* (0.12.0) the pads' lowest and highest note now ("C2 - G4"; none: "") */
+void rfmv_seq_oct_range(const rfm_move_t *m, char *o, int cap)
+{
+    int p, lo = 128, hi = -1;
+    char a[8], b[8];
+    for (p = 0; p < RFM_MOVE_NPADS; p++) {
+        const int n = rfm_move_pad_note(&m->s, p);
+        if (n >= 0)
+            lo = n < lo ? n : lo, hi = n > hi ? n : hi;
+    }
+    if (hi < 0)
+        o[0] = 0;
+    else
+        snprintf(o, (size_t)cap, "%s - %s", rfmv_note_name(lo, a, sizeof a), rfmv_note_name(hi, b, sizeof b));
 }
 int rfmv_seq_volume(rfm_move_t *m, int d)
 {
@@ -1482,8 +1587,8 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
         case MR_CC_UP:
         case MR_CC_DOWN:
             held_transpose(m, (cc == MR_CC_UP ? 1 : -1) * ((q->mods & SEQ_M_SHIFT) ? 12 : 1));
-            rfmv_say_text(m, (q->mods & SEQ_M_SHIFT) ? (cc == MR_CC_UP ? "Octave up" : "Octave down")
-                                                     : (cc == MR_CC_UP ? "Transpose up" : "Transpose down"));
+            rfmv_pop(m, POP_TRIG, 8);                   /* (0.12.0, the owner's) its notes now, as the nudge and the
+                                                         * length show theirs (the words: the popup's) */
             if (q->mods & SEQ_M_SHIFT)
                 q->mods_used |= SEQ_M_SHIFT;
             return 1;
@@ -1641,7 +1746,11 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
             if (o != m->s.octave) {
                 m->s.octave = (int8_t)o;
                 rfmv_changed(m);
+                q->oct_dir = (int8_t)d, q->oct_ms = rfmv_now_ms(m);   /* (0.12.0) a white row over the pads, the way
+                                                         * the octave went */
             }
+            rfmv_pop(m, POP_OCT, 0);                    /* (0.12.0, the owner's) "Octave +2", the pads' notes under it
+                                                         * (at the range's end: the same, unchanged) */
         }
         return 1;
     }
@@ -1887,8 +1996,92 @@ void rfmv_seq_arp_toggle(rfm_move_t *m)
         rfmv_seq_arp_stop(m);
     }
     q->sm_k = 4, q->sm_ms = rfmv_now_ms(m);             /* (its header: the mode, as knob 5 shows it) */
-    rfmv_say_text(m, a->mode == RFM_MOVE_AM_OFF ? "Arp off" : "Arp on");
+    rfmv_pop(m, POP_ARPW, a->mode);                     /* (0.12.0, the owner's: plain at a glance) "Arp On" / "Arp
+                                                         * Off", the whole screen, a second; its words said */
     rfmv_seq_dirty(m);
+}
+/* ---- (0.12.0, the owner's) a held arp lane step's pads: its shortcuts. MOD: the bottom row the eight functions
+ * (play, rest, tie, repeat, lowest, highest, power chord, chord), the row above the played notes 1..6; TRANSPOSE: the
+ * semitones -16 .. +15, from the bottom-left up (the bottom row -16..-9 .. the top row +8..+15). A pad's value, or -99
+ * (dark and dead) */
+static int al_pad_val(const rfm_move_seq_t *q, int p)
+{
+    if (q->arp_page == 2)
+        return p - 16;
+    if (p < RFM_MOVE_AL_N1)
+        return p;
+    if (p >= 8 && p - 8 < RFM_MOVE_AL_N - RFM_MOVE_AL_N1)
+        return RFM_MOVE_AL_N1 + p - 8;
+    return -99;
+}
+static int al_open(const rfm_move_t *m)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    return m->s.mode == RFM_MOVE_MODE_SEQ && q->smenu == RFM_MOVE_SM_ARP && q->arp_page && !q->projects &&
+           !rfmv_seq_trk_held(m);
+}
+int rfmv_seq_al_holding(const rfm_move_t *m) { return al_open(m) && m->seq.al_hold; }
+void rfmv_seq_al_take(rfm_move_t *m)                    /* the pads are the held step's shortcuts now (the notes held
+                                                         * on them play on until let go: their pads keep their hold) */
+{
+    rfm_move_seq_t *q = Q(m);
+    if (!rfmv_seq_al_holding(m) || q->al_pads)
+        return;
+    q->al_pads = 1;
+    q->arp_sel = (uint8_t)(q->al_hold - 1);
+    q->sm_k = 0, q->sm_ms = rfmv_now_ms(m);             /* (the header: the held step and its value) */
+}
+/* a pad pressed while a lane step is held: the step's function (MOD) or its semitones (TRANSPOSE), at the press */
+static void al_pad(rfm_move_t *m, int p)
+{
+    rfm_move_seq_t *q = Q(m);
+    rfm_move_arp_t *a = &q->tr[q->sel_track].arp;
+    const int v = al_pad_val(q, p), st = (q->al_hold - 1) & 15;
+    char w[40];
+    rfmv_seq_al_take(m);
+    q->sm_k = 0, q->sm_ms = rfmv_now_ms(m);
+    if (v == -99)
+        return;
+    a->lane[q->arp_page - 1][st] = (int8_t)v;
+    rfmv_seq_smenu_words(m, 0, w, sizeof w);
+    rfmv_say_text(m, w);
+    rfmv_seq_dirty(m);
+}
+/* the pads' lights while taken: the step's value white, the others by group (MOD: functions orange, notes blue;
+ * TRANSPOSE: 0 and the octaves green, the rest dim blue), dead ones dark; a pad held from before: white */
+static rgb_t al_pad_rgb(const rfm_move_t *m, int p)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const rfm_move_arp_t *a = &q->tr[q->sel_track].arp;
+    const int v = al_pad_val(q, p), cur = a->lane[q->arp_page - 1][(q->al_hold - 1) & 15];
+    if (v == -99)
+        return RFMV_OFF;
+    if (v == cur)
+        return RFMV_WHITE;
+    if (q->arp_page == 2)
+        return v == 0 || v == 12 || v == -12 ? sc(RFMV_GREEN, 140) : sc((rgb_t){ 40, 120, 255 }, 70);
+    return v < RFM_MOVE_AL_N1 ? sc((rgb_t){ 255, 72, 0 }, 120) : sc((rgb_t){ 40, 120, 255 }, 120);
+}
+/* the step keys passed to a lane: all white once, then a wave left to right settles them into the lane's lights
+ * (AL_FLASH ms, then AL_STEP ms a group of 4; the frames quantised: 32 LED messages in all) */
+#define AL_FLASH 120
+#define AL_STEP 80
+static int al_wave_n(const rfm_move_seq_t *q, uint32_t now)   /* the steps settled so far (16: done) */
+{
+    const uint32_t el = now - q->al_wave_ms;
+    if (!q->al_wave || el >= AL_FLASH + 3 * AL_STEP)
+        return 16;
+    return el < AL_FLASH ? 0 : (int)(4 * ((el - AL_FLASH) / AL_STEP + 1));
+}
+static void al_wave_start(rfm_move_t *m)
+{
+    m->seq.al_wave = 1, m->seq.al_wave_ms = rfmv_now_ms(m);
+}
+/* (0.12.0) the arp's mode as its popup and header say it */
+const char *rfmv_seq_arp_mode_name(int mode)
+{
+    static const char *const AM[RFM_MOVE_AM_N] = { "Off", "On", "First", "Once", "Hold" };
+    return AM[mode >= 0 && mode < RFM_MOVE_AM_N ? mode : 0];
 }
 static void smenu_turn(rfm_move_t *m, int k, int d)
 {
@@ -1964,8 +2157,15 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
                                                          * lane's step; knob 1 its function or semitones, knob 2 the
                                                          * lane's length, knob 3 RESET */
         if (k < 0) {
+            const int was = q->arp_page;
             q->arp_page = (uint8_t)clampi(q->arp_page + d, 0, 2);
             q->sm_ms = 0;                               /* (the page's own header) */
+            if (!was && q->arp_page)
+                al_wave_start(m);                       /* (0.12.0) the step keys pass to the lane: its wave */
+            else if (!q->arp_page)
+                q->al_wave = 0;                         /* (back on the main page: the clip's steps at once) */
+            if (q->arp_page != was)
+                q->al_down = 0, q->al_hold = 0, q->al_pads = 0, q->al_lenset = 0;
             break;
         }
         if (q->arp_page) {
@@ -2309,7 +2509,9 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
     /* pads */
     for (i = 0; i < RFM_MOVE_NPADS; i++) {
         rgb_t v = RFMV_OFF;
-        if (q->projects) {
+        if (q->al_pads && rfmv_seq_al_holding(m)) {   /* (0.12.0) a held arp lane step's shortcuts */
+            v = al_pad_rgb(m, i);
+        } else if (q->projects) {
             const int slot = (3 - i / 8) * 8 + i % 8;
             if (slot == q->proj_pending)
                 v = bl ? mode : RFMV_OFF;
@@ -2374,6 +2576,12 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                             v = sc(tc, 200);
                 }
             }
+            if (q->oct_dir && rfmv_now_ms(m) - q->oct_ms < 4 * OCT_FRAME) {   /* (0.12.0) the octave's sweep: a row a
+                                                         * frame, up from the bottom (Up) or down from the top */
+                const int f = (int)((rfmv_now_ms(m) - q->oct_ms) / OCT_FRAME);
+                if (i / 8 == (q->oct_dir > 0 ? f : 3 - f))
+                    v = RFMV_WHITE;
+            }
         }
         c[L_PAD0 + i] = v;
     }
@@ -2412,6 +2620,8 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 v = sc((rgb_t){ 255, 72, 0 }, 150);
             else
                 v = sc(RFMV_WHITE, !L && lv == RFM_MOVE_AL_REST ? 14 : 70);
+            if (i >= al_wave_n(q, rfmv_now_ms(m)))     /* (0.12.0) the takeover's flash and wave */
+                v = RFMV_WHITE;
         } else if (q->mods & SEQ_M_LOOP) {              /* the pages: the loop's in the track's colour, the one
                                                          * shown white, the playing one pulsing; the clip's others
                                                          * (outside the loop) dim; past the clip off */
@@ -2445,6 +2655,8 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 v = RFMV_WHITE;
             if (i == SH_CLOCK && q->following)
                 v = RFMV_GREEN;
+            if (i == SH_ARP && q->arp_sh == 1)          /* (0.12.0) pressed, not yet a click or a hold: white */
+                v = RFMV_WHITE;
         } else if (q->view && i == RFM_MOVE_NSTEPS - 1) {   /* (0.10.0) step 16: every clip stops: white while
                                                          * something plays, blinking while it all stops */
             int t, any = 0, all = 1;
@@ -3198,6 +3410,15 @@ static void arp_head(const rfm_move_t *m, int k, char *o, int cap)
     default: snprintf(o, (size_t)cap, "Arp %s", AM[a->mode % RFM_MOVE_AM_N]); break;   /* (knob 5, and at rest) */
     }
 }
+/* (0.12.0) a 50 % checker over an area: a picture dimmed (the arp off) */
+static void dither(mr_canvas_t *cv, int x0, int y0, int w, int h)
+{
+    int x, y;
+    for (y = y0; y < y0 + h && y < MR_SCREEN_H; y++)
+        for (x = x0; x < x0 + w && x < MR_SCREEN_W; x++)
+            if ((x + y) & 1)
+                cv->px[y][x] = 0;
+}
 /* the MOD lane: what a step does, as a sign in its 6 px column: play a block, rest a low dash, tie a line from the
  * step before, repeat a hollow block, lowest an arrow down, highest an arrow up, power chord two bars, chord three,
  * a played note its number */
@@ -3290,6 +3511,8 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
         int hk = tk >= 0 && (mk >> tk & 1) ? tk : -1;
         if (hk < 0 && q->sm_k >= 0 && (mk >> q->sm_k & 1) && rfmv_now_ms(m) - q->sm_ms < RFM_MOVE_POPUP_MS)
             hk = q->sm_k;
+        if (hk < 0 && q->al_pads && rfmv_seq_al_holding(m))
+            hk = 0;                                     /* (0.12.0) the pads taken: the held step and its value */
         arp_head(m, hk, b, sizeof b);
         fit2(cv, 0, 0, b, 128);
         for (i = 0; i < 8; i++)
@@ -3319,6 +3542,8 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
                 } else
                     arp_sign(cv, x, v);
             }
+            if (a->mode == RFM_MOVE_AM_OFF)              /* (0.12.0, the owner's) off: the lane dimmed */
+                dither(cv, 0, 19, 128, 37);
             v2_strip(cv, 3, 1u << q->arp_page, -1, 0, 128);
             break;
         }
@@ -3339,12 +3564,10 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
                 walk[0] = 1, walk[1] = 0, walk[2] = 2, walk[3] = 0, walk[4] = 1, n = 5; break;
             default: walk[0] = 0, walk[1] = 1, walk[2] = 2, n = 3; break;
             }
-            for (i = 0; i < n; i++) {                   /* (off: outlined) */
-                if (a->mode == RFM_MOVE_AM_OFF)
-                    v2_O(cv, 2 + i * 10, 54 - walk[i] * 11, 8, 4, 1);
-                else
-                    v2_R(cv, 2 + i * 10, 54 - walk[i] * 11, 8, 4, 1);
-            }
+            for (i = 0; i < n; i++)
+                v2_R(cv, 2 + i * 10, 54 - walk[i] * 11, 8, 4, 1);
+            if (a->mode == RFM_MOVE_AM_OFF)              /* (0.12.0, the owner's) off: the walk dimmed (a checker) */
+                dither(cv, 0, 30, 64, 30);
             snprintf(b, sizeof b, "Oct %d", a->range), v2_T(cv, 2, 22, b, 1, 1);   /* (its range: over the walk) */
             fit2(cv, 66, 23, AP_NAMES[a->pat % RFM_MOVE_AP_N], 62);
             arp_rate_name(rfmv_seq_arp_rate_of(a->rate), b, sizeof b), fit2(cv, 66, 42, b, 62);

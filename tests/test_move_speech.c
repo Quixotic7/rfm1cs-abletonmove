@@ -638,10 +638,10 @@ static void test_buttons(void)
     SAID("V:Jog: Algo|");
     jog_press(&M), rest_pop(&M), clear();
     rfm_move_set_slot_layout(&M, 0, RFM_MOVE_LAY_SCALE), clear();   /* a note layout: the arrows' octave */
-    press(&M, MR_CC_UP);
-    SAID("V:Octave 1|");
+    press(&M, MR_CC_UP);                                /* (0.12.0: its popup, the pads' notes too) */
+    SAID("V:Octave 1, C3 to E5|");
     press(&M, MR_CC_DOWN);
-    SAID("V:Octave 0|");
+    SAID("V:Octave 0, C2 to E4|");
     memset(kinds, 0, sizeof kinds);                     /* (0.9.0: the buttons are the sequencer's: none reaches the
                                                          * FM-1; Capture with nothing played, Mute alone: the track) */
     press(&M, MR_CC_CAPTURE), press(&M, MR_CC_MUTE), press(&M, MR_CC_LEFT), jog(&M, 1);

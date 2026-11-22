@@ -1139,7 +1139,8 @@ static void on_step(rfm_move_t *m, int s, int down, uint32_t now)
     rfm_move_hold_t *h = &m->step[s];
     int t;
     if (!down) {
-        if (h->kind == H_SEQ)                           /* (Sequencer mode's step: its release) */
+        if (h->kind == H_SEQ || (h->kind == H_MENU && s == 10 && m->seq.arp_sh))   /* (Sequencer mode's step: its release; 0.12.0:
+                                                         * Track 4's Shift + step 11 too, a gated click) */
             rfmv_seq_step(m, s, 0, now);
         let_go(m, h);
         return;

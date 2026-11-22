@@ -324,11 +324,18 @@ void rfmv_seq_route_leds(const rfm_move_t *m, int fw, rfmv_rgb_t c[L_WHITE0]);  
 int rfmv_sess_on(const rfm_move_t *m);                  /* (0.11.0) session view is what the pads show */
 void rfmv_sv_toggle(rfm_move_t *m);                     /* (0.12.0) session view in / out, from any layout */
 void rfmv_seq_arp_toggle(rfm_move_t *m);                /* (0.11.0) the arp menu's jog click: on / off */
+const char *rfmv_seq_arp_mode_name(int mode);           /* (0.12.0) "Off", "On", "First" .. */
+void rfmv_seq_al_take(rfm_move_t *m);                   /* (0.12.0) a held arp lane step takes the pads */
+int rfmv_seq_al_holding(const rfm_move_t *m);           /* .. a lane step is held: a pad press is its shortcut */
+void rfmv_seq_oct_range(const rfm_move_t *m, char *o, int cap);   /* (0.12.0) the pads' notes: "C2 - G4" */
+void rfmv_seq_held_names(const rfm_move_t *m, char *o, int cap, int px);   /* a held step's notes by name (px: the
+                                                         * width at 2x, 0 any: the first ones and "+n") */
 void rfmv_seq_scene_pop(const rfm_move_t *m, mr_canvas_t *cv);   /* (0.11.0) session's knob 8 touched: the scenes */
 void rfmv_slot_screen(const rfm_move_t *m, mr_canvas_t *cv, int slot, int changed);   /* (0.11.0, screen.c) a slot's
                                                          * summary: its firmware, layout, key, latch, the 16 tracks */
 int rfmv_t4_page(const rfm_move_t *m);                  /* Track 4's page: 0 the Mixer, 1 Routing */
-enum { POP_LAYOUT = 40, POP_JOG, POP_T4, POP_CCNUM, POP_LOCK, POP_SEQ, POP_SLOT, POP_VIEW };   /* (popups,
+enum { POP_LAYOUT = 40, POP_JOG, POP_T4, POP_CCNUM, POP_LOCK, POP_SEQ, POP_SLOT, POP_VIEW, POP_ARPW, POP_OCT };   /* (0.12.0:
+                                                         * POP_ARPW the arp switched on / off, POP_OCT the octave) */   /* (popups,
                                                          * rfm_move_t.pop; 0.11.0: POP_SLOT a slot's summary (session
                                                          * view's Track tap), POP_VIEW the view named under a menu) */
 enum { LK_LOCKED, LK_SOLO, LK_UNSOLO, LK_OFF, LK_ON, LK_MUTE, LK_UNMUTE, LK_CLEARED };   /* the lock menu's word */
