@@ -3,6 +3,54 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.11.0 (2026-11-21, not released)
+
+The owner's feedback on the arp, the held Track buttons and session view, and their UX rules (`design/UX-RULES.md`:
+feedback at once, gated click / hold / double click, a layer takes what it uses, lit knobs, knob labels, step icons).
+The board, drawn from this build: `remoteFM14Move/docs/design/ux-0.11.movedesign.json`.
+
+**The arp menu**
+- **A header** names the touched knob and its value (2x where it fits), or the knob turned last for a second; at rest
+  the page: "Arp On", "Arp Off", "Mod", "Transpose". Under it a tick a knob the page uses, the active one long. (The
+  knobs showed nothing: the ring legend only.) The range moved over the walk ("Oct 2").
+- **The jog's click turns the arp off and on again** as it was (`rfmv_seq_arp_toggle`); Shift + step 11's icon is
+  full while it is on.
+- **The lanes**: the 16 step keys are the lane's 16 steps (a press picks one; the menu has the steps while a lane is
+  open, none reaches the clip). Knob 1 the step's function or semitones, knob 2 the length, knob 3 RESET (were: knob
+  3 the step, knob 2 RESET, knob 4 the length). The MOD lane is drawn as a sign a step, not bars; the step just
+  played is ticked on the screen and green on its key.
+- **Menu no longer closes a Shift menu**: the view flips under it (track <-> session), named a second (`POP_VIEW`);
+  Back closes the menu. The menu's knobs work in session view too (they did nothing there), and a knob's touch there
+  no longer selects a track under the menu.
+
+**A held Track 1..3**
+- **Gated** (`tk_press`, `tk_click`, `rfmv_seq_ui_poll`): a hold routes the track or not once held 300 ms, while
+  still down (it acted at the release); a click selects once the double click's 300 ms have passed (or the Track
+  button is let go, or something else is pressed); the double click solos at its second press and selects nothing.
+- **The steps' lights**: not routed dark (was dim red), routed the firmware's colour, the selected one blinks, the
+  solo blue, pressed white.
+- **A solo stays** when another track is selected (`rfmv_route_on`: that track is routed once the solo ends).
+- **The screen** at rest: the slot at a glance (`rfmv_slot_screen`): firmware, layout, latch, key, and the 16 tracks
+  routed or not, the selected one, the solo. A step acted: the track and what happened over the same row.
+
+**Session view**
+- **Its own layer**: a Track 1..3 tap changes the firmware played and stays in session view (`rfmv_fw_activate_keep`),
+  its summary a second (`POP_SLOT`). The knobs are lit there: a column whose track reaches that firmware in its colour,
+  the others faint white, knob 8 green. A Track held: the pads are the routing (a column: a click routed / not, a double
+  click the solo); the knobs, the jog and Up / Down do nothing there.
+- **A scene pad starts the transport** when stopped (the owner's exception to "only Play starts"; Rec armed: the
+  count-in). Knob 8 touched: "Scenes" (the scene that plays or waits, the rows in view).
+- **Handover shown**: a playing clip whose track has another clip (or a stop) waiting flashes with a stop icon, its
+  pad between green and its own colour; the clip that waits flashes with the play icon; a scene's box the same (a play
+  icon on its way, a stop icon on its way out).
+- **A double click is now**: a clip plays at once (in the bar's phase), an empty slot stops its track at once, a scene
+  launches at once. (A double tap on the playing clip stopped it at the bar: its stop step does that.) **Shift + a
+  scene pad** stops the scene's clips at the bar; a double click: at once.
+- **The stop steps' icons are lit** (a step that is a function), full with something to stop; the select steps' are not.
+
+Tests: `move_sessview` 958 checks (the handover, the double clicks, the scene stop, the routing pads, the gated steps,
+the arp's header, click and lanes); `move_seq`, `move`, `move_tracks`, `move_speech` moved to the gated timing.
+
 ## 0.10.0 (2026-11-21, not released)
 
 Session view after the owner's review as an Ableton Live user (14 answers on the review page; the board, made before

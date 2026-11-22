@@ -140,6 +140,8 @@ void rfmv_seq_release(rfm_move_t *m, int track);       /* the track's sounding n
 void rfmv_seq_launch(rfm_move_t *m, int track, int scene);   /* scene -1: stop the track */
 void rfmv_seq_launch_scene(rfm_move_t *m, int scene);
 void rfmv_seq_launch_now(rfm_move_t *m, int track, int scene);   /* a double tap: now, in phase with the bar */
+void rfmv_seq_launch_scene_now(rfm_move_t *m, int scene);        /* (0.11.0) a scene's double click: now */
+int rfmv_seq_stop_scene(rfm_move_t *m, int scene, int now);      /* (0.11.0) Shift + a scene: its clips stop; tracks stopped */
 void rfmv_seq_mute(rfm_move_t *m, int track, int on);
 void rfmv_seq_solo(rfm_move_t *m, int track, int on);
 int rfmv_seq_groove_of(const rfm_move_t *m, int track);   /* Global (the project's) or the track's own */
@@ -299,8 +301,19 @@ void rfmv_route_toggle(rfm_move_t *m, int slot, int track);   /* a sequencer tra
 void rfmv_route_on(rfm_move_t *m, int slot, int track);       /* (0.9.0) .. routed (selected for the slot) */
 int rfmv_fw_solo(rfm_move_t *m, int slot, int track);         /* (0.9.0) the slot's solo toggled: 1 on */
 rfmv_rgb_t rfmv_lock_rgb(const rfm_move_t *m, int slot, int track);   /* (0.9.0) a track's step in the lock menu */
+int rfmv_fw_activate_keep(rfm_move_t *m, int slot);     /* (0.11.0, fw.c) session view: the slot played, the view kept */
+void rfmv_seq_tk_flush(rfm_move_t *m);                  /* (0.11.0) a held Track's waiting click acts now */
+void rfmv_seq_route_pad(rfm_move_t *m, int fw, int p);  /* (0.11.0) session, a Track held: a column's pad */
+void rfmv_seq_route_leds(const rfm_move_t *m, int fw, rfmv_rgb_t c[L_WHITE0]);   /* .. its pads, steps and knobs */
+int rfmv_sess_on(const rfm_move_t *m);                  /* (0.11.0) session view is what the pads show */
+void rfmv_seq_arp_toggle(rfm_move_t *m);                /* (0.11.0) the arp menu's jog click: on / off */
+void rfmv_seq_scene_pop(const rfm_move_t *m, mr_canvas_t *cv);   /* (0.11.0) session's knob 8 touched: the scenes */
+void rfmv_slot_screen(const rfm_move_t *m, mr_canvas_t *cv, int slot, int changed);   /* (0.11.0, screen.c) a slot's
+                                                         * summary: its firmware, layout, key, latch, the 16 tracks */
 int rfmv_t4_page(const rfm_move_t *m);                  /* Track 4's page: 0 the Mixer, 1 Routing */
-enum { POP_LAYOUT = 40, POP_JOG, POP_T4, POP_CCNUM, POP_LOCK, POP_SEQ };   /* (popups, rfm_move_t.pop) */
+enum { POP_LAYOUT = 40, POP_JOG, POP_T4, POP_CCNUM, POP_LOCK, POP_SEQ, POP_SLOT, POP_VIEW };   /* (popups,
+                                                         * rfm_move_t.pop; 0.11.0: POP_SLOT a slot's summary (session
+                                                         * view's Track tap), POP_VIEW the view named under a menu) */
 enum { LK_LOCKED, LK_SOLO, LK_UNSOLO, LK_OFF, LK_ON, LK_MUTE, LK_UNMUTE, LK_CLEARED };   /* the lock menu's word */
 void rfmv_pop_screen(mr_canvas_t *cv, const char *top, const char *big, int n, int cur, const char *bottom);
 const char *rfmv_lay_name(const rfm_move_t *m, int slot, int lay);   /* "FM-1", "Chords", "Scale" .. */

@@ -337,8 +337,11 @@ static void test_menus(void)
     SAID("V:Scale: Minor|");
     jog(&M, 1);
     SAID("V:Root: Db|");
-    tap_step(&M, 2);                                    /* (0.9.0) a step: track 3 selected for slot 1 (not a channel) */
-    SAID("V:Track 3|V:Track 3, selected|");
+    tap_step(&M, 2);                                    /* (0.9.0) a step: track 3 selected for slot 1 (not a channel);
+                                                         * (0.11.0) gated: once the double click's time has passed */
+    SAID("V:Track 3|");
+    adv_ms(&M, RFM_MOVE_DOUBLE_MS + 30);
+    SAID("V:Track 3, selected|");
     CHECK(rfm_move_seq_lock(&M, 0) == 2 && M.seq.sel_track == 2 && (M.seq.fx.ffilt[0] >> 2 & 1));
     press(&M, MR_CC_UP);
     SAID("V:Octave 1|");
@@ -350,7 +353,9 @@ static void test_menus(void)
     track(&M, 1, 1), tap_pad(&M, 24 + RFM_MOVE_LAY_DRUM);
     SAID("V:Layout: Drum|");
     tap_step(&M, 5);                                    /* (a track for slot 2: not the one edited now) */
-    SAID("V:Track 6|V:Track 6, selected|");
+    SAID("V:Track 6|");
+    adv_ms(&M, RFM_MOVE_DOUBLE_MS + 30);
+    SAID("V:Track 6, selected|");
     track(&M, 1, 0), rest_pop(&M);
     CHECK(said[0] == 0 && M.fw.active == 0 && M.s.slot[1].lay == RFM_MOVE_LAY_DRUM && rfm_move_seq_lock(&M, 1) == 5);
     CHECK((M.seq.fx.ffilt[1] >> 5 & 1) && M.seq.sel_track == 2 && rfm_move_seq_lock(&M, 0) == 2);
@@ -583,6 +588,7 @@ static void test_seq(void)
     track(&M, 0, 1), step(&M, 2, 1);                    /* (0.9.0) Track 1 held, its menu: a step, a track */
     SAID("V:Track 3|");
     step(&M, 2, 0);                                     /* (its tap: selected for slot 1, the one edited now) */
+    adv_ms(&M, RFM_MOVE_DOUBLE_MS + 30);                /* (0.11.0: once the double click's time has passed) */
     SAID("V:Track 3, selected|");                       /* (fixed in 0.8.0: speech.c watch: "Track 3" said again after it) */
     track(&M, 0, 0), rest_pop(&M);
     CHECK(said[0] == 0 && M.seq.sel_track == 2 && rfm_move_seq_lock(&M, 0) == 2);
@@ -725,7 +731,9 @@ static void test_rows(void)
     /* (0.9.0) the tracks: Track 1 held + a step (selected for slot 1, routed), held (not routed), a double tap
      * (slot 1's solo); Mute + a step (mute) */
     track(&M, 0, 1), tap_step(&M, 1);
-    SAID("V:Track 2|V:Track 2, selected|");
+    SAID("V:Track 2|");
+    adv_ms(&M, RFM_MOVE_DOUBLE_MS + 30);
+    SAID("V:Track 2, selected|");
     CHECK(M.seq.sel_track == 1 && rfm_move_seq_lock(&M, 0) == 1);
     step(&M, 2, 1), adv_ms(&M, RFM_MOVE_SEQ_HOLD_MS + 50), step(&M, 2, 0);
     SAID("V:Track 3|V:Track 3, not routed|");          /* (the press picks it; the hold stops it reaching slot 1) */
@@ -763,7 +771,8 @@ static void test_rows(void)
     press(&M, MR_CC_PLAY);
     HAS("V:Playing|");
     adv_ms(&M, 100);
-    tap_pad(&M, 24), tap_pad(&M, 24);                   /* (the playing clip, a double tap: it stops at the bar) */
+    tap_step(&M, 1);                                    /* (0.11.0: its stop step: it stops at the bar; a double click
+                                                         * on a clip launches it now) */
     HAS("V:Track 1, stop queued|");
     for (i = 0; i < 30 && !strstr(said, "stopped"); i++)
         adv_ms(&M, 100);

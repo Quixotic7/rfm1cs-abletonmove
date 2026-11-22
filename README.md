@@ -114,11 +114,19 @@ every loaded firmware (`RFM_MOVE_DEST_ALL`), so their own sequencers and arps fo
 **Track n held: one menu** (every layout): the top row's pads 1..6 FM-1 (white), the firmware's own takeover (purple;
 dark when it has none), Scale, Chroma, Drum, Octave (lime), the slot's own full, the others at 30 %; pad 8 latch
 (amber); rows 2..4 the 24 scales (the key the tracks use: the project's, or the selected track's own). The steps are
-the 16 tracks for firmware n: **a tap selects** one (it is routed to firmware n at once; in a note layout it is the
-track edited), **a double tap solos** it on firmware n only (one solo a firmware: another moves it; again: off, the
-routing as it was), **a hold** stops it reaching firmware n (dim red); Copy, Delete and Mute + a step copy, clear,
-mute a track. The jog the root, Up / Down the octave, the knobs (in a note layout) the track's CC numbers, the volume
-the slot's level. The screen: the firmware, the layout big, six dashes; a step: "ChoralRoot / Track 3 / selected".
+the 16 tracks for firmware n: **a click selects** one (it is routed to firmware n; in a note layout it is the track
+edited), **a double click solos** it on firmware n only (one solo a firmware: another moves it; again: off, the
+routing as it was; (0.11.0) the solo stays when another track is selected), **a hold** routes it to firmware n or not;
+Copy, Delete and Mute + a step copy, clear, mute a track. (0.11.0, `design/UX-RULES.md`) the three are gated: the hold
+acts once held 300 ms, while still down; the click acts once the double click's 300 ms have passed with no second
+press (or the Track button is let go, or something else is pressed); the double click acts at its second press. The
+steps' lights: a track not routed is **dark**, a routed one the firmware's colour, the selected one **blinks**, the
+solo blue, a pressed one white. The jog the root, Up / Down the octave, the knobs (in a note layout) the track's CC
+numbers, the volume the slot's level. The screen (0.11.0): the slot at a glance: the firmware, its layout (a padlock:
+latch on), the key, and the 16 tracks (a block: routed, a dot: not, underlined: the selected one, a bar over it: the
+solo); a step acted: "Felucca / Track 3 / Not Routed" over the same 16 tracks. **In session view** the held Track is
+the routing only: a column's pad: a click routes its track to the firmware or not, a double click solos it; the
+knobs, the jog and Up / Down do nothing there.
 
 **Shift shortcuts** (0.9.0): Track 4 held + a step anywhere (its Shift menu on the screen at once), Shift + a step in
 a note layout and in the Mixer and Routing (a Shift menu opens over them; Back closes it). **Track 1..3 held** works
@@ -262,8 +270,8 @@ so). Back closes layers, and with none flips back to
 the slot's layout (0.8.0, proposal 2).
 
 **Tracks: a firmware Track held** (0.8.0; was Track 4 held): the lock menu (see "The Track buttons"). The 16 steps are
-the 16 tracks: **a tap locks** one to that firmware and selects it, **a double tap solos** it (on / off), **a hold**
-(300 ms) stops it reaching that firmware (on / off). Solo: while any track is soloed only the soloed tracks sound.
+the 16 tracks: **a click selects** one for that firmware, **a double click solos** it (on / off), **a hold**
+(300 ms) routes it to that firmware or not (gated, 0.11.0: see "The Track buttons"). Solo: while any track is soloed only the soloed tracks sound.
 While it is held the knobs set the bank's CC numbers ("K3 CC74"), Up / Down the rate, the jog the MIDI channel; Copy /
 Delete + a step copy / clear a track; Mute + step mutes. The pads do nothing while it is held. The track view shows which of the 16 (a 4 x
 4 in the top-right corner: tracks 1-4 the first column, the selected one filled). Session view's Left / Right move
@@ -348,14 +356,18 @@ the 8th column the scenes, a row a scene (4 of 16 in view), as the Move's Contro
 
 | Gesture | Does |
 |---|---|
-| A clip pressed | launched at the next bar (queued, blinking green; stopped: the track's clip at once, playing with Play) and the selected one at once: its cell framed on the screen. On the playing clip: it plays on, selected |
+| A clip pressed | launched at the next bar (queued: its pad blinks green, its cell flashes with the play icon; the track's playing clip flashes with a stop icon, its pad between green and its own colour; stopped: the track's clip at once, playing with Play) and the selected one at once: its cell framed on the screen. On the playing clip: it plays on, selected |
+| A double click (300 ms) on a slot | (0.11.0) now, not at the bar: a clip plays (in the bar's phase), an empty slot stops its track. The first click queued the same thing |
 | An empty slot pressed | selected (white), **no clip made**: the first note makes it (a step, the pads with Rec, Capture). The track stops at the bar, as Live's stop button. With Rec armed: a new clip there, recorded into (growing a bar at a time) |
 | Shift + a slot | selected for editing; nothing launched or stopped |
-| A scene pad (column 8) | its row launched across the 16 tracks; tracks with no clip in the row stop. Says "Scene 2". With Shift, Copy, Delete or Mute held: nothing (yet) |
-| A double tap (300 ms) on the playing clip | it stops at the next bar (on any other clip a double tap is a tap) |
+| A scene pad (column 8) | its row launched across the 16 tracks; tracks with no clip in the row stop. Says "Scene 2". (0.11.0) **Stopped: the scene plays** (the one pad besides Play that starts the transport; Rec armed: the count-in). A double click: now. Its box on the screen flashes with a play icon while it waits; the scene on its way out flashes with a stop icon. With Copy, Delete or Mute held: nothing (yet) |
+| Shift + a scene pad | (0.11.0) the scene's clips stop at the bar; a double click: now |
+| Track 1..3 tapped | (0.11.0) session view is its own layer: that firmware is the one played, the view stays; its summary a second (the 16 tracks: which reach it). The knobs' lights then show it: a column whose track reaches that firmware in the firmware's colour, the others faint white |
+| Track 1..3 held + a column's pad | (0.11.0) a click: its track routed to that firmware or not; a double click: its solo there. The pads show the routing while held: a lit column reaches it |
 | The steps under a column | the odd one selects the column's track, the even one stops its clip (at the bar). Step 15: nothing. **Step 16: every clip stops** (the transport runs on) |
 | Mute + a clip, Mute + a step | the clip's track muted; the 16 tracks' mutes (as in every view) |
 | A knob (1..7) touched | its column's track selected, and its popup while touched: the track, the firmwares it reaches (a host with the firmware list; none: "Not routed"), its selected clip and length, its channel |
+| Knob 8 touched | (0.11.0) "Scenes": the scene that plays (or waits), the rows in view. Its light is green |
 | Copy tapped alone | nothing (in track view it duplicates the clip, as the Move's Note Mode) |
 | Shift + Play | every clip from its start, as in track view (before 0.10.0: every clip stopped) |
 
@@ -446,7 +458,7 @@ the screen's corner while it records. (Tap tempo: Shift + step 5.)
 | Mute | held: the screen shows the 16 tracks (with notes filled, muted crossed out); + step n or + clip: mute track n; alone: the selected track |
 | Shift (the icons) | while Shift is held or locked (and in FM-1 mode while Track 1 is held), the white icon LEDs under the steps (CC 16..31) light every step with a shortcut: dim, full where it is on (a toggle on, its menu open); off otherwise and in MIDI and Control mode. Written on change only, like every LED; the step pads' own LEDs are separate |
 | Shift | double-tap (a tap, then a press within 300 ms): latched (its LED lit, every Shift combination without holding it); a press unlatches it. Shift + Sample: nothing (the Move has none) |
-| Menu | Track <-> Session view (or out of the project grid) |
+| Menu | Track <-> Session view (or out of the project grid). (0.11.0) An open Shift menu stays (Back closes it): the view flips under it, named a second |
 | Back | the universal escape: closes the latest layer still on, one a click (a Shift menu, the project grid, Loop's latch, Shift's lock, the step / clip clipboard's marks, the page clipboard's); with none: (0.4.3) the projects view (never a mode change). Leaving Loop shows the sequencer at once |
 | Track 1..4 | the modes (FM-1, MIDI, Control, Sequencer); Track 4 held in the sequencer: the tracks and the track's settings (above; the screen: layout, scale, what changed at 2x, the channel and the rate as strips) |
 
@@ -476,7 +488,7 @@ Workflow 1-3, Tempo 1-2 (none while following), Groove 1-2, Layout 1, Keys & Sca
 | 8 Layout | menu: the jog or knob 1 the layout |
 | 9 Keys & Scales | menu: the jog or knob 1 the root, knob 2 the scale, knob 4 the layout. Knob 3: GLOBAL (the project's key and scale, the default; a new project starts with MIDI mode's) or TRACK (the track's own) |
 | 10 Velocity | menu, sticky (Back or Shift + step 10 closes it): the jog the option, DYNAMIC (as played), FIXED (every pad at the level; switching to it from another option sets the level to the last velocity played), SOFT (a light touch plays louder), LINEAR (the straight line: as played), HARD (it takes a firmer one); knob 1 the level 1..127 (FIXED's). The screen: the name big, the curve (played in, out), the level big with its bar (dotted while not FIXED). Every pad that plays goes through it, in every mode (MIDI notes, FM-1 keys, the sequencer's live notes, recordings and step entry). A setting (saved with the others), not the project's; its icon LED is full while FIXED |
-| 11 Repeat (arp) | menu: the track's arp, FIZZ's ARP (its defaults: 1/8, two octaves, QUANT 1/16). The jog turns its pages. Page 1: knobs PATTERN (UP .. AS PLAYED, 17), RATE (1/1 .. 1/64 of a bar, named as said: 1/16, triplets 1/16T, quintuplets 1/16Q), RANGE (octaves), CHANCE, MODE (OFF, ON, 1-ST, ONCE, HOLD), GATE, OCT DIST, QUANT (when a run starts: at once, or the next 1/n of the song's bars); the pattern's walk drawn. Pages 2 and 3: the MOD lane (x as played, . rest, - tie, R repeat, < lowest -oct, > highest +oct, " power chord, # every held note, 1..6 the n-th played) and the TRANSPOSE lane (-48..+48): knob 3 picks a lane step, knob 1 its value, knob 2 RESET (NORM, NOTE: a new note restarts it, MPAT / TPAT: as that lane comes round), knob 4 the lane's length. On, the track's pads play through it; recording, its notes go into the clip with their timing and length |
+| 11 Repeat (arp) | menu: the track's arp, FIZZ's ARP (its defaults: 1/8, two octaves, QUANT 1/16). The jog turns its pages. Page 1: knobs PATTERN (UP .. AS PLAYED, 17), RATE (1/1 .. 1/64 of a bar, named as said: 1/16, triplets 1/16T, quintuplets 1/16Q), RANGE (octaves), CHANCE, MODE (OFF, ON, 1-ST, ONCE, HOLD), GATE, OCT DIST, QUANT (when a run starts: at once, or the next 1/n of the song's bars); the pattern's walk drawn. Pages 2 and 3: the MOD lane (x as played, . rest, - tie, R repeat, < lowest -oct, > highest +oct, " power chord, # every held note, 1..6 the n-th played) and the TRANSPOSE lane (-48..+48). (0.11.0) **The 16 step keys are the lane's 16 steps** (a press picks one; none reaches the clip while the lane is open); knob 1 its function or semitones, knob 2 the lane's length, knob 3 RESET (NORM, NOTE: a new note restarts it, MPAT / TPAT: as that lane comes round); knobs 4..8 dark and dead. The MOD lane is drawn as a sign a step (play a block, rest a low dash, tie a line, repeat a hollow block, lowest an arrow down, highest an arrow up, power chord two bars, chord three, a played note its number). **The header** names the touched knob and its value ("Gate 95%", 2x where it fits), or the one turned last for a second; at rest "Arp On" / "Arp Off" .. , "Mod", "Transpose". **The jog's click turns the arp off and on again** (as it was). Step 11's icon is full while the arp is on. On, the track's pads play through it; recording, its notes go into the clip with their timing and length |
 | 13 Clear Clip | the clip cleared: its steps, locks and trigs (its length kept); "Clip Cleared"; one undo (the owner's; the Move's manual has nothing on step 13) |
 | 14 New Clip | the track's next empty slot gets a new clip, selected |
 | 15 Double Loop | double the loop |

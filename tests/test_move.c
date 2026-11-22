@@ -450,9 +450,10 @@ static void test_layouts(void)
     track(&m, 0, 1);
     clear();
     step(&m, 9, 1), step(&m, 9, 0);
-    CHECK(rfm_move_seq_lock(&m, 0) == 9 && (m.seq.fx.ffilt[0] >> 9 & 1) && count(RFM_MOVE_ACT_KEY) == 0 &&
-          m.s.mode == RFM_MOVE_MODE_FM1);
-    pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 100), pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 0);
+    CHECK(rfm_move_seq_lock(&m, 0) != 9);               /* (0.11.0: a click: gated; another press: it acts first) */
+    pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 100);
+    CHECK(rfm_move_seq_lock(&m, 0) == 9 && (m.seq.fx.ffilt[0] >> 9 & 1) && count(RFM_MOVE_ACT_KEY) == 0);
+    pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 0);
     CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.s.layout == RFM_MOVE_LAYOUT_CHROMATIC &&
           rfm_move_slot_layout(&m, 0) == RFM_MOVE_LAY_CHROMA && m.seq.sel_track == 9 &&
           m.seq.tr[9].layout == RFM_MOVE_LAYOUT_CHROMATIC && count(RFM_MOVE_ACT_MIDI) == 0 &&
@@ -2457,14 +2458,17 @@ static void test_track_gestures(void)
     track(&m, 1, 1);
     clear();
     step(&m, 5, 1), step(&m, 5, 0);
+    CHECK(rfm_move_seq_lock(&m, 1) != 5);               /* (0.11.0: once the double click's time has passed) */
+    ms(&m, RFM_MOVE_DOUBLE_MS + 30);
     CHECK(rfm_move_seq_lock(&m, 1) == 5 && m.seq.sel_track == 5 && (m.seq.fx.ffilt[1] >> 5 & 1) &&
           m.lk_word == LK_LOCKED && count(RFM_MOVE_ACT_SETTINGS) >= 1 && m.seq.nnotes == 0);
     now_ms += 500;                                      /* (later: no double tap) */
     s = m.seq.fx.ffilt[1];
     step(&m, 7, 1), step(&m, 7, 0), step(&m, 7, 1), step(&m, 7, 0);   /* step 8 twice: track 8 soloed on slot 2 alone
                                                          * (the sequencer's own solo untouched) */
-    CHECK(m.fsolo[1] == 8 && m.seq.fx.ffilt[1] == 1u << 7 && m.fsolo_save[1] == (s | 1u << 7) && !m.seq.tr[7].solo &&
-          m.seq.fx.ffilt[0] == 0xFFFF && rfm_move_seq_lock(&m, 1) == 7 && m.lk_word == LK_SOLO);
+    CHECK(m.fsolo[1] == 8 && m.seq.fx.ffilt[1] == 1u << 7 && m.fsolo_save[1] == s && !m.seq.tr[7].solo &&
+          m.seq.fx.ffilt[0] == 0xFFFF && rfm_move_seq_lock(&m, 1) == 5 && m.lk_word == LK_SOLO);   /* (0.11.0: the
+                                                         * double click selects nothing: track 6 stays selected) */
     now_ms += 500;
     step(&m, 9, 1), step(&m, 9, 0), step(&m, 9, 1), step(&m, 9, 0);   /* another: the solo moves (one a firmware) */
     CHECK(m.fsolo[1] == 10 && m.seq.fx.ffilt[1] == 1u << 9 && !m.seq.tr[9].solo);
@@ -2475,7 +2479,7 @@ static void test_track_gestures(void)
     now_ms += 500;
     s = m.seq.fx.ffilt[1] >> 2 & 1;
     step(&m, 2, 1), ms(&m, RFM_MOVE_SEQ_HOLD_MS + 10), step(&m, 2, 0);   /* step 3 held: its routing to slot 2 */
-    CHECK((m.seq.fx.ffilt[1] >> 2 & 1) == !s && (m.seq.fx.ffilt[0] >> 2 & 1) == 1 && rfm_move_seq_lock(&m, 1) == 9);
+    CHECK((m.seq.fx.ffilt[1] >> 2 & 1) == !s && (m.seq.fx.ffilt[0] >> 2 & 1) == 1 && rfm_move_seq_lock(&m, 1) == 5);
     now_ms += 500;
     step(&m, 4, 1), step(&m, 4, 0), step(&m, 4, 1), step(&m, 4, 0);   /* a solo, then a hold on another: the solo ends
                                                          * first, then that track's routing flips */
@@ -2490,14 +2494,14 @@ static void test_track_gestures(void)
     gap();
     tap(&m, 0);                                         /* Track 1: slot 1's FM-1 layout */
     CHECK(rfm_move_fw_active(&m) == 0 && m.s.mode == RFM_MOVE_MODE_FM1);
-    tap(&m, 1);                                         /* Track 2: its track (5, the last tapped) now */
-    CHECK(rfm_move_seq_lock(&m, 1) == 4 && m.seq.sel_track == 4 && rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_SEQ);
+    tap(&m, 1);                                         /* Track 2: its track (6, the one clicked) now */
+    CHECK(rfm_move_seq_lock(&m, 1) == 5 && m.seq.sel_track == 5 && rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_SEQ);
     /* the settings keep the locks and the slots' layouts (version 7) */
     {
         rfm_move_settings_t st;
         uint8_t img[RFM_MOVE_SETTINGS_BYTES];
         CHECK(rfm_move_save(&m.s, img) == RFM_MOVE_SETTINGS_BYTES && rfm_move_load(&st, img, sizeof img) == 0);
-        CHECK(st.lock[1] == 4 && st.lock[0] == 0 && st.slot[1].lay == RFM_MOVE_LAY_SCALE && st.slot[0].lay == RFM_MOVE_LAY_FM1);
+        CHECK(st.lock[1] == 5 && st.lock[0] == 0 && st.slot[1].lay == RFM_MOVE_LAY_SCALE && st.slot[0].lay == RFM_MOVE_LAY_FM1);
     }
 }
 

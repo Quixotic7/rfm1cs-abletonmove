@@ -140,6 +140,13 @@ static void write_pbm(const char *name)
                 fprintf(f, "%02x%02x%02x%c", w[L_PAD0 + r * 8 + c][0], w[L_PAD0 + r * 8 + c][1], w[L_PAD0 + r * 8 + c][2], c == 7 ? '\n' : ' ');
         for (c = 0; c < 16; c++)
             fprintf(f, "%02x%02x%02x%c", w[L_STEP0 + c][0], w[L_STEP0 + c][1], w[L_STEP0 + c][2], c == 15 ? '\n' : ' ');
+        for (c = 0; c < 8; c++)                         /* (0.11.0) the knobs' lights, the icons under the steps, the
+                                                         * Track buttons */
+            fprintf(f, "%02x%02x%02x%c", w[L_RING0 + c][0], w[L_RING0 + c][1], w[L_RING0 + c][2], c == 7 ? '\n' : ' ');
+        for (c = 0; c < 16; c++)
+            fprintf(f, "%02x%c", w[L_ICON0 + c][0], c == 15 ? '\n' : ' ');
+        for (c = 0; c < 4; c++)
+            fprintf(f, "%02x%02x%02x%c", w[L_TRACK0 + c][0], w[L_TRACK0 + c][1], w[L_TRACK0 + c][2], c == 3 ? '\n' : ' ');
         fclose(f);
     }
 }
@@ -241,10 +248,10 @@ static void test_scenes(void)
      * no clip there play nothing; its number underlined on the screen, its pad full green */
     hit(SCN(1));
     CHECK(M.seq.tr[0].active == 1 && M.seq.tr[1].active == 1 && M.seq.tr[2].active == -1 && M.seq.tr[3].active == 1);
-    CHECK(!M.seq.playing && !M.seq.start_pending);
+    CHECK(M.seq.playing || M.seq.start_pending);        /* (0.11.0, the owner's: a scene pad starts the transport) */
     leds(w), screen();
-    CHECK(w[L_PAD0 + SCN(1)][1] == 255 && px(7 * 16 + 3, 4 + 15 + 11) && !px(7 * 16 + 3, 4 + 11));
-    press(MR_CC_PLAY), adv_ms(300);
+    CHECK(green(w[L_PAD0 + SCN(1)]) && w[L_PAD0 + SCN(1)][1] > 90 && px(7 * 16 + 3, 4 + 15 + 11) && !px(7 * 16 + 3, 4 + 11));
+    adv_ms(300);
     CHECK(M.seq.playing && M.seq.tr[0].active == 1);
     /* playing: the scene pad of row 1: queued (the clips' pads and the scene's green, blinking), launched at the bar */
     rest(), bar_start();
@@ -430,8 +437,12 @@ static void test_aligned(void)
     raw(0x80, 3, 0), adv_ms(20);
     CHECK(!rfmv_pop_up(&M, POP_TRKINFO));
     aligned("a knob touched and let go");
-    raw(0x90, 7, 127), raw(0x80, 7, 0);                 /* (knob 8, over the scenes: nothing) */
-    CHECK(M.seq.sel_track == 12 && M.pop != POP_TRKINFO);
+    raw(0x90, 7, 127);                                  /* (0.11.0, the owner's) knob 8, over the scenes: it says so */
+    screen();
+    CHECK(M.seq.sel_track == 12 && rfmv_pop_up(&M, POP_TRKINFO) && M.pop_i == 7 && lit_rows(0, 18) > 60 && !cell_framed(3, 0));
+    write_pbm("scenes");
+    raw(0x80, 7, 0), adv_ms(20);
+    CHECK(!rfmv_pop_up(&M, POP_TRKINFO));
     /* the steps under the columns (0.10.0, Control Live's): odd selects the column's track, even stops it; step 15
      * nothing; the selected track's select step its full colour */
     rfm_move_set_speech(&M, 0);
@@ -441,9 +452,16 @@ static void test_aligned(void)
     CHECK(bright(w[L_STEP0 + 2]) > 3 * bright(w[L_STEP0 + 0]) && bright(w[L_STEP0 + 0]) > 0 && !lit(w[L_STEP0 + 14]));
     step(14, 1), step(14, 0);
     CHECK(M.seq.sel_track == 9 + 1);
-    /* a slot's Track tapped: its track view again (session view is the Menu button's) */
+    /* (0.11.0, the owner's) session view is its own layer: a slot's Track tapped: that firmware is the one played,
+     * the view stays; its summary a second (the 16 tracks: which reach it), then the grid again */
+    tap_track(0);
+    screen();
+    CHECK(M.seq.view && M.fw.active == 0 && M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.sel_track == 9 + 1 && rfmv_pop_up(&M, POP_SLOT));
+    write_pbm("slot");
+    rest();
+    CHECK(M.seq.view && !rfmv_pop_up(&M, POP_SLOT));
     tap_track(1), rest();
-    CHECK(!M.seq.view && M.seq.sel_track == 1);
+    CHECK(M.seq.view && M.fw.active == 1);
 }
 
 /* ================================================================ the steps: stop a track, stop every clip; Shift + Play === */
@@ -452,8 +470,8 @@ static void test_stops(void)
     uint8_t w[RFM_MOVE_NLEDS][3];
     session_view();
     owners_grid();
-    hit(SCN(0));
-    press(MR_CC_PLAY), adv_ms(700), bar_start();
+    hit(SCN(0));                                        /* (0.11.0: the scene pad starts the transport) */
+    adv_ms(700), bar_start();
     leds(w);
     CHECK(white(w[L_STEP0 + 1]) && white(w[L_STEP0 + 7]) && bright(w[L_STEP0 + 9]) < 30 && white(w[L_STEP0 + 15]));
     /* step 4: track 2 stops at the bar (its stop step blinks; the others play on) */
@@ -594,8 +612,8 @@ static void test_led_writes(void)
     session_view();
     for (t = 0; t < 8; t++)
         clip_put(t, 0, 60 + t);
-    hit(PAD(7, 0));                                     /* (the scene: every track's clip 1; 7 in view) */
-    press(MR_CC_PLAY), adv_ms(500);
+    hit(PAD(7, 0));                                     /* (the scene: every track's clip 1; 7 in view; it plays) */
+    adv_ms(500);
     rfm_move_leds(&M, o, RFM_MOVE_NLEDS);
     for (i = 0; i < 2000 / 3; i++) {                    /* 2 s (4 beats at 120 BPM), a block every 3 ms as a host has */
         adv_ms(3);
@@ -640,6 +658,271 @@ static void test_from_takeover(void)
     CHECK(M.seq.tr[0].active == 0 && M.seq.tr[1].active == 0 && M.seq.tr[2].active == 0 && M.seq.tr[3].active == 0);
 }
 
+/* ================================================================ (0.11.0) the owner's UX rules: session view === */
+static int cell_stop(int c, int r)                      /* an outline with the stop square in it (it stops at the bar) */
+{
+    const int x = c * 16 + 1, y = 4 + r * 15;
+    int i, j, n = 0;
+    for (j = y + 3; j < y + 10; j++)
+        for (i = x + 4; i < x + 10; i++)
+            n += px(i, j);
+    return cell_clip(c, r) && n == 42 && !px(x + 2, y + 6) && !px(x + 11, y + 6);
+}
+static unsigned area_hash(int x0, int y0, int w, int h)
+{
+    unsigned hsh = 2166136261u;
+    int x, y;
+    for (y = y0; y < y0 + h; y++)
+        for (x = x0; x < x0 + w; x++)
+            hsh = (hsh ^ (unsigned)px(x, y)) * 16777619u;
+    return hsh;
+}
+static void test_launch(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int i, stops = 0, plays = 0, grn = 0, own = 0, shot = 0, sc_a = 0, sc_b = 0, t;
+    unsigned h0;
+    session_view();
+    owners_grid();
+    hit(SCN(0));
+    adv_ms(700), bar_start();
+    /* the stop steps' icons are lit (a step that is a function), the select steps' are not; step 16's too */
+    leds(w);
+    CHECK(w[L_ICON0 + 1][0] > 0 && !w[L_ICON0 + 0][0] && !w[L_ICON0 + 2][0] && w[L_ICON0 + 15][0] > 0 && !w[L_ICON0 + 14][0]);
+    /* the knobs are lit (a touch shows a track): knob 8 green (the scenes); a track the firmware played gets in its
+     * colour, one it does not get faint white */
+    M.seq.fx.ffilt[1] &= (uint16_t)~(1u << 3);
+    leds(w);
+    CHECK(green(w[L_RING0 + 7]) && lit(w[L_RING0 + 0]) && !white(w[L_RING0 + 0]) && w[L_RING0 + 3][0] == w[L_RING0 + 3][1] &&
+          lit(w[L_RING0 + 3]) && bright(w[L_RING0 + 3]) < bright(w[L_RING0 + 0]));
+    M.seq.fx.ffilt[1] |= 1u << 3;
+    /* a clip launched over the track's playing one: the playing one flashes with a stop icon (its pad: green going
+     * to its own colour), the one that waits flashes with a play icon (its pad: green blinking) */
+    now_ms += 1000, hit(PAD(0, 1));
+    CHECK(M.seq.tr[0].queued == 1 && M.seq.tr[0].active == 0);
+    for (i = 0; i < 60; i++) {
+        adv_ms(10), screen(), leds(w);
+        stops += cell_stop(0, 0), plays += cell_icon(0, 1);
+        grn += green(w[L_PAD0 + PAD(0, 0)]), own += !green(w[L_PAD0 + PAD(0, 0)]) && w[L_PAD0 + PAD(0, 0)][0] > 0;
+        if (cell_stop(0, 0) && !shot)
+            write_pbm("handover"), shot = 1;
+    }
+    CHECKF(stops > 8 && stops < 52 && plays > 8 && plays < 52, "the stop icon %d, the play icon %d of 60", stops, plays);
+    CHECKF(grn > 8 && own > 8 && grn + own == 60, "the stopping pad: green %d, its colour %d of 60", grn, own);
+    adv_ms(2100);
+    CHECK(M.seq.tr[0].active == 1);
+    /* a scene launched: its box flashes with a play icon while it waits; the scene that plays .. with a stop icon */
+    hit(SCN(0)), adv_ms(2100), bar_start();
+    now_ms += 1000, hit(SCN(2));
+    h0 = 0, shot = 0;
+    for (i = 0; i < 60; i++) {
+        adv_ms(10), screen();
+        if (!i)
+            h0 = area_hash(7 * 16, 4 + 2 * 15, 16, 13);
+        sc_a += area_hash(7 * 16, 4 + 2 * 15, 16, 13) != h0;
+        sc_b += px(7 * 16 + 3 + 1, 4 + 0 * 15 + 1 + 1) && px(7 * 16 + 3 + 9, 4 + 0 * 15 + 1 + 9);   /* (the stop square's corners) */
+        if (sc_b && !shot)
+            write_pbm("scenequeue"), shot = 1;
+    }
+    CHECKF(sc_a > 8 && sc_a < 52 && sc_b > 8 && sc_b < 52, "the waiting scene's box changed %d, the playing one's stop icon %d of 60", sc_a, sc_b);
+    adv_ms(2100);
+    /* a double click on a clip: now, not at the bar */
+    bar_start();
+    now_ms += 1000, hit(PAD(0, 0)), hit(PAD(0, 0));
+    CHECK(M.seq.tr[0].active == 0 && M.seq.tr[0].queued == SEQ_NONE && M.seq.playing && M.seq.sel_track == 0);
+    /* .. on an empty slot: its track stops now (no clip made) */
+    now_ms += 1000, hit(PAD(0, 3)), hit(PAD(0, 3));
+    CHECK(M.seq.tr[0].active == -1 && M.seq.tr[0].queued == SEQ_NONE && !clip_has(0, 3) && M.seq.tr[0].sel == 3);
+    /* .. on a scene: now */
+    bar_start();
+    now_ms += 1000, hit(SCN(1)), hit(SCN(1));
+    CHECK(M.seq.tr[0].active == 1 && M.seq.tr[1].active == 1 && M.seq.tr[2].active == -1 && M.seq.tr[3].active == 1);
+    for (t = 0; t < 4; t++)
+        CHECKF(M.seq.tr[t].queued == SEQ_NONE, "track %d queued %d", t + 1, M.seq.tr[t].queued);
+    /* Shift + a scene: its clips stop at the bar .. */
+    bar_start();
+    now_ms += 1000;
+    button(MR_CC_SHIFT, 1), hit(SCN(1)), button(MR_CC_SHIFT, 0);
+    CHECK(M.seq.tr[0].queued == SEQ_STOP && M.seq.tr[1].queued == SEQ_STOP && M.seq.tr[3].queued == SEQ_STOP && M.seq.tr[2].queued == SEQ_NONE);
+    CHECK(!M.seq.shift_lock && M.seq.playing);
+    adv_ms(2100);
+    CHECK(M.seq.tr[0].active == -1 && M.seq.tr[1].active == -1 && M.seq.tr[3].active == -1 && M.seq.playing);
+    /* .. a double click with Shift: now */
+    now_ms += 1000, hit(SCN(0)), adv_ms(2100), bar_start();
+    CHECK(M.seq.tr[0].active == 0 && M.seq.tr[3].active == 0);
+    now_ms += 1000;
+    button(MR_CC_SHIFT, 1), hit(SCN(0)), hit(SCN(0)), button(MR_CC_SHIFT, 0);
+    for (t = 0; t < 4; t++)
+        CHECKF(M.seq.tr[t].active == -1 && M.seq.tr[t].queued == SEQ_NONE, "track %d active %d queued %d", t + 1, M.seq.tr[t].active, M.seq.tr[t].queued);
+    CHECK(M.seq.playing);
+}
+
+/* ================================================================ (0.11.0) a held Track's tracks: gated, at once === */
+static void test_route(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    unsigned f0;
+    session_view();
+    owners_grid();
+    f0 = M.seq.fx.ffilt[1];
+    CHECK((f0 & 0x7F) == 0x7F);
+    /* session view, Track 2 held: the pads are the routing: a column lit: its track reaches the firmware; the scene
+     * column and the knobs dark (nothing passes to the clips) */
+    hold_track(1);
+    leds(w), screen();
+    CHECK(lit(w[L_PAD0 + PAD(0, 0)]) && lit(w[L_PAD0 + PAD(0, 3)]) && lit(w[L_PAD0 + PAD(6, 2)]) && !lit(w[L_PAD0 + SCN(0)]) && !lit(w[L_PAD0 + SCN(3)]));
+    CHECK(!lit(w[L_RING0 + 0]) && !lit(w[L_RING0 + 7]));
+    write_pbm("route_hold");
+    /* a click on column 3: nothing until the double click's time has passed (its pad white meanwhile), then its track
+     * is not routed: the column dark, its step dark, the screen says so */
+    pad(PAD(2, 1), 100);
+    leds(w);
+    CHECK(white(w[L_PAD0 + PAD(2, 1)]) && M.seq.fx.ffilt[1] == f0);
+    pad(PAD(2, 1), 0), adv_ms(100);
+    CHECK(M.seq.fx.ffilt[1] == f0);
+    adv_ms(RFM_MOVE_DOUBLE_MS);
+    leds(w), screen();
+    CHECK(M.seq.fx.ffilt[1] == (f0 & ~(1u << 2)) && M.lk_word == LK_OFF);
+    CHECK(!lit(w[L_PAD0 + PAD(2, 0)]) && !lit(w[L_PAD0 + PAD(2, 3)]) && !lit(w[L_STEP0 + 2]) && lit(w[L_STEP0 + 3]));
+    write_pbm("route_off");
+    /* a double click: the firmware's solo, at once; the click's toggle never shows */
+    hit(PAD(4, 0)), hit(PAD(4, 0));
+    CHECK(M.fsolo[1] == 5 && M.seq.fx.ffilt[1] == 1u << 4 && M.lk_word == LK_SOLO);
+    adv_ms(RFM_MOVE_DOUBLE_MS + 100);
+    CHECK(M.fsolo[1] == 5 && M.seq.fx.ffilt[1] == 1u << 4);
+    hit(PAD(4, 0)), hit(PAD(4, 0));
+    CHECK(!M.fsolo[1] && M.seq.fx.ffilt[1] == (f0 & ~(1u << 2)));
+    adv_ms(RFM_MOVE_DOUBLE_MS + 100);
+    CHECK(M.seq.fx.ffilt[1] == (f0 & ~(1u << 2)));
+    /* the Track let go right after a click: the click acts then; no clip was launched, the view is session's */
+    hit(PAD(2, 0)), track(1, 0);
+    CHECK(M.seq.fx.ffilt[1] == f0 && M.seq.view && M.seq.tr[2].queued == SEQ_NONE && M.seq.sel_track == 1 && M.fw.active == 1);
+    rest();
+    /* track view, Track 2 held, a track's step: a click selects it once the double click's time has passed */
+    press(MR_CC_MENU);
+    CHECK(!M.seq.view);
+    hold_track(1);
+    step(5, 1);
+    leds(w);
+    CHECK(white(w[L_STEP0 + 5]));                       /* (pressed: white at once) */
+    step(5, 0);
+    CHECK(M.s.lock[1] != 5 && M.seq.sel_track != 5);
+    adv_ms(RFM_MOVE_DOUBLE_MS + 30);
+    CHECK(M.s.lock[1] == 5 && M.seq.sel_track == 5 && M.lk_word == LK_LOCKED);
+    /* a hold: not routed once held long enough, while still down (the LED and the screen then); its release: nothing */
+    step(6, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS - 60);
+    CHECK(M.seq.fx.ffilt[1] >> 6 & 1);
+    adv_ms(90);
+    CHECK(!(M.seq.fx.ffilt[1] >> 6 & 1) && M.lk_word == LK_OFF && M.menu_what == MENU_LOCK && M.menu_i == 6);
+    screen();
+    write_pbm("hold_notrouted");
+    step(6, 0), adv_ms(RFM_MOVE_DOUBLE_MS + 100);
+    leds(w);
+    CHECK(!(M.seq.fx.ffilt[1] >> 6 & 1) && M.s.lock[1] == 5 && !lit(w[L_STEP0 + 6]) && lit(w[L_STEP0 + 7]));
+    /* a double click: the solo; no select from it */
+    step(8, 1), step(8, 0), step(8, 1), step(8, 0);
+    CHECK(M.fsolo[1] == 9 && M.lk_word == LK_SOLO);
+    adv_ms(RFM_MOVE_DOUBLE_MS + 100);
+    CHECK(M.fsolo[1] == 9 && M.s.lock[1] == 5);
+    /* the owner's: the solo stays when another track is selected (that track is routed once the solo ends) */
+    step(9, 1), step(9, 0), adv_ms(RFM_MOVE_DOUBLE_MS + 30);
+    CHECK(M.s.lock[1] == 9 && M.seq.sel_track == 9 && M.fsolo[1] == 9 && M.seq.fx.ffilt[1] == 1u << 8 && (M.fsolo_save[1] >> 9 & 1));
+    rest();
+    screen();
+    write_pbm("hold");
+    track(1, 0);
+}
+
+/* ================================================================ (0.11.0) the arp menu === */
+static void test_arp(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    rfm_move_arp_t *ap;
+    unsigned h0, h1, h2;
+    int g, used, i;
+    session_view();
+    press(MR_CC_MENU);
+    ap = &M.seq.tr[M.seq.sel_track].arp;
+    button(MR_CC_SHIFT, 1), step(10, 1), step(10, 0), button(MR_CC_SHIFT, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_ARP && ap->mode == RFM_MOVE_AM_OFF);
+    rest();
+    screen();
+    h0 = area_hash(0, 0, 128, 17);
+    write_pbm("arp_off");
+    /* the jog's click: on and off, the header says which at once */
+    jog_click();
+    screen();
+    CHECK(ap->mode == RFM_MOVE_AM_ON && area_hash(0, 0, 128, 17) != h0);
+    write_pbm("arp_on");
+    knob(4, RFM_MOVE_LIST_TICKS * 3), jog_click();
+    CHECK(ap->mode == RFM_MOVE_AM_OFF);
+    jog_click();
+    CHECK(ap->mode == RFM_MOVE_AM_HOLD);                /* (as it was) */
+    rest();
+    screen();
+    h0 = area_hash(0, 0, 128, 17);
+    /* a knob touched: its name and value in the header; turned: the value changes there; let go: a second, then the
+     * page's own header again */
+    raw(0x90, 5, 127);
+    screen();
+    h1 = area_hash(0, 0, 128, 17);
+    g = ap->gate;
+    knob(5, 1);
+    screen();
+    h2 = area_hash(0, 0, 128, 17);
+    CHECK(h1 != h0 && h2 != h1 && ap->gate == g + 5 && M.pop != POP_CC && M.pop != POP_TRIG);
+    write_pbm("arp_gate");
+    raw(0x80, 5, 0), adv_ms(RFM_MOVE_POPUP_MS + 100);
+    screen();
+    CHECK(area_hash(0, 0, 128, 17) == h0);
+    /* the knobs it uses are lit (all 8 on this page) */
+    leds(w);
+    for (i = 0; i < 8; i++)
+        CHECKF(lit(w[L_RING0 + i]), "knob %d", i + 1);
+    /* Menu: the view flips under the menu, named a second; the menu stays, its knobs too; Back closes it */
+    press(MR_CC_MENU);
+    screen();
+    CHECK(M.seq.view && M.seq.smenu == RFM_MOVE_SM_ARP && rfmv_pop_up(&M, POP_VIEW));
+    write_pbm("arp_view");
+    rest();
+    g = ap->gate;
+    raw(0x90, 5, 127), knob(5, 1), raw(0x80, 5, 0);
+    CHECK(ap->gate == g + 5 && M.pop != POP_TRKINFO && M.seq.smenu == RFM_MOVE_SM_ARP);
+    press(MR_CC_MENU), rest();
+    CHECK(!M.seq.view && M.seq.smenu == RFM_MOVE_SM_ARP);
+    /* the MOD lane (the jog): the step keys are its 16 steps (none reaches the clip under the menu); knob 1: what the
+     * picked one does, knob 2 the length, knob 3 RESET; knobs 4..8 dark and dead */
+    jog(1);
+    CHECK(M.seq.arp_page == 1);
+    used = rfmv_seq_clip_used(&M, SEQ_CLIP(M.seq.sel_track, M.seq.tr[M.seq.sel_track].sel));
+    step(4, 1), step(4, 0);
+    CHECK(M.seq.arp_sel == 4 && rfmv_seq_clip_used(&M, SEQ_CLIP(M.seq.sel_track, M.seq.tr[M.seq.sel_track].sel)) == used);
+    knob(0, RFM_MOVE_LIST_TICKS);
+    CHECK(ap->lane[0][4] == RFM_MOVE_AL_REST);
+    knob(1, -RFM_MOVE_LIST_TICKS * 4);
+    CHECK(ap->mlen == 12);
+    g = ap->gate;
+    knob(5, 3);
+    CHECK(ap->gate == g);
+    leds(w);
+    CHECK(lit(w[L_RING0 + 0]) && lit(w[L_RING0 + 2]) && !lit(w[L_RING0 + 3]) && !lit(w[L_RING0 + 7]));
+    CHECK(white(w[L_STEP0 + 4]) && !lit(w[L_STEP0 + 12]) && lit(w[L_STEP0 + 0]) && !w[L_ICON0 + 4][0]);
+    for (i = 0; i < 12; i++)
+        ap->lane[0][i] = (int8_t)(i < RFM_MOVE_AL_N1 ? i : RFM_MOVE_AL_N1 + i - RFM_MOVE_AL_N1);
+    screen();
+    write_pbm("arp_mod");
+    jog(1);
+    CHECK(M.seq.arp_page == 2);
+    for (i = 0; i < 16; i++)
+        ap->lane[1][i] = (int8_t)((i * 7) % 25 - 12);
+    step(3, 1), step(3, 0);
+    screen();
+    write_pbm("arp_trans");
+    /* Shift + step 11 still closes it (the Shift layer is over the lane's steps); Back too */
+    back();
+    CHECK(!M.seq.smenu);
+}
+
 int main(void)
 {
     test_scenes();
@@ -650,6 +933,9 @@ int main(void)
     test_cut_copy();
     test_led_writes();
     test_from_takeover();
+    test_launch();
+    test_route();
+    test_arp();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

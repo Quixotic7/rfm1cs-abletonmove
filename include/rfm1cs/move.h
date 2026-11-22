@@ -26,9 +26,9 @@ extern "C" {
 
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
-#define RFM1CS_VERSION_MINOR 10
+#define RFM1CS_VERSION_MINOR 11
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.10.0"
+#define RFM1CS_VERSION "0.11.0"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -666,6 +666,19 @@ typedef struct {
     uint8_t bank;                                       /* the Track buttons' bank: tracks bank*4+1 .. +4 */
     int8_t pad_tap;                                     /* session: the clip pad tapped last (a double tap launches now) */
     uint32_t pad_tap_ms;
+    /* (0.11.0, the owner's UX rules) */
+    uint8_t pad_tap_shift;                              /* .. that tap was with Shift (a scene: stop) */
+    int8_t sm_k;                                        /* a Shift menu's knob turned last (-1 the jog / a step), for
+                                                         * its header: shown RFM_MOVE_POPUP_MS from sm_ms */
+    uint32_t sm_ms;
+    uint8_t arp_was[RFM_MOVE_SEQ_TRACKS];               /* each arp's mode before it was switched off (0: On) */
+    /* a held Track's track (a step, or in session view a column's pad): the press's verdict, gated. A hold acts once
+     * held RFM_MOVE_SEQ_HOLD_MS (not at the release); a click acts once RFM_MOVE_DOUBLE_MS have passed with no second
+     * press (or the Track button is let go); a second press in that time is the double click, at once */
+    uint32_t tstep_fired;                               /* bits: this press has acted (its release: nothing) */
+    int8_t tk_pend;                                     /* the track whose click waits, -1 none */
+    uint8_t tk_pend_kind, tk_pend_fw;                   /* .. 0 select (a step), 1 routed / not (a pad); its firmware */
+    uint32_t tk_pend_clk;                               /* .. since when (the sequencer clock's ms) */
     uint8_t layer[8], nlayer;                           /* what Back closes, the latest last (a Shift menu, the grid,
                                                          * Loop's latch, Shift's lock, the clipboard's marks) */
     uint8_t in_seq;                                     /* the settings hold the selected track's layout / CCs */
@@ -840,6 +853,7 @@ typedef struct {
     uint8_t say_tr;                                     /* the transport said last: bit 0 playing, 1 recording */
     uint8_t tick_pop;                                   /* the popup rfm_move_seq_advance looked at last (one the */
     uint32_t tick_t0, tick_msg;                         /* .. clock brings up: a held step's), the message's stamp */
+    uint32_t tick_menu;                                 /* (0.11.0) .. a held Track's track acted by the clock (said) */
     uint32_t msg_n;                                     /* the sequencer's messages so far (each one's stamp) */
     /* (0.6.1) */
     char say_now[48];                                   /* a pressed FM-1 button's words, said at the call's end */

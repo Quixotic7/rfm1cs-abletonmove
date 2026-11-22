@@ -2120,7 +2120,8 @@ void rfmv_track_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
         if (rfmv_track_held(m, t))
             held = t;
     for (t = 0; t < 3; t++) {
-        const int on = held >= 0 ? t == held : !side && f->active == t;
+        const int on = held >= 0 ? t == held : (!side || rfmv_sess_on(m)) && f->active == t;   /* (0.11.0: session
+                                                         * view: the firmware whose tracks its knobs light) */
         rgb_t v;
         if (t >= ns)
             v = OFF;                                    /* (0.5.10: one slot) */
@@ -3174,6 +3175,20 @@ int rfmv_fw_activate(rfm_move_t *m, int t)
     activate(m, t);
     return 1;
 }
+/* (0.11.0) .. from session view: the slot played changes, the view stays (no layout entered: move.c's track_tap) */
+int rfmv_fw_activate_keep(rfm_move_t *m, int t)
+{
+    rfm_move_fw_state_t *f = F(m);
+    if (t < 0 || t >= rfmv_fw_nslots(m) || t == f->active)
+        return 0;
+    if (f->track < 3)
+        f->track = (uint8_t)t;
+    rfmv_slot_leaving(m);
+    f->active = (uint8_t)t;
+    act_fw(m, RFM_MOVE_ACT_FW_ACTIVE, t, f->slot_fw[t], 0);
+    lib_changed(m);
+    return 1;
+}
 void rfmv_view_close(rfm_move_t *m)
 {
     if (m->seq.projects)
@@ -3227,14 +3242,17 @@ void rfmv_route_toggle(rfm_move_t *m, int slot, int track)
     act_route(m);
     rfmv_seq_dirty(m);
 }
-/* (0.9.0) a track selected for a slot reaches it: routed now (a solo on another track there ends) */
+/* (0.9.0) a track selected for a slot reaches it: routed now */
 void rfmv_route_on(rfm_move_t *m, int slot, int track)
 {
     int ch = 0;
     if (slot < 0 || slot >= RFM_MOVE_FW_SLOTS || track < 0 || track >= RFM_MOVE_SEQ_TRACKS)
         return;
-    if (m->fsolo[slot] && m->fsolo[slot] != track + 1)
-        ch = solo_end(m, slot);
+    if (m->fsolo[slot] && m->fsolo[slot] != track + 1) {   /* (0.11.0, the owner's) a solo there stays: the track is
+                                                         * routed once it ends */
+        m->fsolo_save[slot] = (uint16_t)(m->fsolo_save[slot] | 1u << track);
+        return;
+    }
     if (!(m->seq.fx.ffilt[slot] >> track & 1))
         m->seq.fx.ffilt[slot] = (uint16_t)(m->seq.fx.ffilt[slot] | 1u << track), ch = 1;
     if (ch) {

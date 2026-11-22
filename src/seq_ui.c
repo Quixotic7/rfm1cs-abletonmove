@@ -49,19 +49,39 @@ void rfmv_shift_icons(const rfm_move_t *m, uint8_t icon[16])
     int i;
     memset(icon, 0, 16);
     if (!((m->s.mode == RFM_MOVE_MODE_SEQ && (q->mods & SEQ_M_SHIFT)) || rfmv_t4_menu(m) ||
-          (m->seq.projects && m->fw.fx && m->shift_down)))
+          (m->seq.projects && m->fw.fx && m->shift_down))) {
+        /* (0.11.0, the owner's rule: a step that is a function has its icon lit, a step that is a step, a track or a
+         * page has not) session view: the stop steps (the even ones, and step 16: every clip): dim, full with
+         * something to stop */
+        if (rfmv_sess_on(m) && !rfmv_seq_trk_held(m) && !(q->mods & (SEQ_M_MUTE | SEQ_M_LOOP)) &&
+            !(q->smenu == RFM_MOVE_SM_ARP && q->arp_page)) {
+            int any = 0;
+            for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++)
+                any |= (q->tr[i].active >= 0 && (q->playing || q->start_pending)) || q->tr[i].queued >= 0;
+            for (i = 1; i < RFM_MOVE_NSTEPS; i += 2) {
+                const int tr = q->track_page + i / 2;
+                if (i == RFM_MOVE_NSTEPS - 1)
+                    icon[i] = (uint8_t)(any ? 127 : 24);
+                else if (i / 2 < RFM_MOVE_SV_COLS && tr < RFM_MOVE_SEQ_TRACKS)
+                    icon[i] = (uint8_t)((q->tr[tr].active >= 0 && (q->playing || q->start_pending) &&
+                                         rfmv_seq_clip_has(m, SEQ_CLIP(tr, q->tr[tr].active))) || q->tr[tr].queued >= 0 ? 127 : 24);
+            }
+        }
         return;                                         /* (0.8.0: Track 4 held, Shift outside the FM-1 layout) */
+    }
     for (i = 0; i < RFM_MOVE_NSTEPS; i++) {
         const int job = i == SH_PROJECTS || i == SH_CLOCK || i == SH_FIXVEL || i == SH_DOUBLE || i == SH_QUANT ||
                         i == SH_METRO || i == SH_NEWCLIP || i == SH_CLEAR || sh_menu(i);
         const int on = (i == SH_FIXVEL && m->s.vel_mode == RFM_MOVE_VEL_FIXED) || (i == SH_METRO && q->metro) || (i == SH_CLOCK && q->following) ||
-                       (i == SH_PROJECTS && q->projects) || (sh_menu(i) && sh_menu(i) == q->smenu);
+                       (i == SH_PROJECTS && q->projects) || (sh_menu(i) && sh_menu(i) == q->smenu) ||
+                       (i == SH_ARP && q->tr[q->sel_track].arp.mode != RFM_MOVE_AM_OFF);   /* (0.11.0: the arp on) */
         icon[i] = (uint8_t)(!job ? 0 : on ? 127 : 24);
     }
 }
 
 
 static rfm_move_seq_t *Q(rfm_move_t *m) { return &m->seq; }
+int rfmv_sess_on(const rfm_move_t *m) { return m->s.mode == RFM_MOVE_MODE_SEQ && m->seq.view && !m->seq.projects; }
 static int step_empty(const rfm_move_t *m, int clip, int abs)
 {
     int lo;
@@ -400,15 +420,36 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
                                                          * mode) session: the 8th column: the scenes. A press launches
                                                          * the row across the 16 tracks (at the next bar; stopped: at
                                                          * once, playing with Play); tracks with no clip in it stop */
-        const int scene = q->scene_off + (3 - p / 8);
-        char w[16];
-        q->pad_tap = -1;
-        if (q->mods & (SEQ_M_SHIFT | SEQ_M_COPY | SEQ_M_DELETE | SEQ_M_MUTE)) {
-            q->mods_used |= (uint8_t)(q->mods & (SEQ_M_SHIFT | SEQ_M_COPY | SEQ_M_DELETE | SEQ_M_MUTE));
-            return;                                     /* (a modifier + a scene: nothing yet) */
+        /* (0.11.0, the owner's) stopped: the scene plays (the one pad besides Play that starts the transport); a
+         * double click: now, not at the bar; Shift + the pad: the scene's clips stop (at the bar; a double click: now).
+         * A click acts at once: its double click is the same thing sooner, so nothing wrong shows meanwhile */
+        const int scene = q->scene_off + (3 - p / 8), shift = (q->mods & SEQ_M_SHIFT) != 0;
+        const int dbl = q->pad_tap == p && q->pad_tap_shift == shift && now - q->pad_tap_ms < RFM_MOVE_DOUBLE_MS;
+        char w[24];
+        if (q->mods & (SEQ_M_COPY | SEQ_M_DELETE | SEQ_M_MUTE)) {
+            q->mods_used |= (uint8_t)(q->mods & (SEQ_M_COPY | SEQ_M_DELETE | SEQ_M_MUTE));
+            q->pad_tap = -1;
+            return;                                     /* (Copy, Delete, Mute + a scene: nothing yet) */
         }
-        rfmv_seq_launch_scene(m, scene);
-        snprintf(w, sizeof w, "Scene %d", scene + 1);
+        q->pad_tap = (int8_t)(dbl ? -1 : p), q->pad_tap_ms = now, q->pad_tap_shift = (uint8_t)shift;
+        if (shift) {
+            q->mods_used |= SEQ_M_SHIFT;
+            rfmv_seq_stop_scene(m, scene, dbl);
+            snprintf(w, sizeof w, "Scene %d stop", scene + 1);
+        } else {
+            if (dbl)
+                rfmv_seq_launch_scene_now(m, scene);
+            else
+                rfmv_seq_launch_scene(m, scene);
+            if (!running(q)) {                          /* (as Play: Rec armed gives the bar's count-in) */
+                q->ncap = 0;
+                if (q->rec && q->rec_mode == RFM_MOVE_RM_RECORD)
+                    rfmv_seq_count_in(m);
+                else
+                    rfmv_seq_start(m);
+            }
+            snprintf(w, sizeof w, "Scene %d", scene + 1);
+        }
         rfmv_say_text(m, w);
         rfmv_seq_dirty(m);
         return;
@@ -418,8 +459,8 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
         const int track = q->track_page + p % 8, scene = q->scene_off + (3 - p / 8);
         const int clip = SEQ_CLIP(track, scene);
         rfm_move_track_t *t = &q->tr[track];
-        const int dbl = q->pad_tap == p && now - q->pad_tap_ms < 300;
-        q->pad_tap = (int8_t)p, q->pad_tap_ms = now;
+        const int dbl = q->pad_tap == p && !q->pad_tap_shift && now - q->pad_tap_ms < RFM_MOVE_DOUBLE_MS;
+        q->pad_tap = (int8_t)p, q->pad_tap_ms = now, q->pad_tap_shift = 0;
         if (q->mods & SEQ_M_SHIFT) {                    /* (0.10.0, as Control Live) Shift + a slot: selected for
                                                          * editing; nothing launched or stopped (the scenes: column 8) */
             char w[32];
@@ -430,12 +471,15 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
             snprintf(w, sizeof w, "Track %d clip %d selected", track + 1, scene + 1);
             rfmv_say_text(m, w);
             rfmv_seq_dirty(m);
-        } else if (dbl && t->active == scene && t->queued == SEQ_NONE && running(q) && rfmv_seq_clip_used(m, clip) &&
-                   !t->grow && !(q->mods & (SEQ_M_MUTE | SEQ_M_COPY | SEQ_M_DELETE))) {
-            rfmv_seq_launch(m, track, -1);              /* a double tap on the playing clip: it stops at the next bar
-                                                         * (the owner's; on any other clip a double tap is a tap:
-                                                         * everything launches at the next bar) */
+        } else if (dbl && !t->grow && !(q->mods & (SEQ_M_MUTE | SEQ_M_COPY | SEQ_M_DELETE)) &&
+                   !(q->paste && q->clip_kind == 2)) {
+            /* (0.11.0, the owner's) a double click: now, not at the bar: the clip plays (an empty slot: the track
+             * stops). The first click queued the same thing, so nothing wrong showed meanwhile */
+            rfmv_seq_select(m, track);
+            rfmv_seq_launch_now(m, track, rfmv_seq_clip_has(m, clip) ? scene : -1);
+            t->sel = (int8_t)scene;
             q->pad_tap = -1;
+            rfmv_seq_dirty(m);
         } else if (q->mods & SEQ_M_MUTE) {
             q->mods_used |= SEQ_M_MUTE;
             rfmv_seq_mute(m, track, !t->mute);
@@ -695,6 +739,71 @@ static void clip_take(rfm_move_t *m, int clip, int abs, int cut, int more)
 }
 
 /* ================================================================ steps === */
+/* ---- (0.11.0, the owner's UX rules) a held Track's tracks (a step; in session view a column's pad): what the press
+ * means is decided before anything shows. A hold acts once held RFM_MOVE_SEQ_HOLD_MS (rfmv_seq_ui_poll: while still
+ * down, not at the release); a click acts once RFM_MOVE_DOUBLE_MS have passed with no second press (or the Track
+ * button is let go); a second press in that time is the double click, at once. what: 0 selected, 1 routed / not,
+ * 2 the firmware's solo */
+static void tk_act(rfm_move_t *m, int fw, int track, int what)
+{
+    rfm_move_seq_t *q = Q(m);
+    rfmv_menu(m, MENU_LOCK, track);
+    switch (what) {
+    case 0:
+        if (m->s.lock[fw] != track)
+            m->s.lock[fw] = (uint8_t)track, rfmv_changed(m);
+        rfmv_route_on(m, fw, track);                    /* (selected: it reaches the firmware; a solo there stays) */
+        if (fw == (m->fw.active % RFM_MOVE_FW_SLOTS) && m->s.mode == RFM_MOVE_MODE_SEQ)
+            rfmv_seq_select(m, track);                  /* (the slot played: its track view edits it now) */
+        m->lk_word = LK_LOCKED;
+        break;
+    case 1:
+        rfmv_route_toggle(m, fw, track);
+        m->lk_word = (uint8_t)(q->fx.ffilt[fw] >> track & 1 ? LK_ON : LK_OFF);
+        break;
+    default: m->lk_word = (uint8_t)(rfmv_fw_solo(m, fw, track) ? LK_SOLO : LK_UNSOLO); break;
+    }
+}
+void rfmv_seq_tk_flush(rfm_move_t *m)                   /* the click that waits acts now */
+{
+    rfm_move_seq_t *q = Q(m);
+    const int track = q->tk_pend;
+    if (track < 0)
+        return;
+    q->tk_pend = -1;
+    tk_act(m, q->tk_pend_fw, track, q->tk_pend_kind);
+}
+static int tk_press(rfm_move_t *m, int fw, int track, int kind)   /* a press: 1 it was the double click (done) */
+{
+    rfm_move_seq_t *q = Q(m);
+    if (q->tk_pend == track && q->tk_pend_kind == kind && q->tk_pend_fw == fw &&
+        rfmv_now_ms(m) - q->tk_pend_clk < RFM_MOVE_DOUBLE_MS) {
+        q->tk_pend = -1;
+        tk_act(m, fw, track, 2);
+        return 1;
+    }
+    rfmv_seq_tk_flush(m);                               /* (another track's click: it acts first) */
+    return 0;
+}
+static void tk_click(rfm_move_t *m, int fw, int track, int kind)
+{
+    rfm_move_seq_t *q = Q(m);
+    q->tk_pend = (int8_t)track, q->tk_pend_kind = (uint8_t)kind, q->tk_pend_fw = (uint8_t)fw;
+    q->tk_pend_clk = rfmv_now_ms(m);
+}
+/* session view, a firmware Track held: a column's pad: a click routes its track to the firmware or not, a double click
+ * solos it there (or ends the solo) */
+void rfmv_seq_route_pad(rfm_move_t *m, int fw, int p)
+{
+    rfm_move_seq_t *q = Q(m);
+    const int track = q->track_page + p % 8;
+    rfmv_menu(m, MENU_TRACK, 0);                        /* (the Track button was used: its release is no tap) */
+    if (p % 8 >= RFM_MOVE_SV_COLS || track >= RFM_MOVE_SEQ_TRACKS)
+        return;
+    if (!tk_press(m, fw, track, 1))
+        tk_click(m, fw, track, 1);
+}
+
 void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
 {
     rfm_move_seq_t *q = Q(m);
@@ -703,29 +812,15 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
     if (!down) {
         if (q->loop_first == s)
             q->loop_first = -1;
-        if (q->tstep_held & (1u << s)) {                /* (0.8.0) a firmware Track held, a track's step: a tap locks
-                                                         * it to that firmware (and selects it), a double tap solos, a
-                                                         * hold stops it reaching the firmware (its 16-track filter) */
-            const int fw = rfmv_seq_trk_held(m) - 1;
-            q->tstep_held &= ~(1u << s);
-            if (fw < 0)
-                return;
-            rfmv_menu(m, MENU_LOCK, s);
-            if (rfmv_now_ms(m) - q->step_t[s] >= RFM_MOVE_SEQ_HOLD_MS) {
-                rfmv_route_toggle(m, fw, s), q->tstep_tap = -1;
-                m->lk_word = (uint8_t)(q->fx.ffilt[fw] >> s & 1 ? LK_ON : LK_OFF);
-            } else if (q->tstep_tap == s && now - q->tstep_tap_ms < 400) {
-                q->tstep_tap = -1;                      /* (0.9.0: the firmware's solo, one at a time) */
-                m->lk_word = (uint8_t)(rfmv_fw_solo(m, fw, s) ? LK_SOLO : LK_UNSOLO);
-            } else {
-                if (m->s.lock[fw] != s)
-                    m->s.lock[fw] = (uint8_t)s, rfmv_changed(m);
-                rfmv_route_on(m, fw, s);                /* (0.9.0: selected: it reaches the firmware) */
-                if (fw == (m->fw.active % RFM_MOVE_FW_SLOTS) && m->s.mode == RFM_MOVE_MODE_SEQ)
-                    rfmv_seq_select(m, s);              /* (the slot played: its track view edits it now) */
-                q->tstep_tap = (int8_t)s, q->tstep_tap_ms = now;
-                m->lk_word = LK_LOCKED;
-            }
+        if (q->tstep_held & (1u << s)) {                /* (0.8.0) a firmware Track held, a track's step: a click
+                                                         * selects it for that firmware, a double click solos it there,
+                                                         * a hold routes it to the firmware or not; (0.11.0) gated: the
+                                                         * hold and the double click have acted by now (tk_press, the
+                                                         * poll), the click waits out the double click's time */
+            const int fw = rfmv_seq_trk_held(m) - 1, fired = (int)(q->tstep_fired >> s & 1);
+            q->tstep_held &= ~(1u << s), q->tstep_fired &= ~(1u << s);
+            if (fw >= 0 && !fired)
+                tk_click(m, fw, s, 0);
             return;
         }
         if (q->step_held & bit) {
@@ -799,10 +894,25 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             rfmv_seq_group(m);
             rfmv_seq_track_copy(m, q->clip_src, s);
             q->paste = 0, q->clip_kind = 0;
-        } else {                                        /* (its release decides: a tap selects, a double tap
-                                                         * solos, a hold mutes) */
+        } else {                                        /* (a click selects, a double click solos, a hold routes or
+                                                         * not: tk_press, the poll, the release above) */
+            q->tstep_fired &= ~(1u << s);
+            if (tk_press(m, rfmv_seq_trk_held(m) - 1, s, 0))
+                q->tstep_fired |= 1u << s;
             q->tstep_held |= 1u << s;
             q->step_t[s] = rfmv_now_ms(m);
+        }
+        return;
+    }
+    if (q->smenu == RFM_MOVE_SM_ARP && q->arp_page && !(q->mods & SEQ_M_SHIFT)) {
+        /* (0.11.0, the owner's) an arp lane's page: the 16 step keys are the lane's 16 steps: a press picks one (knob 1
+         * its function or semitones). The menu has the steps while it is open: none reaches the clip under it */
+        q->arp_sel = (uint8_t)s;
+        q->sm_k = 0, q->sm_ms = rfmv_now_ms(m);
+        {
+            char w[40];
+            rfmv_seq_smenu_words(m, 0, w, sizeof w);
+            rfmv_say_text(m, w);
         }
         return;
     }
@@ -1033,6 +1143,20 @@ void rfmv_seq_ui_poll(rfm_move_t *m)
         q->step_popped = 1;
         rfmv_pop(m, POP_STEP, q->step_first);
     }
+    if (q->tstep_held) {                                /* (0.11.0) a held Track's step held long enough: routed or not,
+                                                         * now (its release: nothing) */
+        const int fw = rfmv_seq_trk_held(m) - 1;
+        int s;
+        for (s = 0; s < RFM_MOVE_NSTEPS; s++)
+            if ((q->tstep_held >> s & 1) && !(q->tstep_fired >> s & 1) &&
+                rfmv_now_ms(m) - q->step_t[s] >= RFM_MOVE_SEQ_HOLD_MS) {
+                q->tstep_fired |= 1u << s;
+                if (fw >= 0)
+                    tk_act(m, fw, s, 1);
+            }
+    }
+    if (q->tk_pend >= 0 && rfmv_now_ms(m) - q->tk_pend_clk >= RFM_MOVE_DOUBLE_MS)
+        rfmv_seq_tk_flush(m);                           /* (no second press: the click) */
 }
 /* ================================================================ held steps: nudge, transpose, velocity === */
 static int held_view(const rfm_move_t *m) { return !m->seq.view && !m->seq.projects && m->seq.step_held; }
@@ -1218,10 +1342,14 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
     case MR_CC_MENU:
         if (q->projects)
             q->projects = 0;
-        else if (q->smenu)
-            layer_close(m, LY_MENU);                    /* (a Shift menu: Session closes it, as Back) */
-        else
+        else {                                          /* (0.11.0, the owner's) an open Shift menu stays (it has the
+                                                         * knobs, the jog and the screen; Back closes it): the view
+                                                         * flips under it, named a second */
             q->view = (uint8_t)!q->view;
+            q->pad_tap = -1;
+            if (q->smenu)
+                rfmv_pop(m, POP_VIEW, q->view);
+        }
         return 1;
     case MR_CC_BACK:                                    /* the universal escape: the latest layer still on closes
                                                          * (a Shift menu, the project grid, Loop's latch, Shift's
@@ -1575,7 +1703,8 @@ int rfmv_seq_menu_knobs(const rfm_move_t *m)
     case RFM_MOVE_SM_GROOVE: return 0x03;
     case RFM_MOVE_SM_LAYOUT: return 0x01;
     case RFM_MOVE_SM_KEYS: return 0x0F;
-    case RFM_MOVE_SM_ARP: return q->arp_page ? 0x0F : 0xFF;
+    case RFM_MOVE_SM_ARP: return q->arp_page ? 0x07 : 0xFF;   /* (0.11.0: a lane: its value, length and RESET; the
+                                                         * step keys pick its step) */
     case RFM_MOVE_SM_REC: return 0x03;
     case RFM_MOVE_SM_VEL: return 0x01;
     case RFM_MOVE_SM_GLOBAL: return 0;                  /* (0.6.2: the jog's list; the knobs do nothing) */
@@ -1583,11 +1712,34 @@ int rfmv_seq_menu_knobs(const rfm_move_t *m)
     }
 }
 
+/* (0.11.0, the owner's: a quick way to turn the arp on and off) the arp menu's jog click: off, or on again as it was
+ * (On at first); its header says which at once */
+void rfmv_seq_arp_toggle(rfm_move_t *m)
+{
+    rfm_move_seq_t *q = Q(m);
+    rfm_move_arp_t *a = &q->tr[q->sel_track].arp;
+    if (a->mode == RFM_MOVE_AM_OFF) {
+        const int was = q->arp_was[q->sel_track];
+        a->mode = (uint8_t)(was > RFM_MOVE_AM_OFF && was < RFM_MOVE_AM_N ? was : RFM_MOVE_AM_ON);
+    } else {
+        q->arp_was[q->sel_track] = a->mode;
+        a->mode = RFM_MOVE_AM_OFF;
+        rfmv_seq_arp_stop(m);
+    }
+    q->sm_k = 4, q->sm_ms = rfmv_now_ms(m);             /* (its header: the mode, as knob 5 shows it) */
+    rfmv_say_text(m, a->mode == RFM_MOVE_AM_OFF ? "Arp off" : "Arp on");
+    rfmv_seq_dirty(m);
+}
 static void smenu_turn(rfm_move_t *m, int k, int d)
 {
     rfm_move_seq_t *q = Q(m);
     rfm_move_track_t *t = &q->tr[q->sel_track];
     rfm_move_arp_t *a = &t->arp;
+    const rfm_move_arp_t a0 = *a;
+    const int shown = q->sm_k == k && rfmv_now_ms(m) - q->sm_ms < RFM_MOVE_POPUP_MS;
+    if (k >= 0 && !(rfmv_seq_menu_knobs(m) >> k & 1))
+        return;                                         /* (0.11.0: a knob the menu has no job for: nothing) */
+    q->sm_k = (int8_t)k, q->sm_ms = rfmv_now_ms(m);     /* (0.11.0: its name and value in the menu's header) */
     if (k >= 0 && smenu_list(q, k) && !(d = rfmv_list_ticks(m, k, d)))
         return;                                         /* (not a whole item yet) */
     rfmv_menu(m, MENU_NONE, k < 0 ? 0 : k);
@@ -1648,10 +1800,12 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
         break;
     case RFM_MOVE_SM_ARP:                               /* FIZZ's ARP: the jog the page; page 1: PATTERN RATE RANGE
                                                          * CHANCE MODE GATE OCT DIST QUANT; pages 2, 3: the MOD and
-                                                         * TRANSPOSE lanes (knob 3 picks a lane step; knob 1 its
-                                                         * value, knob 2 RESET, knob 4 the lane's length) */
+                                                         * TRANSPOSE lanes: (0.11.0, the owner's) a step key picks the
+                                                         * lane's step; knob 1 its function or semitones, knob 2 the
+                                                         * lane's length, knob 3 RESET */
         if (k < 0) {
             q->arp_page = (uint8_t)clampi(q->arp_page + d, 0, 2);
+            q->sm_ms = 0;                               /* (the page's own header) */
             break;
         }
         if (q->arp_page) {
@@ -1659,14 +1813,11 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
             if (k == 0)
                 a->lane[L][q->arp_sel & 15] = (int8_t)(L ? clampi(a->lane[L][q->arp_sel & 15] + d, -48, 48)
                                                          : clampi(a->lane[L][q->arp_sel & 15] + d, 0, RFM_MOVE_AL_N - 1));
-            else if (k == 1)
-                a->reset = (uint8_t)clampi(a->reset + d, 0, RFM_MOVE_AR_N - 1);
-            else if (k == 2)                            /* knob 3: the lane step (the steps play, the owner's) */
-                q->arp_sel = (uint8_t)clampi(q->arp_sel + d, 0, RFM_MOVE_ARP_LANE - 1);
-            else if (k == 3) {
+            else if (k == 1) {
                 uint8_t *len = L ? &a->tlen : &a->mlen;
                 *len = (uint8_t)clampi(*len + d, 1, 16);
-            }
+            } else if (k == 2)
+                a->reset = (uint8_t)clampi(a->reset + d, 0, RFM_MOVE_AR_N - 1);
             break;
         }
         switch (k) {
@@ -1678,6 +1829,8 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
             a->mode = (uint8_t)clampi(a->mode + d, 0, RFM_MOVE_AM_N - 1);
             if (a->mode == RFM_MOVE_AM_OFF)
                 rfmv_seq_arp_stop(m);
+            else
+                q->arp_was[q->sel_track] = a->mode;     /* (the jog's click brings this one back) */
             break;
         case 5: a->gate = (uint8_t)clampi(a->gate + d * 5, 2, 200); break;
         case 6: a->odist = (int8_t)clampi(a->odist + d, -24, 24); break;
@@ -1715,6 +1868,11 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
         break;
     default: break;
     }
+    if (q->smenu == RFM_MOVE_SM_ARP && k >= 0 && !shown && !memcmp(&a0, a, sizeof a0) && m->speech) {
+        char w[48];                                     /* (its header came up with the value at its end: said) */
+        rfmv_seq_smenu_words(m, k, w, sizeof w);
+        rfmv_say_text(m, w);
+    }
     rfmv_seq_dirty(m);
 }
 
@@ -1723,10 +1881,14 @@ void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now)
     rfm_move_seq_t *q = Q(m);
     const int b = m->s.bank, cc = m->s.cc[b][k];
     (void)now;
-    if (q->view && !rfmv_seq_trk_held(m))
-        return;                                         /* (session: the knobs do nothing; a touch selects a track) */
+    if (q->view && !q->smenu)
+        return;                                         /* (session: the knobs do nothing; a touch shows a track.
+                                                         * 0.11.0: an open Shift menu has them there too; a held Track
+                                                         * has none there) */
     if (rfmv_seq_trk_held(m)) {                         /* a Track button held: the knob's CC number (this bank) */
         const int c = clampi(cc + d, 0, 127);
+        if (q->view)
+            return;
         rfmv_menu(m, MENU_CC, k);
         if (c != cc) {
             m->s.cc[b][k] = (uint8_t)c;
@@ -1801,6 +1963,8 @@ void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now)
     if (rfmv_seq_trk_held(m)) {                         /* a Track button held: the selected track's channel */
         rfm_move_track_t *t = &q->tr[q->sel_track];
         const int ch = clampi(t->ch + d, 0, 15);
+        if (q->view)
+            return;                                     /* (0.11.0: session: the held Track is the routing only) */
         rfmv_menu(m, MENU_TCH, ch);
         if (ch != t->ch) {
             rfmv_seq_release(m, q->sel_track);
@@ -1899,14 +2063,15 @@ static int clip_state(const rfm_move_t *m, int track, int scene)
         return t->grow == 1 ? CS_REC : CS_REC_WAIT;
     if (t->queued == scene)
         return CS_QUEUED;
-    if (t->active == scene && used && t->queued == SEQ_STOP && running(q))
-        return CS_STOPPING;
+    if (t->active == scene && used && running(q) && (t->queued == SEQ_STOP || t->queued >= 0))
+        return CS_STOPPING;                             /* (0.11.0: also when another clip of the track waits) */
     if (t->active == scene && used)
         return q->playing ? CS_PLAYING : CS_ARMED;
     return !used ? CS_EMPTY : rfmv_seq_clip_used(m, SEQ_CLIP(track, scene)) ? CS_CONTENT : CS_HOLLOW;
 }
 /* (0.10.0) a scene (a row across the 16 tracks): 0 no clip in it, 1 clips, 2 the one that plays (stopped: the one Play
- * starts): every track with a clip in the row plays it and the others play nothing, 3 on its way (waiting for the bar) */
+ * starts): every track with a clip in the row plays it and the others play nothing, 3 on its way (waiting for the bar),
+ * (0.11.0) 4 the one that plays, on its way out (another scene, or a stop, waits for the bar) */
 static int scene_state(const rfm_move_t *m, int scene)
 {
     const rfm_move_seq_t *q = &m->seq;
@@ -1923,20 +2088,44 @@ static int scene_state(const rfm_move_t *m, int scene)
         if (has ? then != scene : then >= 0)
             will = 0;
     }
-    return !any ? 0 : wait && will ? 3 : !wait && is ? 2 : 1;
+    return !any ? 0 : wait && will && !is ? 3 : wait && is && !will ? 4 : is ? 2 : 1;
 }
 
 /* (0.8.0, 0.9.0) the lock menu's steps (the board's colours): the track selected for the firmware in its colour, the
  * firmware's solo blue, not routed to it dim red, the others by their content */
+/* (0.11.0, the owner's) not routed: dark; routed: the firmware's colour (a track with nothing in it dimmer); the
+ * track selected for the firmware blinks; its solo blue; pressed (and while its click waits): white */
+static rgb_t route_rgb(const rfm_move_t *m, int fw, int i)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const int on = q->fx.ffilt[fw] >> i & 1, sel = m->s.lock[fw] == i, ph = rfmv_now_ms(m) % 500u < 250u;
+    const rgb_t fc = rfmv_fw_rgb(m, fw), blue = { 40, 110, 255 };
+    if (q->tk_pend == i && q->tk_pend_fw == fw)
+        return sc(RFMV_WHITE, 150);
+    if (m->fsolo[fw] == i + 1)
+        return sel && !ph ? sc(blue, 70) : blue;
+    if (sel)
+        return on ? sc(fc, ph ? 256 : 70) : sc(fc, ph ? 60 : 0);
+    return !on ? RFMV_OFF : sc(fc, rfmv_seq_track_used(m, i) ? 110 : 50);
+}
 rgb_t rfmv_lock_rgb(const rfm_move_t *m, int fw, int i)
 {
-    if (m->fsolo[fw] == i + 1)
-        return (rgb_t){ 40, 110, 255 };
-    if (m->s.lock[fw] == i)
-        return rfmv_fw_rgb(m, fw);
-    if (!(m->seq.fx.ffilt[fw] >> i & 1))
-        return sc((rgb_t){ 255, 40, 40 }, 90);
-    return sc(RFMV_WHITE, rfmv_seq_track_used(m, i) ? 38 : 13);
+    return m->seq.tstep_held >> i & 1 ? RFMV_WHITE : route_rgb(m, fw, i);
+}
+/* (0.11.0) session view, a firmware Track held: the pads are the routing: a column lit: its track reaches the firmware */
+void rfmv_seq_route_leds(const rfm_move_t *m, int fw, rgb_t c[L_WHITE0])
+{
+    const rfm_move_seq_t *q = &m->seq;
+    int i;
+    for (i = 0; i < RFM_MOVE_NPADS; i++) {
+        const int track = q->track_page + i % 8;
+        c[L_PAD0 + i] = i % 8 >= RFM_MOVE_SV_COLS || track >= RFM_MOVE_SEQ_TRACKS ? RFMV_OFF
+                      : m->pad_down[i] ? RFMV_WHITE : route_rgb(m, fw, track);
+    }
+    for (i = 0; i < RFM_MOVE_NSTEPS; i++)
+        c[L_STEP0 + i] = rfmv_lock_rgb(m, fw, i);
+    for (i = 0; i < RFM_MOVE_NKNOBS; i++)               /* (the knobs: nothing here) */
+        c[L_RING0 + i] = RFMV_OFF;
 }
 void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
 {
@@ -1960,6 +2149,7 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 v = sc(RFMV_WHITE, 8);
         } else if (q->view && i % 8 >= RFM_MOVE_SV_COLS) {   /* (0.10.0) the scenes: green (Control Live's) */
             switch (scene_state(m, q->scene_off + (3 - i / 8))) {
+            case 4: v = sc(RFMV_GREEN, bl ? 40 : 256); break;       /* on its way out (against the one coming) */
             case 3: v = sc(RFMV_GREEN, bl ? 256 : 40); break;       /* on its way */
             case 2: v = sc(RFMV_GREEN, pu); break;                  /* the one that plays (stopped: full) */
             case 1: v = sc(RFMV_GREEN, 70); break;                  /* clips in the row */
@@ -1980,7 +2170,10 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             case CS_REC: v = sc(RFMV_RED, pu); break;
             case CS_REC_WAIT: v = sc(RFMV_RED, bl ? 256 : 40); break;
             case CS_QUEUED: v = bl ? RFMV_GREEN : sel ? sc(RFMV_WHITE, 60) : sc(RFMV_GREEN, 40); break;
-            case CS_STOPPING: v = sc(TRACK_RGB[track], bl ? col : 24); break;          /* to stop: blinking */
+            case CS_STOPPING:                           /* (0.11.0) to stop: green flashing away to its stopped colour,
+                                                         * against the flash of the clip that waits */
+                v = bl ? sc(TRACK_RGB[track], 80 * col / 256) : sc(RFMV_GREEN, col);
+                break;
             case CS_PLAYING:
                 v = sel && pu == 256 ? RFMV_WHITE : sc(RFMV_GREEN, pu * (hollow ? 70 : col) / 256);
                 break;
@@ -2029,6 +2222,22 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 v = TRACK_RGB[i];
             else
                 v = sc(TRACK_RGB[i], used ? 64 : 10);
+        } else if (q->smenu == RFM_MOVE_SM_ARP && q->arp_page && !(q->mods & SEQ_M_SHIFT)) {
+            /* (0.11.0) an arp lane: its steps: the one picked white, the one just played green, a step that does
+             * something else than play (a transpose) orange, a rest faint; past the lane's length dark */
+            const rfm_move_arp_t *a = &q->tr[q->sel_track].arp;
+            const int L = q->arp_page - 1, len = clampi(L ? a->tlen : a->mlen, 1, 16), lv = a->lane[L][i];
+            const int at = q->arp_run && q->arp_track == q->sel_track ? ((L ? q->arp_tpos : q->arp_mpos) + len - 1) % len : -1;
+            if (i >= len)
+                v = RFMV_OFF;
+            else if (i == q->arp_sel)
+                v = RFMV_WHITE;
+            else if (i == at)
+                v = RFMV_GREEN;
+            else if (L ? lv != 0 : lv != RFM_MOVE_AL_PLAY && lv != RFM_MOVE_AL_REST)
+                v = sc((rgb_t){ 255, 72, 0 }, 150);
+            else
+                v = sc(RFMV_WHITE, !L && lv == RFM_MOVE_AL_REST ? 14 : 70);
         } else if (q->mods & SEQ_M_LOOP) {              /* the pages: the loop's in the track's colour, the one
                                                          * shown white, the playing one pulsing; the clip's others
                                                          * (outside the loop) dim; past the clip off */
@@ -2129,6 +2338,19 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             const int tv = q->step_first >= 0 && i < 7 ? rfmv_seq_trig_val(m, clip, ab, i) : 0;
             const int def = i == 1 ? 1 : i == 2 ? 100 : i == 6 ? (q->step_first >= 0 ? RFM_MOVE_SEQ_TPS : 0) : 0;
             v = i >= 7 ? RFMV_OFF : m->touched == i ? RFMV_WHITE : tv != def ? sc(RFMV_WHITE, 200) : sc(RFMV_WHITE, 24);
+        } else if (q->view) {                           /* (0.11.0, the owner's) session: a knob's touch shows its
+                                                         * column's track (knob 8: the scenes), so they are lit: a track
+                                                         * the firmware played now gets (its Track button) in that
+                                                         * firmware's colour, the others faint white; the scenes green */
+            const int act = m->fw.active % RFM_MOVE_FW_SLOTS, tr = q->track_page + i;
+            if (i >= RFM_MOVE_SV_COLS)
+                v = sc(RFMV_GREEN, m->touched == i ? 256 : 90);
+            else if (tr >= RFM_MOVE_SEQ_TRACKS)
+                v = RFMV_OFF;
+            else if (q->fx.ffilt[act] >> tr & 1)
+                v = sc(rfmv_fw_rgb(m, act), m->touched == i ? 256 : 120);
+            else
+                v = sc(RFMV_WHITE, m->touched == i ? 120 : 20);
         } else if (!q->view && q->step_first >= 0) {
             const int l = rfmv_seq_lock_get(m, clip, q->page * RFM_MOVE_SEQ_PAGE + q->step_first, m->s.cc[m->s.bank][i]);
             v = l < 0 ? RFMV_OFF : sc(bc, 32 + l * 224 / 127);
@@ -2329,9 +2551,10 @@ static void session_screen(const rfm_move_t *m, mr_canvas_t *cv)
                 case CS_CONTENT: s = 'C'; break;
                 case CS_HOLLOW: s = 'H'; break;
                 case CS_ARMED: s = hollow ? 'h' : 'A'; break;
-                case CS_QUEUED: s = bl ? (hollow ? 'H' : 'C') : 'Q'; break;
+                case CS_QUEUED: s = bl ? (hollow ? 'h' : 'A') : (hollow ? 'H' : 'C'); break;   /* (0.11.0: the play
+                                                         * icon flashing) */
                 case CS_PLAYING: s = hollow ? 'h' : 'P'; break;
-                case CS_STOPPING: s = bl ? (hollow ? 'H' : 'C') : hollow ? 'h' : 'P'; break;
+                case CS_STOPPING: s = bl ? 'S' : hollow ? 'h' : 'P'; break;   /* (0.11.0: a stop icon flashing) */
                 case CS_REC: s = 'R'; break;
                 case CS_REC_WAIT: s = bl ? 'C' : 'R'; break;
                 default: break;
@@ -2347,10 +2570,15 @@ static void session_screen(const rfm_move_t *m, mr_canvas_t *cv)
             }
         }
         /* (0.10.0) the 8th column: the scene's number (the one that plays underlined; on its way: blinking) */
+        /* (0.11.0) on its way: a play icon flashing; on its way out: a stop icon flashing */
         snprintf(n, sizeof n, "%d", scene + 1);
-        if (ss != 3 || bl)
+        if (ss == 3 && bl)
+            v2_ic(cv, V2I_PLAY, RFM_MOVE_SV_COLS * 16 + 3, 4 + r * 15 + 1, 1);
+        else if (ss == 4 && bl)
+            v2_ic(cv, V2I_STOP, RFM_MOVE_SV_COLS * 16 + 3, 4 + r * 15 + 1, 1);
+        else
             v2_TC(cv, RFM_MOVE_SV_COLS * 16 + 8, 4 + r * 15 + 3, n, 1, 1);
-        if (ss == 2)
+        if (ss == 2 || (ss == 4 && !bl))
             v2_R(cv, RFM_MOVE_SV_COLS * 16 + 3, 4 + r * 15 + 11, 10, 1, 1);
     }
 }
@@ -2386,6 +2614,34 @@ void rfmv_seq_track_info(const rfm_move_t *m, int track, char row[4][32])
         snprintf(row[2], 32, "Clip %d, %d %s", t->sel + 1, q->len[clip] / RFM_MOVE_SEQ_PAGE,
                  q->len[clip] == RFM_MOVE_SEQ_PAGE ? "bar" : "bars");
     snprintf(row[3], 32, "Channel %d", t->ch + 1);
+}
+/* (0.11.0, the owner's) session view, knob 8 touched: the column under it launches scenes: "Scenes", the one that plays
+ * (or waits), the rows in view */
+void rfmv_seq_scene_pop(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    char b[24];
+    int sc2, plays = -1, next = -1;
+    for (sc2 = 0; sc2 < RFM_MOVE_SEQ_SCENES; sc2++) {
+        const int st = scene_state(m, sc2);
+        if (st == 2 || st == 4)
+            plays = sc2;
+        if (st == 3)
+            next = sc2;
+    }
+    mr_gfx_clear(cv, 0);
+    v2_ic(cv, V2I_PLAY, 2, 3, 1);
+    v2_T(cv, 18, 2, "Scenes", 2, 1);
+    if (next >= 0)
+        snprintf(b, sizeof b, "Next %d", next + 1);
+    else if (plays >= 0)
+        snprintf(b, sizeof b, "Scene %d", plays + 1);
+    else
+        snprintf(b, sizeof b, "No scene");
+    v2_T(cv, 0, 21, b, 2, 1);
+    snprintf(b, sizeof b, "Rows %d-%d", q->scene_off + 1, q->scene_off + 4);
+    v2_T(cv, 0, 43, b, 1, 1);
+    v2_T(cv, 0, 54, q->playing ? "Playing" : "Stopped", 1, 1);
 }
 void rfmv_seq_track_pop(const rfm_move_t *m, mr_canvas_t *cv, int track)
 {
@@ -2707,6 +2963,76 @@ static void global_screen(const rfm_move_t *m, mr_canvas_t *cv)
     }
 }
 
+/* (0.11.0) the arp menu's header: knob k's name and value, short enough for 2x where it can be (k < 0: the page at
+ * rest: "Arp On" .., "Mod", "Transpose") */
+static const char *const AL_SHORT[RFM_MOVE_AL_N1] = { "Play", "Rest", "Tie", "Repeat", "Lowest", "Highest", "Power", "Chord" };
+static void arp_head(const rfm_move_t *m, int k, char *o, int cap)
+{
+    static const char *const AM[RFM_MOVE_AM_N] = { "Off", "On", "First", "Once", "Hold" };
+    static const char *const AR[RFM_MOVE_AR_N] = { "Off", "Note", "Mod", "Trans" };
+    const rfm_move_seq_t *q = &m->seq;
+    const rfm_move_arp_t *a = &q->tr[q->sel_track].arp;
+    char b[16];
+    if (q->arp_page) {
+        const int L = q->arp_page - 1, st = q->arp_sel & 15, v = a->lane[L][st];
+        if (k == 0 && L)
+            snprintf(o, (size_t)cap, "%d %+d", st + 1, v);
+        else if (k == 0 && v >= RFM_MOVE_AL_N1)
+            snprintf(o, (size_t)cap, "%d Note %d", st + 1, v - RFM_MOVE_AL_N1 + 1);
+        else if (k == 0)
+            snprintf(o, (size_t)cap, "%d %s", st + 1, AL_SHORT[clampi(v, 0, RFM_MOVE_AL_N1 - 1)]);
+        else if (k == 1)
+            snprintf(o, (size_t)cap, "Length %d", L ? a->tlen : a->mlen);
+        else if (k == 2)
+            snprintf(o, (size_t)cap, "Reset %s", AR[a->reset % RFM_MOVE_AR_N]);
+        else
+            snprintf(o, (size_t)cap, "%s", L ? "Transpose" : "Mod");
+        return;
+    }
+    switch (k) {
+    case 0: snprintf(o, (size_t)cap, "Pattern"); break;  /* (its name and picture are below) */
+    case 1: arp_rate_name(rfmv_seq_arp_rate_of(a->rate), b, sizeof b), snprintf(o, (size_t)cap, "Rate %s", b); break;
+    case 2: snprintf(o, (size_t)cap, "Octaves %d", a->range); break;
+    case 3: snprintf(o, (size_t)cap, "Chance %d", a->chance); break;
+    case 5: snprintf(o, (size_t)cap, "Gate %d%%", a->gate); break;
+    case 6: snprintf(o, (size_t)cap, "Spread %+d", a->odist); break;
+    case 7:
+        if (a->quant)
+            arp_rate_name(rfmv_seq_arp_rate_of(a->quant - 1), b, sizeof b), snprintf(o, (size_t)cap, "Sync %s", b);
+        else
+            snprintf(o, (size_t)cap, "Sync Off");
+        break;
+    default: snprintf(o, (size_t)cap, "Arp %s", AM[a->mode % RFM_MOVE_AM_N]); break;   /* (knob 5, and at rest) */
+    }
+}
+/* the MOD lane: what a step does, as a sign in its 6 px column: play a block, rest a low dash, tie a line from the
+ * step before, repeat a hollow block, lowest an arrow down, highest an arrow up, power chord two bars, chord three,
+ * a played note its number */
+static void arp_sign(mr_canvas_t *cv, int x, int v)
+{
+    int r;
+    char d[2] = { 0, 0 };
+    switch (v) {
+    case RFM_MOVE_AL_PLAY: v2_R(cv, x, 28, 6, 12, 1); break;
+    case RFM_MOVE_AL_REST: v2_R(cv, x, 38, 6, 2, 1); break;
+    case RFM_MOVE_AL_TIE: v2_R(cv, x - 2, 33, 8, 2, 1); break;
+    case RFM_MOVE_AL_REPEAT: v2_O(cv, x, 28, 6, 12, 1); break;
+    case RFM_MOVE_AL_LO:
+        for (r = 0; r < 3; r++)
+            v2_R(cv, x + r, 28 + r * 4, 6 - r * 2, 4, 1);
+        break;
+    case RFM_MOVE_AL_HI:
+        for (r = 0; r < 3; r++)
+            v2_R(cv, x + r, 36 - r * 4, 6 - r * 2, 4, 1);
+        break;
+    case RFM_MOVE_AL_PWR: v2_R(cv, x, 28, 6, 5, 1), v2_R(cv, x, 35, 6, 5, 1); break;
+    case RFM_MOVE_AL_CHORD: v2_R(cv, x, 28, 6, 3, 1), v2_R(cv, x, 32, 6, 4, 1), v2_R(cv, x, 37, 6, 3, 1); break;
+    default:
+        d[0] = (char)('1' + clampi(v - RFM_MOVE_AL_N1, 0, 8));
+        v2_T(cv, x, 31, d, 1, 1);
+        break;
+    }
+}
 static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_seq_t *q = &m->seq;
@@ -2762,33 +3088,48 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
     case RFM_MOVE_SM_KEYS:                              /* the build's key / scale screen, Global / Track below */
         rfmv_keys_menu(m, cv, !(t->own & 2));
         break;
-    case RFM_MOVE_SM_ARP:
-        if (q->arp_page) {                              /* a lane: its 16 steps as bars (the edited one underlined;
-                                                         * past its length a dot) */
-            const rfm_move_arp_t *a = &t->arp;
-            const int L = q->arp_page - 1, len = L ? a->tlen : a->mlen;
-            v2_knobs(cv, 0x0F, tk);
-            v2_T(cv, 0, 11, L ? "Trans" : "Mod", 2, 1);
-            v2_R(cv, 0, 40, 128, 1, 1);
+    case RFM_MOVE_SM_ARP: {
+        /* (0.11.0, the owner's) each page has its own picture, so a knob's name and value go in the header (2x where
+         * they fit): the touched knob's, or the one turned last (a second); at rest the page says what it is ("Arp
+         * On", "Mod", "Transpose"). Under it a tick a knob the page uses, the active one long */
+        const rfm_move_arp_t *a = &t->arp;
+        const int mk = rfmv_seq_menu_knobs(m);
+        int hk = tk >= 0 && (mk >> tk & 1) ? tk : -1;
+        if (hk < 0 && q->sm_k >= 0 && (mk >> q->sm_k & 1) && rfmv_now_ms(m) - q->sm_ms < RFM_MOVE_POPUP_MS)
+            hk = q->sm_k;
+        arp_head(m, hk, b, sizeof b);
+        fit2(cv, 0, 0, b, 128);
+        for (i = 0; i < 8; i++)
+            if (mk >> i & 1)
+                v2_R(cv, i == hk ? 3 + i * 16 : 6 + i * 16, 17, i == hk ? 10 : 4, i == hk ? 2 : 1, 1);
+        if (q->arp_page) {                              /* a lane: its 16 steps; MOD: what each does, as a sign;
+                                                         * TRANSPOSE: bars from the line. The picked one underlined, the
+                                                         * one just played ticked; past its length a dot */
+            const int L = q->arp_page - 1, len = clampi(L ? a->tlen : a->mlen, 1, 16);
+            const int at = q->arp_run && q->arp_track == q->sel_track ? ((L ? q->arp_tpos : q->arp_mpos) + len - 1) % len : -1;
+            if (L)
+                v2_dotH(cv, 0, 38, 128);
             for (i = 0; i < RFM_MOVE_ARP_LANE; i++) {
                 const int x = i * 8 + 1, v = a->lane[L][i];
+                if (i == q->arp_sel)
+                    v2_R(cv, x, 56, 6, 2, 1);
                 if (i >= len) {
-                    v2_R(cv, x + 2, 44, 2, 2, 1);
+                    v2_R(cv, x + 2, L ? 38 : 34, 2, 2, 1);
                     continue;
                 }
-                if (L) {                                /* transpose: up or down from the line */
-                    const int d = clampi(v, -48, 48) * 14 / 48;
-                    v2_R(cv, x, d >= 0 ? 40 - d : 41, 6, d ? (d > 0 ? d : -d) : 1, 1);
-                } else                                  /* mod: the kind as a height */
-                    v2_R(cv, x, 40 - 2 * v - 1, 6, 2 * v + 1, 1);
-                if (i == q->arp_sel)
-                    v2_R(cv, x, 55, 6, 2, 1);
+                if (i == at)
+                    v2_R(cv, x, 21, 6, 2, 1);
+                if (L) {                                /* transpose: up or down from the line (two octaves: its
+                                                         * whole height) */
+                    const int d = clampi(v, -24, 24) * 15 / 24;
+                    v2_R(cv, x, d > 0 ? 38 - d : d < 0 ? 39 : 37, 6, d ? (d > 0 ? d : -d) : 3, 1);
+                } else
+                    arp_sign(cv, x, v);
             }
             v2_strip(cv, 3, 1u << q->arp_page, -1, 0, 128);
             break;
         }
         {                                               /* the pattern's walk as a picture, its name, rate, range */
-            const rfm_move_arp_t *a = &t->arp;
             uint8_t walk[8];
             int n = 0;
             switch (a->pat) {
@@ -2805,19 +3146,19 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
                 walk[0] = 1, walk[1] = 0, walk[2] = 2, walk[3] = 0, walk[4] = 1, n = 5; break;
             default: walk[0] = 0, walk[1] = 1, walk[2] = 2, n = 3; break;
             }
-            v2_knobs(cv, 0xFF, tk);
             for (i = 0; i < n; i++) {                   /* (off: outlined) */
                 if (a->mode == RFM_MOVE_AM_OFF)
-                    v2_O(cv, 2 + i * 10, 46 - walk[i] * 15, 8, 4, 1);
+                    v2_O(cv, 2 + i * 10, 54 - walk[i] * 11, 8, 4, 1);
                 else
-                    v2_R(cv, 2 + i * 10, 46 - walk[i] * 15, 8, 4, 1);
+                    v2_R(cv, 2 + i * 10, 54 - walk[i] * 11, 8, 4, 1);
             }
-            fit2(cv, 66, 10, AP_NAMES[a->pat % RFM_MOVE_AP_N], 62);
-            arp_rate_name(rfmv_seq_arp_rate_of(a->rate), b, sizeof b), fit2(cv, 66, 27, b, 62);
-            snprintf(b, sizeof b, "Oct %d", a->range), fit2(cv, 66, 44, b, 62);
+            snprintf(b, sizeof b, "Oct %d", a->range), v2_T(cv, 2, 22, b, 1, 1);   /* (its range: over the walk) */
+            fit2(cv, 66, 23, AP_NAMES[a->pat % RFM_MOVE_AP_N], 62);
+            arp_rate_name(rfmv_seq_arp_rate_of(a->rate), b, sizeof b), fit2(cv, 66, 42, b, 62);
             v2_strip(cv, 3, 1, -1, 0, 128);
         }
         break;
+    }
     case RFM_MOVE_SM_REC: {                             /* the three modes as icons, the chosen one underlined and
                                                          * named; the style below with its icon */
         static const int IC[3] = { V2I_CAPTURE, V2I_REC, V2I_STEP };
@@ -2966,16 +3307,16 @@ void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap)
             snprintf(o, (size_t)cap, "%s", q->arp_page == 0 ? "Arp" : q->arp_page == 1 ? "Mod lane" : "Transpose lane");
         else if (q->arp_page) {
             const int L = q->arp_page - 1, s = q->arp_sel & 15, v = a->lane[L][s];
-            if (k == 0 || k == 2) {
+            if (k == 0) {
                 if (L)
                     snprintf(o, (size_t)cap, "Step %d: %+d", s + 1, v);
                 else if (v >= RFM_MOVE_AL_N1)
                     snprintf(o, (size_t)cap, "Step %d: Note %d", s + 1, v - RFM_MOVE_AL_N1 + 1);
                 else
                     snprintf(o, (size_t)cap, "Step %d: %s", s + 1, AL[clampi(v, 0, RFM_MOVE_AL_N1 - 1)]);
-            } else if (k == 1)
+            } else if (k == 2)
                 snprintf(o, (size_t)cap, "Reset: %s", AR[a->reset % RFM_MOVE_AR_N]);
-            else if (k == 3)
+            else if (k == 1)
                 snprintf(o, (size_t)cap, "Length: %d", L ? a->tlen : a->mlen);
         } else
             switch (k) {

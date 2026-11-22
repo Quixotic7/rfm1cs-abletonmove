@@ -1050,9 +1050,14 @@ static void on_pad(rfm_move_t *m, int p, int vel, uint32_t now)
             rfmv_view_open(m, p == 24 ? VIEW_MIXER : VIEW_ROUTING);
         return;
     }
-    if ((t = rfmv_lay_menu(m)) != 0) {                  /* (0.8.0) a firmware Track held: its layout menu */
+    if ((t = rfmv_lay_menu(m)) != 0) {                  /* (0.8.0) a firmware Track held: its layout menu; (0.11.0,
+                                                         * the owner's) in session view the pads are the routing: a
+                                                         * column's track to that firmware or not */
         h->kind = H_MENU;
-        lay_pad(m, t - 1, p);
+        if (rfmv_sess_on(m))
+            rfmv_seq_route_pad(m, t - 1, p);
+        else
+            lay_pad(m, t - 1, p);
         return;
     }
     if (fm1_seq_layer(m) && m->seq.projects) {
@@ -1185,7 +1190,8 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
     }
     if ((t = rfmv_lay_menu(m)) != 0 && (cc == MR_CC_UP || cc == MR_CC_DOWN)) {
         const int o = clampi(m->s.octave + (cc == MR_CC_UP ? 1 : -1), RFM_MOVE_OCT_MIN, RFM_MOVE_OCT_MAX);
-        if (down) {                                     /* a firmware Track held: the pads' octave */
+        if (down && !rfmv_sess_on(m)) {                 /* a firmware Track held: the pads' octave (0.11.0: not in
+                                                         * session view: the held Track is the routing only there) */
             rfmv_menu(m, MENU_OCT, o - RFM_MOVE_OCT_MIN);
             if (o != m->s.octave) {
                 m->s.octave = (int8_t)o;
@@ -1308,7 +1314,8 @@ static void on_knob(rfm_move_t *m, int k, int d, uint32_t now)
     if ((t = rfmv_lay_menu(m)) != 0) {                  /* (0.8.0) a firmware Track held: in a note layout (0.9.0: the
                                                          * sequencer) the selected track's CC numbers (seq_ui.c); the
                                                          * FM-1 layout, a takeover: nothing */
-        if (m->s.mode == RFM_MOVE_MODE_SEQ) {           /* (the track selected for that firmware: its CC number) */
+        if (m->s.mode == RFM_MOVE_MODE_SEQ && !m->seq.view) {   /* (the track selected for that firmware: its CC
+                                                         * number; 0.11.0: session view: nothing) */
             const int tr = m->s.lock[t - 1] % RFM_MOVE_SEQ_TRACKS, b = m->s.bank & 3;
             if (tr == m->seq.sel_track)
                 rfmv_seq_knob(m, k, d, now);
@@ -1375,6 +1382,8 @@ static void on_jog(rfm_move_t *m, int d, uint32_t now)
     }
     if ((t = rfmv_lay_menu(m)) != 0) {                  /* a firmware Track held: the root (the key the tracks use) */
         const int r = ((key_root(m) + d) % 12 + 12) % 12;
+        if (rfmv_sess_on(m))
+            return;                                     /* (0.11.0: session view: the held Track is the routing only) */
         rfmv_menu(m, MENU_ROOT, r);
         key_set(m, r, -1);
         return;
@@ -1412,6 +1421,10 @@ static void on_jog(rfm_move_t *m, int d, uint32_t now)
 /* (0.8.0) the jog's click in the FM-1 layout: what it turns, SELECT -> PRESET -> ALGO, named a second */
 static void on_jog_click(rfm_move_t *m, int down)
 {
+    if (down && m->seq.smenu == RFM_MOVE_SM_ARP && !rfmv_lay_menu(m) && !rfmv_t4_menu(m)) {
+        rfmv_seq_arp_toggle(m);                         /* (0.11.0, the owner's) the arp menu: the jog's click: on / off */
+        return;
+    }
     if (!down || m->s.mode != RFM_MOVE_MODE_FM1 || rfmv_lay_menu(m) || rfmv_t4_menu(m) || fm1_seq_layer(m))
         return;
     m->jog_enc = (uint8_t)((m->jog_enc + 1) % 3);
@@ -1449,18 +1462,17 @@ static void on_touch(rfm_move_t *m, int k, int on)
     m->touched = (int8_t)k;
     if ((t = rfmv_lay_menu(m)) != 0) {                  /* (0.8.0) a firmware Track held: a note layout's knob shows its
                                                          * CC number (the FM-1 layout's: nothing) */
-        if (k < RFM_MOVE_NKNOBS && m->s.mode == RFM_MOVE_MODE_SEQ)
+        if (k < RFM_MOVE_NKNOBS && m->s.mode == RFM_MOVE_MODE_SEQ && !m->seq.view)
             rfmv_menu(m, MENU_CC, k);
         return;
     }
     if (rfmv_t4_menu(m))
         return;
-    if (m->s.mode == RFM_MOVE_MODE_SEQ && m->seq.view && !m->seq.projects && k < 8) {
-        if (k < RFM_MOVE_SV_COLS) {                     /* (session: a knob touched selects the track in its column;
+    if (rfmv_sess_on(m) && !m->seq.smenu && k < 8) {    /* (0.11.0: an open Shift menu has the knobs there too) */
+        if (k < RFM_MOVE_SV_COLS)                       /* (session: a knob touched selects the track in its column;
                                                          * 0.10.0: and shows its popup while touched) */
             rfmv_seq_select(m, m->seq.track_page + k);
-            rfmv_pop(m, POP_TRKINFO, k);
-        }
+        rfmv_pop(m, POP_TRKINFO, k);                    /* (0.11.0, the owner's: knob 8: the scenes) */
         return;
     }
     if (rfmv_half(m)) {                                 /* (0.5.6, the owner's: FM-1 mode, MIDI's NOTES: a touch alone
@@ -1518,6 +1530,13 @@ static void track_tap(rfm_move_t *m, int t)
         return;                                         /* (one slot: Tracks 2, 3 dark, nothing) */
     if (m->seq.projects)
         rfmv_view_close(m);                             /* (out of the view to where it came from, then the tap) */
+    if (rfmv_sess_on(m)) {                              /* (0.11.0, the owner's) session view is its own layer: the
+                                                         * firmware played changes, the view stays; its summary (the
+                                                         * tracks that reach it) a second, the knobs' lights after */
+        rfmv_fw_activate_keep(m, t);
+        rfmv_pop(m, POP_SLOT, t);
+        return;
+    }
     if (!rfmv_fw_activate(m, t))                        /* (its layout played: rfmv_slot_changed; 0.9.0: a note layout
                                                          * is the sequencer on the slot's selected track) */
         slot_mode_fresh(m, 1);                          /* (the slot already played: again, its track view) */
@@ -1556,6 +1575,7 @@ static int track_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
     if (!(m->track_held & bit))
         return 1;
     m->track_held = (uint8_t)(m->track_held & ~bit);
+    rfmv_seq_tk_flush(m);                               /* (0.11.0: a track's click that waited: it acts now) */
     if (m->tbtn_dbl & bit) {                            /* (a double click's release: nothing) */
         m->tbtn_dbl = (uint8_t)(m->tbtn_dbl & ~bit);
         return 1;
@@ -1649,6 +1669,10 @@ static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
         return;
     if (track_input(m, ev, now_ms))                     /* (0.8.0) the Track buttons, in every mode and the view */
         return;
+    if (m->seq.tk_pend >= 0 && ev->value && ev->type != MR_EV_TOUCH && ev->type != MR_EV_PAD_PRESSURE &&
+        ev->type != MR_EV_STEP && !(ev->type == MR_EV_PAD && rfmv_sess_on(m)))
+        rfmv_seq_tk_flush(m);                           /* (0.11.0) a held Track's track clicked, then something else
+                                                         * pressed: the click acts first (a layout goes to that track) */
     if (m->track_held && ev->value && ev->type != MR_EV_TOUCH && ev->type != MR_EV_PAD_PRESSURE &&
         m->menu_what == MENU_NONE)
         m->tbtn_used = m->track_held;                   /* (anything pressed with a Track held: its release no tap) */
@@ -1747,7 +1771,7 @@ int rfmv_menu_knobs(const rfm_move_t *m)
                 if (t == 3)
                     return 0;
                 if (m->s.mode == RFM_MOVE_MODE_SEQ)
-                    return 0xFF;
+                    return m->seq.view ? 0 : 0xFF;      /* (0.11.0: session view: the routing only, no knobs) */
                 return rfmv_slot_lay(m, t) >= RFM_MOVE_LAY_SCALE ? 0xFF : 0;
             }
     }
@@ -1837,6 +1861,10 @@ static void lay_menu_leds(const rfm_move_t *m, int t, rgb_t c[L_WHITE0])
                                                 { 200, 255, 42 }, { 200, 255, 42 } };
     const int lay = rfmv_slot_lay(m, t);
     int i;
+    if (rfmv_sess_on(m)) {                              /* (0.11.0) session view: the pads are the routing */
+        rfmv_seq_route_leds(m, t, c);
+        return;
+    }
     for (i = 0; i < RFM_MOVE_NPADS; i++) {
         rgb_t v = OFF;
         if (i >= 24 && i < 24 + RFM_MOVE_LAY_N) {

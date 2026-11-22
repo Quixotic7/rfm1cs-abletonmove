@@ -195,7 +195,10 @@ static void test_layout_menu(void)
     CHECK(M.s.slot[1].lay == RFM_MOVE_LAY_DRUM && M.fw.active == 0 && M.s.mode == RFM_MOVE_MODE_FM1);
     CHECK(M.seq.tr[1].layout == RFM_MOVE_LAYOUT_DRUM);
     write_pbm("menu_drum");
-    step(5, 1), step(5, 0);                             /* track 6 selected for Felucca, routed to it */
+    step(5, 1), step(5, 0);                             /* track 6 selected for Felucca, routed to it (0.11.0: a click:
+                                                         * once the double click's time has passed) */
+    CHECK(M.s.lock[1] != 5);
+    adv_ms(RFM_MOVE_DOUBLE_MS + 30);
     CHECK(M.s.lock[1] == 5 && (M.seq.fx.ffilt[1] >> 5 & 1) && M.lk_word == LK_LOCKED);
     write_pbm("menu_select");
     track(1, 0);                                        /* used: no tap */
@@ -312,7 +315,7 @@ static void test_track4(void)
     back();
     CHECK(!M.seq.smenu && M.seq.projects && M.fw.fx);
     /* Track 1 held over the Mixer: its menu (the pads its layouts, the steps its tracks) */
-    rest(), hold_track(0), step(6, 1), step(6, 0);
+    rest(), hold_track(0), step(6, 1), step(6, 0), adv_ms(RFM_MOVE_DOUBLE_MS + 30);
     CHECK(M.s.lock[0] == 6 && M.seq.projects);
     hit(26);
     CHECK(M.s.slot[0].lay == RFM_MOVE_LAY_SCALE);
@@ -340,8 +343,11 @@ static void test_seq(void)
     CHECK(M.seq.view);
     back();
     CHECK(!M.seq.view);
-    press(MR_CC_MENU), tap_track(0);                    /* a Track tap: the track view too */
-    CHECK(!M.seq.view && M.seq.trig);
+    press(MR_CC_MENU), tap_track(0);                    /* (0.11.0, the owner's) a Track tap in session view: the
+                                                         * view stays (its own layer); Menu: the track view */
+    CHECK(M.seq.view && M.fw.active == 0);
+    rest(), press(MR_CC_MENU);
+    CHECK(!M.seq.view);
     rest(), hold_track(0);                              /* the merged menu */
     write_pbm("lock_menu");
     step(6, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(6, 0);   /* hold: track 7 not routed to ChoralRoot */
@@ -482,6 +488,8 @@ static void test_speech(void)
     hold_track(1);
     CHECKF(strstr(said, "Felucca, layouts, Drum, Track 2") != NULL, "said \"%s\"", said);
     clear(), step(5, 1), step(5, 0);
+    CHECKF(strstr(said, "selected") == NULL, "said \"%s\"", said);   /* (0.11.0: not before the click is one) */
+    adv_ms(RFM_MOVE_DOUBLE_MS + 30);
     CHECKF(strstr(said, "Track 6, selected") != NULL, "said \"%s\"", said);
     track(1, 0), rest(), clear();
     tap_track(3);

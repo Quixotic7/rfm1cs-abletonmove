@@ -95,6 +95,7 @@ static void tap_step(rfm_move_t *m, int s) { step(m, s, 1), step(m, s, 0); }
 static void button(rfm_move_t *m, int cc, int down) { raw(m, 0xB0, (uint8_t)cc, down ? 127 : 0); }
 static void write_pbm(const char *path, const uint8_t *packed);
 static void rest(rfm_move_t *m);
+static void dblgap(rfm_move_t *m);
 static int px_at(const uint8_t *packed, int x, int y);
 static int lit_in(const uint8_t *out, int x0, int y0, int x1, int y1)
 {
@@ -653,8 +654,9 @@ static void test_launch(void)
     CHECK(!rfmv_seq_clip_has(m, SEQ_CLIP(0, 3)));
     rfm_move_seq_play(m, 0);
     pad(m, 23, 100), pad(m, 23, 0);                     /* the scene pad of row 2: scene 2 across the tracks (stopped:
-                                                         * at once, no start) */
-    CHECK(m->seq.tr[1].active == 1 && m->seq.tr[0].active == 1 && m->seq.tr[2].active == -1 && !m->seq.start_pending);
+                                                         * at once; 0.11.0, the owner's: and it plays) */
+    CHECK(m->seq.tr[1].active == 1 && m->seq.tr[0].active == 1 && m->seq.tr[2].active == -1 &&
+          (m->seq.start_pending || m->seq.playing));
     rfm_move_seq_play(m, 0);
     /* the owner's session: a column a track (Left / Right one track at a time), a row a clip slot (Up / Down) */
     press(m, MR_CC_RIGHT), press(m, MR_CC_DOWN);
@@ -1400,10 +1402,10 @@ static void write_pbm(const char *path, const uint8_t *packed)
 
 #define GOLD_TRACK 0xa1088f61u
 #define GOLD_STEP 0x7923b304u
-#define GOLD_SESSION 0x70363f4eu
+#define GOLD_SESSION 0x1d49a265u
 #define GOLD_PROJECTS 0x5204a535u
 #define GOLD_PROJECT 0xb8a42ba8u
-#define GOLD_TRACKS 0x0e18c2a2u                     /* (0.9.0: the merged menu, "FM-1" "Track 3" "selected") */
+#define GOLD_TRACKS 0x24dac365u                     /* (0.9.0: the merged menu, "FM-1" "Track 3" "selected") */
 #define GOLD_COUNT 0x8e572804u
 #define GOLD_MSG 0x418461a1u
 static int px_at(const uint8_t *packed, int x, int y) { return packed[(y >> 3) * 128 + x] >> (y & 7) & 1; }
@@ -1577,12 +1579,15 @@ static void test_screens_leds(void)
     }
     /* (0.9.0) Track 1 held: the merged menu; a step: the track selected for slot 0 (FM-1 on top, "Track 3",
      * "selected") */
+    if (m->seq.view)
+        press(m, MR_CC_MENU);                           /* (0.11.0: in session view a held Track is the routing only) */
     track(m, 0, 1);
     tap_step(m, 2);
+    dblgap(m);
     rfm_move_screen(m, NULL, out);
     CHECK(m->menu_what == MENU_LOCK && m->seq.sel_track == 2 && rfm_move_seq_lock(m, 0) == 2 && m->lk_word == LK_LOCKED);
-    CHECK(px_at(out, 9, 28) && px_at(out, 3, 20) && px_at(out, 33, 55) && !px_at(out, 9, 14));   /* "Track 3",
-                                                         * "selected" under it */
+    /* (0.11.0) the firmware, "Track 3", "Selected", and the 16 tracks: routed blocks, the selected one underlined */
+    CHECK(lit(out) > 200 && px_at(out, 1, 54) && px_at(out, 2 * 8 + 1, 54) && px_at(out, 2 * 8 + 1, 60) && !px_at(out, 1, 60));
     {                                                   /* a value changed (0.9.0: the jog: the key's root): the keys
                                                          * screen over the menu for a second, then the layout screen */
         uint8_t o2[MR_SCREEN_BYTES], o3[MR_SCREEN_BYTES];
@@ -1756,6 +1761,8 @@ static void test_popups(void)
 
 static uint64_t b0;                                     /* (the frame a play started at) */
 static void rest(rfm_move_t *m) { adv(m, RATE * RFM_MOVE_POPUP_MS / 1000 + 256); }   /* (popups gone) */
+/* (0.11.0) a held Track's step clicked: it acts once the double click's time has passed */
+static void dblgap(rfm_move_t *m) { adv(m, RATE * (RFM_MOVE_DOUBLE_MS + 40) / 1000); }
 
 /* ================================================================ the owner's Move test (2026-11-17) === */
 static int count_on(int ch, int note)                   /* note ons in acts[] */
@@ -2318,23 +2325,24 @@ static void test_tracks16(void)
     CHECK(m->seq.fx.ffilt[0] >> 2 & 1);                 /* (every track routed to slot 0 at first) */
     track(m, 0, 1);
     tap_step(m, 12);                                    /* a tap: track 13, locked to slot 0 */
+    dblgap(m);
     CHECK(m->seq.sel_track == 12 && m->s.mode == RFM_MOVE_MODE_SEQ && rfm_move_seq_lock(m, 0) == 12);
     rfm_move_screen(m, NULL, out);
     write_pbm("move_seq_tracks_held.pbm", out);
     now_ms += 1000;
-    tap_step(m, 13), tap_step(m, 13);                   /* (0.9.0) a double tap: track 14 soloed on slot 0 only (the
-                                                         * first tap selected it); the sequencer's own solo untouched */
+    tap_step(m, 13), tap_step(m, 13);                   /* (0.9.0) a double tap: track 14 soloed on slot 0 only;
+                                                         * (0.11.0) it selects nothing; the sequencer's own solo untouched */
     CHECK(m->fsolo[0] == 14 && m->seq.fx.ffilt[0] == 1u << 13 && m->fsolo_save[0] == 0xFFFF && !m->seq.tr[13].solo &&
-          m->seq.sel_track == 13 && m->lk_word == LK_SOLO);
+          m->seq.sel_track == 12 && m->lk_word == LK_SOLO);
     step(m, 2, 1), adv(m, RATE * RFM_MOVE_SEQ_HOLD_MS / 1000 + 256), step(m, 2, 0);   /* a hold: the solo ends, track 3
                                                          * not routed */
-    CHECK(!m->fsolo[0] && m->seq.fx.ffilt[0] == (0xFFFF & ~(1u << 2)) && !m->seq.tr[2].mute && m->seq.sel_track == 13);
+    CHECK(!m->fsolo[0] && m->seq.fx.ffilt[0] == (0xFFFF & ~(1u << 2)) && !m->seq.tr[2].mute && m->seq.sel_track == 12);
     button(m, MR_CC_MUTE, 1), tap_step(m, 2), button(m, MR_CC_MUTE, 0);   /* Mute + step: track 3 muted */
-    CHECK(m->seq.tr[2].mute && m->seq.sel_track == 13);
+    CHECK(m->seq.tr[2].mute && m->seq.sel_track == 12);
     now_ms += 1000;
     tap_step(m, 13), tap_step(m, 13);                   /* soloed again (the filter without track 3 kept aside) */
     CHECK(m->fsolo[0] == 14 && m->fsolo_save[0] == (0xFFFF & ~(1u << 2)));
-    {   /* the LEDs (the merged menu): soloed blue, not routed dim red */
+    {   /* the LEDs (the merged menu): soloed blue, (0.11.0, the owner's) not routed dark */
         rfm_move_led_t leds[RFM_MOVE_NLEDS];
         int k;
         rfm_move_leds_invalidate(m);
@@ -2343,7 +2351,7 @@ static void test_tracks16(void)
             if (!leds[i].cc && leds[i].number == MR_NOTE_STEP0 + 13)
                 CHECK(leds[i].b > leds[i].r);
             if (!leds[i].cc && leds[i].number == MR_NOTE_STEP0 + 2)
-                CHECK(leds[i].r > leds[i].g && leds[i].r > leds[i].b && leds[i].r < 255);
+                CHECK(!leds[i].r && !leds[i].g && !leds[i].b);
         }
     }
     now_ms += 1000;
@@ -2384,6 +2392,7 @@ static void test_tracks16(void)
     CHECK(m->s.layout == RFM_MOVE_LAYOUT_DRUM && m->s.cc[0][0] == 21);
     now_ms += 1000;
     tap_step(m, 14);                                    /* track 15: its own (the defaults) */
+    dblgap(m);
     CHECK(m->seq.sel_track == 14 && m->s.layout == RFM_MOVE_LAYOUT_SCALE && m->s.cc[0][0] == 16);
     now_ms += 1000;
     tap_step(m, 12);
@@ -2479,14 +2488,14 @@ static void test_round2(void)
         knob(m, 4, RFM_MOVE_LIST_TICKS), knob(m, 1, 3 * RFM_MOVE_LIST_TICKS), knob(m, 2, -RFM_MOVE_LIST_TICKS), knob(m, 7, -10 * RFM_MOVE_LIST_TICKS);   /* ON, 1/16, RANGE 1, QUANT off */
         jog(m, 1);
         CHECK(m->seq.arp_page == 1);
-        knob(m, 2, RFM_MOVE_LIST_TICKS), knob(m, 0, RFM_MOVE_AL_REST * RFM_MOVE_LIST_TICKS);   /* (knob 3: the lane step) */
-        knob(m, 2, RFM_MOVE_LIST_TICKS), knob(m, 0, RFM_MOVE_AL_CHORD * RFM_MOVE_LIST_TICKS);
-        knob(m, 3, -13);                                /* (the lane's length: 3) */
+        tap_step(m, 1), knob(m, 0, RFM_MOVE_AL_REST * RFM_MOVE_LIST_TICKS);   /* (0.11.0: a step key: the lane's step) */
+        tap_step(m, 2), knob(m, 0, RFM_MOVE_AL_CHORD * RFM_MOVE_LIST_TICKS);
+        knob(m, 1, -7 * RFM_MOVE_LIST_TICKS), knob(m, 1, -6 * RFM_MOVE_LIST_TICKS);   /* (knob 2: the lane's length: 3) */
         CHECK(ap->lane[0][1] == RFM_MOVE_AL_REST && ap->lane[0][2] == RFM_MOVE_AL_CHORD && ap->mlen == 3 && ap->quant == 0);
         rest(m);
         rfm_move_screen(m, NULL, (uint8_t[MR_SCREEN_BYTES]){ 0 });
         jog(m, 1);                                      /* the TRANSPOSE lane: step 1 +12 */
-        knob(m, 2, -2 * RFM_MOVE_LIST_TICKS), knob(m, 0, 12);
+        tap_step(m, 0), knob(m, 0, 12);
         CHECK(m->seq.arp_page == 2 && ap->lane[1][0] == 12);
         knob(m, 0, -12);
         press(m, MR_CC_BACK);
@@ -2635,14 +2644,18 @@ static void test_session2(void)
     now_ms += 1000;
     pad(m, 16, 100), pad(m, 16, 0);                     /* track 1, scene 2 */
     CHECK(m->seq.tr[0].queued == 1 && m->seq.tr[0].active == 0);
-    pad(m, 16, 100), pad(m, 16, 0);                     /* (again, at once: a double tap) */
-    CHECK(m->seq.tr[0].queued == 1 && m->seq.tr[0].active == 0);
+    pad(m, 16, 100), pad(m, 16, 0);                     /* (again, at once: a double click: 0.11.0, the owner's: it
+                                                         * plays now, not at the bar) */
+    CHECK(m->seq.tr[0].queued == SEQ_NONE && m->seq.tr[0].active == 1);
     clear();
     adv(m, 16 * FPS);
     CHECK(m->seq.tr[0].active == 1 && find_midi(0x90, 62, 100, NULL) && !find_midi(0x90, 60, -1, NULL));
-    /* a double tap on the playing clip: it stops at the next bar */
+    /* (0.11.0) a double click on the playing clip: it plays on (now, in the bar's phase); its stop step stops it at
+     * the next bar */
     now_ms += 1000;
     pad(m, 16, 100), pad(m, 16, 0), pad(m, 16, 100), pad(m, 16, 0);
+    CHECK(m->seq.tr[0].queued == SEQ_NONE && m->seq.tr[0].active == 1);
+    tap_step(m, 1);
     CHECK(m->seq.tr[0].queued == SEQ_STOP && m->seq.tr[0].active == 1);
     adv(m, 16 * FPS);
     CHECK(m->seq.tr[0].active == -1);
@@ -2746,6 +2759,16 @@ static void test_only_play_starts(void)
             step(m, i, 1), adv(m, FPS * 4), step(m, i, 0), STOPPED("step hold");
         }
         for (i = 0; i < RFM_MOVE_NPADS; i++) {
+            if (v && i % 8 == 7) {                      /* (0.11.0, the owner's) session view's scene pads: the one
+                                                         * exception: a scene plays from stopped */
+                pad(m, i, 100), pad(m, i, 0);
+                CHECKF(m->seq.playing || m->seq.start_pending, "scene pad %d starts", i);
+                rfm_move_seq_play(m, 0);
+                now_ms += 1000;
+                button(m, MR_CC_SHIFT, 1), pad(m, i, 100), pad(m, i, 0), button(m, MR_CC_SHIFT, 0), STOPPED("Shift + scene pad");
+                now_ms += 1000;
+                continue;
+            }
             pad(m, i, 100), pad(m, i, 0), STOPPED("pad");
             pad(m, i, 100), pad(m, i, 0), STOPPED("pad double tap");
             pad(m, i, 90), adv(m, FPS * 4), pad(m, i, 0), STOPPED("pad hold");

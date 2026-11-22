@@ -210,6 +210,52 @@ static void keys_menu_v(mr_canvas_t *cv, int root, int scale, int layout, int ch
 }
 static const char *const LK_WORDS[] = { "selected", "solo", "solo off", "not routed", "routed", "muted", "unmuted",
                                         "cleared" };
+/* (0.11.0, the owner's) a firmware slot at a glance (its held Track button; session view's Track tap): its firmware,
+ * its layout (a padlock: latch on), the key the tracks use, and the 16 tracks: a block: it reaches the firmware, a
+ * dot: it does not, underlined: the one selected for it, a bar over it: the firmware's solo. changed: a track's step
+ * or column just acted: "Track n" and what happened in place of the layout and the key */
+void rfmv_slot_screen(const rfm_move_t *m, mr_canvas_t *cv, int t, int chg)
+{
+    const int lay = rfmv_slot_lay(m, t), seq = m->s.mode == RFM_MOVE_MODE_SEQ;
+    char nm[24], a[24];
+    int i;
+    mr_gfx_clear(cv, 0);
+    slot_title(m, t, nm, sizeof nm);
+    nm[10] = 0;
+    v2_T(cv, 0, 0, nm, 2, 1);
+    if (chg) {
+        snprintf(a, sizeof a, "Track %d", (m->menu_i & 15) + 1);
+        v2_T(cv, 0, 17, a, 2, 1);
+        rfmv_tcase(m->lk_word < 8 ? LK_WORDS[m->lk_word] : "selected", a, sizeof a);
+        v2_T(cv, 0, 34, a, 2, 1);
+    } else {
+        snprintf(a, sizeof a, "%s", rfmv_lay_name(m, t, lay));
+        a[9] = 0;
+        v2_T(cv, 0, 17, a, 2, 1);
+        if (m->latch)
+            v2_ic(cv, V2I_LOCK, 115, 18, 1);
+        {
+            char sn[20];
+            rfmv_tcase(rfm_move_scale_name(seq ? m->s.scale : m->seq.scale), sn, sizeof sn);
+            snprintf(a, sizeof a, "%s %s", rfmv_note_names[(seq ? m->s.root : m->seq.root) % 12], sn);
+        }
+        if (v2_tw(a, 2) <= 128)
+            v2_T(cv, 0, 34, a, 2, 1);
+        else
+            v2_T(cv, 0, 38, a, 1, 1);
+    }
+    for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++) {
+        const int x = i * 8 + 1;
+        if (m->seq.fx.ffilt[t] >> i & 1)
+            v2_R(cv, x, 53, 6, 5, 1);
+        else
+            v2_R(cv, x + 2, 55, 2, 2, 1);
+        if (m->fsolo[t] == i + 1)
+            v2_R(cv, x, 51, 6, 1, 1);
+        if (m->s.lock[t] == i)
+            v2_R(cv, x, 60, 6, 2, 1);
+    }
+}
 /* a held Track's menu: a firmware's layout menu (its layout; a scale, the root, the channel or the octave changed:
  * the keys screen; a knob: its CC number), Track 4's (its page), the Sequencer's lock menu (the track locked) */
 static void track_menu(const rfm_move_t *m, mr_canvas_t *cv, int t)
@@ -226,9 +272,8 @@ static void track_menu(const rfm_move_t *m, mr_canvas_t *cv, int t)
     }
     {                                                   /* (0.9.0) one menu: the pads the layout, the steps the tracks */
         const int lay = rfmv_slot_lay(m, t), seq = m->s.mode == RFM_MOVE_MODE_SEQ;
-        if (recent && m->menu_what == MENU_LOCK) {      /* a step: the lock screen (the track, what changed) */
-            snprintf(a, sizeof a, "Track %d", m->s.lock[t] + 1);
-            pop_screen_at(cv, nm, a, 0, 0, m->lk_word < 8 ? LK_WORDS[m->lk_word] : "selected", 18);
+        if (recent && m->menu_what == MENU_LOCK) {      /* a step: the track and what happened, over the 16 tracks */
+            rfmv_slot_screen(m, cv, t, 1);
         } else if (seq && m->menu_what == MENU_CC && (recent || m->touched == (m->menu_i & 7))) {
             const int tr = m->s.lock[t] % 16, k = m->menu_i & 7;   /* a knob: the track's CC number (the board's I) */
             snprintf(a, sizeof a, "Knob %d", k + 1);
@@ -238,8 +283,8 @@ static void track_menu(const rfm_move_t *m, mr_canvas_t *cv, int t)
             mr_gfx_clear(cv, 0);                        /* the key */
             keys_menu_v(cv, seq ? m->s.root : m->seq.root, seq ? m->s.scale : m->seq.scale,
                         lay >= RFM_MOVE_LAY_SCALE ? lay - RFM_MOVE_LAY_SCALE : -1, m->seq.tr[m->s.lock[t] % 16].ch);
-        } else
-            rfmv_pop_screen(cv, nm, rfmv_lay_name(m, t, lay), RFM_MOVE_LAY_N, lay, NULL);
+        } else                                          /* (0.11.0) at rest: the slot at a glance */
+            rfmv_slot_screen(m, cv, t, 0);
     }
 }
 
@@ -909,8 +954,12 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             mr_gfx_clear(cv, 0);
             v2_msg(cv, nm, b);
             g_full = 1;
-        } else if (m->pop == POP_TRKINFO) {             /* (0.10.0) session view, a knob touched: its track */
-            rfmv_seq_track_pop(m, cv, clampi(q->track_page + m->pop_i, 0, RFM_MOVE_SEQ_TRACKS - 1));
+        } else if (m->pop == POP_TRKINFO) {             /* (0.10.0) session view, a knob touched: its track; (0.11.0)
+                                                         * knob 8: the scenes */
+            if (m->pop_i >= RFM_MOVE_SV_COLS)
+                rfmv_seq_scene_pop(m, cv);
+            else
+                rfmv_seq_track_pop(m, cv, clampi(q->track_page + m->pop_i, 0, RFM_MOVE_SEQ_TRACKS - 1));
             g_full = 1;
         } else if (m->pop == POP_TRACK) {                 /* a track change: its name */
             char b[12];
@@ -950,6 +999,13 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             host_popup(m, cv);
         else if (m->pop == POP_TK) {                    /* (0.7.0) a takeover entered: its name, the whole screen */
             tk_popup(m, cv);
+            g_full = 1;
+        } else if (m->pop == POP_SLOT) {                /* (0.11.0) session view, a Track tapped: its slot's summary */
+            rfmv_slot_screen(m, cv, m->pop_i % 3, 0);
+            g_full = 1;
+        } else if (m->pop == POP_VIEW) {                /* (0.11.0) Menu under an open Shift menu: the view named */
+            mr_gfx_clear(cv, 0);
+            v2_modeName(cv, m->pop_i ? "Session" : "Sequencer", 2, m->pop_i != 0);
             g_full = 1;
         } else if (m->pop >= POP_LAYOUT && m->pop <= POP_SEQ) {   /* (0.8.0) the Track buttons' popups (the board) */
             char nm[24], a[16], b[16];

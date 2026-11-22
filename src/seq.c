@@ -584,6 +584,7 @@ void rfmv_seq_init(rfm_move_t *m)
     q->nlast = 0;
     q->step_first = -1;
     q->loop_first = -1, q->loop_tap = -1, q->tstep_tap = -1, q->pad_tap = -1, q->proj_held = -1;
+    q->tk_pend = -1, q->sm_k = -1;
     q->rng = 0x9E3779B9u;
     q->qstrength = 100;
     q->group = 1;
@@ -1356,7 +1357,7 @@ void rfmv_seq_launch(rfm_move_t *m, int track, int scene)
     t->queued = (int8_t)(scene < 0 ? SEQ_STOP : scene);
 }
 /* a clip launched now, not at the bar: in phase with the bar the song is in (stopped: as a launch) */
-void rfmv_seq_launch_now(rfm_move_t *m, int track, int scene)
+void rfmv_seq_launch_now(rfm_move_t *m, int track, int scene)   /* (0.11.0) scene -1: the track stops now */
 {
     rfm_move_seq_t *q = &m->seq;
     rfm_move_track_t *t = &q->tr[track];
@@ -1366,17 +1367,47 @@ void rfmv_seq_launch_now(rfm_move_t *m, int track, int scene)
     }
     rfmv_seq_release(m, track);
     t->queued = SEQ_NONE, t->grow = 0;
+    if (scene < 0) {
+        t->active = -1, t->pos = -1;
+        return;
+    }
     t->active = (int8_t)scene, t->sel = (int8_t)scene;
     t->t0 = q->T - q->T % BAR, t->pos = -1;
     seek(m, track, q->T);
 }
-void rfmv_seq_launch_scene(rfm_move_t *m, int scene)
+/* a scene (a row across the 16 tracks): its clips launched, the tracks with none there stopped; now: not at the bar */
+static void launch_scene(rfm_move_t *m, int scene, int now)
 {
     int t;
-    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++)
-        rfmv_seq_launch(m, t, rfmv_seq_clip_has(m, SEQ_CLIP(t, scene)) ? scene : -1);
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++) {
+        const int to = rfmv_seq_clip_has(m, SEQ_CLIP(t, scene)) ? scene : -1;
+        if (now)
+            rfmv_seq_launch_now(m, t, to);
+        else
+            rfmv_seq_launch(m, t, to);
+    }
     for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++)
         m->seq.tr[t].sel = (int8_t)scene;
+}
+void rfmv_seq_launch_scene(rfm_move_t *m, int scene) { launch_scene(m, scene, 0); }
+void rfmv_seq_launch_scene_now(rfm_move_t *m, int scene) { launch_scene(m, scene, 1); }
+/* (0.11.0) a scene stopped: every track that plays its clip, or is about to (at the bar; now: at once). Tracks stopped */
+int rfmv_seq_stop_scene(rfm_move_t *m, int scene, int now)
+{
+    rfm_move_seq_t *q = &m->seq;
+    int t, n = 0;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++) {
+        const rfm_move_track_t *tr = &q->tr[t];
+        if (tr->queued == scene || (tr->active == scene && rfmv_seq_clip_has(m, SEQ_CLIP(t, scene)) && tr->queued != SEQ_STOP) ||
+            (now && tr->active == scene && tr->queued == SEQ_STOP)) {
+            if (now)
+                rfmv_seq_launch_now(m, t, -1);
+            else
+                rfmv_seq_launch(m, t, -1);
+            n++;
+        }
+    }
+    return n;
 }
 /* solo: while any track is soloed only the soloed ones sound */
 void rfmv_seq_solo(rfm_move_t *m, int track, int on)

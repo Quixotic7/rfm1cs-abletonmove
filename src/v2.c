@@ -345,6 +345,8 @@ void v2_cell(mr_canvas_t *b, int c, int r, char s)
         v2_O(b, x, y, 14, 13, 1), v2_O(b, x + 2, y + 2, 10, 9, 1);
     else if (s == 'A')                                  /* (0.10.0) armed: stopped, Play starts it */
         v2_O(b, x, y, 14, 13, 1), v2_ic(b, V2I_PLAY, x + 2, y + 1, 1);
+    else if (s == 'S')                                  /* (0.11.0) it stops at the bar */
+        v2_O(b, x, y, 14, 13, 1), v2_R(b, x + 4, y + 3, 6, 7, 1);
     else if (s == 'H' || s == 'h') {                    /* (0.10.0) a clip with no notes: its corners (h: it plays) */
         v2_R(b, x, y, 3, 1, 1), v2_R(b, x, y, 1, 3, 1), v2_R(b, x + 11, y, 3, 1, 1), v2_R(b, x + 13, y, 1, 3, 1);
         v2_R(b, x, y + 12, 3, 1, 1), v2_R(b, x, y + 10, 1, 3, 1), v2_R(b, x + 11, y + 12, 3, 1, 1), v2_R(b, x + 13, y + 10, 1, 3, 1);
