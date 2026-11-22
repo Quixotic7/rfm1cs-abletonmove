@@ -2105,8 +2105,8 @@ static rgb_t route_rgb(const rfm_move_t *m, int fw, int i)
     if (m->fsolo[fw] == i + 1)
         return sel && !ph ? sc(blue, 70) : blue;
     if (sel)
-        return on ? sc(fc, ph ? 256 : 70) : sc(fc, ph ? 60 : 0);
-    return !on ? RFMV_OFF : sc(fc, rfmv_seq_track_used(m, i) ? 110 : 50);
+        return on ? sc(fc, ph ? 256 : 50) : sc(fc, ph ? 60 : 0);
+    return !on ? RFMV_OFF : sc(fc, rfmv_seq_track_used(m, i) ? 170 : 100);   /* (plainly lit: dark means not routed) */
 }
 rgb_t rfmv_lock_rgb(const rfm_move_t *m, int fw, int i)
 {
