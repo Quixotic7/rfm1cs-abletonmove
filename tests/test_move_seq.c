@@ -711,7 +711,7 @@ static void test_note_offs(void)
     play_long(m);
     /* 5 the track's channel changes (0.9.0: Workflow, Shift + step 3, the jog) */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 2), button(m, MR_CC_SHIFT, 0);
-    jog(m, 1);
+    jog_click(m), jog(m, 1);                            /* (0.13.0: the click edits the selected channel) */
     CHECK(m->seq.smenu == RFM_MOVE_SM_WORKFLOW && m->seq.tr[0].ch == 1 && sounding[0][60] == 0);
     press(m, MR_CC_BACK);
     for (t = 0; t < 4; t++)                             /* 6 clip changes (stop at the bar) */
@@ -803,7 +803,8 @@ static void test_record(void)
     button(m, MR_CC_SHIFT, 1), tap_step(m, 9), button(m, MR_CC_SHIFT, 0);
     CHECK(m->seq.smenu == RFM_MOVE_SM_VEL && m->s.vel_mode == RFM_MOVE_VEL_DYNAMIC);
     pad(m, 6, 83), pad(m, 6, 0);                       /* (the last velocity played: 83) */
-    jog(m, 1);                                          /* Fixed: from the last velocity played (the owner's) */
+    jog(m, 1), jog_click(m), jog(m, 1);                 /* Fixed: from the last velocity played (the owner's; 0.13.0:
+                                                         * the jog selects the option, knob 2's, its click edits it) */
     CHECK(m->s.vel_mode == RFM_MOVE_VEL_FIXED && m->s.vel_level == 83);
     jog(m, 2);                                          /* (the jog's order: Dynamic Fixed Soft Linear Hard) */
     CHECK(m->s.vel_mode == RFM_MOVE_VEL_LINEAR && rfm_move_vel(&m->s, 40) == 40);
@@ -1867,7 +1868,7 @@ static void test_live_record(void)
     /* the record settings: Shift + Record, the jog = the mode, knob 2 = the style; saved with the project */
     button(m, MR_CC_SHIFT, 1), press(m, MR_CC_REC), button(m, MR_CC_SHIFT, 0);
     CHECK(m->seq.smenu == RFM_MOVE_SM_REC);
-    jog(m, -2), knob(m, 1, RFM_MOVE_LIST_TICKS);
+    jog_click(m), jog(m, -2), knob(m, 1, RFM_MOVE_LIST_TICKS);   /* (0.13.0: the click edits the mode first) */
     CHECK(m->seq.rec_mode == RFM_MOVE_RM_CAPTURE && m->seq.rec_style == RFM_MOVE_RS_REPLACE);
     press(m, MR_CC_BACK);
     CHECK(!m->seq.smenu && m->s.mode == RFM_MOVE_MODE_SEQ);
@@ -2069,10 +2070,11 @@ static void test_controls(void)
     /* Shift + step 7: groove (the jog): an off 16th late */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 6), button(m, MR_CC_SHIFT, 0);
     CHECK(m->seq.smenu == RFM_MOVE_SM_GROOVE);
-    jog(m, 15);                                         /* (5 % a detent: 75 %; GLOBAL at first: the project's) */
+    jog_click(m), jog(m, 15);                           /* (5 % a detent: 75 %; GLOBAL at first: the project's.
+                                                         * 0.13.0: the jog's click edits the amount first) */
     CHECK(m->seq.groove == 75 && !(m->seq.tr[0].own & 1) && rfmv_seq_groove_of(m, 5) == 75);
     knob(m, 1, RFM_MOVE_LIST_TICKS);                                      /* knob 2: TRACK (its own, from the global one) */
-    jog(m, 2);
+    jog(m, -1), jog_click(m), jog(m, 2);                /* (knob 2 took the jog's cursor: back on the amount, edit) */
     CHECK((m->seq.tr[0].own & 1) && m->seq.tr[0].groove == 85 && m->seq.groove == 75 && rfmv_seq_groove_of(m, 0) == 85);
     jog(m, -2), knob(m, 1, -RFM_MOVE_LIST_TICKS);                         /* (GLOBAL again) */
     CHECK(!(m->seq.tr[0].own & 1) && rfmv_seq_groove_of(m, 0) == 75);
@@ -2093,7 +2095,7 @@ static void test_controls(void)
     /* Shift + step 3: Workflow Settings: the jog the channel, knob 2 the rate, knob 3 Quantize's amount */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 2), button(m, MR_CC_SHIFT, 0);
     CHECK(m->seq.smenu == RFM_MOVE_SM_WORKFLOW);
-    jog(m, 2), knob(m, 1, -RFM_MOVE_LIST_TICKS), knob(m, 2, -10);
+    jog_click(m), jog(m, 2), knob(m, 1, -RFM_MOVE_LIST_TICKS), knob(m, 2, -10);
     CHECK(m->seq.tr[0].ch == 2 && m->seq.tr[0].rate == 2 && m->seq.qstrength == 50);
     rest(m);
     rfm_move_screen(m, NULL, out);
@@ -2105,7 +2107,7 @@ static void test_controls(void)
     CHECK(m->seq.notes[rfmv_seq_find(m, 0, 2, 66)].micro == 5);
     /* Shift + step 5: the tempo (the jog); following the firmware's clock: locked */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 4), button(m, MR_CC_SHIFT, 0);
-    jog(m, 3);
+    jog_click(m), jog(m, 3);
     CHECK(m->seq.smenu == RFM_MOVE_SM_TEMPO && m->seq.bpm10 == 1230);
     rest(m);
     rfm_move_screen(m, NULL, out);
@@ -2123,7 +2125,7 @@ static void test_controls(void)
     pad(m, 27, 100), pad(m, 27, 0);
     CHECK(m->seq.smenu == RFM_MOVE_SM_LAYOUT && m->s.layout == RFM_MOVE_LAYOUT_OCTAVE && count_kind(RFM_MOVE_ACT_MIDI) == 2);
     button(m, MR_CC_SHIFT, 1), tap_step(m, 8), button(m, MR_CC_SHIFT, 0);
-    knob(m, 1, RFM_MOVE_LIST_TICKS), knob(m, 3, -3 * RFM_MOVE_LIST_TICKS), jog(m, 2);
+    knob(m, 1, RFM_MOVE_LIST_TICKS), knob(m, 3, -3 * RFM_MOVE_LIST_TICKS), jog(m, -3), jog_click(m), jog(m, 2);
     CHECK(m->seq.smenu == RFM_MOVE_SM_KEYS && m->s.scale == 1 && m->s.root == 2 && m->s.layout == RFM_MOVE_LAYOUT_SCALE);
     rest(m);
     rfm_move_screen(m, NULL, out);
@@ -2402,7 +2404,7 @@ static void test_tracks16(void)
     /* each track its own layout and CC numbers (Shift + step 8, the Layout menu; Track 1 held: the knobs, the steps) */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 7), button(m, MR_CC_SHIFT, 0);
     CHECK(m->seq.smenu == RFM_MOVE_SM_LAYOUT);
-    jog(m, 2);                                          /* Scale -> Drum */
+    jog_click(m), jog(m, 2);                            /* Scale -> Drum (0.13.0: the click edits it) */
     press(m, MR_CC_BACK);
     CHECK(!m->seq.smenu && m->s.mode == RFM_MOVE_MODE_SEQ);
     track(m, 0, 1), knob(m, 0, 5);
@@ -2419,9 +2421,10 @@ static void test_tracks16(void)
     CHECK(m->s.mode == RFM_MOVE_MODE_SEQ && m->s.layout == RFM_MOVE_LAYOUT_DRUM && m->s.cc[0][0] == 21);
     /* the key: GLOBAL (the project's) or TRACK (Keys & Scales, knob 3) */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 8), button(m, MR_CC_SHIFT, 0);
-    jog(m, 2);                                          /* D, the project's */
+    jog_click(m), jog(m, 2);                            /* D, the project's */
     CHECK(m->seq.root == 2 && m->s.root == 2 && !(m->seq.tr[12].own & 2));
-    knob(m, 2, RFM_MOVE_LIST_TICKS), jog(m, 2);                           /* TRACK: its own, E */
+    knob(m, 2, RFM_MOVE_LIST_TICKS), jog(m, -2), jog_click(m), jog(m, 2);   /* TRACK: its own, E (0.13.0: the jog
+                                                         * back on the root, edited) */
     CHECK((m->seq.tr[12].own & 2) && m->seq.tr[12].root == 4 && m->seq.root == 2 && m->s.root == 4);
     press(m, MR_CC_BACK);
     track(m, 0, 1), now_ms += 1000, tap_step(m, 0), track(m, 0, 0);   /* track 1: GLOBAL: D */
@@ -2716,7 +2719,8 @@ static void test_round4(void)
     CHECK(m->list_acc[1] == 0);
     knob(m, 0, 2 * RFM_MOVE_LIST_TICKS);                /* the root: two items */
     CHECK(m->s.root == 2);
-    jog(m, 1);                                          /* (the jog stays 1:1) */
+    jog_click(m), jog(m, 1);                            /* (the jog stays 1:1; 0.13.0: knob 1 took the jog's cursor,
+                                                         * its click edits the root) */
     CHECK(m->s.root == 3);
     press(m, MR_CC_BACK);
     CHECK(!m->seq.smenu && m->s.mode == RFM_MOVE_MODE_SEQ);

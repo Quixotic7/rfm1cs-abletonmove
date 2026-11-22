@@ -1546,6 +1546,10 @@ static void on_jog(rfm_move_t *m, int d, uint32_t now)
 /* (0.8.0) the jog's click in the FM-1 layout: what it turns, SELECT -> PRESET -> ALGO, named a second */
 static void on_jog_click(rfm_move_t *m, int down)
 {
+    if (down && m->seq.smenu && !rfmv_lay_menu(m) && (!rfmv_t4_menu(m) || m->seq.t4_opened) &&
+        (m->s.mode == RFM_MOVE_MODE_SEQ || fm1_seq_layer(m)) && rfmv_seq_menu_click(m))
+        return;                                         /* (0.13.0, the owner's) a Shift menu: the jog's click edits the
+                                                         * selected parameter, again: selects (where its turn goes) */
     if (down && m->seq.smenu == RFM_MOVE_SM_ARP && !rfmv_lay_menu(m) && !rfmv_t4_menu(m)) {
         rfmv_seq_arp_toggle(m);                         /* (0.11.0, the owner's) the arp menu: the jog's click: on / off */
         return;

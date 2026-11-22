@@ -140,6 +140,32 @@ host carries the firmware state files with the project buffer; tested.
 - "If a bar is like 5 steps, then pressing and adding a step outsite that should not make the loop length of the
   page become a bar": a step entered after the loop's end in its own last bar no longer grows the loop (grow_to).
 
+### The jog in the Shift menus (the owner's, 2026-11-22)
+- "In a menu like the track settings, we have the paramets mapped to knobs but also the jogwheel turn is changing the
+  first one. The jogwheel should work like it does for the global settings in which it selects a parameter, then click
+  to edit that parameter, click to go back to selecting." In Workflow, Tempo, Groove, Layout, Keys & Scales, Velocity
+  and Record the jog's turn selects one of the menu's knobs' parameters (knob order, stopping at the ends; the first at
+  each opening) and changes nothing: the header names it and its value a second, its knob's tick is long (the cursor).
+  The jog's click edits it: the header stays, its words between two arrows, the turn changes it by the knob's code path
+  (`smenu_turn`: the same limits and words; a list an item a detent; Shift fine for Tempo and Groove as before);
+  the click again selects ("Done"). Back closes the menu from either state. A knob turned works as before and moves the
+  cursor to itself (editing another parameter ends). Words: "Rate: 1/16", "Editing Rate: 1/16", "Done".
+- What the jog did before, per menu (all replaced by the above): Workflow the channel, Tempo the tempo (1 BPM, Shift
+  0.1), Groove the amount, Layout the layout, Keys & Scales the root, Record the mode: each is knob 1's, which keeps
+  it. Velocity: the jog was the option (Dynamic .. Hard), on no knob: it is knob 2 now (lit, named, a list), so the jog
+  selects the level (knob 1) or the option (knob 2). The jog's click did nothing in these menus (in a note layout's
+  FM-1 page it flipped the page's level under the menu: the menu has it now, R3).
+- Kept: the arp menu (the jog its pages, its click the arp off / on), Global settings (its list), a held step, Loop
+  or Track 4's layer over a menu (they keep the jog while held; a menu a held Track 4 opened has the jog and its click).
+  Groove's and Keys' GLOBAL / TRACK (a toggle by the turn's direction) edit the same way: the click enters editing, a
+  turn right TRACK, left GLOBAL. Tempo following the clock: no parameter, the jog does nothing.
+- In every place a Shift menu opens: track view, session view, over the Mixer / Routing, over the FM-1 layout, from a
+  held Track 4. design/UX-RULES.md R3 has the rule in the owner's words.
+- seq_ui.c smenu_jogsel, smenu_sel, smenu_jog_turn, rfmv_seq_menu_click (move.c on_jog_click), smenu_hk, smenu_top
+  (head_arrow), smenu_turn (jog: no list ticks); rfm_move_seq_t.sm_sel, sm_edit (new, at the end).
+- Tests: move_sessview test_mj_menus (a loop over the seven menus), test_mj_places; tests that turned the jog to change
+  a menu's value now click first (test_move.c, test_move_seq.c, test_move_speech.c, move_sessview.c).
+
 ## 0.12.0 (2026-11-22, not released)
 
 The owner's answers on the review page, card by card. New fields in `rfm_move_seq_t` (after `tk_pend_clk`): rebuild

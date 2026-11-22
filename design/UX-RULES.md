@@ -51,6 +51,12 @@ held stays routed (the press routed it). The window and the release then show no
   its screen and the controls it uses; the menu is back at its release. A tap that shows a popup (a Track button)
   shows it over the menu and returns.
 - Menu never closes a menu: in a note layout it flips the view under it, in the FM-1 layout it is the firmware's key.
+- (2026-11-22, the owner's words) **A menu's jog selects, its click edits**: "The jogwheel should work like it does
+  for the global settings in which it selects a parameter, then click to edit that parameter, click to go back to
+  selecting." In a menu whose parameters are on the knobs the jog's turn moves a cursor over them (changing nothing),
+  its click edits the selected one (the turn then changes it as its knob does), the click again selects; Back closes
+  the menu from either state. The knobs keep their parameters at all times. The arp menu keeps its own design (the jog
+  its pages, the click the arp on / off).
 
 ## R4. A knob in use is lit
 

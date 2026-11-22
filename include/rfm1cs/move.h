@@ -868,6 +868,11 @@ typedef struct {
      * when, the sequencer clock's ms; tflash: on) */
     uint8_t tflash;
     uint32_t tflash_ms;
+    /* (0.13.0, the owner's 2026-11-22) the jog in a Shift menu (not the arp's, not Global settings): sm_sel the knob
+     * whose parameter the jog has selected (0: knob 1, at each opening); sm_edit: its click edits it (the turn changes
+     * that value as the knob does), a click again selects */
+    int8_t sm_sel;
+    uint8_t sm_edit;
 } rfm_move_seq_t;
 
 /* ---- the state */

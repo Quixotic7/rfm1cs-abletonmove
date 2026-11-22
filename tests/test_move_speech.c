@@ -688,8 +688,16 @@ static void test_rows(void)
     press(&M, MR_CC_BACK), clear();
     button(&M, MR_CC_SHIFT, 1), tap_step(&M, 6), button(&M, MR_CC_SHIFT, 0);   /* Groove */
     HAS("E:Groove|");
+    jog(&M, 1);                                         /* (0.13.0) the jog selects: knob 2's parameter, said */
+    HAS("V:Groove for: Global|");
+    clear(), jog(&M, -1);
+    HAS("V:Groove: 0%|");
+    clear(), jog_press(&M);                             /* its click edits it, said as Global settings says it */
+    HAS("V:Editing Groove: 0%|");
     jog(&M, 1);
     HAS("V:Groove: 5%|");
+    clear(), jog_press(&M);
+    HAS("V:Done|");
     press(&M, MR_CC_BACK), clear();
     button(&M, MR_CC_SHIFT, 1), tap_step(&M, 9), button(&M, MR_CC_SHIFT, 0);   /* Velocity */
     HAS("E:Velocity|");

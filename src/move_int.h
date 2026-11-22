@@ -218,6 +218,9 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now);   /* 1 taken
 int rfmv_seq_volume(rfm_move_t *m, int d);             /* the volume knob: 1 taken (a step held: velocity) */
 void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now);
 void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now);
+int rfmv_seq_menu_click(rfm_move_t *m);                 /* (0.13.0) a Shift menu's jog click: edit / select */
+int rfmv_seq_menu_sel(const rfm_move_t *m);
+int rfmv_seq_menu_editing(const rfm_move_t *m);
 void rfmv_shift_icons(const rfm_move_t *m, uint8_t icon[16]);   /* the Shift layer's icon LEDs (0 off) */
 void rfmv_seq_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0], uint8_t white[13]);
 void rfmv_seq_screen(const rfm_move_t *m, mr_canvas_t *cv);

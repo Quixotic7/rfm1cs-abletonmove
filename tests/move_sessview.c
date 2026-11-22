@@ -2091,8 +2091,8 @@ static void menu_heads(const char *name, int bits)
     rest(), scr_save();
     snprintf(nm, sizeof nm, "menu_%s_rest", name);
     write_pbm(nm);
-    for (k = 0, ok = 1; k < 8; k++)
-        ok &= (bits >> k & 1) ? tick(k, 0) : !px(6 + k * 16, 17);
+    for (k = 0, ok = 1; k < 8; k++)                     /* (0.13.0: the first one long: the jog's cursor) */
+        ok &= (bits >> k & 1) ? tick(k, !(bits & ((1 << k) - 1))) : !px(6 + k * 16, 17);
     CHECKF(ok && rings_menu(bits), "%s: ticks at rest", name);
     for (k = 0; k < 8; k++) {
         touch(k, 1);
@@ -2119,7 +2119,7 @@ static void test_menu_heads(void)
     shift_step(6), menu_heads("groove", 0x03), back();
     shift_step(7), menu_heads("layout", 0x01), back();
     shift_step(8), menu_heads("keys", 0x0F), back();
-    shift_step(9), menu_heads("velocity", 0x01);
+    shift_step(9), menu_heads("velocity", 0x03);         /* (0.13.0: knob 2 the option) */
     jog(1);
     CHECK(!scr_same());
     write_pbm("menu_velocity_jog");
@@ -2151,7 +2151,7 @@ static void menu_over(const char *where, int sh_step, int bits)
     CHECKF(!count(RFM_MOVE_ACT_TURN), "%s: no FM-1 turn", where);
     if (M.seq.smenu == RFM_MOVE_SM_TEMPO) {
         CHECKF(rfm_move_seq_bpm10(&M) == bpm + 10, "%s: knob 1 the tempo", where);
-        jog(-1);
+        jog_click(), jog(-1), jog_click();              /* (0.13.0: the jog's click edits the selected tempo) */
         CHECKF(rfm_move_seq_bpm10(&M) == bpm, "%s: the jog the tempo", where);
     }
     touch(5, 1);                                        /* (an unused knob: nothing) */
@@ -2266,8 +2266,8 @@ static void test_t4_layer(void)
     write_pbm("t4_menu_opened");
     knob(0, 1);
     CHECK(rfm_move_seq_bpm10(&M) == 1210);
-    jog(-1);
-    CHECK(rfm_move_seq_bpm10(&M) == 1200);
+    jog_click(), jog(-1), jog_click();                  /* (0.13.0: the click edits the tempo, again: selects) */
+    CHECK(rfm_move_seq_bpm10(&M) == 1200 && !M.seq.sm_edit);
     track(3, 0), rest();
     CHECK(M.seq.smenu == RFM_MOVE_SM_TEMPO && rings_menu(0x03));
     /* a menu open before Track 4: under its hold layer the knobs are dead and dark */
@@ -3930,6 +3930,195 @@ static void test_loop_steps(void)
     CHECK(rfmv_seq_range(&M, clip, 10, &i) > i && M.seq.len[clip] == 5);
 }
 
+/* ---- (0.13.0, the owner's 2026-11-22) the jog in the Shift menus: its turn selects a parameter (the menu's knobs', in
+ * knob order; nothing changes), its click edits it (the turn changes it as its knob does), a click again selects;
+ * Back closes from either state; a knob turned works as before and takes the cursor */
+static void mj_vals(char *o, int cap)                   /* every Shift menu's parameter, as text */
+{
+    const rfm_move_seq_t *q = &M.seq;
+    const rfm_move_track_t *t = &q->tr[q->sel_track];
+    snprintf(o, (size_t)cap, "ch%d rt%d qs%d bpm%d gr%d tg%d own%d ly%d rt%d sc%d vm%d vl%d rm%d rs%d", t->ch, t->rate,
+             q->qstrength, rfm_move_seq_bpm10(&M), q->groove, t->groove, t->own, M.s.layout, M.s.root, M.s.scale,
+             M.s.vel_mode, M.s.vel_level, q->rec_mode, q->rec_style);
+}
+static int mj_first(int bits) { int k = 0; while (k < 8 && !(bits >> k & 1)) k++; return k; }
+static int mj_next(int bits, int k) { int n = k + 1; while (n < 8 && !(bits >> n & 1)) n++; return n < 8 ? n : k; }
+static int mj_col(int x, int y0, int y1)                /* column x's lit pixels, rows y0..y1 */
+{
+    int y, n = 0;
+    for (y = y0; y <= y1; y++)
+        n += px(x, y);
+    return n;
+}
+static int mj_head_arrows(void)                         /* the header's editing arrows: the header's leftmost and
+                                                         * rightmost lit columns are arrow tips (row 7 alone) */
+{
+    int l = 0, r = 127;
+    screen();
+    while (l < 128 && !mj_col(l, 0, 16))
+        l++;
+    while (r >= 0 && !mj_col(r, 0, 16))
+        r--;
+    return l < r && mj_col(l, 0, 16) == 1 && px(l, 7) && mj_col(r, 0, 16) == 1 && px(r, 7);
+}
+static void mj_open(int sm)
+{
+    if (sm == RFM_MOVE_SM_REC)
+        button(MR_CC_SHIFT, 1), press(MR_CC_REC), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    else
+        shift_step(sm == RFM_MOVE_SM_WORKFLOW ? 2 : sm == RFM_MOVE_SM_TEMPO ? 4 : sm == RFM_MOVE_SM_GROOVE ? 6 :
+                   sm == RFM_MOVE_SM_LAYOUT ? 7 : sm == RFM_MOVE_SM_KEYS ? 8 : 9);
+}
+static void test_mj_menus(void)
+{
+    static const struct { int sm, bits; const char *name; } MN[] = {
+        { RFM_MOVE_SM_WORKFLOW, 0x07, "workflow" }, { RFM_MOVE_SM_TEMPO, 0x03, "tempo" },
+        { RFM_MOVE_SM_GROOVE, 0x03, "groove" },     { RFM_MOVE_SM_LAYOUT, 0x01, "layout" },
+        { RFM_MOVE_SM_KEYS, 0x0F, "keys" },         { RFM_MOVE_SM_VEL, 0x03, "velocity" },
+        { RFM_MOVE_SM_REC, 0x03, "record" },
+    };
+    static rfm_move_t MC;
+    char v0[160], v1[160], v2[160], nm[48];
+    int i;
+    track_view();
+    for (i = 0; i < (int)(sizeof MN / sizeof MN[0]); i++) {
+        const int f = mj_first(MN[i].bits), n = mj_next(MN[i].bits, f), last = 7 - __builtin_clz(MN[i].bits) + 24;
+        mj_open(MN[i].sm), rest(), clear();
+        CHECKF(M.seq.smenu == MN[i].sm && rfmv_seq_menu_sel(&M) == f && !rfmv_seq_menu_editing(&M), "%s: opened: the first",
+               MN[i].name);
+        screen();
+        CHECKF(tick(f, 1) && !mj_head_arrows(), "%s: the first's tick long, no arrows", MN[i].name);
+        scr_save(), mj_vals(v0, sizeof v0);
+        /* the turn selects: nothing changes; the header names it at once, its tick long */
+        jog(1);
+        mj_vals(v1, sizeof v1);
+        CHECKF(!strcmp(v0, v1) && rfmv_seq_menu_sel(&M) == n, "%s: the turn selects (%d), changes nothing", MN[i].name, n);
+        screen();
+        CHECKF(tick(n, 1) && (n == f || !tick(f, 1)) && !scr_same(), "%s: the selection shown", MN[i].name);
+        CHECKF(said[0] != 0, "%s: the selection said", MN[i].name);
+        snprintf(nm, sizeof nm, "mj_%s_sel", MN[i].name);
+        write_pbm(nm);
+        jog(5);                                         /* (stops at the end) */
+        mj_vals(v1, sizeof v1);
+        CHECKF(!strcmp(v0, v1) && rfmv_seq_menu_sel(&M) == last, "%s: the end", MN[i].name);
+        jog(-9);
+        CHECKF(rfmv_seq_menu_sel(&M) == f, "%s: the start", MN[i].name);
+        jog(1);
+        /* the click edits: the header stays with arrows; the turn changes only that one, as its knob */
+        clear(), jog_click();
+        CHECKF(rfmv_seq_menu_editing(&M) && strstr(said, "Editing "), "%s: editing, said %s", MN[i].name, said);
+        rest();
+        CHECKF(mj_head_arrows() && tick(n, 1), "%s: editing shown (after the second too)", MN[i].name);
+        snprintf(nm, sizeof nm, "mj_%s_edit", MN[i].name);
+        write_pbm(nm);
+        MC = M;
+        jog(1);
+        mj_vals(v1, sizeof v1);
+        {
+            const int list = (MN[i].sm == RFM_MOVE_SM_WORKFLOW && n <= 1) || (MN[i].sm == RFM_MOVE_SM_GROOVE && n == 1) ||
+                             MN[i].sm == RFM_MOVE_SM_LAYOUT || (MN[i].sm == RFM_MOVE_SM_KEYS && n <= 3) ||
+                             (MN[i].sm == RFM_MOVE_SM_VEL && n == 1) || MN[i].sm == RFM_MOVE_SM_REC;
+            rfm_move_t *keep = malloc(sizeof *keep);
+            *keep = M, M = MC;
+            knob(n, list ? RFM_MOVE_LIST_TICKS : 1);    /* (the knob's step, on the copy from before the turn) */
+            mj_vals(v2, sizeof v2);
+            M = *keep, free(keep);
+        }
+        CHECKF(strcmp(v0, v1) && !strcmp(v1, v2), "%s: the edit turn = knob %d's step (%s / %s)", MN[i].name, n + 1, v1, v2);
+        /* the click again: selecting; the turn changes nothing */
+        clear(), jog_click();
+        CHECKF(!rfmv_seq_menu_editing(&M) && strstr(said, "Done"), "%s: selecting again", MN[i].name);
+        jog(-1);
+        mj_vals(v2, sizeof v2);
+        CHECKF(!strcmp(v1, v2) && rfmv_seq_menu_sel(&M) == f, "%s: selects again", MN[i].name);
+        rest();
+        CHECKF(!mj_head_arrows(), "%s: no arrows selecting", MN[i].name);
+        /* a knob meanwhile: works, takes the cursor (editing ended) */
+        jog_click();
+        knob(last, MN[i].sm == RFM_MOVE_SM_TEMPO || MN[i].sm == RFM_MOVE_SM_WORKFLOW ? -1 : -RFM_MOVE_LIST_TICKS);
+        mj_vals(v2, sizeof v2);
+        CHECKF(rfmv_seq_menu_sel(&M) == last && (last == f || !rfmv_seq_menu_editing(&M)), "%s: a knob takes the cursor",
+               MN[i].name);
+        /* Back from editing: closed at once; opened again: the first, selecting */
+        jog_click();
+        CHECKF(rfmv_seq_menu_editing(&M) || last == f, "%s: editing before Back", MN[i].name);
+        back();
+        CHECKF(!M.seq.smenu, "%s: Back closes from editing", MN[i].name);
+        mj_open(MN[i].sm), rest();
+        CHECKF(M.seq.smenu == MN[i].sm && rfmv_seq_menu_sel(&M) == f && !rfmv_seq_menu_editing(&M), "%s: again: the first",
+               MN[i].name);
+        back(), rest();
+    }
+}
+/* the same in session view, over the Mixer, over the FM-1 layout and from a held Track 4; the arp's jog and Global
+ * settings unchanged; a held step over a menu keeps the jog */
+static void mj_workflow(const char *where)
+{
+    const rfm_move_track_t *t = &M.seq.tr[M.seq.sel_track];
+    const int ch = t->ch, rate = t->rate;
+    CHECKF(M.seq.smenu == RFM_MOVE_SM_WORKFLOW, "%s: open", where);
+    jog(1);
+    CHECKF(t->ch == ch && t->rate == rate && rfmv_seq_menu_sel(&M) == 1, "%s: selects", where);
+    jog_click(), jog(1);
+    CHECKF(t->ch == ch && t->rate == rate + 1 && rfmv_seq_menu_editing(&M), "%s: edits", where);
+    {
+        char nm[48];
+        snprintf(nm, sizeof nm, "mj_%s_edit", where);
+        write_pbm(nm);
+    }
+    jog_click(), jog(-1);
+    CHECKF(t->rate == rate + 1 && rfmv_seq_menu_sel(&M) == 0, "%s: selects again", where);
+    jog_click(), back(), rest();
+    CHECKF(!M.seq.smenu, "%s: Back", where);
+}
+static void test_mj_places(void)
+{
+    rfm_move_track_t *t;
+    int clip, lo = 0, mode, pg, row;
+    session_view(), rest();
+    CHECK(M.seq.view);
+    shift_step(2), rest(), mj_workflow("session");
+    tap_track(3), rest();                               /* the Mixer */
+    CHECK(M.seq.projects);
+    shift_step(2), rest(), mj_workflow("mixer");
+    track_view(), tap_track(0), rest();                 /* the FM-1 layout (slot 1): Track 4 + step 3 */
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1);
+    track(3, 1), step(2, 1), step(2, 0), track(3, 0), rest(), clear();
+    mj_workflow("fm1");
+    CHECK(!count(RFM_MOVE_ACT_TURN) && M.jog_enc == 0);  /* (not the FM-1's SELECT, its click not the jog's mode) */
+    track(3, 1), adv_ms(50), step(2, 1), step(2, 0);    /* Track 4 held: the menu it opened has the jog and its click */
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
+    jog(1), jog_click();
+    CHECK(rfmv_seq_menu_sel(&M) == 1 && rfmv_seq_menu_editing(&M));
+    track(3, 0), back(), rest();
+    /* the arp: the jog its pages, its click the arp on / off (unchanged) */
+    track_view();
+    shift_step10(0), rest();
+    CHECK(M.seq.smenu == RFM_MOVE_SM_ARP);
+    mode = M.seq.tr[M.seq.sel_track].arp.mode, pg = M.seq.arp_page;
+    jog(1);
+    CHECK(M.seq.arp_page == pg + 1);
+    jog(-1), jog_click();
+    CHECK(M.seq.tr[M.seq.sel_track].arp.mode != mode && !M.seq.sm_edit);
+    jog_click(), back(), rest();
+    /* Global settings: the list (unchanged) */
+    shift_step(1);
+    row = M.gl_row;
+    jog(1), jog_click();
+    CHECK(M.gl_row == row + 1 && M.gl_edit && !M.seq.sm_edit);
+    jog_click(), back(), rest();
+    CHECK(!M.seq.smenu);
+    /* a held step over a menu: the jog the notes' length, its click nothing of the menu's */
+    t = &M.seq.tr[M.seq.sel_track];
+    clip = SEQ_CLIP(M.seq.sel_track, t->sel);
+    rfmv_seq_note_put(&M, clip, 0, 60, 100, 24, 0);
+    shift_step(2), rest();
+    step(0, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20);
+    jog(2), jog_click();
+    CHECK(rfmv_seq_range(&M, clip, 0, &lo) > lo && M.seq.notes[lo].len == 28 && !M.seq.sm_edit && rfmv_seq_menu_sel(&M) == 0);
+    step(0, 0), back(), rest();
+}
+
 int main(void)
 {
     test_scenes();
@@ -3986,6 +4175,8 @@ int main(void)
     test_fwp_trackflash();
     test_x_gone_dbl_stop();
     test_loop_steps();
+    test_mj_menus();
+    test_mj_places();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

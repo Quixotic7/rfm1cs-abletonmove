@@ -197,7 +197,7 @@ static void layer_close(rfm_move_t *m, int id)
 {
     rfm_move_seq_t *q = &m->seq;
     switch (id) {
-    case LY_MENU: q->smenu = 0; break;
+    case LY_MENU: q->smenu = 0, q->sm_edit = 0; break;
     case LY_PROJ: q->projects = 0; break;
     case LY_LOOP:                                       /* (0.4.3: the sequencer's screen at once, not a second on) */
         q->loop_latch = 0, q->mods &= (uint8_t)~SEQ_M_LOOP;
@@ -955,7 +955,8 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             q->arp_sh = 0;
             if (!held) {
                 q->smenu = (uint8_t)(q->smenu == RFM_MOVE_SM_ARP ? 0 : RFM_MOVE_SM_ARP);
-                q->arp_page = 0, m->gl_edit = 0, q->sm_ms = 0;   /* (0.12.0: no header left from another menu) */
+                q->arp_page = 0, m->gl_edit = 0, q->sm_ms = 0, q->sm_sel = -1, q->sm_edit = 0;   /* (0.12.0: no header
+                                                         * left from another menu; 0.13.0: the jog on the first) */
                 if (q->smenu)
                     layer(q, LY_MENU);
                 rfmv_menu(m, MENU_NONE, 0);
@@ -1143,7 +1144,7 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
                                                          * tempo) */
             rfmv_seq_tap(m, now);
             if (q->smenu != RFM_MOVE_SM_TEMPO)
-                q->sm_ms = 0;
+                q->sm_ms = 0, q->sm_sel = -1, q->sm_edit = 0;
             q->smenu = RFM_MOVE_SM_TEMPO;
             layer(q, LY_MENU);
             return;
@@ -1156,7 +1157,8 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         }
         if (sh_menu(s)) {                               /* a menu: open (again: closed) */
             q->smenu = (uint8_t)(q->smenu == sh_menu(s) ? 0 : sh_menu(s));
-            q->arp_page = 0, m->gl_edit = 0, q->sm_ms = 0;   /* (0.12.0: no header left from another menu) */
+            q->arp_page = 0, m->gl_edit = 0, q->sm_ms = 0, q->sm_sel = -1, q->sm_edit = 0;   /* (0.12.0: no header
+                                                         * left from another menu; 0.13.0: the jog on the first) */
             if (q->smenu)
                 layer(q, LY_MENU);
             rfmv_menu(m, MENU_NONE, 0);
@@ -1807,7 +1809,7 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
     case MR_CC_REC:
         if (q->mods & SEQ_M_SHIFT) {                    /* Shift + Record: the record settings */
             q->mods_used |= SEQ_M_SHIFT;
-            q->smenu = (uint8_t)(q->smenu == RFM_MOVE_SM_REC ? 0 : RFM_MOVE_SM_REC), q->sm_ms = 0;
+            q->smenu = (uint8_t)(q->smenu == RFM_MOVE_SM_REC ? 0 : RFM_MOVE_SM_REC), q->sm_ms = 0, q->sm_sel = -1, q->sm_edit = 0;
             if (q->smenu)
                 layer(q, LY_MENU);
             return 1;
@@ -2220,6 +2222,7 @@ static int smenu_list(const rfm_move_seq_t *q, int k)
             return (k == 0 && q->arp_page == 1) || k == 1 || k == 2;
         return k == 0 || k == 1 || k == 2 || k == 4 || k == 7;
     case RFM_MOVE_SM_REC: return k <= 1;
+    case RFM_MOVE_SM_VEL: return k == 1;
     case RFM_MOVE_SM_GLOBAL: return k <= 1 || k == 3;
     default: return 0;
     }
@@ -2238,7 +2241,7 @@ int rfmv_seq_menu_knobs(const rfm_move_t *m)
     case RFM_MOVE_SM_ARP: return q->arp_page ? 0x07 : 0xFF;   /* (0.11.0: a lane: its value, length and RESET; the
                                                          * step keys pick its step) */
     case RFM_MOVE_SM_REC: return 0x03;
-    case RFM_MOVE_SM_VEL: return 0x01;
+    case RFM_MOVE_SM_VEL: return 0x03;                  /* (0.13.0: knob 2 the option, the jog's before) */
     case RFM_MOVE_SM_GLOBAL: return 0;                  /* (0.6.2: the jog's list; the knobs do nothing) */
     default: return 0;
     }
@@ -2358,7 +2361,8 @@ static uint32_t smenu_sig(const rfm_move_t *m)
            (uint32_t)m->s.vel_level << 9 ^ (uint32_t)q->rec_mode << 30 ^ (uint32_t)q->rec_style << 29;
 }
 static void smenu_head(const rfm_move_t *m, int k, char *o, int cap);
-static void smenu_turn(rfm_move_t *m, int k, int d)
+static void smenu_turn(rfm_move_t *m, int k, int d, int jog)   /* (jog: the jog editing knob k's parameter: an item a
+                                                         * detent, no list ticks) */
 {
     rfm_move_seq_t *q = Q(m);
     rfm_move_track_t *t = &q->tr[q->sel_track];
@@ -2369,7 +2373,7 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
     if (k >= 0 && !(rfmv_seq_menu_knobs(m) >> k & 1))
         return;                                         /* (0.11.0: a knob the menu has no job for: nothing) */
     q->sm_k = (int8_t)k, q->sm_ms = rfmv_now_ms(m);     /* (0.11.0: its name and value in the menu's header) */
-    if (k >= 0 && smenu_list(q, k) && !(d = rfmv_list_ticks(m, k, d)))
+    if (k >= 0 && !jog && smenu_list(q, k) && !(d = rfmv_list_ticks(m, k, d)))
         return;                                         /* (not a whole item yet) */
     rfmv_menu(m, MENU_NONE, k < 0 ? 0 : k);
     switch (q->smenu) {
@@ -2479,8 +2483,9 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
                                                          * Global settings is its list on the jog (rfmv_global_input,
                                                          * which has the jog everywhere now); its knobs dark and dead */
         break;
-    case RFM_MOVE_SM_VEL:                               /* the jog: the option (1:1, five); knob 1: the level */
-        if (k < 0)
+    case RFM_MOVE_SM_VEL:                               /* knob 1: the level; (0.13.0) knob 2: the option (1:1, five),
+                                                         * the jog's before the jog selected */
+        if (k < 0 || k == 1)
             rfmv_vel_step(m, d);
         else if (k == 0)
             m->s.vel_level = (uint8_t)clampi(m->s.vel_level + d, 1, 127);
@@ -2505,6 +2510,88 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
             rfmv_say_text(m, w);
     }
     rfmv_seq_dirty(m);
+}
+
+/* (0.13.0, the owner's 2026-11-22: "The jogwheel should work like it does for the global settings in which it
+ * selects a parameter, then click to edit that parameter, click to go back to selecting") every Shift menu but the
+ * arp's (its jog turns its pages, its click the arp on / off) and Global settings (its own list): the jog's turn moves
+ * a cursor over the menu's knobs' parameters, in knob order, stopping at the ends; nothing changes. Its click edits
+ * the selected one: the turn then changes it by the knob's code path (smenu_turn; an item a detent where the knob is
+ * slower); the click again selects. A knob turned meanwhile works as before and takes the cursor */
+static int smenu_jogsel(const rfm_move_seq_t *q)
+{
+    return q->smenu && q->smenu != RFM_MOVE_SM_ARP && q->smenu != RFM_MOVE_SM_GLOBAL;
+}
+static int smenu_sel(const rfm_move_t *m)              /* the selected knob (-1: the menu has none: Tempo following) */
+{
+    const int mk = rfmv_seq_menu_knobs(m), s = m->seq.sm_sel;
+    int k;
+    if (!smenu_jogsel(&m->seq))
+        return -1;
+    if (s >= 0 && s < 8 && (mk >> s & 1))
+        return s;
+    for (k = 0; k < 8; k++)
+        if (mk >> k & 1)
+            return k;
+    return -1;
+}
+int rfmv_seq_menu_sel(const rfm_move_t *m) { return smenu_sel(m); }
+int rfmv_seq_menu_editing(const rfm_move_t *m) { return smenu_sel(m) >= 0 && m->seq.sm_edit; }
+static void smenu_sel_words(const rfm_move_t *m, int k, const char *pre, char *o, int cap)   /* "Editing Rate: 1/16" */
+{
+    char w[48];
+    rfmv_seq_smenu_words(m, k, w, sizeof w);
+    if (!w[0])
+        smenu_head(m, k, w, sizeof w);
+    snprintf(o, (size_t)cap, "%s%s", pre, w);
+}
+static void smenu_jog_turn(rfm_move_t *m, int d)
+{
+    rfm_move_seq_t *q = Q(m);
+    const int mk = rfmv_seq_menu_knobs(m);
+    int k = smenu_sel(m), i;
+    char w[64];
+    if (k < 0 || !d)
+        return;
+    if (q->sm_edit) {
+        smenu_turn(m, k, d, 1);
+        return;
+    }
+    for (i = 0; i < (d < 0 ? -d : d); i++) {            /* (the next knob with a job that way; none: the end) */
+        int n = k + (d > 0 ? 1 : -1);
+        while (n >= 0 && n < 8 && !(mk >> n & 1))
+            n += d > 0 ? 1 : -1;
+        if (n < 0 || n >= 8)
+            break;
+        k = n;
+    }
+    q->sm_sel = (int8_t)k;
+    q->sm_k = (int8_t)k, q->sm_ms = rfmv_now_ms(m);     /* (the header names it and its value, as a knob's turn) */
+    rfmv_menu(m, MENU_NONE, k);
+    smenu_sel_words(m, k, "", w, sizeof w);
+    rfmv_say_text(m, w);
+    rfmv_seq_dirty(m);
+}
+/* the jog's click in such a menu (move.c on_jog_click): editing on / off, said as Global settings says it; 0: not
+ * ours (the arp, Global settings, no menu, a held step or Loop over it) */
+int rfmv_seq_menu_click(rfm_move_t *m)
+{
+    rfm_move_seq_t *q = Q(m);
+    const int k = smenu_sel(m);
+    char w[64];
+    if (!smenu_jogsel(q) || held_view(m) || rfmv_seq_loop_over(m))
+        return 0;
+    if (k < 0)
+        return 1;                                       /* (Tempo following the clock: nothing to edit) */
+    q->sm_sel = (int8_t)k;
+    q->sm_edit = (uint8_t)!q->sm_edit;
+    q->sm_k = (int8_t)k, q->sm_ms = rfmv_now_ms(m);
+    if (q->sm_edit)
+        smenu_sel_words(m, k, "Editing ", w, sizeof w), rfmv_say_text(m, w);
+    else
+        rfmv_say_text(m, "Done");
+    rfmv_seq_dirty(m);
+    return 1;
 }
 
 /* (0.12.x) the knobs do the TRIG page's: on it, or a step held on the FM-1 page (its knobs are the firmware's only
@@ -2537,7 +2624,10 @@ void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now)
     }
     if (q->smenu && !held_view(m)) {                    /* a Shift menu open: its values (0.12.0, l3: a held step has
                                                          * the knobs over it) */
-        smenu_turn(m, k, d);
+        if (smenu_jogsel(q) && (rfmv_seq_menu_knobs(m) >> k & 1) && k != smenu_sel(m))
+            q->sm_sel = (int8_t)k, q->sm_edit = 0;      /* (0.13.0) a knob turned: the jog's selection goes to it (a
+                                                         * one cursor, as Global settings' row); editing another: ended */
+        smenu_turn(m, k, d, 0);
         return;
     }
     if (rfmv_seq_trig_on(m) && !q->view && !q->projects) {   /* the TRIG page: the held steps' (none held: every step
@@ -2614,8 +2704,12 @@ void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now)
         return;
     }
     if (q->smenu && !held_view(m) && !(rfmv_seq_loop_over(m) && q->smenu != RFM_MOVE_SM_GLOBAL)) {
-        smenu_turn(m, -1, d);                           /* a Shift menu: its first value (0.12.0, l3: a held step or
-                                                         * Loop held has the jog over it) */
+        if (smenu_jogsel(q))
+            smenu_jog_turn(m, d);                       /* (0.13.0, the owner's) a menu's jog selects a parameter, its
+                                                         * click edits it */
+        else
+            smenu_turn(m, -1, d, 0);                    /* the arp: its pages (0.12.0, l3: a held step or Loop held has
+                                                         * the jog over it) */
         return;
     }
     if (!q->view && q->step_held) {                     /* held steps: the notes' length (Move: ~10 % of a step a
@@ -3795,11 +3889,6 @@ static void arp_sign(mr_canvas_t *cv, int x, int v)
  * tick at the place of each knob the menu uses, the active one long. At rest the top line is the menu's own (its
  * title, its main value) */
 #define HEAD_JOG (-2)
-static int smenu_jog(const rfm_move_seq_t *q)           /* the menu's jog has a value of its own to name */
-{
-    return q->smenu && q->smenu != RFM_MOVE_SM_ARP && q->smenu != RFM_MOVE_SM_GLOBAL &&
-           !(q->smenu == RFM_MOVE_SM_TEMPO && q->following);
-}
 static int smenu_hk(const rfm_move_t *m)                /* the header's knob, HEAD_JOG, or -1 (at rest) */
 {
     const rfm_move_seq_t *q = &m->seq;
@@ -3808,8 +3897,8 @@ static int smenu_hk(const rfm_move_t *m)                /* the header's knob, HE
         return tk;
     if (recent && q->sm_k >= 0 && (mk >> q->sm_k & 1))
         return q->sm_k;
-    if (recent && q->sm_k < 0 && q->sm_ms && smenu_jog(q))
-        return HEAD_JOG;
+    if (q->sm_edit && smenu_sel(m) >= 0)
+        return smenu_sel(m);                            /* (0.13.0) the jog editing: its parameter named while it lasts */
     if (q->smenu == RFM_MOVE_SM_ARP && q->al_pads && rfmv_seq_al_holding(m))
         return 0;                                       /* (0.12.0) the pads taken: the held step and its value */
     return -1;
@@ -3859,7 +3948,7 @@ static void smenu_head(const rfm_move_t *m, int k, char *o, int cap)   /* knob k
             snprintf(o, (size_t)cap, "Layout %s", LN[m->s.layout & 3]);
         break;
     case RFM_MOVE_SM_VEL:
-        if (k == HEAD_JOG)
+        if (k == HEAD_JOG || k == 1)
             rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), o, cap);
         else
             snprintf(o, (size_t)cap, "Level %d", m->s.vel_level);
@@ -3874,21 +3963,37 @@ static void smenu_head(const rfm_move_t *m, int k, char *o, int cap)   /* knob k
     default: break;
     }
 }
-/* the top line (hk >= 0 or HEAD_JOG: the header over the menu's own; the arp's: always) and the knobs' ticks at 17 */
+/* (0.13.0) an arrow 4 x 7 at x, y pointing left or right (the header's editing marks, as Global settings' value) */
+static void head_arrow(mr_canvas_t *cv, int x, int y, int right)
+{
+    int i;
+    for (i = 0; i < 4; i++)
+        v2_R(cv, right ? x + i : x + 3 - i, y + i, 1, 7 - 2 * i, 1);
+}
+/* the top line (hk >= 0 or HEAD_JOG: the header over the menu's own; the arp's: always) and the knobs' ticks at 17.
+ * (0.13.0) the tick long: the named knob's, else the jog's selection (the cursor); the jog editing: the header stays,
+ * its words between two arrows (as Global settings' value being edited) */
 static void smenu_top(const rfm_move_t *m, mr_canvas_t *cv, int hk)
 {
-    const int mk = rfmv_seq_menu_knobs(m);
+    const int mk = rfmv_seq_menu_knobs(m), sel = smenu_sel(m), cur = hk >= 0 ? hk : sel;
+    const int ed = sel >= 0 && m->seq.sm_edit && hk == sel;
     char b[32];
     int i;
     if (hk != -1 || m->seq.smenu == RFM_MOVE_SM_ARP) {
         smenu_head(m, hk, b, sizeof b);
         v2_R(cv, 0, 0, 128, 17, 0);
-        fit2(cv, 0, 0, b, 128);
+        if (ed) {
+            const int w = v2_tw(b, 2) <= 116 ? v2_tw(b, 2) : v2_tw(b, 1), x = 64 - w / 2;
+            head_arrow(cv, x - 9, 4, 0);
+            fit2(cv, x, 0, b, 116);
+            head_arrow(cv, x + w + 4, 4, 1);
+        } else
+            fit2(cv, 0, 0, b, 128);
     }
     v2_R(cv, 0, 17, 128, 2, 0);
     for (i = 0; i < 8; i++)
         if (mk >> i & 1)
-            v2_R(cv, i == hk ? 3 + i * 16 : 6 + i * 16, 17, i == hk ? 10 : 4, i == hk ? 2 : 1, 1);
+            v2_R(cv, i == cur ? 3 + i * 16 : 6 + i * 16, 17, i == cur ? 10 : 4, i == cur ? 2 : 1, 1);
 }
 static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
@@ -4260,6 +4365,8 @@ void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap)
     case RFM_MOVE_SM_GLOBAL:
         if (k == 0 && q->smenu == RFM_MOVE_SM_VEL)
             snprintf(o, (size_t)cap, "Velocity level: %d", m->s.vel_level);
+        else if (k == 1 && q->smenu == RFM_MOVE_SM_VEL)
+            rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), b, sizeof b), snprintf(o, (size_t)cap, "Velocity: %s", b);
         break;                                          /* (0.6.2: Global settings' list says its own rows) */
     default: break;
     }

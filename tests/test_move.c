@@ -38,6 +38,7 @@ static void step(rfm_move_t *m, int s, int down) { raw(m, down ? 0x90 : 0x80, (u
 static void button(rfm_move_t *m, int cc, int down) { raw(m, 0xB0, (uint8_t)cc, down ? 127 : 0); }
 static void knob(rfm_move_t *m, int k, int d) { raw(m, 0xB0, (uint8_t)(MR_CC_KNOB1 + k), (uint8_t)(d & 127)); }
 static void jog(rfm_move_t *m, int d) { raw(m, 0xB0, MR_CC_JOG, (uint8_t)(d & 127)); }
+static void jog_click(rfm_move_t *m) { raw(m, 0xB0, MR_CC_JOG_CLICK, 127), raw(m, 0xB0, MR_CC_JOG_CLICK, 0); }
 static void touch(rfm_move_t *m, int k, int on) { raw(m, on ? 0x90 : 0x80, (uint8_t)k, on ? 127 : 0); }
 static void track(rfm_move_t *m, int t, int down) { button(m, MR_CC_TRACK1 - t, down); }   /* t 0..3 */
 
@@ -1294,7 +1295,8 @@ static void test_fm1_shift_layer(void)
     }
     CHECK(m.seq.smenu == RFM_MOVE_SM_GROOVE && m.s.mode == RFM_MOVE_MODE_FM1 && !m.seq.projects && m.pop != POP_MODE);
     clear();
-    jog(&m, 2);                                         /* (the menu's: the groove, not SELECT) */
+    jog_click(&m), jog(&m, 2);                          /* (the menu's: the groove, not SELECT; 0.13.0: its click
+                                                         * edits the selected parameter first) */
     CHECK(m.seq.groove == 10 && count(RFM_MOVE_ACT_TURN) == 0);
     rfm_move_screen(&m, NULL, out);
     write_pbm("move_fm1_groove.pbm", out);
@@ -1306,7 +1308,7 @@ static void test_fm1_shift_layer(void)
     track(&m, 3, 1), button(&m, MR_CC_REC, 1), button(&m, MR_CC_REC, 0), track(&m, 3, 0);   /* Track 4 + Record */
     CHECK(m.seq.smenu == RFM_MOVE_SM_REC && !m.seq.projects && count(RFM_MOVE_ACT_BTN) == 0);
     clear();
-    jog(&m, 1);
+    jog_click(&m), jog(&m, 1);
     CHECK(m.seq.rec_mode == RFM_MOVE_RM_RECORD && count(RFM_MOVE_ACT_TURN) == 0);
     back(&m);
     track(&m, 3, 1), step(&m, 4, 1), step(&m, 4, 0), now_ms += 400, step(&m, 4, 1), step(&m, 4, 0), track(&m, 3, 0);
@@ -1480,7 +1482,8 @@ static void test_velocity(void)
     rfm_move_init(&m, NULL, on_act, NULL);
     track(&m, 3, 1), step(&m, 9, 1), step(&m, 9, 0), track(&m, 3, 0);   /* FM-1 mode: the menu, over FM-1 mode */
     CHECK(m.seq.smenu == RFM_MOVE_SM_VEL && m.s.mode == RFM_MOVE_MODE_FM1);
-    jog(&m, 1), knob(&m, 0, -27);                       /* FIXED, 100 */
+    jog(&m, 1), jog_click(&m), jog(&m, 1), knob(&m, 0, -27);   /* FIXED (0.13.0: the jog selects knob 2's, its click
+                                                         * edits it), 100 */
     CHECK(m.s.vel_mode == RFM_MOVE_VEL_FIXED && m.s.vel_level == 100 && m.seq.smenu == RFM_MOVE_SM_VEL);
     button(&m, MR_CC_BACK, 1), button(&m, MR_CC_BACK, 0);
     CHECK(!m.seq.smenu);
@@ -1622,10 +1625,10 @@ static void test_menu_knob_leds(void)
     now_ms += 400, track(&m, 3, 0);
     rfm_move_set_slot_layout(&m, 0, RFM_MOVE_LAY_FM1);
     ring_of(&m, 0, n0);
-    track(&m, 3, 1), step(&m, 9, 1), step(&m, 9, 0), now_ms += 400, track(&m, 3, 0);   /* the Velocity menu: knob 1 */
+    track(&m, 3, 1), step(&m, 9, 1), step(&m, 9, 0), now_ms += 400, track(&m, 3, 0);   /* the Velocity menu: knobs 1, 2 */
     for (k = 0; k < 8; k++) {
         ring_of(&m, k, a);
-        CHECK(k == 0 ? a[0] && a[1] && !a[2] : !a[0] && !a[1] && !a[2]);
+        CHECK(k <= 1 ? a[0] && a[1] && !a[2] : !a[0] && !a[1] && !a[2]);
     }
     back(&m);
     ring_of(&m, 0, a);
