@@ -2776,6 +2776,15 @@ static void ps_two_projects(void)                       /* project 1: ChoralRoot
         clip_put(c % 4, c / 4, 60 + c);
     ps_store(6);
     rfm_move_project_load(&M, 0, NULL, 0);
+    {                                                   /* (project 1 is an older one: all routed, track n on channel
+                                                         * n; an empty project made current now gets a new project's
+                                                         * routing) */
+        static const int ALL[RFM_MOVE_FW_SLOTS] = { 0xFFFF, 0xFFFF, 0xFFFF };
+        int t;
+        rfm_move_route_set(&M, ALL, NULL);
+        for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++)
+            M.seq.tr[t].ch = (uint8_t)t;
+    }
     ps_slots("choralroot", "felucca", "");
     ps_store(0);
     ps_answer = 0;
@@ -4251,6 +4260,25 @@ static void test_loop_dbl(void)
     button(MR_CC_LOOP, 0), rest();
 }
 
+/* ---- (0.13.0) an empty project loaded (the host at start: rfm_move_project_load with no blob, after
+ * rfm_move_project_dir) keeps a new project's routing, channels and Track tracks together. Found by the host's
+ * latch_e2e: the clear put the channels back to 1..16 while the Track buttons stayed on tracks 1, 5, 9, so slot 2's
+ * pads played channel 5 */
+static void test_empty_load_defaults(void)
+{
+    ps_fresh(1);
+    rfm_move_project_dir(&M, 0);
+    CHECK(M.seq.fx.ffilt[1] == 0x00F0 && M.seq.tr[4].ch == 0 && M.s.lock[1] == 4);
+    rfm_move_project_load(&M, 0, NULL, 0);
+    CHECK(M.seq.fx.ffilt[0] == 0x000F && M.seq.fx.ffilt[1] == 0x00F0 && M.seq.fx.ffilt[2] == 0x0F00);
+    CHECK(M.seq.tr[4].ch == 0 && M.seq.tr[6].ch == 2 && M.seq.tr[15].ch == 3 && M.s.lock[1] == 4 && M.s.lock[2] == 8);
+    CHECK(!M.seq.dirty);                                /* (nothing to save: an empty project is not stored by this) */
+    ps_fresh(0);                                        /* an older host: as before */
+    rfm_move_project_dir(&M, 0);
+    rfm_move_project_load(&M, 0, NULL, 0);
+    CHECK(M.seq.fx.ffilt[1] == 0xFFFF && M.seq.tr[6].ch == 6 && M.s.lock[1] == 1);
+}
+
 int main(void)
 {
     test_scenes();
@@ -4311,6 +4339,7 @@ int main(void)
     test_mj_places();
     test_mj_page_len();
     test_loop_dbl();
+    test_empty_load_defaults();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

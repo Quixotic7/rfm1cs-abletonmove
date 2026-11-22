@@ -188,6 +188,12 @@ host carries the firmware state files with the project buffer; tested.
   undo step (loop_tap_grp): one Undo brings back the loop of before. Held + a second step: the range, unchanged.
   (seq_ui.c rfmv_seq_step, rfmv_seq_button.) Test: test_loop_dbl.
 
+### An empty project made current keeps a new project's routing together (found by the host's latch_e2e)
+- `rfm_move_project_load` with no blob (the host at start with nothing stored in the slot, a cut of the open
+  project) cleared the channels and filters back to the old defaults while the settings kept a new project's Track
+  tracks (1, 5, 9): slot 2's pads then played channel 5. It applies a new project's routing, channels and tracks
+  now (rfmv_pfw_defaults; hosts without RFM_MOVE_CAP_PROJFW as before; the project is not marked edited by it).
+
 ## 0.12.0 (2026-11-22, not released)
 
 The owner's answers on the review page, card by card. New fields in `rfm_move_seq_t` (after `tk_pend_clk`): rebuild

@@ -434,6 +434,13 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
         else
             rfmv_seq_start(m);
     }
+    if (!(b && n))                                      /* (0.13.0) an empty project made the current one (the host at
+                                                         * start with nothing stored there, a cut of the open one, a
+                                                         * new one): a new project's routing, channels and Track
+                                                         * buttons' tracks, together. (The clear above put the channels
+                                                         * and filters back to the old defaults while the settings kept
+                                                         * the new tracks: slot 2's pads then played channel 5) */
+        rfmv_pfw_defaults(m);
     q->dirty = 0;
     info_live(m, &q->info[slot]);
     rfmv_fx_loaded(m);                                  /* (0.4.0: its FX setup to the host) */
