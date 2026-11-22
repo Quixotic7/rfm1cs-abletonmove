@@ -315,7 +315,7 @@ void rfmv_tcase(const char *s, char *o, int cap)
 static void bank_strip(const rfm_move_t *m, mr_canvas_t *cv)
 {
     if (m->s.mode == RFM_MOVE_MODE_SEQ)
-        v2_strip(cv, 5, 1u << (m->seq.trig ? 0 : m->s.bank + 1), -1, 0, 128);
+        v2_strip(cv, RFM_MOVE_NBANKS + 2, 1u << (m->seq.trig ? 0 : m->seq.fwp ? 1 : m->s.bank + 2), -1, 0, 128);
     else
         v2_strip(cv, 4, 1u << m->s.bank, -1, 0, 128);
 }
@@ -586,6 +586,14 @@ static void value_popup(const rfm_move_t *m, mr_canvas_t *cv)
         return;
     }
     default:                                            /* POP_BANK (the sequencer: TRIG before bank 1) */
+        if (m->s.mode == RFM_MOVE_MODE_SEQ && !q->trig && q->fwp) {   /* (0.12.x) the FM-1 page (its level 2: "Keys"
+                                                         * too; an empty slot: "Empty slot"), the whole screen */
+            mr_gfx_clear(cv, 0);
+            v2_titleBox(cv, !rfmv_fwp_live(m) ? "Empty slot" : rfmv_fwp_full(m) ? "Knobs+Keys" : "Knobs", "FM-1", 64, 124);
+            bank_strip(m, cv);
+            g_full = 1;
+            return;
+        }
         if (m->s.mode == RFM_MOVE_MODE_SEQ && q->trig)
             value_pop(cv, "Knobs", "Trig", 0, 0);
         else {
@@ -663,7 +671,7 @@ static void trig_popup(const rfm_move_t *m, mr_canvas_t *cv)
         rfmv_seq_page_strip(m, cv, abs);
         return;
     }
-    if (!q->trig) {                                     /* a held step's edit popup (V2Track's seq.micro / len / vel) */
+    if (!rfmv_seq_trig_on(m)) {                         /* a held step's edit popup (V2Track's seq.micro / len / vel) */
         if (k == 0)
             snprintf(l, sizeof l, "Nudge"), snprintf(b, sizeof b, v ? "%+d%%" : "0%%", v * 100 / RFM_MOVE_SEQ_TPS);
         else if (k == 6)
@@ -766,7 +774,8 @@ static void trig_popup(const rfm_move_t *m, mr_canvas_t *cv)
     default: snprintf(l, sizeof l, "--"); break;
     }
     v2_titleBox(cv, l, b, 88, 80);
-    v2_strip(cv, 5, 1, -1, 0, 128);
+    v2_strip(cv, RFM_MOVE_NBANKS + 2, q->trig ? 1 : 2, -1, 0, 128);   /* (0.12.x: the FM-1 page second; a step held on it:
+                                                         * its TRIG knobs) */
 }
 
 /* Loop held or latched (page edit): the loop icon, the range in words, the 16 pages as cells; the jog: Move's
@@ -1028,6 +1037,9 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
         } else if (m->pop == POP_VIEW) {                /* (0.11.0) Menu under an open Shift menu: the view named */
             mr_gfx_clear(cv, 0);
             v2_modeName(cv, m->pop_i ? "Session" : "Sequencer", 2, m->pop_i != 0);
+            g_full = 1;
+        } else if (m->pop == POP_FWLV) {                /* (0.12.x) the FM-1 page's level: "Knobs" / "Knobs+Keys" */
+            rfmv_pop_screen(cv, "FM-1", m->pop_i ? "Knobs+Keys" : "Knobs", 2, m->pop_i != 0, NULL);
             g_full = 1;
         } else if (m->pop == POP_ARPW) {                /* (0.12.0, the owner's) the arp switched: "Arp" over its mode
                                                          * at 4x, the whole screen */
@@ -1421,8 +1433,38 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
         mr_gfx_pack(&cv, out);
         return;
     }
+    if (rfmv_fwp_knobs(m) && !rfmv_half(m) && rfmv_pop_up(m, m->pop) &&
+        (m->pop == POP_ENC || (m->pop == POP_READ && m->pop_i < RFM_MOVE_NKNOBS))) {
+        /* (0.12.x) the FM-1 page's level 1: a knob's popup over the track view, in the popups' place as over a
+         * takeover (Global settings' Popup size: the whole screen, or the left half with the firmware's screen on the
+         * right) */
+        rfmv_seq_screen(m, &cv);
+        g_half = 1, g_full = 0, g_label_drawn = 0, g_wide_drawn = 0;
+        g_lw = m->s.pop_half ? 64 : 128;
+        g_scroll_ms = rfmv_now_ms(m) - m->pop_t0;
+        if (m->pop == POP_READ)
+            knob_readout(m, &cv, &m->rd_pop, m->pop_i);
+        else
+            value_popup(m, &cv);
+        if (g_lw == 64)
+            for (y = 0; y < 64; y++)
+                for (x = 0; x < 64; x++)
+                    cv.px[y][64 + x] = m->thumb[y][x];
+        g_lw = 64;
+        mr_gfx_pack(&cv, out);
+        return;
+    }
     switch (m->s.mode) {
-    case RFM_MOVE_MODE_SEQ: rfmv_seq_screen(m, &cv); break;
+    case RFM_MOVE_MODE_SEQ:
+        if (rfmv_fwp_full(m) && !m->seq.smenu) {        /* (0.12.x) the FM-1 page's level 2: the FM-1's screen (its
+                                                         * buttons and keys act on it), as the FM-1 layout */
+            rfmv_fm1_art(m, &cv);
+            for (y = 0; y < 64; y++)
+                for (x = 0; x < 64; x++)
+                    cv.px[y][64 + x] = m->thumb[y][x];
+        } else
+            rfmv_seq_screen(m, &cv);
+        break;
     case RFM_MOVE_MODE_MIDI:
         if (m->s.midi_view == RFM_MOVE_MV_NOTES) {
             notes_half(m, &cv);                         /* the notes and the chord; the FM-1's screen on the right */

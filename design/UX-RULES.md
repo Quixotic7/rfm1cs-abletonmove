@@ -31,6 +31,12 @@ One exception, stated so it is a decision and not an accident: when the double c
 clip or a scene: click = at the bar, double click = now; Shift + a scene: stop at the bar / now), the click acts at
 once. Its effect is what the double click would do anyway, so nothing wrong shows, and a launch is never 300 ms late.
 
+A second exception of that kind (the owner, 2026-11-22: "Track Held: Clicking a step should instantly show selected,
+not wait the 300ms"): **a held Track's step selects its track at the press** (routed to the firmware too, as the click
+does). The double click (the solo, at its second press) and the hold (the routing flipped at 300 ms, from the routing
+before the press) both start with that same selection, so the click's effect never shows wrongly; a not-routed track
+held stays routed (the press routed it). The window and the release then show nothing more.
+
 ## R3. A layer takes what it uses
 
 - A layer that draws a menu on the screen (not a plain toggle) takes **the jog wheel**; **Back** closes it and

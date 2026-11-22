@@ -559,7 +559,7 @@ static void slot_seq_enter(rfm_move_t *m, int t, int fresh)
         rfmv_seq_sync(m);
     }
     if (fresh)
-        q->trig = 1, q->view = 0;                       /* (the owner's: the TRIG page first; the track view) */
+        q->trig = 1, q->fwp = 0, q->view = 0;           /* (the owner's: the TRIG page first; the track view) */
 }
 /* the active slot's layout played: the FM-1 layout or its takeover (FM-1 mode), or a note layout (the sequencer) */
 static void slot_mode_fresh(rfm_move_t *m, int fresh)
@@ -770,8 +770,10 @@ static void readout(rfm_move_t *m, int control, int kind, const char *title, con
         if (knob_up == control)
             return;                                     /* (its popup is up: drawn in place) */
     }
-    if (!rfmv_half(m) || m->seq.projects)
-        return;
+    if ((!rfmv_half(m) && !(rfmv_fwp_knobs(m) && control >= RFM_MOVE_LBL_KNOB0 && control < RFM_MOVE_LBL_BTN0)) ||
+        m->seq.projects)
+        return;                                         /* (0.12.x: the FM-1 page's level 1: a knob's own, over the
+                                                         * track view) */
     m->rd_pop = r;
     rfmv_pop(m, POP_READ, control < 0 ? 255 : control);
     m->rd_ms = (uint16_t)(ms > 0 ? clampi(ms, 1, 60000) : RFM_MOVE_POPUP_MS);
@@ -795,7 +797,7 @@ static int any_btn_held(const rfm_move_t *m)
 static void label_pop(rfm_move_t *m, int slot, int at_once)
 {
     char t[RFM_MOVE_LABEL_MAX + 1];
-    if (m->s.mode != RFM_MOVE_MODE_FM1 || m->seq.projects)
+    if ((m->s.mode != RFM_MOVE_MODE_FM1 && !rfmv_fwp_full(m)) || m->seq.projects)
         return;
     if (!rfmv_label(m, slot, t, sizeof t) && m->pop == POP_LABEL && m->pop_i != slot && rfmv_pop_up(m, POP_LABEL))
         return;                                         /* (no words now: the label up stays; 0.5.8: else it comes up
@@ -915,7 +917,8 @@ int rfmv_list_ticks(rfm_move_t *m, int k, int d)
 void rfmv_release_holds(rfm_move_t *m) { release_holds(m); }
 int rfmv_half(const rfm_move_t *m)                     /* popups on the left half: the FM-1's screen on the right */
 {
-    return m->s.mode == RFM_MOVE_MODE_FM1 || (m->s.mode == RFM_MOVE_MODE_MIDI && m->s.midi_view == RFM_MOVE_MV_NOTES);
+    return m->s.mode == RFM_MOVE_MODE_FM1 || (m->s.mode == RFM_MOVE_MODE_MIDI && m->s.midi_view == RFM_MOVE_MV_NOTES) ||
+           (rfmv_fwp_full(m) && !m->seq.smenu);        /* (0.12.x: the FM-1 page's level 2: the FM-1's screen) */
 }
 #define track_held(m, t) rfmv_track_held(m, t)
 
@@ -940,6 +943,38 @@ int rfmv_lay_menu(const rfm_move_t *m)                  /* a firmware Track held
     return 0;
 }
 int rfmv_t4_menu(const rfm_move_t *m) { return track_held(m, 3); }   /* Track 4 held: its menu (the view too) */
+/* ---- (0.12.x, the owner's 2026-11-22: "we should also add in a page to control the firmware's knobs like you get on
+ * the FM-1 Layout .. Then when clicking the jogwheel it should switch the takeover between just knobs and then full
+ * shortcuts: Buttons, steps, ect, but pads stay in the MIDI layout, and Jogwheel is not taken over") a note layout's
+ * FM-1 knob page: level 1 the knobs (the FM-1 layout's: SELECT, PRESETS, ALGO, -, K1..K4), level 2 the FM-1 layout's
+ * buttons (all it maps but Up: Up / Down stay the pads' octave) and the steps (its keys) too. The same paths as the
+ * FM-1 layout (enc_turn, key_hold, btn_hold), so the firmware gets exactly what that layout sends */
+int rfmv_fwp_page(const rfm_move_t *m)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    return m->s.mode == RFM_MOVE_MODE_SEQ && q->fwp && !q->trig && !q->view && !q->projects;
+}
+int rfmv_fwp_live(const rfm_move_t *m)                  /* (an empty slot: the page is there, its knobs dark and dead) */
+{
+    return rfmv_fwp_page(m) && (!m->fw.host || m->fw.slot_id[act_slot(m)][0]);
+}
+int rfmv_fwp_full(const rfm_move_t *m) { return rfmv_fwp_live(m) && m->seq.fwp_full; }
+int rfm_move_fwp_level(const rfm_move_t *m) { return rfmv_fwp_full(m) ? 2 : rfmv_fwp_live(m) ? 1 : 0; }
+int rfmv_fwp_knobs(const rfm_move_t *m) { return rfmv_fwp_live(m) && !m->seq.smenu && !m->seq.step_held; }
+static int fwp_btn(int cc) { return cc != MR_CC_UP && rfm_move_button_of(cc) >= 0; }   /* (level 2's buttons) */
+/* what level 2 took is let go once it is not on (the jog's click, another page, another view or slot) */
+static void fwp_sync(rfm_move_t *m)
+{
+    int i;
+    if (m->s.mode != RFM_MOVE_MODE_SEQ || rfmv_fwp_full(m))
+        return;
+    for (i = 0; i < RFM_MOVE_NSTEPS; i++)
+        if (m->step[i].kind == H_KEY)
+            let_go(m, &m->step[i]);
+    for (i = 0; i < 128; i++)
+        if (m->btn[i].kind == H_BTN)
+            let_go(m, &m->btn[i]);
+}
 const char *rfmv_jog_name(int i) { static const char *const N[3] = { "SELECT", "PRESET", "ALGO" }; return N[i % 3]; }
 
 /* outside Sequencer mode: a sequencer menu (opened from Track 4's menu or Shift + a step) is open: it takes what it
@@ -1158,6 +1193,7 @@ static void on_step(rfm_move_t *m, int s, int down, uint32_t now)
     }
     if (h->kind != H_NONE)
         return;
+    m->seq.tflash = 0;                                  /* (0.12.x: a step pressed ends a Track tap's flash) */
     if (rfmv_t4_menu(m) || (m->seq.projects && m->fw.fx && m->shift_down)) {
         h->kind = H_MENU;                               /* (0.8.0) Track 4 held (any mode), (0.9.0) Shift in the Mixer or
                                                          * Routing: Shift + step, the Move's shortcuts on the sequencer */
@@ -1168,6 +1204,12 @@ static void on_step(rfm_move_t *m, int s, int down, uint32_t now)
                                                          * 16 tracks (select, solo, not routed: seq_ui.c) */
         h->kind = H_SEQ;
         rfmv_seq_step(m, s, 1, now);
+        return;
+    }
+    if (rfmv_fwp_full(m)) {                             /* (0.12.x) the FM-1 page's level 2: the steps are the FM-1's
+                                                         * keys, as in the FM-1 layout */
+        h->kind = H_KEY, h->a = (uint8_t)STEP_KEY[s];
+        key_hold(m, h->a, 100);
         return;
     }
     if (m->s.mode == RFM_MOVE_MODE_SEQ) {
@@ -1205,7 +1247,8 @@ static int back_bit(int cc)
 int rfmv_back_keys(const rfm_move_t *m)
 {
     return m->back_down && m->s.mode == RFM_MOVE_MODE_SEQ && !m->seq.projects && !m->track_held && !m->seq.step_held &&
-           !m->seq.fill && rfm_move_states_open(m) < 0;   /* (0.13.0: not in the States layer, where Back closes it) */
+           !m->seq.fill && rfm_move_states_open(m) < 0 &&   /* (0.13.0: not in the States layer, where Back closes it) */
+           !rfmv_fwp_full(m);                           /* (the FM-1 page's level 2: as the FM-1 layout) */
 }
 static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
 {
@@ -1277,6 +1320,16 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
                                                          * never closes a menu: in the FM-1 layout it is the FM-1's
                                                          * HOME, the menu stays) */
             rfmv_seq_button(m, MR_CC_BACK, 1, now);
+        return;
+    }
+    if (m->s.mode == RFM_MOVE_MODE_SEQ && cc >= 0 && cc < 128 &&
+        (down ? m->btn[cc].kind == H_NONE && rfmv_fwp_full(m) && fwp_btn(cc) : m->btn[cc].kind == H_BTN)) {
+        h = &m->btn[cc];                                /* (0.12.x) the FM-1 page's level 2: the FM-1 layout's buttons
+                                                         * (Play the firmware's PLAY too) */
+        if (!down)
+            let_go(m, h);
+        else
+            h->kind = H_BTN, h->a = (uint8_t)rfm_move_button_of(cc), btn_hold(m, h->a);
         return;
     }
     if (m->s.mode == RFM_MOVE_MODE_SEQ && cc >= 0 && cc < 128 && (m->btn[cc].kind == H_NONE || m->btn[cc].kind == H_MENU)) {
@@ -1401,6 +1454,12 @@ static void on_knob(rfm_move_t *m, int k, int d, uint32_t now)
         rfmv_seq_knob(m, k, d, now);                    /* (a sequencer menu open outside it: its knobs) */
         return;
     }
+    if (rfmv_fwp_page(m) && !m->seq.smenu && !m->seq.step_held) {
+        if (rfmv_fwp_live(m) && KNOB_ENC[k] >= 0)       /* (0.12.x) the FM-1 page: the FM-1 layout's knobs (an empty
+                                                         * slot: dead) */
+            enc_turn(m, k, d, 0);
+        return;
+    }
     if (m->s.mode == RFM_MOVE_MODE_SEQ) {               /* (the lock menu: the track's CC numbers, seq_ui.c) */
         rfmv_seq_knob(m, k, d, now);
         return;
@@ -1491,6 +1550,12 @@ static void on_jog_click(rfm_move_t *m, int down)
         rfmv_seq_arp_toggle(m);                         /* (0.11.0, the owner's) the arp menu: the jog's click: on / off */
         return;
     }
+    if (down && rfmv_fwp_live(m) && !rfmv_lay_menu(m) && !rfmv_t4_menu(m)) {
+        m->seq.fwp_full = (uint8_t)!m->seq.fwp_full;    /* (0.12.x) the FM-1 page: knobs <-> knobs + keys, at the press,
+                                                         * named a second */
+        rfmv_pop(m, POP_FWLV, m->seq.fwp_full);
+        return;
+    }
     if (!down || m->s.mode != RFM_MOVE_MODE_FM1 || rfmv_lay_menu(m) || rfmv_t4_menu(m) || fm1_seq_layer(m))
         return;
     m->jog_enc = (uint8_t)((m->jog_enc + 1) % 3);
@@ -1515,7 +1580,8 @@ static void on_touch(rfm_move_t *m, int k, int on)
             m->touched = -1;
         if (k < RFM_MOVE_NKNOBS)
             m->knob_acc[k] = 0, m->list_acc[k] = 0;
-        if (rfmv_half(m) && (m->pop == POP_ENC || m->pop == POP_MASTER) && m->pop_i == k) {
+        if ((rfmv_half(m) || (rfmv_fwp_page(m) && m->pop == POP_ENC)) && (m->pop == POP_ENC || m->pop == POP_MASTER) &&
+            m->pop_i == k) {
             m->pop = POP_NONE, m->pop_val = 0;          /* (FM-1 mode, MIDI's NOTES: the release ends the gesture: the
                                                          * popup goes, its count starts again) */
             return;
@@ -1551,6 +1617,12 @@ static void on_touch(rfm_move_t *m, int k, int on)
         rfmv_pop(m, POP_TRKINFO, k);                    /* (0.11.0, the owner's: knob 8: the scenes) */
         return;
     }
+    if (k < RFM_MOVE_NKNOBS && rfmv_fwp_page(m) && !m->seq.step_held) {   /* (0.12.x) the FM-1 page: as the FM-1
+                                                         * layout: the knob's name (a knob with no job: nothing) */
+        if (rfmv_fwp_live(m) && KNOB_ENC[k] >= 0 && !enc_nojob(m, KNOB_ENC[k]))
+            rfmv_pop(m, POP_ENC, k), m->pop_blank = 1;
+        return;
+    }
     if (rfmv_half(m)) {                                 /* (0.5.6, the owner's: FM-1 mode, MIDI's NOTES: a touch alone
                                                          * shows the knob's name (and MASTER its level); a turn its
                                                          * detents) */
@@ -1566,7 +1638,7 @@ static void on_touch(rfm_move_t *m, int k, int on)
         return;                                         /* (a menu or a held Track: its own screen, the legend ring) */
     if (k == 8)
         rfmv_pop(m, POP_MASTER, 8);
-    else if (k < RFM_MOVE_NKNOBS && m->s.mode == RFM_MOVE_MODE_SEQ && m->seq.trig && !m->seq.view) {
+    else if (k < RFM_MOVE_NKNOBS && m->s.mode == RFM_MOVE_MODE_SEQ && rfmv_seq_trig_on(m) && !m->seq.view) {
         if (k < 7)
             rfmv_pop(m, POP_TRIG, k);                   /* (0.12.0, a12: knob 8 has no job there: no popup) */
     }
@@ -1649,6 +1721,7 @@ static void track_tap(rfm_move_t *m, int t)
                                                          * is the sequencer on the slot's selected track) */
         slot_mode_fresh(m, 1);                          /* (the slot already played: again, its track view) */
     name_layout(m);
+    rfmv_seq_tflash_start(m);                           /* (0.12.x: a note layout: its selected track on the steps) */
 }
 static void track_double(rfm_move_t *m, int t)
 {
@@ -1841,6 +1914,7 @@ void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
     m->say_back = m->speech && ev->type == MR_EV_BUTTON && ev->index == MR_CC_BACK && !ev->value &&
                   m->say_n == m->say_bdown;             /* .. where it left you is said */
     input(m, ev, now_ms);
+    fwp_sync(m);                                        /* (0.12.x: level 2's keys and buttons let go once it is off) */
     rfmv_slot_push(m);                                  /* (0.8.0: the active slot's record kept current) */
     rfmv_pfw_watch(m);                                  /* (0.13.0: a firmware setting changed: the project edited) */
     rfmv_tk_sync(m);                                    /* (0.7.0: the takeover shown or gone) */
@@ -2046,6 +2120,32 @@ static void t4_menu_white(uint8_t wv[13])
     wv[W_LOOP] = wv[W_LOOP] > 60 ? wv[W_LOOP] : 60;
 }
 
+/* (0.12.x) the FM-1 page: its knobs as the FM-1 layout lights them (R4: a knob with a job lit, the others dark; an
+ * empty slot: all dark); level 2: the steps and the buttons it takes as the FM-1 layout (the firmware's LEDs) */
+static void fwp_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
+{
+    const rgb_t fm = MODE_RGB[RFM_MOVE_MODE_FM1];
+    int i;
+    if (!rfmv_fwp_page(m))
+        return;
+    if (!m->seq.smenu && !m->seq.step_held)
+        for (i = 0; i < RFM_MOVE_NKNOBS; i++)
+            c[L_RING0 + i] = rfmv_fwp_live(m) && KNOB_ENC[i] >= 0 && !enc_nojob(m, KNOB_ENC[i])
+                           ? sc(fm, m->touched == i ? 256 : 64) : OFF;
+    if (!rfmv_fwp_full(m))
+        return;
+    for (i = 0; i < RFM_MOVE_NSTEPS; i++) {
+        const int lv = alpha(level_of(m, 14 + STEP_KEY[i]));
+        c[L_STEP0 + i] = m->step[i].kind == H_KEY ? fm : sc(WHITE, lv > FLOOR ? lv : FLOOR);
+    }
+    c[L_PLAY] = add(sc(WHITE, alpha(level_of(m, RFM_MOVE_B_PLAY))), sc(GREEN, alpha(m->play_green)));
+    c[L_REC] = sc(RED, alpha(level_of(m, RFM_MOVE_B_REC)));
+    c[L_SAMPLE] = sc(WHITE, alpha(level_of(m, RFM_MOVE_B_SEL)));
+    for (i = 0; i < 13; i++)
+        if (fwp_btn(WHITE_CC[i]))
+            wv[i] = (uint8_t)clampi(alpha(level_of(m, rfm_move_button_of(WHITE_CC[i]))) * 127 / 256, 6, 127);
+}
+
 static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
 {
     const rgb_t mode = MODE_RGB[m->s.mode & 3];
@@ -2109,8 +2209,12 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
     if (m->seq.projects)                                /* the projects view: its own LEDs (the firmwares or the
                                                          * projects; the rest off) */
         rfmv_fw_leds(m, c, wv);
-    else if (m->s.mode == RFM_MOVE_MODE_SEQ)            /* Sequencer mode takes over all but the Track LEDs */
+    else if (m->s.mode == RFM_MOVE_MODE_SEQ) {          /* Sequencer mode takes over all but the Track LEDs */
         rfmv_seq_leds(m, c, wv);
+        fwp_leds(m, c, wv);                             /* (0.12.x) the FM-1 page's */
+        if (rfmv_seq_tflash_on(m))
+            rfmv_seq_tflash_leds(m, c);                 /* (0.12.x) a Track's tap: the tracks a moment */
+    }
     if (lm)
         lay_menu_leds(m, rfmv_lay_menu(m) - 1, c);
     else if (t4m)

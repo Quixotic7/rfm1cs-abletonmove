@@ -866,7 +866,9 @@ void rfmv_seq_tk_flush(rfm_move_t *m)                   /* the click that waits 
     if (track < 0)
         return;
     q->tk_pend = -1;
-    tk_act(m, q->tk_pend_fw, track, q->tk_pend_kind);
+    if (q->tk_pend_kind)                                /* (0.12.x: a step's click acted at its press: only the double
+                                                         * click's window waited) */
+        tk_act(m, q->tk_pend_fw, track, q->tk_pend_kind);
 }
 static int tk_press(rfm_move_t *m, int fw, int track, int kind)   /* a press: 1 it was the double click (done) */
 {
@@ -942,7 +944,8 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
                                                          * selects it for that firmware, a double click solos it there,
                                                          * a hold routes it to the firmware or not; (0.11.0) gated: the
                                                          * hold and the double click have acted by now (tk_press, the
-                                                         * poll), the click waits out the double click's time */
+                                                         * poll); (0.12.x) the click acted at the press: its release
+                                                         * only opens the double click's window (nothing shows) */
             const int fw = rfmv_seq_trk_held(m) - 1, fired = (int)(q->tstep_fired >> s & 1);
             q->tstep_held &= ~(1u << s), q->tstep_fired &= ~(1u << s);
             if (fw >= 0 && !fired)
@@ -1022,9 +1025,21 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             q->paste = 0, q->clip_kind = 0;
         } else {                                        /* (a click selects, a double click solos, a hold routes or
                                                          * not: tk_press, the poll, the release above) */
+            const int fw = rfmv_seq_trk_held(m) - 1;
             q->tstep_fired &= ~(1u << s);
-            if (tk_press(m, rfmv_seq_trk_held(m) - 1, s, 0))
+            if (tk_press(m, fw, s, 0))
                 q->tstep_fired |= 1u << s;
+            else {                                      /* (0.12.x, the owner's: "Clicking a step should instantly show
+                                                         * selected, not wait the 300ms") the click's selection at the
+                                                         * press (routed too, as the click did); the hold toggles from
+                                                         * the routing before it, the double click solos at its second
+                                                         * press. UX-RULES R2's "the same thing sooner" kind */
+                if ((m->fsolo[fw] && m->fsolo[fw] != s + 1 ? m->fsolo_save[fw] : q->fx.ffilt[fw]) >> s & 1)
+                    q->tstep_rt0 |= 1u << s;            /* (under another track's solo: its routing kept for after) */
+                else
+                    q->tstep_rt0 &= ~(1u << s);
+                tk_act(m, fw, s, 0);
+            }
             q->tstep_held |= 1u << s;
             q->step_t[s] = rfmv_now_ms(m);
         }
@@ -1418,8 +1433,13 @@ void rfmv_seq_ui_poll(rfm_move_t *m)
             if ((q->tstep_held >> s & 1) && !(q->tstep_fired >> s & 1) &&
                 rfmv_now_ms(m) - q->step_t[s] >= RFM_MOVE_SEQ_HOLD_MS) {
                 q->tstep_fired |= 1u << s;
-                if (fw >= 0)
-                    tk_act(m, fw, s, 1);
+                if (fw >= 0 && (q->tstep_rt0 >> s & 1))
+                    tk_act(m, fw, s, 1);                /* (routed before the press: not routed now) */
+                else if (fw >= 0) {                     /* (0.12.x) not routed before: the press routed it, the hold
+                                                         * leaves it so (named) */
+                    rfmv_menu(m, MENU_LOCK, s);
+                    m->lk_word = LK_ON;
+                }
             }
     }
     if (q->tk_pend >= 0 && rfmv_now_ms(m) - q->tk_pend_clk >= RFM_MOVE_DOUBLE_MS)
@@ -2443,6 +2463,10 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
     rfmv_seq_dirty(m);
 }
 
+/* (0.12.x) the knobs do the TRIG page's: on it, or a step held on the FM-1 page (its knobs are the firmware's only
+ * while no step is held) */
+int rfmv_seq_trig_on(const rfm_move_t *m) { return m->seq.trig || (m->seq.fwp && m->seq.step_held); }
+
 void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now)
 {
     rfm_move_seq_t *q = Q(m);
@@ -2472,7 +2496,7 @@ void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now)
         smenu_turn(m, k, d);
         return;
     }
-    if (q->trig && !q->view && !q->projects) {          /* the TRIG page: the held steps' (none held: every step
+    if (rfmv_seq_trig_on(m) && !q->view && !q->projects) {   /* the TRIG page: the held steps' (none held: every step
                                                          * with notes in the clip) */
         const int clip = edit_clip(m);
         int s;
@@ -2602,11 +2626,12 @@ void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now)
         rfmv_pop(m, POP_DRUM, p);
         return;
     }
-    {                                                   /* the knob pages: TRIG, then banks 1..4 */
-        const int pg = clampi((q->trig ? 0 : m->s.bank + 1) + d, 0, RFM_MOVE_NBANKS);
-        q->trig = (uint8_t)(pg == 0);
-        if (pg && pg - 1 != m->s.bank) {
-            m->s.bank = (uint8_t)(pg - 1);
+    {                                                   /* the knob pages: TRIG, (0.12.x) FM-1, then banks 1..4 (the
+                                                         * bank stored as before: 0..3) */
+        const int pg = clampi((q->trig ? 0 : q->fwp ? 1 : m->s.bank + 2) + d, 0, RFM_MOVE_NBANKS + 1);
+        q->trig = (uint8_t)(pg == 0), q->fwp = (uint8_t)(pg == 1);
+        if (pg >= 2 && pg - 2 != m->s.bank) {
+            m->s.bank = (uint8_t)(pg - 2);
             rfmv_changed(m);
         }
         rfmv_pop(m, POP_BANK, 0);
@@ -2693,13 +2718,41 @@ static rgb_t route_rgb(const rfm_move_t *m, int fw, int i)
     const rfm_move_seq_t *q = &m->seq;
     const int on = q->fx.ffilt[fw] >> i & 1, sel = m->s.lock[fw] == i, ph = rfmv_now_ms(m) % 500u < 250u;
     const rgb_t fc = rfmv_fw_rgb(m, fw), blue = RFMV_SOLO_RGB;   /* (0.12.0, q1: the solo purple) */
-    if (q->tk_pend == i && q->tk_pend_fw == fw)
-        return sc(RFMV_WHITE, 150);
+    if (q->tk_pend == i && q->tk_pend_fw == fw && q->tk_pend_kind)
+        return sc(RFMV_WHITE, 150);                     /* (0.12.x: a pad's click waits; a step's acted at its press) */
     if (m->fsolo[fw] == i + 1)
         return sel && !ph ? sc(blue, 70) : blue;
     if (sel)
         return on ? sc(fc, ph ? 256 : 50) : sc(fc, ph ? 60 : 0);
     return !on ? RFMV_OFF : sc(fc, rfmv_seq_track_used(m, i) ? 170 : 100);   /* (plainly lit: dark means not routed) */
+}
+/* (0.12.x, the owner's 2026-11-22: "once you switch, I think we should do a flash on the steps briefly to show which
+ * track is selected") a Track 1..3 tap into a note layout's track view: the steps show the 16 tracks for
+ * RFM_MOVE_TFLASH_MS as the held Track's menu shows them (routed: the slot's colour, not routed: dark), the selected
+ * one blinking white / the slot's colour (100 ms each: three blinks), then the clip's steps again. A step pressed
+ * ends it; the held Track's menu, session view, the projects view, the FM-1 page's level 2 do not show it */
+void rfmv_seq_tflash_start(rfm_move_t *m)
+{
+    m->seq.tflash = m->s.mode == RFM_MOVE_MODE_SEQ && !m->seq.view && !m->seq.projects;
+    m->seq.tflash_ms = rfmv_now_ms(m);
+}
+int rfmv_seq_tflash_on(const rfm_move_t *m)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    return q->tflash && rfmv_now_ms(m) - q->tflash_ms < RFM_MOVE_TFLASH_MS && m->s.mode == RFM_MOVE_MODE_SEQ &&
+           !q->view && !q->projects && !rfmv_fwp_full(m) && !rfmv_seq_trk_held(m);
+}
+void rfmv_seq_tflash_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const int fw = m->fw.active % RFM_MOVE_FW_SLOTS, sel = m->s.lock[fw] % RFM_MOVE_SEQ_TRACKS;
+    const int white = (rfmv_now_ms(m) - q->tflash_ms) / 100 % 2 == 0;
+    const rgb_t fc = rfmv_fw_rgb(m, fw);
+    int i;
+    for (i = 0; i < RFM_MOVE_NSTEPS; i++) {
+        const int on = q->fx.ffilt[fw] >> i & 1;
+        c[L_STEP0 + i] = i == sel ? (white ? RFMV_WHITE : fc) : on ? sc(fc, rfmv_seq_track_used(m, i) ? 170 : 100) : RFMV_OFF;
+    }
 }
 rgb_t rfmv_lock_rgb(const rfm_move_t *m, int fw, int i)
 {
@@ -2942,7 +2995,7 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
     for (i = 0; i < RFM_MOVE_NKNOBS; i++) {
         const rgb_t bc = rfmv_bank_rgb[m->s.bank & 3];
         rgb_t v;
-        if (q->trig && !q->view) {                      /* the TRIG page: the held step's values (lit: not the default) */
+        if (rfmv_seq_trig_on(m) && !q->view) {          /* the TRIG page: the held step's values (lit: not the default) */
             const int ab = q->page * RFM_MOVE_SEQ_PAGE + (q->step_first >= 0 ? q->step_first : 0);
             const int tv = q->step_first >= 0 && i < 7 ? rfmv_seq_trig_val(m, clip, ab, i) : 0;
             const int def = i == 1 ? 1 : i == 2 ? 100 : i == 6 ? (q->step_first >= 0 ? RFM_MOVE_SEQ_TPS : 0) : 0;

@@ -452,7 +452,7 @@ static void test_layouts(void)
     track(&m, 0, 1);
     clear();
     step(&m, 9, 1), step(&m, 9, 0);
-    CHECK(rfm_move_seq_lock(&m, 0) != 9);               /* (0.11.0: a click: gated; another press: it acts first) */
+    CHECK(rfm_move_seq_lock(&m, 0) == 9);               /* (0.12.x, the owner's: a click selects at its press) */
     pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 100);
     CHECK(rfm_move_seq_lock(&m, 0) == 9 && (m.seq.fx.ffilt[0] >> 9 & 1) && count(RFM_MOVE_ACT_KEY) == 0);
     pad(&m, 24 + RFM_MOVE_LAY_CHROMA, 0);
@@ -591,7 +591,7 @@ static void test_control(void)
     clear();
     knob(&m, 0, 3);                                     /* (the TRIG page first: no CC) */
     CHECK(count(RFM_MOVE_ACT_MIDI) == 0);
-    jog(&m, 1);                                         /* the jog: the next knob page, bank 1 (16..23) */
+    jog(&m, 2);                                         /* the jog: TRIG, (0.12.x) FM-1, bank 1 (16..23) */
     CHECK(!m.seq.trig && m.s.bank == 0);
     clear();
     knob(&m, 0, 3);
@@ -624,7 +624,7 @@ static void test_control(void)
     CHECK(m.s.cc[0][1] == 22 && m.seq.tr[0].cc[0][1] == 22);   /* (kept in the track) */
     /* the channel is the track's; the volume knob is still MASTER; the pads still play notes */
     m.seq.tr[0].ch = 3;
-    jog(&m, 1);
+    jog(&m, 2);
     CHECK(!m.seq.trig);
     clear();
     knob(&m, 1, 1);
@@ -650,14 +650,14 @@ static void test_control(void)
     tap(&m, 1);
     CHECK(rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_SEQ && m.s.layout == RFM_MOVE_LAYOUT_DRUM &&
           m.seq.sel_track == 1 && m.seq.trig);
-    jog(&m, 1);
+    jog(&m, 2);
     clear();
     knob(&m, 0, 1);
     CHECKF(nact >= 1 && acts[0].bytes[0] == 0xB1 && acts[0].bytes[1] == 26, "%d: %02x %d", nact, nact ? acts[0].bytes[0] : 0,
            nact ? acts[0].bytes[1] : 0);               /* (fixed in 0.9.0: track 2's own CC number) */
     tap(&m, 0);
     CHECK(rfm_move_fw_active(&m) == 0 && m.s.layout == RFM_MOVE_LAYOUT_SCALE && m.seq.sel_track == 0);
-    jog(&m, 1);
+    jog(&m, 2);
     clear();
     knob(&m, 0, 1);
     CHECKF(nact == 1 && acts[0].bytes[0] == 0xB3 && acts[0].bytes[1] == 16, "%02x %d %d", nact ? acts[0].bytes[0] : 0,
@@ -769,7 +769,7 @@ static void write_pbm(const char *path, const uint8_t *packed)
 #define GOLD_MASTER 0x7ac52bc1u
 #define GOLD_MIDI 0x6bbd6df5u                           /* (0.9.0: the sequencer's track view) */
 #define GOLD_MIDI_HIT GOLD_MIDI                         /* (0.9.0: a live note draws nothing) */
-#define GOLD_CC 0xb28a5e1cu                             /* (0.9.0: the sequencer's CC popup, its page strip) */
+#define GOLD_CC 0x0921b91cu                             /* (0.9.0: the sequencer's CC popup, its page strip; 0.12.x: 6 pages) */
 #define GOLD_MENU_MIDI 0x91e1fc98u
 #define GOLD_MENU_CC 0x4ce8d36du                        /* (0.9.0: the sequencer's "Knob 3 CC", "20") */
 
@@ -1028,7 +1028,7 @@ static void test_screen(void)
     lay(&m, 0, RFM_MOVE_LAY_SCALE);
 
     /* (0.9.0) the note layout's knobs: the sequencer's; the jog to bank 1: the track's CCs (the slot's are gone) */
-    jog(&m, 1);
+    jog(&m, 2);
     CHECK(!m.seq.trig && m.s.bank == 0);
     knob(&m, 1, 36);                                    /* knob 2: 100 */
     ms(&m, RFM_MOVE_POPUP_MS);
@@ -2467,7 +2467,7 @@ static void test_track_gestures(void)
     track(&m, 1, 1);
     clear();
     step(&m, 5, 1), step(&m, 5, 0);
-    CHECK(rfm_move_seq_lock(&m, 1) != 5);               /* (0.11.0: once the double click's time has passed) */
+    CHECK(rfm_move_seq_lock(&m, 1) == 5 && m.seq.sel_track == 5);   /* (0.12.x, the owner's: at the press) */
     ms(&m, RFM_MOVE_DOUBLE_MS + 30);
     CHECK(rfm_move_seq_lock(&m, 1) == 5 && m.seq.sel_track == 5 && (m.seq.fx.ffilt[1] >> 5 & 1) &&
           m.lk_word == LK_LOCKED && count(RFM_MOVE_ACT_SETTINGS) >= 1 && m.seq.nnotes == 0);
@@ -2475,9 +2475,9 @@ static void test_track_gestures(void)
     s = m.seq.fx.ffilt[1];
     step(&m, 7, 1), step(&m, 7, 0), step(&m, 7, 1), step(&m, 7, 0);   /* step 8 twice: track 8 soloed on slot 2 alone
                                                          * (the sequencer's own solo untouched) */
-    CHECK(m.fsolo[1] == 8 && m.seq.fx.ffilt[1] == 1u << 7 && m.fsolo_save[1] == s && !m.seq.tr[7].solo &&
-          m.seq.fx.ffilt[0] == 0xFFFF && rfm_move_seq_lock(&m, 1) == 5 && m.lk_word == LK_SOLO);   /* (0.11.0: the
-                                                         * double click selects nothing: track 6 stays selected) */
+    CHECK(m.fsolo[1] == 8 && m.seq.fx.ffilt[1] == 1u << 7 && m.fsolo_save[1] == (s | 1u << 7) && !m.seq.tr[7].solo &&
+          m.seq.fx.ffilt[0] == 0xFFFF && rfm_move_seq_lock(&m, 1) == 7 && m.lk_word == LK_SOLO);   /* (0.12.x: its
+                                                         * first press selected track 8 (routed): that stays) */
     now_ms += 500;
     step(&m, 9, 1), step(&m, 9, 0), step(&m, 9, 1), step(&m, 9, 0);   /* another: the solo moves (one a firmware) */
     CHECK(m.fsolo[1] == 10 && m.seq.fx.ffilt[1] == 1u << 9 && !m.seq.tr[9].solo);
@@ -2488,7 +2488,8 @@ static void test_track_gestures(void)
     now_ms += 500;
     s = m.seq.fx.ffilt[1] >> 2 & 1;
     step(&m, 2, 1), ms(&m, RFM_MOVE_SEQ_HOLD_MS + 10), step(&m, 2, 0);   /* step 3 held: its routing to slot 2 */
-    CHECK((m.seq.fx.ffilt[1] >> 2 & 1) == !s && (m.seq.fx.ffilt[0] >> 2 & 1) == 1 && rfm_move_seq_lock(&m, 1) == 5);
+    CHECK((m.seq.fx.ffilt[1] >> 2 & 1) == !s && (m.seq.fx.ffilt[0] >> 2 & 1) == 1 && rfm_move_seq_lock(&m, 1) == 2);
+                                                        /* (0.12.x: its press selected it; the hold left that) */
     now_ms += 500;
     step(&m, 4, 1), step(&m, 4, 0), step(&m, 4, 1), step(&m, 4, 0);   /* a solo, then a hold on another: the solo ends
                                                          * first, then that track's routing flips */
@@ -2503,14 +2504,14 @@ static void test_track_gestures(void)
     gap();
     tap(&m, 0);                                         /* Track 1: slot 1's FM-1 layout */
     CHECK(rfm_move_fw_active(&m) == 0 && m.s.mode == RFM_MOVE_MODE_FM1);
-    tap(&m, 1);                                         /* Track 2: its track (6, the one clicked) now */
-    CHECK(rfm_move_seq_lock(&m, 1) == 5 && m.seq.sel_track == 5 && rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_SEQ);
+    tap(&m, 1);                                         /* Track 2: its track (12, the one pressed last) now */
+    CHECK(rfm_move_seq_lock(&m, 1) == 11 && m.seq.sel_track == 11 && rfm_move_fw_active(&m) == 1 && m.s.mode == RFM_MOVE_MODE_SEQ);
     /* the settings keep the locks and the slots' layouts (version 7) */
     {
         rfm_move_settings_t st;
         uint8_t img[RFM_MOVE_SETTINGS_BYTES];
         CHECK(rfm_move_save(&m.s, img) == RFM_MOVE_SETTINGS_BYTES && rfm_move_load(&st, img, sizeof img) == 0);
-        CHECK(st.lock[1] == 5 && st.lock[0] == 0 && st.slot[1].lay == RFM_MOVE_LAY_SCALE && st.slot[0].lay == RFM_MOVE_LAY_FM1);
+        CHECK(st.lock[1] == 11 && st.lock[0] == 0 && st.slot[1].lay == RFM_MOVE_LAY_SCALE && st.slot[0].lay == RFM_MOVE_LAY_FM1);
     }
 }
 

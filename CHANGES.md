@@ -91,6 +91,35 @@ host carries the firmware state files with the project buffer; tested.
   second after the last turn the menu is back, and a touch of the volume knob with the Track held shows the level
   without changing it (R5). fw.c rfmv_fw_level_shown; screen.c; move.c on_touch; test_track_volume.
 
+### A held Track's step selects at the press (the owner's, 2026-11-22)
+- "Track Held: Clicking a step should instantly show selected, not wait the 300ms": the step's track is selected (and
+  routed to the firmware if it was not) at the press; the double click solos at its second press, the track staying
+  selected; the hold flips the routing at 300 ms from what it was before the press (a routed track un-routed, still
+  selected; a not-routed one stays routed, "Routed"); the window and the release show nothing more. Session view's
+  steps under a held Track the same; its pads keep their gated click. UX-RULES R2: a second "the same thing sooner"
+  exception. (seq_ui.c rfmv_seq_step, rfmv_seq_tk_flush, rfmv_seq_ui_poll, route_rgb; seq.tstep_rt0)
+
+### The FM-1 knob page in the note layouts (the owner's, 2026-11-22)
+- The knob pages are TRIG, FM-1, banks 1..4 (the strip six cells; the stored bank unchanged; the page RAM only).
+- Level 1: the knobs are the FM-1 layout's (SELECT, PRESETS, ALGO, -, K1..K4) by the same paths: their lights (no
+  job: dark), touch name, turn readout / detents, words; popups over the track view, Popup Full or Half (the FM-1's
+  screen on the right). A step held: its TRIG knobs.
+- The jog's click (at the press, "FM-1 / Knobs+Keys" / "Knobs" a second): level 2 adds the steps (the FM-1's keys,
+  its LEDs, icons dark) and the FM-1 layout's buttons but Up (Capture FX .. Play PLAY, Rec REC, Left / Right OCT- /
+  OCT+), the screen the FM-1's. The pads, Up / Down (octave), the jog, Back, the Track buttons, the volume stay ours.
+  Another page gives the steps and buttons back (what was held let go); the page again: its level. An empty slot:
+  "Empty slot", knobs dark and dead. rfm_move_fwp_level() (new): 0 / 1 / 2. No host change needed.
+  (move.c rfmv_fwp_*, fwp_sync, fwp_leds, on_step / on_button / on_knob / on_touch / on_jog_click, rfmv_half,
+  label_pop, readout; screen.c; speech.c; POP_FWLV)
+- Gold: GOLD_CC (the strip's six cells).
+
+### A Track tap flashes the selected track (the owner's, 2026-11-22)
+- A Track 1..3 tap into a note layout's track view: the steps show the slot's 16 tracks for 600 ms (routed: the
+  slot's colour, not routed: dark, the selected one blinking white / slot colour, 100 ms each), then the clip's steps.
+  Also on the slot already played. A step pressed ends it and is a clip step. Not in the FM-1 layout, a takeover,
+  session view, the FM-1 page's level 2, under the held Track's menu or the browser. At most 24 step writes in all.
+  (seq_ui.c rfmv_seq_tflash_*, move.c track_tap)
+
 ## 0.12.0 (2026-11-22, not released)
 
 The owner's answers on the review page, card by card. New fields in `rfm_move_seq_t` (after `tk_pend_clk`): rebuild

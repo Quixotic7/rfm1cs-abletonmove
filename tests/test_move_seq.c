@@ -1880,7 +1880,7 @@ static void test_trig(void)
     rfmv_seq_note_put(m, 0, 0, 60, 100, 24, 0);
     rfmv_seq_note_put(m, 0, 4, 62, 100, 24, 0);
     rfmv_seq_note_put(m, 0, 8, 64, 100, 24, 0);
-    jog(m, -1);
+    jog(m, -2);                                         /* (bank 1 -> (0.12.x) FM-1 -> TRIG) */
     CHECK(m->seq.trig && m->pop == POP_BANK);
     step(m, 4, 1);
     knob(m, 1, 3);                                      /* ratchet x4 */
@@ -2341,14 +2341,16 @@ static void test_tracks16(void)
     write_pbm("move_seq_tracks_held.pbm", out);
     now_ms += 1000;
     tap_step(m, 13), tap_step(m, 13);                   /* (0.9.0) a double tap: track 14 soloed on slot 0 only;
-                                                         * (0.11.0) it selects nothing; the sequencer's own solo untouched */
+                                                         * (0.12.x) its first press selected track 14; the sequencer's
+                                                         * own solo untouched */
     CHECK(m->fsolo[0] == 14 && m->seq.fx.ffilt[0] == 1u << 13 && m->fsolo_save[0] == 0xFFFF && !m->seq.tr[13].solo &&
-          m->seq.sel_track == 12 && m->lk_word == LK_SOLO);
+          m->seq.sel_track == 13 && m->lk_word == LK_SOLO);
     step(m, 2, 1), adv(m, RATE * RFM_MOVE_SEQ_HOLD_MS / 1000 + 256), step(m, 2, 0);   /* a hold: the solo ends, track 3
                                                          * not routed */
-    CHECK(!m->fsolo[0] && m->seq.fx.ffilt[0] == (0xFFFF & ~(1u << 2)) && !m->seq.tr[2].mute && m->seq.sel_track == 12);
+    CHECK(!m->fsolo[0] && m->seq.fx.ffilt[0] == (0xFFFF & ~(1u << 2)) && !m->seq.tr[2].mute && m->seq.sel_track == 2);
+                                                        /* (0.12.x: its press selected it; un-routed, it stays so) */
     button(m, MR_CC_MUTE, 1), tap_step(m, 2), button(m, MR_CC_MUTE, 0);   /* Mute + step: track 3 muted */
-    CHECK(m->seq.tr[2].mute && m->seq.sel_track == 12);
+    CHECK(m->seq.tr[2].mute && m->seq.sel_track == 2);
     now_ms += 1000;
     tap_step(m, 13), tap_step(m, 13);                   /* soloed again (the filter without track 3 kept aside) */
     CHECK(m->fsolo[0] == 14 && m->fsolo_save[0] == (0xFFFF & ~(1u << 2)));
@@ -2373,7 +2375,10 @@ static void test_tracks16(void)
     step(m, 2, 1), adv(m, RATE * RFM_MOVE_SEQ_HOLD_MS / 1000 + 256), step(m, 2, 0);   /* held again: routed */
     CHECK(m->seq.fx.ffilt[0] == 0xFFFF);
     track(m, 0, 0);
-    CHECK(m->seq.sel_track == 12 && m->s.mode == RFM_MOVE_MODE_SEQ);
+    CHECK(m->seq.sel_track == 2 && m->s.mode == RFM_MOVE_MODE_SEQ);   /* (0.12.x: the hold's press selected it) */
+    now_ms += 1000;
+    track(m, 0, 1), tap_step(m, 12), track(m, 0, 0);    /* track 13 again, for what follows */
+    CHECK(m->seq.sel_track == 12 && rfm_move_seq_lock(m, 0) == 12);
     /* the sequencer's own solo (the engine; 0.9.0: no gesture in the merged menu, the API): only the soloed tracks
      * sound */
     rfmv_seq_solo(m, 13, 1);
