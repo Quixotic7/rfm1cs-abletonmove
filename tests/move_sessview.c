@@ -4119,6 +4119,73 @@ static void test_mj_places(void)
     step(0, 0), back(), rest();
 }
 
+/* (0.13.0, the owner's) the Loop layer: a page's step held + the jog: every note on that page longer / shorter (a held
+ * step's units), one undo; the loop untouched; an empty page: the popup, nothing changes; two held: nothing */
+static int pl_len(int clip, int st, int note) { int i = rfmv_seq_find(&M, clip, st, note); return i >= 0 ? M.seq.notes[i].len : -1; }
+static void test_mj_page_len(void)
+{
+    static const int ST[5] = { 0, 16, 20, 30, 40 }, NT[5] = { 60, 62, 64, 65, 67 };
+    int clip, i, lo, hi, ok;
+    fresh();
+    hold_track(1), hit(26), track(1, 0), rest();
+    tap_track(1), rest();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    clip = SEQ_CLIP(M.seq.sel_track, M.seq.tr[M.seq.sel_track].sel);
+    rfmv_seq_len_set(&M, clip, 64);
+    for (i = 0; i < 5; i++)
+        rfmv_seq_note_put(&M, clip, ST[i], NT[i], 100, 24, 0);
+    rfmv_seq_note_put(&M, clip, 20, 67, 90, 30, 0);     /* (a chord: both) */
+    lo = rfmv_seq_loop_lo(&M, clip), hi = rfmv_seq_loop_hi(&M, clip);
+    rest(), clear();
+    button(MR_CC_LOOP, 1);
+    step(1, 1);                                         /* page 2 held: shown at once */
+    CHECK(M.seq.page == 1);
+    jog(3);
+    for (i = 0, ok = 1; i < 5; i++)
+        ok &= pl_len(clip, ST[i], NT[i]) == (ST[i] >= 16 && ST[i] < 32 ? 24 + 3 * 2 : 24);
+    CHECK(ok && pl_len(clip, 20, 67) == 36);
+    CHECK(M.seq.len[clip] == 64 && rfmv_seq_loop_lo(&M, clip) == lo && rfmv_seq_loop_hi(&M, clip) == hi);
+    CHECK(M.pop == POP_LOOP && M.pop_val == 2 && M.seq.loop_dlen == 6);
+    write_pbm("mj_page_len");
+    adv_ms(20);
+    CHECKF(strstr(said, "Bar 2 length: plus 1/4 step") != NULL, "said %s", said);
+    button(MR_CC_SHIFT, 1), jog(1), button(MR_CC_SHIFT, 0);   /* Shift: whole steps */
+    CHECK(pl_len(clip, 16, 62) == 48 && pl_len(clip, 20, 67) == 48 && pl_len(clip, 0, 60) == 24);
+    write_pbm("mj_page_len_shift");
+    for (i = 0; i < 10; i++)                            /* (clamped: 1 tick at least) */
+        jog(-10);
+    CHECK(pl_len(clip, 16, 62) == 1 && pl_len(clip, 40, 67) == 24);
+    step(1, 0);
+    CHECK(M.seq.len[clip] == 64 && rfmv_seq_loop_hi(&M, clip) == hi);
+    step(1, 1), step(1, 0);                             /* (a tap right after: not a double tap: the loop stays) */
+    CHECK(rfmv_seq_loop_lo(&M, clip) == lo && rfmv_seq_loop_hi(&M, clip) == hi);
+    button(MR_CC_LOOP, 0), rest();
+    CHECK(!(M.seq.mods & SEQ_M_LOOP));                  /* (used: no latch) */
+    press(MR_CC_UNDO);                                  /* one undo: the whole hold */
+    for (i = 0, ok = 1; i < 5; i++)
+        ok &= pl_len(clip, ST[i], NT[i]) == 24;
+    CHECK(ok && pl_len(clip, 20, 67) == 30);
+    /* an empty page: the popup ("--"), nothing changes */
+    rest(), clear();
+    button(MR_CC_LOOP, 1), step(3, 1), jog(2);
+    for (i = 0, ok = 1; i < 5; i++)
+        ok &= pl_len(clip, ST[i], NT[i]) == 24;
+    CHECK(ok && M.pop == POP_LOOP && M.pop_val == 3 && M.seq.len[clip] == 64);
+    write_pbm("mj_page_len_empty");
+    step(3, 0);
+    /* two pages held: the range (as before); the jog nothing */
+    step(0, 1), step(2, 1);
+    CHECK(rfmv_seq_loop_lo(&M, clip) == 0 && rfmv_seq_loop_hi(&M, clip) == 48);
+    hi = M.seq.len[clip];
+    jog(2);
+    CHECK(pl_len(clip, 0, 60) == 24 && pl_len(clip, 40, 67) == 24 && rfmv_seq_loop_hi(&M, clip) == 48 && M.seq.len[clip] == hi);
+    step(2, 0), step(0, 0);
+    /* none held: the jog the loop's length (as before) */
+    jog(-1);
+    CHECK(rfmv_seq_loop_hi(&M, clip) == 47 && M.pop_val == 1);
+    button(MR_CC_LOOP, 0), rest();
+}
+
 int main(void)
 {
     test_scenes();
@@ -4177,6 +4244,7 @@ int main(void)
     test_loop_steps();
     test_mj_menus();
     test_mj_places();
+    test_mj_page_len();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

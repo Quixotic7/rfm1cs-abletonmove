@@ -233,7 +233,7 @@ void rfmv_seq_ui_release(rfm_move_t *m)
             rfmv_seq_pad_off(m, p, q->recn[p].note);
     q->mods = q->mods_used = 0, q->copy_src = 0, q->copy_pasted = 0, q->chord = 0;
     q->step_held = q->step_add = q->step_edit = 0, q->step_first = -1, q->step_popped = 0;
-    q->loop_first = -1, q->fill = 0, q->steps_chord = 0, q->loop_latch = 0, q->mute_latch = 0, q->mute_end = 0;
+    q->loop_first = -1, q->loop_down = 0, q->fill = 0, q->steps_chord = 0, q->loop_latch = 0, q->mute_latch = 0, q->mute_end = 0;
     q->cs_step = -1, q->cs_shown = 0, q->cs_k = -1;
     q->arp_sh = 0, q->al_down = 0, q->al_hold = 0, q->al_pads = 0, q->al_lenset = 0;   /* (0.12.0) */
     rfmv_seq_arp_stop(m);
@@ -980,6 +980,7 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         }
         if (q->loop_first == s)
             q->loop_first = -1;
+        q->loop_down &= (uint16_t)~bit;                 /* (0.13.0: a page step let go: nothing more) */
         if (q->cs_step == s)                            /* (0.12.0) a select step let go: its settings go (a hold's
                                                          * release: nothing more) */
             q->cs_step = -1, q->cs_shown = 0, q->cs_k = -1;
@@ -1211,6 +1212,7 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
                                                          * loop the pages from one to the other; a double tap loops
                                                          * that page alone */
         q->mods_used |= SEQ_M_LOOP;
+        q->loop_down |= bit, q->loop_jogd = 0;          /* (0.13.0: held alone, the jog its notes' length) */
         if (q->loop_first >= 0 && q->loop_first != s) {
             const int a = q->loop_first < s ? q->loop_first : s, b = q->loop_first < s ? s : q->loop_first;
             rfmv_seq_group(m);
@@ -2686,6 +2688,38 @@ void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now)
     }
 }
 
+/* (0.13.0, the owner's 2026-11-22: "while holding on to a page/bar you should be able to turn the jogwheel and change
+ * all the note lengths in that bar like you can with the default Move sequencer") the Loop layer, a page's step held
+ * alone + the jog: every note starting on that page longer or shorter by what a held step's jog does to its notes (a
+ * detent LEN_FINE ticks, Shift a whole step; the same clamps); one undo step a hold; the loop's length untouched. The
+ * popup (POP_LOOP, pop_val 2): "Bar n Length" and the change so far; a page with no notes: "--", nothing changes */
+static void loop_page_len(rfm_move_t *m, int pg, int d)
+{
+    rfm_move_seq_t *q = Q(m);
+    const int clip = edit_clip(m), whole = (q->mods & SEQ_M_SHIFT) != 0;
+    int s, lo, hi, i, n = 0;
+    if (!q->loop_jogd)
+        rfmv_seq_group(m), q->loop_jogd = 1, q->loop_dlen = 0;
+    q->loop_tap = -1;                                   /* (no double tap with this press) */
+    q->mods_used |= (uint8_t)(SEQ_M_LOOP | (whole ? SEQ_M_SHIFT : 0));
+    for (s = pg * RFM_MOVE_SEQ_PAGE; s < (pg + 1) * RFM_MOVE_SEQ_PAGE; s++) {
+        hi = rfmv_seq_range(m, clip, s, &lo);
+        for (i = lo; i < hi; i++, n++) {
+            const rfm_move_note_t nt = q->notes[i];
+            const int len = whole ? (nt.len / RFM_MOVE_SEQ_TPS + d) * RFM_MOVE_SEQ_TPS : nt.len + d * LEN_FINE;
+            rfmv_seq_note_put(m, clip, nt.step, nt.note, nt.vel,
+                              clampi(len, whole ? RFM_MOVE_SEQ_TPS : 1, clip_len(m) * RFM_MOVE_SEQ_TPS), nt.micro);
+        }
+    }
+    if (n)
+        q->loop_dlen = (int16_t)clampi(q->loop_dlen + d * (whole ? RFM_MOVE_SEQ_TPS : LEN_FINE), -9999, 9999);
+    q->page = (uint8_t)pg;
+    rfmv_pop(m, POP_LOOP, pg);
+    m->pop_val = (int16_t)(n ? 2 : 3);                  /* (2: the change; 3: an empty page, "--") */
+    if (n)
+        rfmv_seq_dirty(m);
+}
+
 void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now)
 {
     rfm_move_seq_t *q = Q(m);
@@ -2732,6 +2766,11 @@ void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now)
             }
         rfmv_pop(m, POP_TRIG, 6);                       /* (the TRIG page's LENGTH popup) */
         return;
+    }
+    if ((q->mods & SEQ_M_LOOP) && q->loop_down && !q->view) {
+        if (!(q->loop_down & (q->loop_down - 1)))       /* (0.13.0, the owner's) a page held: its notes' length */
+            loop_page_len(m, __builtin_ctz(q->loop_down), d);
+        return;                                         /* (two pages held: the jog does nothing) */
     }
     if (q->mods & SEQ_M_LOOP) {                         /* Loop held (or latched): the clip's length (Move's), a
                                                          * step a detent (Shift: a page) */

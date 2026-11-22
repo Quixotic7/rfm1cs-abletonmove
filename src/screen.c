@@ -820,6 +820,32 @@ static void loop_popup(const rfm_move_t *m, mr_canvas_t *cv)
             v2_strip(cv, 16, sel, -1, 0, 128);
         return;
     }
+    if ((m->pop_val == 2 || m->pop_val == 3) && rfmv_now_ms(m) - m->pop_ms < RFM_MOVE_POPUP_MS) {
+        /* (0.13.0, the owner's) a page held + the jog: "Bar n Length", the change so far ("+1/12", "-2"; an empty
+         * page "--"); under it the page's 16 steps (a note: filled). "Bar n" 2x, "Length" 1x beside it */
+        const int p0 = m->pop_i * RFM_MOVE_SEQ_PAGE, dl = m->seq.loop_dlen;
+        char l[24], v[16];
+        snprintf(l, sizeof l, "Bar %d", m->pop_i + 1);
+        if (m->pop_val == 3)
+            snprintf(b, sizeof b, "--");
+        else {
+            len_text(dl < 0 ? -dl : dl, v, sizeof v);
+            snprintf(b, sizeof b, "%s%s", dl < 0 ? "-" : "+", dl ? v : "0");
+        }
+        v2_T(cv, 2, 3, l, 2, 1);                        /* (the bar at 2x, "Length" beside it: one 2x line has no
+                                                         * room for both) */
+        v2_T(cv, 126 - v2_tw("Length", 1), 7, "Length", 1, 1);
+        v2_titleBox(cv, "", b, 64, 124);
+        for (i = 0; i < 16; i++) {
+            int nlo;
+            const int x = i * 8;
+            if (rfmv_seq_range(m, clip, p0 + i, &nlo) > nlo)
+                v2_R(cv, x, 52, 7, 11, 1);
+            else
+                v2_O(cv, x, 52, 7, 11, 1);
+        }
+        return;
+    }
     rfmv_seq_loop_edit(m, cv);                          /* (else: page edit's own screen) */
 }
 

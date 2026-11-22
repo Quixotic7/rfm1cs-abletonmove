@@ -873,6 +873,12 @@ typedef struct {
      * that value as the knob does), a click again selects */
     int8_t sm_sel;
     uint8_t sm_edit;
+    /* (0.13.0, the owner's 2026-11-22) the Loop layer: loop_down its page steps down; a page held alone + the jog: the
+     * length of every note on that page (loop_jogd: the jog used in this hold, one undo step; loop_dlen: the change so
+     * far, ticks, for the popup) */
+    uint16_t loop_down;
+    uint8_t loop_jogd;
+    int16_t loop_dlen;
 } rfm_move_seq_t;
 
 /* ---- the state */

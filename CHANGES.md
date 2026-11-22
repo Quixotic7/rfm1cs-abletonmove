@@ -166,6 +166,17 @@ host carries the firmware state files with the project buffer; tested.
 - Tests: move_sessview test_mj_menus (a loop over the seven menus), test_mj_places; tests that turned the jog to change
   a menu's value now click first (test_move.c, test_move_seq.c, test_move_speech.c, move_sessview.c).
 
+### A page held + the jog: its notes' length (the owner's, 2026-11-22)
+- "Also in the loop bar, while holding on to a page/bar you should be able to turn the jogwheel and change all the note
+  lengths in that bar like you can with the default Move sequencer." Loop held or latched, one page's step held: the
+  jog changes the length of every note starting on that page by a held step's jog step (`LEN_FINE` ticks, Shift a
+  whole step; the same clamps), one undo step for the hold; the loop's length is not touched. The popup (POP_LOOP,
+  pop_val 2): "Bar n" 2x with "Length" 1x, the change so far at 4x ("+1/4", "-1"), the page's 16 steps (a note
+  filled); "Bar 2 length: plus 1/4 step". An empty page: the same popup with "--" (pop_val 3), nothing changes, "Bar 4:
+  no notes". Two page steps held: the jog does nothing (the range is set as before). A page step used with the jog is
+  not a double tap's first tap; its release does nothing. (seq_ui.c loop_page_len, rfmv_seq_jog, rfmv_seq_step;
+  screen.c loop_popup; speech.c loop_words; rfm_move_seq_t.loop_down, loop_jogd, loop_dlen.) Test: test_mj_page_len.
+
 ## 0.12.0 (2026-11-22, not released)
 
 The owner's answers on the review page, card by card. New fields in `rfm_move_seq_t` (after `tk_pend_clk`): rebuild

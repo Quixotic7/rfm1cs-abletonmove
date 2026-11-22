@@ -318,6 +318,17 @@ static void loop_words(const rfm_move_t *m, char *o, int cap)
     const rfm_move_seq_t *q = &m->seq;
     const int clip = SEQ_CLIP(q->sel_track, q->tr[q->sel_track].sel);
     const int L = rfmv_seq_loop_hi(m, clip) - rfmv_seq_loop_lo(m, clip), P = L / RFM_MOVE_SEQ_PAGE, S = L % RFM_MOVE_SEQ_PAGE;
+    if (m->pop_val == 2 || m->pop_val == 3) {           /* (0.13.0) a page held + the jog: its notes' length change */
+        const int dl = q->loop_dlen;
+        char b[24];
+        if (m->pop_val == 3)
+            snprintf(o, (size_t)cap, "Bar %d: no notes", m->pop_i + 1);
+        else {
+            len_words(dl < 0 ? -dl : dl, b, sizeof b);
+            snprintf(o, (size_t)cap, "Bar %d length: %s%s", m->pop_i + 1, dl < 0 ? "minus " : dl ? "plus " : "", b);
+        }
+        return;
+    }
     if (!P)
         snprintf(o, (size_t)cap, "Loop: %d %s", S, S == 1 ? "step" : "steps");
     else if (S)

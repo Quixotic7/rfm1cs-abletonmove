@@ -382,6 +382,13 @@ Buttons, steps, ect, but pads stay in the MIDI layout, and Jogwheel is not taken
   owner's): the two lower rows set the loop's last bar's length, 1..16 steps (the upper of the two 1..8, the bottom
   row 9..16: two bars and pad 8: 16 + 8 steps), lit up to the length (the length itself white); the two upper rows
   are dark and dead; no pad plays while Loop is held or latched.
+- **A page's step held + the jog** (0.13.0, the owner's: "while holding on to a page/bar you should be able to turn
+  the jogwheel and change all the note lengths in that bar like you can with the default Move sequencer"): every note
+  starting on that page longer or shorter as a held step's jog does it (a detent ~10 % of a step, Shift whole steps;
+  the same clamps), one undo step a hold; the loop's length stays. The popup: "Bar 2" with "Length", the change so far
+  ("+1/4", "-1"), the page's 16 steps under it ("Bar 2 length: plus 1/4 step"). A page with no notes: the popup with
+  "--", nothing changes ("Bar 4: no notes"). Two page steps held: the jog does nothing. A page step used with the jog
+  is no double tap's first tap.
 - **A step entered after the loop's end in the loop's own last bar** leaves the loop's length alone (0.13.0, the
   owner's; it used to stretch the loop to the bar's end): the note is outside the loop, its step dim. A step on a
   later bar still grows the loop to that bar's end.
