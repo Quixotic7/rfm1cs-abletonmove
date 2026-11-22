@@ -1311,6 +1311,12 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
         mr_gfx_pack(&cv, out);
         return;
     }
+    if (m->seq.fill) {                                  /* (0.12.0, a10) FILL on: "Fill" the whole screen while held */
+        mr_gfx_clear(&cv, 0);
+        rfmv_pop_screen(&cv, NULL, "Fill", 0, 0, NULL);
+        mr_gfx_pack(&cv, out);
+        return;
+    }
     if (!(m->pop == POP_MODE && (m->pop_i == 30 || m->pop_i == 31) && rfmv_pop_up(m, POP_MODE))) {
         for (t = 0; t < 4 && (!rfmv_hold_shown(m, t) || (t == 3 && m->seq.smenu && m->seq.t4_opened) ||
                               (t < 3 && m->seq.projects && m->fw.pop == FP_LEVEL)); t++) {}   /* (a slot's level set in the

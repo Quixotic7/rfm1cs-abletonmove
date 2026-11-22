@@ -28,6 +28,7 @@ static const rgb_t TRACK_RGB[RFM_MOVE_SEQ_TRACKS] = {
 static const uint8_t LQ_ORDER[RFM_MOVE_LQ_N] = { RFM_MOVE_LQ_INSTANT, RFM_MOVE_LQ_BEAT, RFM_MOVE_LQ_BAR, RFM_MOVE_LQ_2BARS,
                                                  RFM_MOVE_LQ_4BARS, RFM_MOVE_LQ_CLIP };
 static int touched_knob(const rfm_move_t *m);
+static rgb_t sv_col_rgb(const rfm_move_t *m, int track);
 /* Shift + step n (0-based), as printed on the Move (its manual): 1 Set Overview (our projects), 2 Setup (our clock
  * source), 3 Workflow Settings, 5 Tempo, 6 Metronome, 7 Groove, 8 Layout, 9 Keys & Scales, 10 Full Velocity (our Velocity menu),
  * 11 Repeat (our arp), 14 New Clip, 15 Double Loop, 16 Quantize */
@@ -145,6 +146,21 @@ int rfmv_seq_loop_over(const rfm_move_t *m)             /* Loop's layer shows (a
     if (m->s.mode != RFM_MOVE_MODE_SEQ || !(q->mods & SEQ_M_LOOP) || q->view || q->projects || q->fill)
         return 0;
     return !q->smenu || btn_down(m, MR_CC_LOOP) || (q->loop_latch && layer_pos(q, LY_LOOP) > layer_pos(q, LY_MENU));
+}
+/* (0.12.0, a10, the owner's: "all the pads should also do some fun animation when using fill") FILL on: a diagonal
+ * of pads in the selected track's colour travels across the 8 x 4 pads, a diagonal every FILL_FRAME ms (11 diagonals
+ * and two dark frames a round), over their own colours; a pressed pad stays white. A frame changes at most 8 pads:
+ * some 80 LED writes a second */
+#define FILL_FRAME 100
+rgb_t rfmv_seq_fill_rgb(const rfm_move_t *m)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    return q->view ? sv_col_rgb(m, q->sel_track) : TRACK_RGB[q->sel_track % RFM_MOVE_SEQ_TRACKS];
+}
+int rfmv_seq_fill_on(const rfm_move_t *m, int p)       /* pad p is on FILL's wave now */
+{
+    const rfm_move_seq_t *q = &m->seq;
+    return q->fill && (int)((rfmv_now_ms(m) - q->fill_ms) / FILL_FRAME % 13) == p % 8 + p / 8;
 }
 int rfmv_seq_mute_on(const rfm_move_t *m)              /* Mute's layer shows (held, or latched and not under a menu
                                                          * opened after it) */
@@ -1544,6 +1560,7 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
                                                          * Loop is Shift + step 15) */
                 q->mods_used |= SEQ_M_SHIFT;
                 q->fill = 1, q->loop_end = 1;           /* (its release: FILL off, nothing else) */
+                q->fill_ms = rfmv_now_ms(m);            /* (0.12.0, a10: its light, its screen, the pads' wave) */
                 return 1;
             }
             if (mb == SEQ_M_SHIFT) {                    /* a double tap latches Shift (a tap, then a press within
@@ -2859,7 +2876,9 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
         w[W_RIGHT] = q->page + 1 < RFM_MOVE_SEQ_PAGES ? ((q->page + 1) * RFM_MOVE_SEQ_PAGE < rfmv_seq_loop_hi(m, clip) ? 100 : 40) : 8;
     }
     w[W_UNDO] = q->un ? 60 : 6;
-    if (q->loop_latch) {                                /* latched (page edit on): glowing, a second round */
+    if (q->fill)                                        /* (0.12.0, a10) FILL: blinking fast */
+        w[W_LOOP] = (rfmv_now_ms(m) - q->fill_ms) / 100 % 2 ? 0 : 127;
+    else if (q->loop_latch) {                           /* latched (page edit on): glowing, a second round */
         const int ph = (int)(q->now_us / 1000u % 1000u);
         w[W_LOOP] = (uint8_t)(60 + (ph < 500 ? ph : 1000 - ph) * 67 / 500);
     } else

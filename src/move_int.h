@@ -68,7 +68,9 @@ int rfmv_seq_menu_knobs(const rfm_move_t *m);
 int rfmv_seq_held_takes(const rfm_move_t *m);          /* (0.12.0) a held step has the knobs and jog (over a menu too) */
 int rfmv_seq_loop_over(const rfm_move_t *m);           /* .. Loop's layer shows (over a menu: held, or latched after it) */
 int rfmv_seq_mute_on(const rfm_move_t *m);             /* .. Mute's layer shows */
-int rfmv_seq_mod_over(const rfm_move_t *m);            /* .. a held modifier's picture over the open menu */
+int rfmv_seq_mod_over(const rfm_move_t *m);
+rfmv_rgb_t rfmv_seq_fill_rgb(const rfm_move_t *m);      /* (0.12.0) FILL's wave: its colour */
+int rfmv_seq_fill_on(const rfm_move_t *m, int p);       /* .. pad p on it now */            /* .. a held modifier's picture over the open menu */
 void rfmv_vel_step(rfm_move_t *m, int d);              /* the velocity option along the jog's order */
 void rfmv_tcase(const char *s, char *o, int cap);       /* Title Case ("CUTOFF" -> "Cutoff") */
 void rfmv_keys_menu(const rfm_move_t *m, mr_canvas_t *cv, int glob);   /* the key / scale screen (-1: channels) */

@@ -2422,6 +2422,53 @@ static void test_slot_colours(void)
     track(2, 0), rest();
 }
 
+/* a10: FILL (Shift + Loop held): Loop's light blinks fast, "Fill" on the screen (said once), a diagonal wave over the
+ * pads in the track's colour (under ~100 LED writes a second); the pads still play; off: all back at once */
+static void test_fill(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3], w0[RFM_MOVE_NLEDS][3];
+    int t, np, peak, i, ok, on = 0, off = 0, waves = 0;
+    track_view();
+    hit(5);                                             /* (pad 6 played once: the last notes as they will be after) */
+    rest(), scr_save(), leds(w0);
+    led_flush();
+    button(MR_CC_SHIFT, 1), button(MR_CC_LOOP, 1);
+    CHECK(M.seq.fill && !scr_same());
+    CHECKF(strstr(said, "Fill on") != NULL, "said %s", said);
+    write_pbm("fill");
+    np = peak = 0;
+    for (t = 0; t < 1000; t += 10) {                    /* (a second: the writes counted, the light's blinks) */
+        int s1 = 0, p1 = 0;
+        led_msgs(&s1, &p1);
+        np += p1, peak = p1 > peak ? p1 : peak;
+        leds(w);
+        on += w[L_WHITE0 + W_LOOP][0] == 127, off += w[L_WHITE0 + W_LOOP][0] == 0;
+        for (i = 0, ok = 0; i < 32; i++)
+            ok += memcmp(w[L_PAD0 + i], w0[L_PAD0 + i], 3) != 0;
+        waves += ok > 0;
+        led_flush();
+        adv_ms(10);
+    }
+    printf("fill wave: %d pad LED writes a second, at most %d at once\n", np, peak);
+    CHECKF(np <= 100 && peak <= 8 && np > 20, "fill: %d pad writes, %d at once", np, peak);
+    CHECKF(on > 20 && off > 20 && waves > 50, "fill: light on %d off %d, wave frames %d", on, off, waves);
+    clear();
+    pad(5, 100);                                        /* (a pad plays, white at once) */
+    leds(w);
+    CHECK(count(RFM_MOVE_ACT_MIDI) == 1 && white(w[L_PAD0 + 5]));
+    pad(5, 0);
+    button(MR_CC_LOOP, 0);                              /* (off: the pads, the light, the screen back at once) */
+    CHECK(!M.seq.fill);
+    leds(w);
+    for (i = 0, ok = 1; i < 32; i++)
+        ok &= !memcmp(w[L_PAD0 + i], w0[L_PAD0 + i], 3);
+    CHECKF(ok && w[L_WHITE0 + W_LOOP][0] == w0[L_WHITE0 + W_LOOP][0], "pads %d, loop %d / %d", ok, w[L_WHITE0 + W_LOOP][0],
+           w0[L_WHITE0 + W_LOOP][0]);
+    button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    rest();
+    CHECK(scr_same());
+}
+
 int main(void)
 {
     test_scenes();
@@ -2453,6 +2500,7 @@ int main(void)
     test_loop_mute_taps();
     test_clear_clip();
     test_slot_colours();
+    test_fill();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

@@ -2066,6 +2066,14 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
             for (i = 0; i < RFM_MOVE_NKNOBS; i++)
                 c[L_RING0 + i] = !(mk >> i & 1) ? OFF : sc(MENU_KNOB, m->touched == i ? 256 : 110);
     }
+    if (m->seq.fill) {                                  /* (0.12.0, a10) FILL: the pads' wave (a pressed one white),
+                                                         * Loop's light blinking fast, in every layout */
+        const rgb_t fc = rfmv_seq_fill_rgb(m);
+        for (i = 0; i < RFM_MOVE_NPADS; i++)
+            if (!m->pad_down[i] && rfmv_seq_fill_on(m, i))
+                c[L_PAD0 + i] = fc;
+        wv[W_LOOP] = (uint8_t)((rfmv_now_ms(m) - m->seq.fill_ms) / 100 % 2 ? 0 : 127);
+    }
     rfmv_track_leds(m, c);
     for (i = 0; i < L_WHITE0; i++)
         w[i][0] = c[i].r, w[i][1] = c[i].g, w[i][2] = c[i].b;
