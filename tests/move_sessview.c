@@ -1476,6 +1476,42 @@ static void test_sv_clipset(void)
     CHECK(count(RFM_MOVE_ACT_MASTER) == 1);
 }
 
+/* ================================================================ (0.12.0, r2) a double click stops only what plays === */
+static void test_sv_dbl_stop(void)
+{
+    int t;
+    session_view();
+    owners_grid();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    hit(SCN(0)), adv_ms(700), bar_start();
+    CHECK(M.seq.tr[0].active == 0 && M.seq.tr[4].active == -1);
+    /* an empty slot of a track that plays: a click stops it at the bar, a double click at once */
+    now_ms += 1000, hit(PAD(0, 3));
+    CHECK(M.seq.tr[0].queued == SEQ_STOP);
+    hit(PAD(0, 3));
+    CHECK(M.seq.tr[0].active == -1 && M.seq.tr[0].queued == SEQ_NONE);
+    /* .. of a track that plays nothing (track 5): nothing changes, nothing said of a stop */
+    rest(), clear();
+    now_ms += 1000, hit(PAD(4, 2)), hit(PAD(4, 2));
+    CHECK(M.seq.tr[4].active == -1 && M.seq.tr[4].queued == SEQ_NONE && M.seq.tr[4].sel == 2 && !clip_has(4, 2));
+    CHECKF(!strstr(said, "stop") && !strstr(said, "Stop"), "said \"%s\"", said);
+    for (t = 1; t < 4; t++)
+        CHECK(M.seq.tr[t].active == 0 && M.seq.tr[t].queued == SEQ_NONE);
+    /* Shift + a double click on a scene: its playing clips stop at once */
+    now_ms += 1000;
+    button(MR_CC_SHIFT, 1), hit(SCN(0)), hit(SCN(0)), button(MR_CC_SHIFT, 0);
+    for (t = 1; t < 4; t++)
+        CHECKF(M.seq.tr[t].active == -1 && M.seq.tr[t].queued == SEQ_NONE, "track %d", t + 1);
+    /* .. a scene nothing of which plays (row 2, all stopped now; row 4 empty): nothing changes, nothing said */
+    hit(SCN(2)), adv_ms(2100);                          /* (row 3 plays: tracks 1 and 3) */
+    rest(), clear();
+    now_ms += 1000;
+    button(MR_CC_SHIFT, 1), hit(SCN(1)), hit(SCN(1)), hit(SCN(3)), button(MR_CC_SHIFT, 0);
+    CHECK(M.seq.tr[0].active == 2 && M.seq.tr[2].active == 2 && M.seq.tr[0].queued == SEQ_NONE && M.seq.tr[2].queued == SEQ_NONE);
+    CHECKF(!strstr(said, "stop") && !strstr(said, "Stop"), "said \"%s\"", said);
+    CHECK(M.seq.playing);
+}
+
 int main(void)
 {
     test_scenes();
@@ -1494,6 +1530,7 @@ int main(void)
     test_sv_scenes();
     test_sv_launch_q();
     test_sv_clipset();
+    test_sv_dbl_stop();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

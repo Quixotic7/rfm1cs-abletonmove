@@ -3,6 +3,54 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.12.0 (2026-11-22, not released)
+
+The owner's answers on the review page, card by card. New fields in `rfm_move_seq_t` (after `tk_pend_clk`): rebuild
+everything. The project blob is version 8 (versions 1..7 load, with the defaults); `RFM_MOVE_PROJECT_MAX` 40396.
+
+**Session view**
+- **The stop icon** (n12): a clip on its way out is drawn as the playing one is, filled, with a black square in it
+  (was an outline with a white square); recording, which had that square, is a black dot now (`v2_cell` 'S', 'R').
+- **No icons lit at rest** (n16): the icons under the steps are dark in session view (0.11.0 lit the stop steps');
+  Shift (held, latched) and Track 4 light the shortcuts' as in every view (`rfmv_shift_icons`).
+- **Columns that do not reach the firmware played** (n9): their pads at a quarter in every state (a press: full; not
+  with no firmware list, nor while a Track is held), their cells' outlines dotted on the screen (`sv_unrouted`,
+  `v2_cellDots`).
+- **Paging** (c11): Shift + Left / Right 7 tracks, Shift + Up / Down 4 rows (Shift + arrows had no job there).
+- **Session view from anywhere** (c9, `rfmv_sv_toggle`): Shift + Menu in a note layout (it did what Menu does);
+  Back held + Menu everywhere; Track 1..3 held + Menu (the FM-1 layout's and a takeover's Move-side Shift). From the
+  FM-1 layout or a takeover the sequencer runs session view and the slot keeps its layout; Menu (alone or with those)
+  goes back to the active slot's own layout. The Track's hold is used up (no menu, tap or double click after it);
+  Back's click does not come; a takeover that has Back gets neither Back nor Menu (`takeover.c`). Named (`POP_VIEW`;
+  the FM-1 layout: its layout popup). **Back no longer leaves session view** (`back_click`).
+- **Clips: Copy and Delete** (k6, c12): Delete held + a clip deletes it at the press into the clip buffer (armed; one
+  undo); Delete never pastes (an empty slot: nothing). Copy held + an empty slot pastes; Copy held + a clip pastes over
+  it when armed (the last clip function a copy or a delete; not the very clip just copied), else copies it. A paste
+  and Back disarm (Back keeps the buffer). Nothing waits after Copy is let go (`sv_armed`).
+- **Scenes: copy, paste, delete** (c13, `scene_edit`, `rfmv_seq_scene_copy` / `_paste`): a scene buffer of its own
+  (16 clips with their loops and launch settings); Copy + a row copies it or (armed) replaces with the buffer, Copy +
+  an empty row pastes, Delete + a row deletes it into the buffer; all 16 tracks; one undo; never a launch. Its cells
+  dashed / crossed and its pads blinking while the modifier is held; "Scene 3 copied", "Scene 3 deleted", "Pasted to
+  scene 5", "Scene 5 replaced".
+- **Copy and Delete held show an icon** at the press (scissors, two sheets): track view the roll's top right,
+  session view the scene column (`rfmv_seq_held_icon`). Nothing of the kind was in this repository's history: 0.6.3's
+  "Hold Delete / + a step" text (on the release) went in 0.6.4, and the cut mark (the X) shows only after a cut.
+- **Copy tapped alone does nothing in every view** (track view: it duplicated the clip, "Duplicated", and dropped a
+  waiting copy). Delete tapped alone: nothing (its spoken hint stays).
+- **Launch quantization** (c15): Global settings' new last row **Launch**: Instant, 1 Beat, 1 Bar (default), 2 Bars,
+  4 Bars, Clip (the end of the playing clip's loop; none: the next bar), saved with the project. **Each clip's own
+  Launch** (Global or one of those) and **After** (Loop; Next: at its loop's end the clip below it, or the top of its
+  run, seamless). Copied, pasted, duplicated with the clip; journaled (`OP_CSET`); `launch_due`, `rfmv_seq_lq_of`,
+  `rfmv_seq_after_next`. Instant launches at once in the bar's phase (as a double click), so nothing waits or flashes.
+- **A column's select step held** (c16, `cs_*`): held 300 ms, or a knob touched or turned while down: the track's
+  selected clip's Launch (knob 1) and After (knob 2), the knob's tick and row marked; knobs 3..8 dark and dead; an
+  empty slot "No clip". The volume knob sets the level of the firmware the track plays (`rfmv_fw_level_turn`, the
+  level popup) or says "Not routed". A quick click only selects.
+- **r2**: a double click on an empty slot stops its track at once only when it plays something; Shift + a scene with
+  nothing of it playing changes and says nothing.
+- A clip's "made" bit is journaled (`OP_MADE`): an undone paste or delete leaves the slot as it was (it left a clip
+  with no notes).
+
 ## 0.11.0 (2026-11-21, not released)
 
 The owner's feedback on the arp, the held Track buttons and session view, and their UX rules (`design/UX-RULES.md`:

@@ -132,8 +132,17 @@ knobs, the jog and Up / Down do nothing there.
 a note layout and in the Mixer and Routing (a Shift menu opens over them; Back closes it). **Track 1..3 held** works
 over the projects view too.
 
-**Back** closes layers only (a Shift menu, Loop's latch, the clipboard's marks, session view, the projects view's
-levels); with nothing open it does nothing (0.9.0; in 0.8.0 it flipped to a Sequencer mode).
+**Back** closes layers only (a Shift menu, Loop's latch, the clipboard's marks, the projects view's levels); with
+nothing open it does nothing (0.9.0; in 0.8.0 it flipped to a Sequencer mode). (0.12.0, the owner's "Back never changes
+the mode or the view") it never leaves session view: Menu does.
+
+**Session view from anywhere** (0.12.0, the owner's): **Shift + Menu** in a note layout, **Back held + Menu** in every
+layout, and **Track 1..3 held + Menu** (in the FM-1 layout and a takeover the Move's Shift is the firmware's: a held
+Track is the Move-side Shift) open session view, from the FM-1 layout and a takeover too (the sequencer runs it; the
+slot keeps its layout). The Track's hold is used up by the Menu press: its menu, tap and double click do not come;
+Back's click does not come either (a takeover that has Back: neither Back nor Menu is sent to it). In session view
+Menu, alone or with any of them, returns to the active slot's own layout: a note layout's track view, or the FM-1
+layout (its takeover). Both ways are named (`POP_VIEW` "Session" / "Sequencer"; the FM-1 layout: its layout popup).
 
 **The LEDs:** Track 1..3 the loaded firmware's colour (an empty slot faint white), full for the one played (on the
 sequencer side, dim; a held one full); Track 4 red, full on the sequencer side (the Sequencer, the Mixer, Routing, the
@@ -283,10 +292,10 @@ its 8 columns through the 16 tracks.
 |---|---|---|
 | pads | the track's layout, the scale and octave (shared with MIDI mode), on the track's channel; what they play is what an empty step gets | clips (the owner's mockup): a column a track (8 in view), a row a clip slot (4 in view, the top row first) |
 | steps | the 16 steps of the page | the 2 under each column: the first stops that track's clips (at the bar; lit while it plays something, blinking while it stops), the second mutes it (the track's colour; muted: red, dim) |
-| Left / Right | the bar shown; Right past the last bar: a ghost bar (below); a step held: micro timing (the MICRO popup) | the tracks, one at a time (1..16) |
-| Up / Down | octave (MIDI mode's); a step held: transpose | the clip slots, one at a time |
-| knobs | the knob page: TRIG (below), then Control mode's CC banks 1..4, live on the track's channel; a step held: its CC locks | nothing; a touch selects the track in that knob's column |
-| volume knob | MASTER; a step held: its notes' velocity (a VELO popup) | MASTER |
+| Left / Right | the bar shown; Right past the last bar: a ghost bar (below); a step held: micro timing (the MICRO popup) | the tracks, one at a time (1..16); (0.12.0) Shift: 7 at a time |
+| Up / Down | octave (MIDI mode's); a step held: transpose | the clip slots, one at a time; (0.12.0) Shift: 4 at a time |
+| knobs | the knob page: TRIG (below), then Control mode's CC banks 1..4, live on the track's channel; a step held: its CC locks | nothing; a touch selects the track in that knob's column; (0.12.0) a select step held: knob 1 the clip's Launch, knob 2 its After |
+| volume knob | MASTER; a step held: its notes' velocity (a VELO popup) | MASTER; (0.12.0) a select step held: the level of the firmware its track plays |
 | jog | the knob page (TRIG, banks 1..4); a step held: its notes' length (the LENGTH popup); Loop held or latched: the loop's length; a Shift menu: its value; a drum pad held: its note | the knob page |
 | jog pressed | nothing (FILL is Shift + Loop held) | the same |
 
@@ -356,25 +365,32 @@ the 8th column the scenes, a row a scene (4 of 16 in view), as the Move's Contro
 
 | Gesture | Does |
 |---|---|
-| A clip pressed | launched at the next bar (queued: its pad blinks green, its cell flashes with the play icon; the track's playing clip flashes with a stop icon, its pad between green and its own colour; stopped: the track's clip at once, playing with Play) and the selected one at once: its cell framed on the screen. On the playing clip: it plays on, selected |
+| A clip pressed | launched at the next bar ((0.12.0) or as Global settings' Launch says, or the clip's own Launch; Instant: at once, nothing waits) (queued: its pad blinks green, its cell flashes with the play icon; the track's playing clip flashes with a stop icon, its pad between green and its own colour; stopped: the track's clip at once, playing with Play) and the selected one at once: its cell framed on the screen. On the playing clip: it plays on, selected |
 | A double click (300 ms) on a slot | (0.11.0) now, not at the bar: a clip plays (in the bar's phase), an empty slot stops its track. The first click queued the same thing |
 | An empty slot pressed | selected (white), **no clip made**: the first note makes it (a step, the pads with Rec, Capture). The track stops at the bar, as Live's stop button. With Rec armed: a new clip there, recorded into (growing a bar at a time) |
 | Shift + a slot | selected for editing; nothing launched or stopped |
-| A scene pad (column 8) | its row launched across the 16 tracks; tracks with no clip in the row stop. Says "Scene 2". (0.11.0) **Stopped: the scene plays** (the one pad besides Play that starts the transport; Rec armed: the count-in). A double click: now. Its box on the screen flashes with a play icon while it waits; the scene on its way out flashes with a stop icon. With Copy, Delete or Mute held: nothing (yet) |
-| Shift + a scene pad | (0.11.0) the scene's clips stop at the bar; a double click: now |
+| A scene pad (column 8) | its row launched across the 16 tracks (each track at its clip's own Launch, else the project's); tracks with no clip in the row stop. Says "Scene 2". (0.11.0) **Stopped: the scene plays** (the one pad besides Play that starts the transport; Rec armed: the count-in). A double click: now. Its box on the screen flashes with a play icon while it waits; the scene on its way out flashes with a stop icon. With Mute held: nothing; Copy, Delete: below |
+| Shift + a scene pad | (0.11.0) the scene's clips stop at the bar; a double click: now. (0.12.0) Nothing of the scene plays: nothing changes, nothing said |
+| Copy held + a scene pad | (0.12.0, the owner's; the scene buffer: a row of 16 clips, its own) a row with a clip: copied (its cells dashed, its pads blinking while Copy is held), or, armed (the last scene function a copy or a delete, not this very row's copy), the buffer replaces it (all 16 tracks; a track with no clip in the buffer: emptied there). An empty row: the buffer pasted. Never a launch. "Scene 3 copied", "Scene 5 replaced", "Pasted to scene 5" |
+| Delete held + a scene pad | every clip of the row deleted (a playing one: as a clip's delete), into the scene buffer (crossed while Delete is held), armed; an empty row: nothing. One undo. "Scene 3 deleted" |
 | Track 1..3 tapped | (0.11.0) session view is its own layer: that firmware is the one played, the view stays; its summary a second (the 16 tracks: which reach it). The knobs' lights then show it: a column whose track reaches that firmware in the firmware's colour, the others faint white |
 | Track 1..3 held + a column's pad | (0.11.0) a click: its track routed to that firmware or not; a double click: its solo there. The pads show the routing while held: a lit column reaches it |
-| The steps under a column | the odd one selects the column's track, the even one stops its clip (at the bar). Step 15: nothing. **Step 16: every clip stops** (the transport runs on) |
+| The steps under a column | the odd one selects the column's track, the even one stops its clip (at the bar). Step 15: nothing. **Step 16: every clip stops** (the transport runs on). (0.12.0) Their icons are dark (lit only for Shift's shortcuts) |
+| A select step held | (0.12.0, the owner's) held 300 ms, or a knob touched or turned while it is down: its track's selected clip's settings until it is let go: "Track 3  Clip 2", **knob 1 Launch** (Global, Instant, 1 Beat, 1 Bar, 2 Bars, 4 Bars, Clip), **knob 2 After** (Loop; Next: after its loop, the clip below it, or the top of its run of clips); a tick at each knob's place, the touched one long, its row underlined. Knobs 1, 2 lit, 3..8 dark and dead. An empty slot: "No clip", the knobs dark. **The volume knob**: the level of the firmware the track plays (the one played if it reaches it, else the lowest slot it reaches; the Mixer's level, its popup naming the firmware); none: "Not routed". A quick click only selects; the release does nothing more |
 | Mute + a clip, Mute + a step | the clip's track muted; the 16 tracks' mutes (as in every view) |
 | A knob (1..7) touched | its column's track selected, and its popup while touched: the track, the firmwares it reaches (a host with the firmware list; none: "Not routed"), its selected clip and length, its channel |
 | Knob 8 touched | (0.11.0) "Scenes": the scene that plays (or waits), the rows in view. Its light is green |
-| Copy tapped alone | nothing (in track view it duplicates the clip, as the Move's Note Mode) |
+| Copy, Delete tapped alone | nothing, in every view (0.12.0: track view's Copy tap duplicated the clip) |
+| Shift + Left / Right, Up / Down | (0.12.0) 7 tracks, 4 rows a press (clamped as the single steps) |
 | Shift + Play | every clip from its start, as in track view (before 0.10.0: every clip stopped) |
 
 The pads (Live's colours): **green pulsing** a playing clip (the selected one white on the beat), **green steady** the
 track's clip while stopped (Play starts it), **green blinking** waiting for the bar, **the track's colour, dim** a
 stopped clip (very dim: a clip with no notes), blinking in the track's colour: stopping, **white** the selected clip
-or slot, red recording. The scene pads are green: very dim no clip in the row, dim clips, pulsing (stopped: full) the
+or slot, red recording. (0.12.0, the owner's) A column whose track does not reach the firmware played is dimmed to a
+quarter (every state; a press shows at full; not with no firmware list, nor while a Track is held); on the screen its
+cells' outlines are dotted (the routed ones solid). On the screen a clip on its way out is filled with a black square
+(as the playing one with its black play icon); recording: a black dot. The scene pads are green: very dim no clip in the row, dim clips, pulsing (stopped: full) the
 scene that plays (every track with a clip in the row plays it, the others nothing), blinking on its way.
 A project loaded: clips with no notes or locks are empty slots again (before 0.10.0 every press on an empty slot
 made one). Cut, copy and paste as below.
@@ -396,15 +412,14 @@ pasted over ("Step 9 replaced"); press C again: cut.
 | Copy held, a step with notes tapped (several in one hold: a group) | copied (dashed) | "Step 5 copied" |
 | Copy held, an empty step tapped | the clipboard pasted there (a group: its first step there) | "Pasted to step 9" |
 | Copy released after copying, then a plain step | pasted there once (Move's way) | "Pasted to step 9" |
-| Delete held, a clip pressed (Session: the first press, or after a paste) (0.9.2: clips as steps) | cut: gone, into the clipboard, an X in its slot | "Cut track 1 clip 2" |
-| Delete held, a slot pressed **right after a cut** (in this hold) | the clipboard pasted there; a clip there is replaced | "Pasted to track 1 clip 3", "Track 3 clip 1 replaced" |
-| Delete held, an empty slot pressed (the first press, or after a paste) | the clipboard pasted there (an empty clipboard: nothing); it pastes again and again | "Pasted to track 1 clip 3" |
-| Copy held, a clip pressed | copied (dashed while Copy is held, and while it waits) | "Copied track 1 clip 2" |
-| Copy held, an empty slot pressed | the clipboard pasted there | "Pasted to track 1 clip 3" |
-| Copy released after copying, then a plain press on any slot | pasted there once (Move's way); a clip there is replaced | "Track 8 clip 1 replaced" |
+| (0.12.0, the owner's) Delete held, a clip pressed (session view) | deleted at the press, into the clip buffer (an X in its slot), armed; one undo brings it back. **Delete never pastes**: an empty slot, the same slot again: nothing | "Cut track 1 clip 2" |
+| Copy held, a clip pressed | armed (the last clip function a copy or a delete): the buffer pasted over it (replaced; not the very clip just copied: copied again); else copied (dashed while armed), armed | "Copied track 1 clip 2", "Track 3 clip 1 replaced" |
+| Copy held, an empty slot pressed | the buffer pasted there (an empty buffer: nothing); a paste disarms, the buffer stays | "Pasted to track 1 clip 3" |
+| Copy let go | nothing waits: a plain press launches (0.12.0; it pasted once) | |
+| Back | the marks and armed go; the clip buffer stays | |
 | Delete tapped, or held and let go alone | nothing changes, on the screen neither (0.6.4) | "Delete: hold and press a step, pad or clip" (spoken only) |
-| Delete or Copy held (track view) | the screen as ever: the canvas's seq.clip, the roll over the 16 step cells (copied dashed, cut crossed; a group: each of its steps) | |
-| Copy tapped alone | a waiting copy dropped, else the clip duplicated into the track's next empty slot | "Duplicated" |
+| Delete or Copy held (track view and session view) | (0.12.0, the owner's) at the press an icon says so: Delete scissors, Copy two sheets (track view: the roll's top right; session view: the scene column, a row each). The roll over the 16 step cells as ever (copied dashed, cut crossed) | |
+| Copy tapped alone | nothing, in every view (0.12.0: it duplicated the clip, and dropped a waiting copy: Back does that; Shift + step 14 / 15 make and double clips) | |
 | Delete held + a pad (track view) | that note out of the clip | "Deleted C3" |
 | Track 4 held + Delete (let go) | the selected track cleared (no clipboard) | "Track 1 cleared" |
 | Track 4 held + Delete held + a step | that track cleared | "Track 3 cleared" |
@@ -458,7 +473,7 @@ the screen's corner while it records. (Tap tempo: Shift + step 5.)
 | Mute | held: the screen shows the 16 tracks (with notes filled, muted crossed out); + step n or + clip: mute track n; alone: the selected track |
 | Shift (the icons) | while Shift is held or locked (and in FM-1 mode while Track 1 is held), the white icon LEDs under the steps (CC 16..31) light every step with a shortcut: dim, full where it is on (a toggle on, its menu open); off otherwise and in MIDI and Control mode. Written on change only, like every LED; the step pads' own LEDs are separate |
 | Shift | double-tap (a tap, then a press within 300 ms): latched (its LED lit, every Shift combination without holding it); a press unlatches it. Shift + Sample: nothing (the Move has none) |
-| Menu | Track <-> Session view (or out of the project grid). (0.11.0) An open Shift menu stays (Back closes it): the view flips under it, named a second |
+| Menu | Track <-> Session view (or out of the project grid). (0.11.0) An open Shift menu stays (Back closes it): the view flips under it, named a second. (0.12.0) Shift + Menu, Back held + Menu, Track 1..3 held + Menu: the same, from every layout (above); out of session view: the slot's own layout |
 | Back | the universal escape: closes the latest layer still on, one a click (a Shift menu, the project grid, Loop's latch, Shift's lock, the step / clip clipboard's marks, the page clipboard's); with none: (0.4.3) the projects view (never a mode change). Leaving Loop shows the sequencer at once |
 | Track 1..4 | the modes (FM-1, MIDI, Control, Sequencer); Track 4 held in the sequencer: the tracks and the track's settings (above; the screen: layout, scale, what changed at 2x, the channel and the rate as strips) |
 
@@ -480,7 +495,9 @@ Workflow 1-3, Tempo 1-2 (none while following), Groove 1-2, Layout 1, Keys & Sca
 | Step | Function |
 |---|---|
 | 1 Set Overview | the project grid |
-| 2 Global Settings | (0.6.2) a list on the jog wheel, sticky (Shift + step 2 again, or Back when not editing, or Session closes it). (0.6.10, the owner's direction A) On top the Move's battery: an icon filled to the charge and the percentage at 2x ("--" until the first STATUS: Move Remote's STATUS byte 4 as the surface reports it, taken as 0..100 %, clamped; the host passes it with `rfm_move_set_battery`), "GLOBAL" on the right, a rule under them. Rows (0.6.12: Speech first, then the others; four show, the list scrolls): Speech (Off, On, Jog: see Speech modes), Clock (Auto, Int, Ext; Int is the default (0.5.5); Auto follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), Velocity (the option, as the Velocity menu), Fixed level, Popup size (FM-1 mode's popups: Full, the default, or Half, 0.5.9). Turn the jog: the selected row (inverted) moves; click: edit its value (the row framed, the value inverted between small arrows), the jog changes it; click again or Back: done. While it is open it owns the controls: no knob, pad, step or button reaches the FM-1, the firmware or the sequencer (the knobs do nothing; their touches show nothing); releases pass, so a pad held before it opened lets go; the Track buttons and Shift + step 2 pass |
+| 2 Global Settings | (0.6.2) a list on the jog wheel, sticky (Shift + step 2 again, or Back when not editing, or Session closes it). (0.6.10, the owner's direction A) On top the Move's battery: an icon filled to the charge and the percentage at 2x ("--" until the first STATUS: Move Remote's STATUS byte 4 as the surface reports it, taken as 0..100 %, clamped; the host passes it with `rfm_move_set_battery`), "GLOBAL" on the right, a rule under them. Rows (0.6.12: Speech first, then the others; four show, the list scrolls): Speech (Off, On, Jog: see Speech modes), Clock (Auto, Int, Ext; Int is the default (0.5.5); Auto follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), Velocity (the option, as the Velocity menu), Fixed level, Popup size (FM-1 mode's popups: Full, the default, or Half, 0.5.9), (0.12.0) Launch (when a clicked
+clip, scene or stop takes effect: Instant, 1 Beat, 1 Bar (the default), 2 Bars, 4 Bars, Clip: the end of the loop the
+track plays; saved with the project, version 8; a clip's own Launch wins). Turn the jog: the selected row (inverted) moves; click: edit its value (the row framed, the value inverted between small arrows), the jog changes it; click again or Back: done. While it is open it owns the controls: no knob, pad, step or button reaches the FM-1, the firmware or the sequencer (the knobs do nothing; their touches show nothing); releases pass, so a pad held before it opened lets go; the Track buttons and Shift + step 2 pass |
 | 3 Workflow Settings | menu: the jog the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent) |
 | 5 Tempo | each press is a tap (tap tempo: the average of up to 4 taps) and opens the menu: the tempo at 4x; the jog 1 BPM (Shift, or knob 2: 0.1); following the firmware's clock: locked (a padlock, EXT; taps ignored) |
 | 6 Metronome | on / off (off at first): a click a beat, the bar's first higher (`RFM_MOVE_ACT_CLICK`, frame-stamped; the web player plays it after the volume, never into a recording); also in the count-in |

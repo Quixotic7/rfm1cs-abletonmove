@@ -439,7 +439,9 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
         q->pad_tap = (int8_t)(dbl ? -1 : p), q->pad_tap_ms = now, q->pad_tap_shift = (uint8_t)shift;
         if (shift) {
             q->mods_used |= SEQ_M_SHIFT;
-            rfmv_seq_stop_scene(m, scene, dbl);
+            if (!rfmv_seq_stop_scene(m, scene, dbl))
+                return;                                 /* (0.12.0, r2: nothing of it plays: nothing changes, nothing
+                                                         * said) */
             snprintf(w, sizeof w, "Scene %d stop", scene + 1);
         } else {
             if (dbl)
@@ -480,7 +482,11 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
             /* (0.11.0, the owner's) a double click: now, not at the bar: the clip plays (an empty slot: the track
              * stops). The first click queued the same thing, so nothing wrong showed meanwhile */
             rfmv_seq_select(m, track);
-            rfmv_seq_launch_now(m, track, rfmv_seq_clip_has(m, clip) ? scene : -1);
+            if (rfmv_seq_clip_has(m, clip))
+                rfmv_seq_launch_now(m, track, scene);
+            else if ((t->active >= 0 && running(q)) || t->queued != SEQ_NONE)
+                rfmv_seq_launch_now(m, track, -1);      /* (0.12.0, r2: an empty slot stops its track at once only when
+                                                         * it plays something; else nothing) */
             t->sel = (int8_t)scene;
             q->pad_tap = -1;
             rfmv_seq_dirty(m);
