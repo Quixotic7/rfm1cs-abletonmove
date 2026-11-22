@@ -2379,6 +2379,49 @@ static void test_clear_clip(void)
     press(MR_CC_PLAY), press(MR_CC_MENU), rest();
 }
 
+/* q1: a colour per firmware slot (orange, blue, yellow) on the Track buttons, the routing, session view's columns
+ * (the lowest slot a track reaches; none: grey); solo purple */
+static int hue_orange(const uint8_t c[3]) { return c[0] > 0 && c[2] == 0 && c[1] * 10 > c[0] * 3 && c[1] * 10 < c[0] * 6; }
+static int hue_blue(const uint8_t c[3]) { return c[2] > c[1] && c[1] > c[0] && c[0] > 0; }
+static int hue_yellow(const uint8_t c[3]) { return c[0] > 0 && c[2] == 0 && c[1] * 10 > c[0] * 7; }
+static int hue_grey(const uint8_t c[3]) { return c[0] > 0 && c[0] == c[1] && c[2] > c[0] && c[2] - c[0] < c[0] / 4 + 2; }
+static void test_slot_colours(void)
+{
+    static const char *const ids[RFM_MOVE_FW_SLOTS] = { "choralroot", "felucca", "aurora" };
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int t;
+    session_view();
+    rfm_move_fw_slots(&M, ids);
+    M.seq.track_page = 0, M.seq.scene_off = 0;
+    M.seq.fx.ffilt[0] = 1u << 0, M.seq.fx.ffilt[1] = 1u << 1 | 1u << 4, M.seq.fx.ffilt[2] = 1u << 2 | 1u << 4;
+    for (t = 0; t < 5; t++)
+        clip_put(t, 2, 60 + t);
+    rest();
+    leds(w);
+    CHECKF(hue_orange(w[L_PAD0 + PAD(0, 2)]) && hue_blue(w[L_PAD0 + PAD(1, 2)]) && hue_yellow(w[L_PAD0 + PAD(2, 2)]) &&
+           hue_grey(w[L_PAD0 + PAD(3, 2)]) && hue_blue(w[L_PAD0 + PAD(4, 2)]),
+           "columns %02x%02x%02x %02x%02x%02x %02x%02x%02x %02x%02x%02x %02x%02x%02x", w[L_PAD0 + PAD(0, 2)][0],
+           w[L_PAD0 + PAD(0, 2)][1], w[L_PAD0 + PAD(0, 2)][2], w[L_PAD0 + PAD(1, 2)][0], w[L_PAD0 + PAD(1, 2)][1],
+           w[L_PAD0 + PAD(1, 2)][2], w[L_PAD0 + PAD(2, 2)][0], w[L_PAD0 + PAD(2, 2)][1], w[L_PAD0 + PAD(2, 2)][2],
+           w[L_PAD0 + PAD(3, 2)][0], w[L_PAD0 + PAD(3, 2)][1], w[L_PAD0 + PAD(3, 2)][2], w[L_PAD0 + PAD(4, 2)][0],
+           w[L_PAD0 + PAD(4, 2)][1], w[L_PAD0 + PAD(4, 2)][2]);
+    CHECK(hue_orange(w[L_STEP0 + 0]) && hue_yellow(w[L_STEP0 + 4]) && hue_grey(w[L_STEP0 + 6]));   /* (the select steps) */
+    CHECK(hue_orange(w[L_TRACK0 + 0]) && hue_blue(w[L_TRACK0 + 1]) && hue_yellow(w[L_TRACK0 + 2]));   /* (the Track buttons) */
+    CHECK(hue_blue(w[L_RING0 + 1]) && hue_blue(w[L_RING0 + 4]) && !hue_blue(w[L_RING0 + 0]));   /* (the knobs: slot 2's) */
+    write_pbm("slotcols");
+    /* the held Track's routing: its slot's colour on the pads and steps; the solo purple */
+    hold_track(2);
+    leds(w);
+    CHECK(hue_yellow(w[L_PAD0 + PAD(2, 0)]) && hue_yellow(w[L_PAD0 + PAD(4, 0)]) && !lit(w[L_PAD0 + PAD(0, 0)]) &&
+          hue_yellow(w[L_STEP0 + 4]));
+    write_pbm("route_hold");
+    rfmv_fw_solo(&M, 2, 4);
+    leds(w);
+    CHECK(w[L_STEP0 + 4][0] == 170 || w[L_STEP0 + 4][0] == 170 * 70 / 256);
+    rfmv_fw_solo(&M, 2, 4);
+    track(2, 0), rest();
+}
+
 int main(void)
 {
     test_scenes();
@@ -2409,6 +2452,7 @@ int main(void)
     test_t4_layer();
     test_loop_mute_taps();
     test_clear_clip();
+    test_slot_colours();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

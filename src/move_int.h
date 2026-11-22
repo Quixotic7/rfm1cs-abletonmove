@@ -311,7 +311,10 @@ void rfmv_slot_leaving(rfm_move_t *m);                 /* (fw.c) the active slot
 void rfmv_slot_changed(rfm_move_t *m);                 /* (fw.c) .. it changed: its layout played */
 int rfmv_fw_activate(rfm_move_t *m, int slot);          /* (fw.c) a Track's tap: that slot played (FW_ACTIVE), any
                                                          * slot the host offers, loaded or not; 1 changed */
-rfmv_rgb_t rfmv_fw_rgb(const rfm_move_t *m, int slot);  /* a slot's firmware colour (empty: white) */
+rfmv_rgb_t rfmv_fw_rgb(const rfm_move_t *m, int slot);  /* a slot's colour (0.12.0: its own, not its firmware's; empty:
+                                                         * white) */
+extern const rfmv_rgb_t RFMV_SLOT_RGB[RFM_MOVE_FW_SLOTS]; /* (0.12.0) orange, blue, yellow */
+#define RFMV_SOLO_RGB ((rfmv_rgb_t){ 170, 60, 255 })    /* (0.12.0) solo: purple (blue is slot 2's) */
 int rfmv_fw_nslots(const rfm_move_t *m);                /* the slots the Track buttons play (1: no list, one slot) */
 enum { VIEW_SLOT0 = 0, VIEW_PROJECTS = 3, VIEW_MIXER = 4, VIEW_ROUTING = 5 };
 void rfmv_view_open(rfm_move_t *m, int what);           /* the projects view on a slot's browser, the projects, FX */

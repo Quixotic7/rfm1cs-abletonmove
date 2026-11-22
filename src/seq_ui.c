@@ -2546,6 +2546,18 @@ static int sv_unrouted(const rfm_move_t *m, int track)
            !(m->seq.fx.ffilt[m->fw.active % RFM_MOVE_FW_SLOTS] >> track & 1);
 }
 
+/* (0.12.0, q1, the owner's: "The columns too") session view: a column's colour is the slot its track reaches (two or
+ * three: the lowest), grey for none; with no firmware list (no host) the track's own colour as before */
+static rgb_t sv_col_rgb(const rfm_move_t *m, int track)
+{
+    int k;
+    if (!m->fw.host)
+        return TRACK_RGB[track % RFM_MOVE_SEQ_TRACKS];
+    for (k = 0; k < rfmv_fw_nslots(m); k++)
+        if (m->seq.fx.ffilt[k] >> track & 1)
+            return rfmv_fw_rgb(m, k);
+    return (rgb_t){ 150, 150, 160 };
+}
 /* (0.8.0, 0.9.0) the lock menu's steps (the board's colours): the track selected for the firmware in its colour, the
  * firmware's solo blue, not routed to it dim red, the others by their content */
 /* (0.11.0, the owner's) not routed: dark; routed: the firmware's colour (a track with nothing in it dimmer); the
@@ -2554,7 +2566,7 @@ static rgb_t route_rgb(const rfm_move_t *m, int fw, int i)
 {
     const rfm_move_seq_t *q = &m->seq;
     const int on = q->fx.ffilt[fw] >> i & 1, sel = m->s.lock[fw] == i, ph = rfmv_now_ms(m) % 500u < 250u;
-    const rgb_t fc = rfmv_fw_rgb(m, fw), blue = { 40, 110, 255 };
+    const rgb_t fc = rfmv_fw_rgb(m, fw), blue = RFMV_SOLO_RGB;   /* (0.12.0, q1: the solo purple) */
     if (q->tk_pend == i && q->tk_pend_fw == fw)
         return sc(RFMV_WHITE, 150);
     if (m->fsolo[fw] == i + 1)
@@ -2629,14 +2641,14 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             case CS_QUEUED: v = bl ? RFMV_GREEN : sel ? sc(RFMV_WHITE, 60) : sc(RFMV_GREEN, 40); break;
             case CS_STOPPING:                           /* (0.11.0) to stop: green flashing away to its stopped colour,
                                                          * against the flash of the clip that waits */
-                v = bl ? sc(TRACK_RGB[track], 80 * col / 256) : sc(RFMV_GREEN, col);
+                v = bl ? sc(sv_col_rgb(m, track), 80 * col / 256) : sc(RFMV_GREEN, col);
                 break;
             case CS_PLAYING:
                 v = sel && pu == 256 ? RFMV_WHITE : sc(RFMV_GREEN, pu * (hollow ? 70 : col) / 256);
                 break;
             case CS_ARMED: v = sel ? sc(RFMV_WHITE, 150) : sc(RFMV_GREEN, hollow ? 40 : col); break;
-            case CS_CONTENT: v = sel ? sc(RFMV_WHITE, 150) : sc(TRACK_RGB[track], 80 * col / 256); break;
-            case CS_HOLLOW: v = sel ? sc(RFMV_WHITE, 60) : sc(TRACK_RGB[track], 22); break;
+            case CS_CONTENT: v = sel ? sc(RFMV_WHITE, 150) : sc(sv_col_rgb(m, track), 80 * col / 256); break;
+            case CS_HOLLOW: v = sel ? sc(RFMV_WHITE, 60) : sc(sv_col_rgb(m, track), 22); break;
             default: v = sel ? sc(RFMV_WHITE, 60) : RFMV_OFF; break;
             }
             if (sv_unrouted(m, track) && !m->pad_down[i])
@@ -2680,7 +2692,8 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
         } else if (t4 || (q->mods & SEQ_M_MUTE)) {      /* the tracks */
             const int used = rfmv_seq_track_used(m, i);
             if (q->tr[i].solo)
-                v = sc((rgb_t){ 40, 90, 255 }, t4 && i == q->sel_track ? 256 : 140);   /* soloed: blue (Move's) */
+                v = sc(RFMV_SOLO_RGB, t4 && i == q->sel_track ? 256 : 140);   /* soloed: purple (0.12.0, q1: blue is
+                                                         * slot 2's) */
             else if (q->tr[i].mute)
                 v = sc(RFMV_RED, t4 && i == q->sel_track ? 256 : 48);
             else if (i == q->sel_track)
@@ -2758,7 +2771,7 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             const int tr = q->track_page + i / 2;
             const rfm_move_track_t *t = &q->tr[tr];
             if (!(i & 1))
-                v = t->mute ? sc(RFMV_RED, tr == q->sel_track ? 256 : 60) : sc(TRACK_RGB[tr], tr == q->sel_track ? 256 : 50);
+                v = t->mute ? sc(RFMV_RED, tr == q->sel_track ? 256 : 60) : sc(sv_col_rgb(m, tr), tr == q->sel_track ? 256 : 50);
             else
                 v = (t->active >= 0 && running(q) && rfmv_seq_clip_has(m, SEQ_CLIP(tr, t->active))) || t->queued >= 0
                         ? (t->queued == SEQ_STOP ? sc(RFMV_WHITE, bl ? 256 : 30) : RFMV_WHITE)

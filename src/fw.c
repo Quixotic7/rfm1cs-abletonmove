@@ -2141,7 +2141,7 @@ void rfmv_track_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
         else if (!f->host)
             v = lit(rfmv_mode_rgb[0], on ? 256 : A(0.25));   /* (no list: the one firmware) */
         else if (slot_loaded(m, t)) {
-            v = lit(PAL[color(m, f->slot_fw[t])], on ? 256 : A(0.25));
+            v = lit(RFMV_SLOT_RGB[t], on ? 256 : A(0.25));   /* (0.12.0, q1: the slot's own colour) */
             if (!(snd >> t & 1) && !slow)               /* (loaded past the host's voices: silent, blinking slowly) */
                 v = lit(v, 40);
         } else
@@ -2170,7 +2170,7 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             for (r = 0; r < 4; r++) {
                 const int part = v - r * 127;
                 c[L_PAD0 + pad_of((3 - r) * 8 + i)] =
-                    part >= 127 ? PAL[color(m, f->slot_fw[i])] : part > 0 ? lit(PAL[color(m, f->slot_fw[i])], A(0.12) + part * (256 - A(0.12)) / 127 / 2) : OFF;
+                    part >= 127 ? RFMV_SLOT_RGB[i] : part > 0 ? lit(RFMV_SLOT_RGB[i], A(0.12) + part * (256 - A(0.12)) / 127 / 2) : OFF;
             }
         }
         for (r = 0; r < 4; r++)
@@ -2192,7 +2192,7 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             if (!fx_page_ok(m, p))
                 continue;
             if (p == PG_ROUTE)
-                empty = !slot_loaded(m, r), col = empty ? WHITE : PAL[color(m, f->slot_fw[r])];
+                empty = !slot_loaded(m, r), col = empty ? WHITE : RFMV_SLOT_RGB[r];   /* (0.12.0, q1) */
             else
                 empty = fxslot((rfm_move_t *)m, p == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO, r)->mod < 0,
                 col = empty ? WHITE : FXCOL[p];
@@ -3172,9 +3172,13 @@ void rfmv_fw_slot_name(const rfm_move_t *m, int s, char *o, int cap)
 /* ---- (0.8.0) the Track buttons (move.c): the slots they play, the view opened on a slot, the projects, the Mixer or
  * Routing */
 int rfmv_fw_nslots(const rfm_move_t *m) { return m->fw.host ? nslots(m) : 1; }
-rgb_t rfmv_fw_rgb(const rfm_move_t *m, int slot)        /* a slot's firmware colour (empty, no list: white) */
+/* (0.12.0, q1, the owner's: "the 3 firmware tracks each have their own color theme, like: Orange, Blue, Yellow") a
+ * slot's own colour, on everything that means "this slot": the Track buttons, the routing lights, session view's
+ * knobs and columns, the Mixer's and Routing's slot pads. The firmware's own colour stays in the browser */
+const rgb_t RFMV_SLOT_RGB[RFM_MOVE_FW_SLOTS] = { { 255, 120, 0 }, { 40, 120, 255 }, { 255, 200, 0 } };
+rgb_t rfmv_fw_rgb(const rfm_move_t *m, int slot)        /* a slot's colour (empty, no list: white) */
 {
-    return m->fw.host && slot_loaded(m, slot) ? PAL[color(m, m->fw.slot_fw[slot])] : WHITE;
+    return m->fw.host && slot_loaded(m, slot) ? RFMV_SLOT_RGB[slot % RFM_MOVE_FW_SLOTS] : WHITE;
 }
 int rfmv_fx_ok(const rfm_move_t *m) { return m->fw.host && has_fx(m); }
 int rfmv_t4_page(const rfm_move_t *m) { return m->s.fx_page == PG_MIX ? 0 : 1; }

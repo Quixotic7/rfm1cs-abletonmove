@@ -361,7 +361,7 @@ static void test_seq(void)
     CHECK(M.lk_word == LK_SOLO);
     write_pbm("lock_solo");
     leds(w);
-    CHECK(w[L_STEP0 + 4][2] == 255 && w[L_STEP0 + 4][0] == 40);   /* soloed: blue */
+    CHECK(w[L_STEP0 + 4][2] == 255 && w[L_STEP0 + 4][0] == 170);  /* soloed: purple (0.12.0, q1: blue is slot 2) */
     now_ms += 500;
     step(8, 1), step(8, 0), step(8, 1), step(8, 0);     /* another: one solo a firmware */
     CHECK(M.fsolo[0] == 9 && M.seq.fx.ffilt[0] == 1u << 8);
