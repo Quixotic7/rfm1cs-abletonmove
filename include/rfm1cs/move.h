@@ -879,6 +879,10 @@ typedef struct {
     uint16_t loop_down;
     uint8_t loop_jogd;
     int16_t loop_dlen;
+    /* (0.13.0, the owner's) loop_shown: the page shown was shown by a page step's tap (not reached with Left / Right):
+     * its ghost key does not confirm it; loop_tap_grp: the tap waiting for its double tap confirmed ghost bars (the
+     * double tap joins its undo step) */
+    uint8_t loop_shown, loop_tap_grp;
 } rfm_move_seq_t;
 
 /* ---- the state */

@@ -200,7 +200,7 @@ static void layer_close(rfm_move_t *m, int id)
     case LY_MENU: q->smenu = 0, q->sm_edit = 0; break;
     case LY_PROJ: q->projects = 0; break;
     case LY_LOOP:                                       /* (0.4.3: the sequencer's screen at once, not a second on) */
-        q->loop_latch = 0, q->mods &= (uint8_t)~SEQ_M_LOOP;
+        q->loop_latch = 0, q->mods &= (uint8_t)~SEQ_M_LOOP, q->loop_shown = 0;
         if (m->pop == POP_LOOP)
             m->pop = POP_NONE;
         break;
@@ -1220,20 +1220,26 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             if (q->page < a || q->page > b)
                 q->page = (uint8_t)a;                   /* (the page shown: in the new loop) */
             q->loop_tap = -1;
-        } else if (s > clip_end_page(m, clip) && s <= q->page) {   /* a ghost page's key: the new bars confirmed
-                                                         * (the clip to that page) */
+        } else if (q->loop_tap == s && now - q->loop_tap_ms < 400) {
+            /* (0.13.0, the owner's: "In the loop page double clicking a step should always solo that bar, not extend the
+             * page range to that bar") a double tap: that page alone, any page (in the loop, the clip's, past its end,
+             * a ghost bar); after a first tap that confirmed ghost bars: the same undo step (one Undo: the loop as it
+             * was before the first tap) */
+            if (!q->loop_tap_grp)
+                rfmv_seq_group(m);
+            rfmv_seq_loop_set(m, clip, s * RFM_MOVE_SEQ_PAGE, RFM_MOVE_SEQ_PAGE);
+            q->page = (uint8_t)s, q->loop_tap = -1, q->loop_tap_grp = 0, q->loop_first = (int8_t)s;
+        } else if (s > clip_end_page(m, clip) && s <= q->page && !q->loop_shown) {   /* a ghost page's key (the ghost
+                                                         * bar reached with Right): the new bars confirmed (the clip to
+                                                         * that page); a page a tap showed: not (0.13.0) */
             const int lo = rfmv_seq_loop_lo(m, clip);
             rfmv_seq_group(m);
             rfmv_seq_loop_set(m, clip, lo, (s + 1) * RFM_MOVE_SEQ_PAGE - lo);
-            q->page = (uint8_t)s, q->loop_tap = -1, q->loop_first = (int8_t)s;
-        } else {
-            if (q->loop_tap == s && now - q->loop_tap_ms < 400) {
-                rfmv_seq_group(m);
-                rfmv_seq_loop_set(m, clip, s * RFM_MOVE_SEQ_PAGE, RFM_MOVE_SEQ_PAGE);
-                q->loop_tap = -1;
-            } else
-                q->loop_tap = (int8_t)s, q->loop_tap_ms = now;
             q->page = (uint8_t)s, q->loop_first = (int8_t)s;
+            q->loop_tap = (int8_t)s, q->loop_tap_ms = now, q->loop_tap_grp = 1;   /* (0.13.0: a double tap's first) */
+        } else {                                        /* a tap: the page shown, the loop as it is */
+            q->loop_tap = (int8_t)s, q->loop_tap_ms = now, q->loop_tap_grp = 0;
+            q->page = (uint8_t)s, q->loop_first = (int8_t)s, q->loop_shown = 1;
         }
         rfmv_pop(m, POP_LOOP, 0);
         return;
@@ -1656,7 +1662,7 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
                 return 1;
             }
             if (mb == SEQ_M_LOOP)
-                q->loop_ms = rfmv_now_ms(m);
+                q->loop_ms = rfmv_now_ms(m), q->loop_shown = 0, q->loop_tap = -1;   /* (0.13.0: opened) */
             if (mb == SEQ_M_MUTE)
                 q->mute_ms = rfmv_now_ms(m);
             q->mods |= (uint8_t)mb, q->mods_used &= (uint8_t)~mb, q->mods_other &= (uint8_t)~mb;
@@ -1696,6 +1702,8 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
             const int alone = !used && !q->projects && !(q->mods & SEQ_M_SHIFT) && !q->step_held &&
                               !rfmv_seq_trk_held(m);
             q->mods &= (uint8_t)~mb;
+            if (mb == SEQ_M_LOOP)
+                q->loop_shown = 0;                      /* (0.13.0: closed) */
             /* (0.12.0, a2: Mute alone no longer mutes the selected track: its click latches the layer) */
             if (mb == SEQ_M_COPY) {
                 if (used)                               /* a source and no paste yet: the next press pastes (Move) */
@@ -1890,6 +1898,7 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
             const int clip = edit_clip(m), was = q->page, end = clip_end_page(m, clip);
             if (q->mods & SEQ_M_LOOP)                   /* (page edit: the same) */
                 q->mods_used |= SEQ_M_LOOP;
+            q->loop_shown = 0;                          /* (0.13.0: reached with the arrows: a ghost key confirms) */
             q->page = (uint8_t)clampi(q->page + d, 0, RFM_MOVE_SEQ_PAGES - 1);   /* the bars there are; Right past
                                                          * the last: a ghost bar (+1, +2 ..: real once a step goes in
                                                          * there, or, in page edit, once its step key confirms it) */

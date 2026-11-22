@@ -4186,6 +4186,71 @@ static void test_mj_page_len(void)
     button(MR_CC_LOOP, 0), rest();
 }
 
+/* (0.13.0, the owner's) the Loop layer's double tap: always that page alone (in the loop, the clip's outside it, past
+ * the clip's end, a ghost bar reached with Right); a tap only shows a page (a page past the end too: a later tap there
+ * confirms nothing); a ghost bar reached with Right: its key confirms it (as before); held + a second: the range */
+static int lt_clip;
+static void lt_reset(void)                              /* the loop: pages 2..3; a note on page 5 (the clip to there) */
+{
+    button(MR_CC_LOOP, 0), rest();
+    rfmv_seq_loop_set(&M, lt_clip, 16, 32);
+    M.seq.page = 1;
+    rest(), now_ms += 500;
+}
+static int lt_is(int lo, int hi) { return rfmv_seq_loop_lo(&M, lt_clip) == lo && rfmv_seq_loop_hi(&M, lt_clip) == hi; }
+static void lt_dbl(int s) { step(s, 1), step(s, 0), now_ms += 50, step(s, 1), step(s, 0); }
+static void test_loop_dbl(void)
+{
+    static const int PG[3] = { 1, 0, 4 };              /* in the loop; the clip's before it; the clip's after it */
+    int i;
+    fresh();
+    hold_track(1), hit(26), track(1, 0), rest();
+    tap_track(1), rest();
+    lt_clip = SEQ_CLIP(M.seq.sel_track, M.seq.tr[M.seq.sel_track].sel);
+    rfmv_seq_note_put(&M, lt_clip, 70, 60, 100, 24, 0);
+    for (i = 0; i < 3; i++) {
+        lt_reset();
+        button(MR_CC_LOOP, 1), lt_dbl(PG[i]);
+        CHECKF(lt_is(PG[i] * 16, PG[i] * 16 + 16) && M.seq.page == PG[i], "double tap on page %d: alone", PG[i] + 1);
+        button(MR_CC_LOOP, 0), rest(), press(MR_CC_UNDO);
+        CHECKF(lt_is(16, 48), "page %d: one undo", PG[i] + 1);
+    }
+    lt_reset();                                         /* past the clip's end (no Right) */
+    button(MR_CC_LOOP, 1), lt_dbl(7);
+    CHECK(lt_is(112, 128) && M.seq.page == 7);
+    write_pbm("mj_loop_dbl");
+    button(MR_CC_LOOP, 0), rest(), press(MR_CC_UNDO);
+    CHECK(lt_is(16, 48));
+    lt_reset();                                         /* a ghost bar reached with Right: the first tap confirms, the
+                                                         * second makes it alone; one Undo: as before both */
+    M.seq.page = 4, press(MR_CC_RIGHT), press(MR_CC_RIGHT), rest();
+    CHECK(M.seq.page == 6);
+    button(MR_CC_LOOP, 1), lt_dbl(6);
+    CHECK(lt_is(96, 112) && M.seq.page == 6);
+    button(MR_CC_LOOP, 0), rest(), press(MR_CC_UNDO);
+    CHECK(lt_is(16, 48));
+    /* a single tap on a page past the end, then again after the double tap's time: only shown, the loop the same */
+    lt_reset();
+    button(MR_CC_LOOP, 1), step(9, 1), step(9, 0);
+    CHECK(lt_is(16, 48) && M.seq.page == 9);
+    now_ms += 500, adv_ms(10);
+    step(9, 1), step(9, 0);
+    CHECK(lt_is(16, 48) && M.seq.page == 9);
+    now_ms += 500, adv_ms(10);
+    step(8, 1), step(8, 0);                             /* (a ghost before the shown one: shown, not confirmed) */
+    CHECK(lt_is(16, 48) && M.seq.page == 8);
+    /* a ghost bar reached with Right, tapped once: confirmed (as before) */
+    lt_reset();
+    M.seq.page = 4, press(MR_CC_RIGHT), press(MR_CC_RIGHT), rest();
+    button(MR_CC_LOOP, 1), step(6, 1), step(6, 0);
+    CHECK(lt_is(16, 112) && M.seq.page == 6);
+    /* held + a second: the range (as before) */
+    lt_reset();
+    button(MR_CC_LOOP, 1), step(2, 1), step(5, 1), step(5, 0), step(2, 0);
+    CHECK(lt_is(32, 96));
+    button(MR_CC_LOOP, 0), rest();
+}
+
 int main(void)
 {
     test_scenes();
@@ -4245,6 +4310,7 @@ int main(void)
     test_mj_menus();
     test_mj_places();
     test_mj_page_len();
+    test_loop_dbl();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

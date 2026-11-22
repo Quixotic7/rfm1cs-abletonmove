@@ -177,6 +177,17 @@ host carries the firmware state files with the project buffer; tested.
   not a double tap's first tap; its release does nothing. (seq_ui.c loop_page_len, rfmv_seq_jog, rfmv_seq_step;
   screen.c loop_popup; speech.c loop_words; rfm_move_seq_t.loop_down, loop_jogd, loop_dlen.) Test: test_mj_page_len.
 
+### The Loop layer's double tap always makes that bar the loop (the owner's, 2026-11-22)
+- "In the loop page double clicking a step should always solo that bar, not extend the page range to that bar, you do
+  that by holding one step button then pressing a second." A page past the clip's end: its first tap showed it, and the
+  second then counted as a ghost bar's confirmation (the loop extended to it) instead of the double tap. Now the double
+  tap is checked first: any page (in the loop, the clip's outside it, past the end, a ghost bar reached with Right) is
+  the loop alone. A tap only shows a page; a ghost bar's key confirms the new bars only when the bar was reached with
+  Left / Right (rfm_move_seq_t.loop_shown: set by a tap, cleared by the arrows and when the Loop layer opens or
+  closes). A ghost bar reached with Right and double tapped: the first tap confirms, the second makes it alone, in one
+  undo step (loop_tap_grp): one Undo brings back the loop of before. Held + a second step: the range, unchanged.
+  (seq_ui.c rfmv_seq_step, rfmv_seq_button.) Test: test_loop_dbl.
+
 ## 0.12.0 (2026-11-22, not released)
 
 The owner's answers on the review page, card by card. New fields in `rfm_move_seq_t` (after `tk_pend_clk`): rebuild

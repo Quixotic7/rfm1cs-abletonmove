@@ -373,7 +373,10 @@ Buttons, steps, ect, but pads stay in the MIDI layout, and Jogwheel is not taken
   ending at the release: a hold let go unused does not latch): the
   steps are the 16 pages: the loop's in the track's colour, the one shown white, the playing one pulsing, the clip's
   others (outside the loop) dim, past the clip off. A step: show that page. Two steps held: the loop is those pages and
-  the ones between (the page shown moves into it). A double tap (400 ms): the loop is that page alone. The jog:
+  the ones between (the page shown moves into it). A double tap (400 ms): the loop is that page alone, any page (0.13.0,
+  the owner's: "In the loop page double clicking a step should always solo that bar, not extend the page range to that
+  bar, you do that by holding one step button then pressing a second": also a page past the clip's end and a ghost bar;
+  one Undo: the loop before the first tap). A tap only shows the page, past the clip's end too. The jog:
   the length, a step a detent (Shift: a page), growing into new pages up to 16 (the owner's; the Move's wheel moves
   bars). The popup: the length in bars (+ steps), a bar over the 16 pages. (0.13.0, the owner's) A length that ends
   inside a bar ("5 Steps", "1 Bar +8"): the popup's bottom row is that bar's 16 steps (a cell: in the loop, filled
@@ -398,7 +401,7 @@ Buttons, steps, ect, but pads stay in the MIDI layout, and Jogwheel is not taken
   second on each press; the strip the real bars as a line, blank for the ghosts, a + at the far end). Outside page
   edit a ghost bar becomes real once a step goes in there (the clip grows to it); in page edit the step keys are
   the pages (a ghost one drawn as a +), and pressing a ghost page's key confirms the new bars (the clip to that
-  page). Leaving them adds nothing.
+  page; 0.13.0: only for a ghost bar reached with Right, not one a tap showed). Leaving them adds nothing.
 - **Pages cut, copied, pasted** (Loop held or latched): Delete + a page with notes cuts it (gone, an X on its step and
   in the popup's page strip), Copy + one copies it (dashed); Delete or Copy + an empty page pastes there (a pasted cut
   empties the clipboard). A page clipboard of its own, apart from the steps'. Back clears its mark.
