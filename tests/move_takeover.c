@@ -117,6 +117,22 @@ static void fw_data(int slot)
     rfm_move_tk_screen(&M, slot, FWSCR);
     rfm_move_tk_leds(&M, slot, (const uint8_t(*)[3])FWLED);
 }
+static void write_pbm(const char *name, const uint8_t *scr)   /* (0.12.0) for the design board: sessview_<name>.pbm */
+{
+    char path[96];
+    FILE *f;
+    int x, y;
+    snprintf(path, sizeof path, "sessview_%s.pbm", name);
+    if (!(f = fopen(path, "w")))
+        return;
+    fprintf(f, "P1\n128 64\n");
+    for (y = 0; y < 64; y++) {
+        for (x = 0; x < 128; x++)
+            fputc(scr[(y >> 3) * 128 + x] >> (y & 7) & 1 ? '1' : '0', f);
+        fputc('\n', f);
+    }
+    fclose(f);
+}
 static int screen_is_fw(void)
 {
     uint8_t o[MR_SCREEN_BYTES];
@@ -484,8 +500,47 @@ static void test_screen(void)
     rest_pop();
     rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_SCREEN | RFM_MOVE_TK_PADS, "NoScreen");   /* (now it is) */
     CHECK(screen_is_fw());
-    knob(4, 2);                                         /* (the knob still turns the FM-1, its popup not shown) */
-    CHECK(screen_is_fw());
+    {                                                   /* (0.12.0, a15) the knob still turns the FM-1; its popup over
+                                                         * the takeover's screen, in the popups' place: the whole screen
+                                                         * (the default), or the left half with the firmware's screen on
+                                                         * the right (Popup size Half) */
+        int x, y, right = 1, left = 0;
+        touch(4, 1), knob(4, 2);
+        rfm_move_screen(&M, NULL, b);
+        CHECK(!screen_is_fw() && M.pop == POP_ENC);
+        write_pbm("tk_knob_full", b);
+        for (y = 0, right = 0; y < 64; y++)
+            for (x = 64; x < 128; x++)
+                right += (b[(y >> 3) * 128 + x] >> (y & 7) & 1) != (FWSCR[(y >> 3) * 128 + x] >> (y & 7) & 1);
+        CHECK(right > 0);                               /* (the whole screen: the right half is the popup's too) */
+        touch(4, 0), rest_pop();
+        CHECK(screen_is_fw());
+        M.s.pop_half = 1;
+        touch(4, 1), knob(4, 2);
+        rfm_move_screen(&M, NULL, b);
+        for (y = 0, right = 0, left = 0; y < 64; y++)
+            for (x = 0; x < 128; x++) {
+                const int d = (b[(y >> 3) * 128 + x] >> (y & 7) & 1) != (FWSCR[(y >> 3) * 128 + x] >> (y & 7) & 1);
+                if (x < 64)
+                    left += d;
+                else
+                    right += d;
+            }
+        CHECK(left > 0 && right == 0);                  /* (the left half: the firmware's screen on the right) */
+        write_pbm("tk_knob_half", b);
+        touch(4, 0);                                    /* (let go: the gesture ends, as outside a takeover) */
+        CHECK(screen_is_fw());
+        knob(4, 2);                                     /* (turned untouched: its second after the turn) */
+        adv_ms(RFM_MOVE_POPUP_MS / 2);
+        CHECK(!screen_is_fw());
+        rest_pop();
+        CHECK(screen_is_fw());
+        M.s.pop_half = 0;
+        rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_SCREEN | RFM_MOVE_TK_PADS | RFM_MOVE_TK_KNOBS, "NoScreen");
+        knob(4, 2);                                     /* (claimed knobs: the firmware's own, no popup of ours) */
+        CHECK(screen_is_fw());
+        rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_SCREEN | RFM_MOVE_TK_PADS, "NoScreen");
+    }
     rfm_move_popup(&M, "Load failed");                  /* the host's message over it */
     CHECK(!screen_is_fw());
     rest_pop();

@@ -1339,6 +1339,25 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
                                                          * level over the firmware's screen, full screen */
             value_popup(m, &cv);
             mr_gfx_pack(&cv, out);
+        } else if (!(rfmv_tk_claims(m) & RFM_MOVE_TK_KNOBS) && rfmv_pop_up(m, m->pop) &&
+                   (m->pop == POP_ENC || (m->pop == POP_READ && m->pop_i < RFM_MOVE_NKNOBS))) {
+            /* (0.12.0, a15, the owner's: "Keep the setting to put the popups on the left side or full screen as I might
+             * want to sometimes see the screen while turning the knob") a knob the takeover leaves to the FM-1: its
+             * popup over the takeover's screen, while touched and its second after a turn, in the popups' place (Global
+             * settings' Popup size: the left half, the firmware's screen on the right; or the whole screen) */
+            const uint8_t *ts = m->tk[m->fw.active % RFM_MOVE_FW_SLOTS].screen;
+            for (y = 0; y < 64; y++)
+                for (x = 0; x < 128; x++)
+                    cv.px[y][x] = (uint8_t)(ts[(y >> 3) * 128 + x] >> (y & 7) & 1);
+            g_half = 1, g_full = 0, g_label_drawn = 0, g_wide_drawn = 0;
+            g_lw = m->s.pop_half ? 64 : 128;
+            g_scroll_ms = rfmv_now_ms(m) - m->pop_t0;
+            if (m->pop == POP_READ)
+                knob_readout(m, &cv, &m->rd_pop, m->pop_i);
+            else
+                value_popup(m, &cv);
+            g_lw = 64;
+            mr_gfx_pack(&cv, out);
         } else
             memcpy(out, m->tk[m->fw.active % RFM_MOVE_FW_SLOTS].screen, MR_SCREEN_BYTES);
         return;
