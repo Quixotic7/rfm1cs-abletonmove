@@ -951,7 +951,7 @@ static int fm1_seq_layer(const rfm_move_t *m)
 static void fm1_shift(rfm_move_t *m, int is_step, int i, int down, uint32_t now)
 {
     rfm_move_seq_t *q = &m->seq;
-    const uint8_t had = q->mods & SEQ_M_SHIFT;
+    const uint8_t had = q->mods & SEQ_M_SHIFT, sm = q->smenu;
     q->mods |= SEQ_M_SHIFT;
     if (is_step)
         rfmv_seq_step(m, i, down, now);
@@ -959,6 +959,9 @@ static void fm1_shift(rfm_move_t *m, int is_step, int i, int down, uint32_t now)
         rfmv_seq_button(m, i, down, now);
     if (!had)
         q->mods &= (uint8_t)~SEQ_M_SHIFT;
+    if (q->smenu && q->smenu != sm)
+        q->t4_opened = 1;                               /* (0.12.0, a8: a menu it opened owns the knobs, lit, while
+                                                         * Track 4 is still down) */
     rfmv_menu(m, MENU_SHIFT, 0);                        /* (the Track button was used: its release is no tap) */
 }
 
@@ -1139,9 +1142,13 @@ static void on_step(rfm_move_t *m, int s, int down, uint32_t now)
     rfm_move_hold_t *h = &m->step[s];
     int t;
     if (!down) {
-        if (h->kind == H_SEQ || (h->kind == H_MENU && s == 10 && m->seq.arp_sh))   /* (Sequencer mode's step: its release; 0.12.0:
-                                                         * Track 4's Shift + step 11 too, a gated click) */
+        if (h->kind == H_SEQ || (h->kind == H_MENU && s == 10 && m->seq.arp_sh)) {   /* (Sequencer mode's step: its
+                                                         * release; 0.12.0: Track 4's Shift + step 11 too, a gated click) */
+            const int sm = m->seq.smenu;
             rfmv_seq_step(m, s, 0, now);
+            if (rfmv_t4_menu(m) && m->seq.smenu && m->seq.smenu != sm)
+                m->seq.t4_opened = 1;
+        }
         let_go(m, h);
         return;
     }
@@ -1347,8 +1354,9 @@ static void on_knob(rfm_move_t *m, int k, int d, uint32_t now)
         }
         return;
     }
-    if (rfmv_t4_menu(m))
-        return;                                         /* (Track 4 held: the knobs do nothing) */
+    if (rfmv_t4_menu(m) && !(m->seq.smenu && m->seq.t4_opened))
+        return;                                         /* (Track 4 held: the knobs do nothing; 0.12.0: a menu it opened
+                                                         * has them) */
     if (fm1_seq_layer(m) && m->seq.smenu) {
         rfmv_seq_knob(m, k, d, now);                    /* (a sequencer menu open outside it: its knobs) */
         return;
@@ -1394,10 +1402,6 @@ static void on_jog(rfm_move_t *m, int d, uint32_t now)
     int t;
     if (!d)
         return;
-    if (fm1_seq_layer(m) && m->seq.smenu) {
-        rfmv_seq_jog(m, d, now);                        /* (a sequencer menu open outside it) */
-        return;
-    }
     if ((t = rfmv_lay_menu(m)) != 0) {                  /* a firmware Track held: the root (the key the tracks use) */
         const int r = ((key_root(m) + d) % 12 + 12) % 12;
         if (rfmv_sess_on(m))
@@ -1406,8 +1410,12 @@ static void on_jog(rfm_move_t *m, int d, uint32_t now)
         key_set(m, r, -1);
         return;
     }
-    if (rfmv_t4_menu(m))
+    if (rfmv_t4_menu(m) && !(m->seq.smenu && m->seq.t4_opened))
+        return;                                         /* (Track 4 held: dead; 0.12.0: a menu it opened has the jog) */
+    if (fm1_seq_layer(m) && m->seq.smenu) {
+        rfmv_seq_jog(m, d, now);                        /* (a sequencer menu open outside it) */
         return;
+    }
     if (m->s.mode == RFM_MOVE_MODE_SEQ) {
         rfmv_seq_jog(m, d, now);
         return;
@@ -1485,8 +1493,11 @@ static void on_touch(rfm_move_t *m, int k, int on)
             rfmv_menu(m, MENU_CC, k);
         return;
     }
-    if (rfmv_t4_menu(m))
+    if (rfmv_t4_menu(m) && !(m->seq.smenu && m->seq.t4_opened))
         return;
+    if (k < RFM_MOVE_NKNOBS && m->seq.smenu && rfmv_menu_knobs(m) >= 0)
+        return;                                         /* (0.12.0, a5 .. a7) an open Shift menu: its header names the
+                                                         * knob, in every view and layout; no other popup */
     if (k <= 8 && rfmv_seq_cs_touch(m, k))
         return;                                         /* (0.12.0) a select step held: its clip's settings take the
                                                          * knobs (no track popup, no select) */
@@ -1606,6 +1617,8 @@ static int track_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
         if (m->back_down)
             m->back_used = 1;                           /* (Back's click is not one now) */
         rfmv_menu(m, MENU_NONE, 0);
+        if (t == 3)
+            m->seq.t4_opened = 0;
         m->track_held = (uint8_t)(m->track_held | bit);
         m->tbtn_used = (uint8_t)(m->tbtn_used & ~bit);
         m->tbtn_ms[t] = now, m->tbtn_clk[t] = rfmv_now_ms(m);
@@ -1802,7 +1815,13 @@ static const rgb_t MENU_KNOB = { 255, 72, 0 };         /* a menu's knobs (the ow
 /* a held Track's (its menu or layer shown) or an open menu's knobs: a bit each; -1 none (the knobs as they are) */
 int rfmv_menu_knobs(const rfm_move_t *m)
 {
-    if (m->seq.projects)                                /* (Track 4: knob 1 the colour; the firmware tracks and FX
+    if (m->seq.smenu && !rfmv_seq_held_takes(m) && !(rfmv_lay_menu(m) && rfmv_hold_shown(m, rfmv_lay_menu(m) - 1)) &&
+        !(rfmv_t4_menu(m) && rfmv_hold_shown(m, 3) && !m->seq.t4_opened))
+        return rfmv_seq_menu_knobs(m);                  /* (0.12.0, a6: a Shift menu owns its knobs over every view,
+                                                         * the Mixer and Routing too; a held Track's menu over it, a
+                                                         * held step, Track 4 held (unless it opened the menu) take
+                                                         * them) */
+    if (m->seq.projects)                              /* (Track 4: knob 1 the colour; the firmware tracks and FX
                                                          * setup light their own) */
         return m->fw.fx || m->fw.track < 3 ? -1 : 0x01;
     {                                                   /* (0.8.0) a firmware Track's menu: a note layout's CC numbers

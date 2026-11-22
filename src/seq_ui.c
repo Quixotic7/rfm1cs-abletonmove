@@ -869,7 +869,7 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             q->arp_sh = 0;
             if (!held) {
                 q->smenu = (uint8_t)(q->smenu == RFM_MOVE_SM_ARP ? 0 : RFM_MOVE_SM_ARP);
-                q->arp_page = 0, m->gl_edit = 0;
+                q->arp_page = 0, m->gl_edit = 0, q->sm_ms = 0;   /* (0.12.0: no header left from another menu) */
                 if (q->smenu)
                     layer(q, LY_MENU);
                 rfmv_menu(m, MENU_NONE, 0);
@@ -1043,6 +1043,8 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         if (s == SH_TEMPO) {                            /* Shift + step 5: the tempo menu, and each press a tap (tap
                                                          * tempo) */
             rfmv_seq_tap(m, now);
+            if (q->smenu != RFM_MOVE_SM_TEMPO)
+                q->sm_ms = 0;
             q->smenu = RFM_MOVE_SM_TEMPO;
             layer(q, LY_MENU);
             return;
@@ -1055,7 +1057,7 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         }
         if (sh_menu(s)) {                               /* a menu: open (again: closed) */
             q->smenu = (uint8_t)(q->smenu == sh_menu(s) ? 0 : sh_menu(s));
-            q->arp_page = 0, m->gl_edit = 0;
+            q->arp_page = 0, m->gl_edit = 0, q->sm_ms = 0;   /* (0.12.0: no header left from another menu) */
             if (q->smenu)
                 layer(q, LY_MENU);
             rfmv_menu(m, MENU_NONE, 0);
@@ -1685,7 +1687,7 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
     case MR_CC_REC:
         if (q->mods & SEQ_M_SHIFT) {                    /* Shift + Record: the record settings */
             q->mods_used |= SEQ_M_SHIFT;
-            q->smenu = (uint8_t)(q->smenu == RFM_MOVE_SM_REC ? 0 : RFM_MOVE_SM_REC);
+            q->smenu = (uint8_t)(q->smenu == RFM_MOVE_SM_REC ? 0 : RFM_MOVE_SM_REC), q->sm_ms = 0;
             if (q->smenu)
                 layer(q, LY_MENU);
             return 1;
@@ -2123,12 +2125,25 @@ const char *rfmv_seq_arp_mode_name(int mode)
     static const char *const AM[RFM_MOVE_AM_N] = { "Off", "On", "First", "Once", "Hold" };
     return AM[mode >= 0 && mode < RFM_MOVE_AM_N ? mode : 0];
 }
+/* (0.12.0) what the menus' headers show, at a glance: a turn that changed none of it at a range's end still brings the
+ * header up, so its words are said */
+static uint32_t smenu_sig(const rfm_move_t *m)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const rfm_move_track_t *t = &q->tr[q->sel_track];
+    return (uint32_t)t->ch ^ (uint32_t)t->rate << 4 ^ (uint32_t)q->qstrength << 8 ^ (uint32_t)rfm_move_seq_bpm10(m) << 12 ^
+           (uint32_t)rfmv_seq_groove_of(m, q->sel_track) << 3 ^ (uint32_t)t->own << 28 ^ (uint32_t)m->s.layout << 26 ^
+           (uint32_t)m->s.root << 20 ^ (uint32_t)m->s.scale << 15 ^ (uint32_t)m->s.vel_mode << 24 ^
+           (uint32_t)m->s.vel_level << 9 ^ (uint32_t)q->rec_mode << 30 ^ (uint32_t)q->rec_style << 29;
+}
+static void smenu_head(const rfm_move_t *m, int k, char *o, int cap);
 static void smenu_turn(rfm_move_t *m, int k, int d)
 {
     rfm_move_seq_t *q = Q(m);
     rfm_move_track_t *t = &q->tr[q->sel_track];
     rfm_move_arp_t *a = &t->arp;
     const rfm_move_arp_t a0 = *a;
+    const uint32_t sig0 = smenu_sig(m);
     const int shown = q->sm_k == k && rfmv_now_ms(m) - q->sm_ms < RFM_MOVE_POPUP_MS;
     if (k >= 0 && !(rfmv_seq_menu_knobs(m) >> k & 1))
         return;                                         /* (0.11.0: a knob the menu has no job for: nothing) */
@@ -2238,20 +2253,10 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
         default: break;
         }
         break;
-    case RFM_MOVE_SM_GLOBAL:                            /* the jog or knob 1: the clock source; knob 2: the velocity
-                                                         * option; knob 3: its level; (0.5.9) knob 4: the FM-1
-                                                         * popups' width (Full, Half) */
-        if (k <= 0)
-            rfm_move_seq_set_clock(m, clampi(q->clock_mode + d, 0, 2));
-        else if (k == 1)
-            rfmv_vel_step(m, d), rfmv_changed(m);
-        else if (k == 2)
-            m->s.vel_level = (uint8_t)clampi(m->s.vel_level + d, 1, 127), rfmv_changed(m);
-        else if (k == 3) {
-            const int h = clampi(m->s.pop_half + d, 0, 1);
-            if (h != m->s.pop_half)
-                m->s.pop_half = (uint8_t)h, rfmv_changed(m);
-        }
+    case RFM_MOVE_SM_GLOBAL:                            /* (0.12.0, a6) nothing: a leftover of before 0.6.2 (the jog
+                                                         * or knob 1 the clock, knobs 2..4 velocity, level, popups).
+                                                         * Global settings is its list on the jog (rfmv_global_input,
+                                                         * which has the jog everywhere now); its knobs dark and dead */
         break;
     case RFM_MOVE_SM_VEL:                               /* the jog: the option (1:1, five); knob 1: the level */
         if (k < 0)
@@ -2272,6 +2277,11 @@ static void smenu_turn(rfm_move_t *m, int k, int d)
         char w[48];                                     /* (its header came up with the value at its end: said) */
         rfmv_seq_smenu_words(m, k, w, sizeof w);
         rfmv_say_text(m, w);
+    } else if (q->smenu != RFM_MOVE_SM_ARP && !shown && smenu_sig(m) == sig0 && m->speech) {
+        char w[48];                                     /* (0.12.0: every menu's header, the same) */
+        smenu_head(m, k < 0 ? -2 : k, w, sizeof w);
+        if (w[0])
+            rfmv_say_text(m, w);
     }
     rfmv_seq_dirty(m);
 }
@@ -3302,8 +3312,8 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
 {
     rfm_move_seq_t *q = Q(m);
     char w[48];
-    if (q->smenu != RFM_MOVE_SM_GLOBAL || q->projects)
-        return 0;
+    if (q->smenu != RFM_MOVE_SM_GLOBAL)
+        return 0;                                       /* (0.12.0, a6: over the projects view too: the Mixer, Routing) */
     switch (ev->type) {
     case MR_EV_JOG: {
         const int d = ev->value;
@@ -3340,7 +3350,7 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
                                                          * it, or the FM-1 layout's HOME) */
         if (!ev->value)
             return ev->index == MR_CC_BACK;             /* (its press was ours) */
-        if (ev->index == MR_CC_SHIFT && m->s.mode != RFM_MOVE_MODE_FM1)
+        if (ev->index == MR_CC_SHIFT && (m->s.mode != RFM_MOVE_MODE_FM1 || q->projects))
             return 0;                                   /* (Shift + step 2 closes it in Sequencer mode and, 0.8.0, a note
                                                          * layout; in the FM-1 layout Shift is the FM-1's GLO) */
         if (ev->index == MR_CC_BACK) {
@@ -3351,7 +3361,8 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
         }
         return 1;
     case MR_EV_STEP:
-        if (!ev->value || rfmv_track_held(m, 3) || (q->mods & SEQ_M_SHIFT) || (m->shift_down && m->s.mode == RFM_MOVE_MODE_MIDI))
+        if (!ev->value || rfmv_track_held(m, 3) || (q->mods & SEQ_M_SHIFT) ||
+            (m->shift_down && (m->s.mode == RFM_MOVE_MODE_MIDI || q->projects)))
             return 0;                                   /* (releases; Shift + step: the menus, this one's toggle) */
         return 1;
     case MR_EV_TOUCH:
@@ -3492,44 +3503,148 @@ static void arp_sign(mr_canvas_t *cv, int x, int v)
         break;
     }
 }
+/* ---- (0.12.0, a5) every Shift menu names its knobs as the arp's does: the touched knob's (or the one turned last, a
+ * second; or the jog's value when the jog turned last) name and value in the top line, 2x where it fits; under it a
+ * tick at the place of each knob the menu uses, the active one long. At rest the top line is the menu's own (its
+ * title, its main value) */
+#define HEAD_JOG (-2)
+static int smenu_jog(const rfm_move_seq_t *q)           /* the menu's jog has a value of its own to name */
+{
+    return q->smenu && q->smenu != RFM_MOVE_SM_ARP && q->smenu != RFM_MOVE_SM_GLOBAL &&
+           !(q->smenu == RFM_MOVE_SM_TEMPO && q->following);
+}
+static int smenu_hk(const rfm_move_t *m)                /* the header's knob, HEAD_JOG, or -1 (at rest) */
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const int mk = rfmv_seq_menu_knobs(m), tk = touched_knob(m), recent = rfmv_now_ms(m) - q->sm_ms < RFM_MOVE_POPUP_MS;
+    if (tk >= 0 && (mk >> tk & 1))
+        return tk;
+    if (recent && q->sm_k >= 0 && (mk >> q->sm_k & 1))
+        return q->sm_k;
+    if (recent && q->sm_k < 0 && q->sm_ms && smenu_jog(q))
+        return HEAD_JOG;
+    if (q->smenu == RFM_MOVE_SM_ARP && q->al_pads && rfmv_seq_al_holding(m))
+        return 0;                                       /* (0.12.0) the pads taken: the held step and its value */
+    return -1;
+}
+static void arp_head(const rfm_move_t *m, int k, char *o, int cap);
+static void smenu_head(const rfm_move_t *m, int k, char *o, int cap)   /* knob k's name and value (HEAD_JOG the jog's) */
+{
+    static const char *const LN[4] = { "In-Key", "Chromatic", "Drum", "Octaves" };
+    static const char *const RM[3] = { "Capture", "Record", "Step" };
+    const rfm_move_seq_t *q = &m->seq;
+    const rfm_move_track_t *t = &q->tr[q->sel_track];
+    const int b10 = rfm_move_seq_bpm10(m);
+    char v[24];
+    if (k == HEAD_JOG && q->smenu != RFM_MOVE_SM_VEL)
+        k = 0;                                          /* (the jog turns what knob 1 does) */
+    o[0] = 0;
+    switch (q->smenu) {
+    case RFM_MOVE_SM_WORKFLOW:
+        if (k == 0)
+            snprintf(o, (size_t)cap, "Channel %d", t->ch + 1);
+        else if (k == 1)
+            snprintf(o, (size_t)cap, "Rate %s", rfm_move_seq_rate_name(t->rate));
+        else
+            snprintf(o, (size_t)cap, "Quantize %d%%", q->qstrength);
+        break;
+    case RFM_MOVE_SM_TEMPO:
+        if (k || b10 % 10)
+            snprintf(o, (size_t)cap, "%s %d.%d", k ? "Fine" : "Tempo", b10 / 10, b10 % 10);
+        else
+            snprintf(o, (size_t)cap, "Tempo %d", b10 / 10);   /* (2x: a whole tempo without its ".0") */
+        break;
+    case RFM_MOVE_SM_GROOVE:
+        if (k == 0)
+            snprintf(o, (size_t)cap, "Groove %d%%", rfmv_seq_groove_of(m, q->sel_track));
+        else
+            snprintf(o, (size_t)cap, "For %s", t->own & 1 ? "Track" : "Global");
+        break;
+    case RFM_MOVE_SM_LAYOUT: snprintf(o, (size_t)cap, "Layout %s", LN[m->s.layout & 3]); break;
+    case RFM_MOVE_SM_KEYS:
+        if (k == 0)
+            snprintf(o, (size_t)cap, "Root %s", rfmv_note_names[m->s.root % 12]);
+        else if (k == 1)
+            rfmv_tcase(rfm_move_scale_name(m->s.scale), v, sizeof v), snprintf(o, (size_t)cap, "Scale %s", v);
+        else if (k == 2)
+            snprintf(o, (size_t)cap, "For %s", t->own & 2 ? "Track" : "Global");
+        else
+            snprintf(o, (size_t)cap, "Layout %s", LN[m->s.layout & 3]);
+        break;
+    case RFM_MOVE_SM_VEL:
+        if (k == HEAD_JOG)
+            rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), o, cap);
+        else
+            snprintf(o, (size_t)cap, "Level %d", m->s.vel_level);
+        break;
+    case RFM_MOVE_SM_REC:
+        if (k == 0)
+            snprintf(o, (size_t)cap, "Mode %s", RM[q->rec_mode % 3]);
+        else
+            snprintf(o, (size_t)cap, "Style %s", q->rec_style == RFM_MOVE_RS_REPLACE ? "Replace" : "Overdub");
+        break;
+    case RFM_MOVE_SM_ARP: arp_head(m, k, o, cap); break;
+    default: break;
+    }
+}
+/* the top line (hk >= 0 or HEAD_JOG: the header over the menu's own; the arp's: always) and the knobs' ticks at 17 */
+static void smenu_top(const rfm_move_t *m, mr_canvas_t *cv, int hk)
+{
+    const int mk = rfmv_seq_menu_knobs(m);
+    char b[32];
+    int i;
+    if (hk != -1 || m->seq.smenu == RFM_MOVE_SM_ARP) {
+        smenu_head(m, hk, b, sizeof b);
+        v2_R(cv, 0, 0, 128, 17, 0);
+        fit2(cv, 0, 0, b, 128);
+    }
+    v2_R(cv, 0, 17, 128, 2, 0);
+    for (i = 0; i < 8; i++)
+        if (mk >> i & 1)
+            v2_R(cv, i == hk ? 3 + i * 16 : 6 + i * 16, 17, i == hk ? 10 : 4, i == hk ? 2 : 1, 1);
+}
 static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_seq_t *q = &m->seq;
     const rfm_move_track_t *t = &q->tr[q->sel_track];
-    const int tk = touched_knob(m);
+    const int hk = smenu_hk(m);
     char b[32], c[32];
     int i;
     switch (q->smenu) {
     case RFM_MOVE_SM_WORKFLOW:                          /* the track's channel, rate and quantize: a row a knob */
-        v2_knobs(cv, 7, tk);
-        snprintf(b, sizeof b, "Ch %d", t->ch + 1), v2_T(cv, 0, 14, b, 2, 1);
-        snprintf(b, sizeof b, "Rate %s", rfm_move_seq_rate_name(t->rate)), v2_T(cv, 0, 31, b, 2, 1);
-        snprintf(b, sizeof b, "Quant %d%%", q->qstrength), v2_T(cv, 0, 48, b, 2, 1);
+        v2_TC(cv, 64, 0, "Workflow", 2, 1);
+        snprintf(b, sizeof b, "Ch %d", t->ch + 1), v2_T(cv, 0, 20, b, 2, 1);
+        snprintf(b, sizeof b, "Rate %s", rfm_move_seq_rate_name(t->rate)), v2_T(cv, 0, 35, b, 2, 1);
+        snprintf(b, sizeof b, "Quant %d%%", q->qstrength), v2_T(cv, 0, 50, b, 2, 1);
+        smenu_top(m, cv, hk);
         break;
     case RFM_MOVE_SM_TEMPO: {                           /* the tap icon (following: a padlock), the BPM at 4x; the
                                                          * taps counted on the strip */
         const int b10 = rfm_move_seq_bpm10(m);
-        v2_ic(cv, q->following ? V2I_LOCK : V2I_TAP, 2, 3, 1);
-        v2_TC(cv, 64, 3, "Tempo", 2, 1);
+        v2_ic(cv, q->following ? V2I_LOCK : V2I_TAP, 2, 2, 1);
+        v2_TC(cv, 64, 0, "Tempo", 2, 1);
         snprintf(b, sizeof b, b10 % 10 && b10 < 1000 ? "%d.%d" : "%d", b10 % 10 && b10 < 1000 ? b10 / 10 : (b10 + 5) / 10, b10 % 10);
-        v2_TC(cv, 64, 22, b, v2_tw(b, 4) <= 124 ? 4 : 3, 1);
+        v2_TC(cv, 64, 24, b, v2_tw(b, 4) <= 124 ? 4 : 3, 1);
         if (!q->following)
             v2_strip(cv, 4, (1u << clampi(q->ntap, 0, 4)) - 1, -1, 0, 128);
+        smenu_top(m, cv, hk);
         break;
     }
-    case RFM_MOVE_SM_GROOVE: {                          /* two 16ths, the second late by the groove; Global / Track */
+    case RFM_MOVE_SM_GROOVE: {                          /* two 16ths, the second late by the groove (its amount at 3x
+                                                         * beside them); Global / Track */
         const int g = rfmv_seq_groove_of(m, q->sel_track), own = t->own & 1;
-        v2_knobs(cv, 3, tk);
-        v2_R(cv, 4, 12, 3, 30, 1);
-        v2_R(cv, 28 + (g * 10 + 50) / 100, 12, 3, 30, 1);
-        v2_dotV(cv, 28, 12, 30);
+        v2_TC(cv, 64, 0, "Groove", 2, 1);
+        v2_R(cv, 4, 21, 3, 24, 1);
+        v2_R(cv, 28 + (g * 10 + 50) / 100, 21, 3, 24, 1);
+        v2_dotV(cv, 28, 21, 24);
         snprintf(b, sizeof b, "%d%%", g);
-        v2_titleBox(cv, "Groove", b, 88, 50);
+        v2_TC(cv, 94, 23, b, 3, 1);
         if (own)
-            v2_ic(cv, V2I_GLOBE, 2, 48, 1), v2_icSel(cv, V2I_TRACK, 18, 48);
+            v2_ic(cv, V2I_GLOBE, 2, 50, 1), v2_icSel(cv, V2I_TRACK, 18, 49);
         else
-            v2_icSel(cv, V2I_GLOBE, 2, 48), v2_ic(cv, V2I_TRACK, 18, 48, 1);
-        v2_T(cv, 40, 48, own ? "Track" : "Global", 2, 1);
+            v2_icSel(cv, V2I_GLOBE, 2, 49), v2_ic(cv, V2I_TRACK, 18, 50, 1);
+        v2_T(cv, 40, 49, own ? "Track" : "Global", 2, 1);
+        smenu_top(m, cv, hk);
         break;
     }
     case RFM_MOVE_SM_LAYOUT: {                          /* Move's icon row: the chosen one underlined and named */
@@ -3537,32 +3652,45 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
         static const char *const NM[4] = { "In-Key", "Chromatic", "Drum", "Octaves" };
         for (i = 0; i < 4; i++)
             if (i == m->s.layout)
-                v2_icSel(cv, IC[i], 22 + i * 24, 6);
+                v2_icSel(cv, IC[i], 22 + i * 24, 1);
             else
-                v2_ic(cv, IC[i], 22 + i * 24, 6, 1);
+                v2_ic(cv, IC[i], 22 + i * 24, 1, 1);
         v2_TC(cv, 64, 30, NM[m->s.layout & 3], 2, 1);
         v2_strip(cv, 2, 1, -1, 0, 128);
+        smenu_top(m, cv, hk);
         break;
     }
-    case RFM_MOVE_SM_KEYS:                              /* the build's key / scale screen, Global / Track below */
-        rfmv_keys_menu(m, cv, !(t->own & 2));
+    case RFM_MOVE_SM_KEYS: {                            /* the key and scale on top, the root on a 12-key row, the four
+                                                         * layouts' icons (the chosen one underlined), Global / Track */
+        static const int IC[4] = { V2I_INKEY, V2I_CHROM, V2I_DRUM, V2I_OCT };
+        const int glob = !(t->own & 2);
+        rfmv_tcase(rfm_move_scale_name(m->s.scale), c, sizeof c);
+        snprintf(b, sizeof b, "%s %s", rfmv_note_names[m->s.root % 12], c);
+        v2_TC(cv, 64, v2_tw(b, 2) <= 128 ? 0 : 4, b, v2_tw(b, 2) <= 128 ? 2 : 1, 1);
+        for (i = 0; i < 12; i++) {
+            const int blk = (0x54A >> i) & 1, x = 4 + i * 10, y = blk ? 21 : 24, h = blk ? 5 : 6;
+            if (i == m->s.root % 12)
+                v2_R(cv, x, y, 8, h, 1);
+            else
+                v2_O(cv, x, y, 8, h, 1);
+        }
+        for (i = 0; i < 4; i++)
+            if (i == m->s.layout)
+                v2_icSel(cv, IC[i], 2 + i * 16, 34);
+            else
+                v2_ic(cv, IC[i], 2 + i * 16, 34, 1);
+        v2_ic(cv, glob ? V2I_GLOBE : V2I_TRACK, 68, 36, 1);
+        v2_T(cv, 82, 36, glob ? "Global" : "Track", 1, 1);
+        smenu_top(m, cv, hk);
         break;
+    }
     case RFM_MOVE_SM_ARP: {
         /* (0.11.0, the owner's) each page has its own picture, so a knob's name and value go in the header (2x where
          * they fit): the touched knob's, or the one turned last (a second); at rest the page says what it is ("Arp
-         * On", "Mod", "Transpose"). Under it a tick a knob the page uses, the active one long */
+         * On", "Mod", "Transpose"). Under it a tick a knob the page uses, the active one long (0.12.0: smenu_top,
+         * every menu's) */
         const rfm_move_arp_t *a = &t->arp;
-        const int mk = rfmv_seq_menu_knobs(m);
-        int hk = tk >= 0 && (mk >> tk & 1) ? tk : -1;
-        if (hk < 0 && q->sm_k >= 0 && (mk >> q->sm_k & 1) && rfmv_now_ms(m) - q->sm_ms < RFM_MOVE_POPUP_MS)
-            hk = q->sm_k;
-        if (hk < 0 && q->al_pads && rfmv_seq_al_holding(m))
-            hk = 0;                                     /* (0.12.0) the pads taken: the held step and its value */
-        arp_head(m, hk, b, sizeof b);
-        fit2(cv, 0, 0, b, 128);
-        for (i = 0; i < 8; i++)
-            if (mk >> i & 1)
-                v2_R(cv, i == hk ? 3 + i * 16 : 6 + i * 16, 17, i == hk ? 10 : 4, i == hk ? 2 : 1, 1);
+        smenu_top(m, cv, hk);
         if (q->arp_page) {                              /* a lane: its 16 steps; MOD: what each does, as a sign;
                                                          * TRANSPOSE: bars from the line. The picked one underlined, the
                                                          * one just played ticked; past its length a dot */
@@ -3626,26 +3754,27 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
         static const char *const NM[3] = { "Capture", "Record", "Step" };
         for (i = 0; i < 3; i++)
             if (i == q->rec_mode)
-                v2_icSel(cv, IC[i], 34 + i * 24, 2);
+                v2_icSel(cv, IC[i], 34 + i * 24, 1);
             else
-                v2_ic(cv, IC[i], 34 + i * 24, 2, 1);
-        v2_TC(cv, 64, 22, NM[q->rec_mode % 3], 2, 1);
-        v2_ic(cv, q->rec_style == RFM_MOVE_RS_REPLACE ? V2I_REPLACE : V2I_OVERDUB, 22, 44, 1);
-        v2_T(cv, 40, 42, q->rec_style == RFM_MOVE_RS_REPLACE ? "Replace" : "Overdub", 2, 1);
+                v2_ic(cv, IC[i], 34 + i * 24, 1, 1);
+        v2_TC(cv, 64, 24, NM[q->rec_mode % 3], 2, 1);
+        v2_ic(cv, q->rec_style == RFM_MOVE_RS_REPLACE ? V2I_REPLACE : V2I_OVERDUB, 22, 46, 1);
+        v2_T(cv, 40, 44, q->rec_style == RFM_MOVE_RS_REPLACE ? "Replace" : "Overdub", 2, 1);
+        smenu_top(m, cv, hk);
         break;
     }
-    case RFM_MOVE_SM_VEL: {                             /* the curve as a graph (Fixed: a flat line at the level), the
-                                                         * option (the jog) and the level (knob 1) with a bar */
-        v2_knobs(cv, 1, tk);
-        v2_R(cv, 2, 12, 1, 40, 1), v2_R(cv, 2, 51, 40, 1, 1);
+    case RFM_MOVE_SM_VEL: {                             /* the option (the jog) on top; the curve as a graph (Fixed: a
+                                                         * flat line at the level), the level (knob 1) with a bar */
+        rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), c, sizeof c);
+        v2_TC(cv, 64, 0, c, 2, 1);
+        v2_R(cv, 2, 21, 1, 40, 1), v2_R(cv, 2, 60, 40, 1, 1);
         for (i = 0; i < 38; i++) {
             const int v = rfm_move_vel(&m->s, 1 + i * 126 / 37);
-            v2_R(cv, 3 + i, 51 - (v * 37 + 63) / 127, 1, 2, 1);
+            v2_R(cv, 3 + i, 60 - (v * 37 + 63) / 127, 1, 2, 1);
         }
-        rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), c, sizeof c);
-        v2_T(cv, 50 + v2_tw(c, 2) <= 128 ? 50 : 128 - v2_tw(c, 2), 12, c, 2, 1);
-        snprintf(b, sizeof b, "%d", m->s.vel_level), v2_T(cv, 50, 30, b, 2, 1);
-        v2_vbar(cv, m->s.vel_level / 127.0, 0, 50, 76, 48);
+        snprintf(b, sizeof b, "%d", m->s.vel_level), v2_T(cv, 50, 26, b, 3, 1);
+        v2_vbar(cv, m->s.vel_level / 127.0, 0, 50, 76, 54);
+        smenu_top(m, cv, hk);
         break;
     }
     case RFM_MOVE_SM_GLOBAL:                            /* (0.6.2) a list on the jog wheel */

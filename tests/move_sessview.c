@@ -2080,6 +2080,130 @@ static void test_menu_stays(void)
     tap_track(1), rest();
 }
 
+/* a5: every Shift menu names its knobs: the touched (or just turned) knob's name and value on top, a tick a knob in
+ * use (the active one long); at rest the menu's own top; an unused knob touched: nothing changes */
+static int tick(int k, int lng) { return lng ? px(3 + k * 16, 17) && px(12 + k * 16, 17) : px(6 + k * 16, 17) && !px(4 + k * 16, 17); }
+static void menu_heads(const char *name, int bits)
+{
+    char nm[48];
+    int k, ok;
+    rest(), scr_save();
+    snprintf(nm, sizeof nm, "menu_%s_rest", name);
+    write_pbm(nm);
+    for (k = 0, ok = 1; k < 8; k++)
+        ok &= (bits >> k & 1) ? tick(k, 0) : !px(6 + k * 16, 17);
+    CHECKF(ok && rings_menu(bits), "%s: ticks at rest", name);
+    for (k = 0; k < 8; k++) {
+        touch(k, 1);
+        if (bits >> k & 1) {
+            screen();
+            CHECKF(tick(k, 1) && !scr_same(), "%s: knob %d touched", name, k + 1);
+            snprintf(nm, sizeof nm, "menu_%s_k%d", name, k + 1);
+            write_pbm(nm);
+        } else
+            CHECKF(scr_same() && !rfmv_pop_up(&M, M.pop), "%s: unused knob %d touched", name, k + 1);
+        touch(k, 0), rest();
+    }
+    CHECKF(scr_same(), "%s: back at rest", name);
+}
+static void test_menu_heads(void)
+{
+    track_view();
+    shift_step(2), menu_heads("workflow", 0x07);
+    jog(1);                                             /* (the jog's value named: the channel) */
+    CHECK(!scr_same());
+    write_pbm("menu_workflow_jog");
+    jog(-1), back();
+    shift_step(4), menu_heads("tempo", 0x03), back();
+    shift_step(6), menu_heads("groove", 0x03), back();
+    shift_step(7), menu_heads("layout", 0x01), back();
+    shift_step(8), menu_heads("keys", 0x0F), back();
+    shift_step(9), menu_heads("velocity", 0x01);
+    jog(1);
+    CHECK(!scr_same());
+    write_pbm("menu_velocity_jog");
+    jog(-1), back();
+    button(MR_CC_SHIFT, 1), press(MR_CC_REC), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    CHECK(M.seq.smenu == RFM_MOVE_SM_REC);
+    menu_heads("record", 0x03), back();
+    CHECK(!M.seq.smenu);
+}
+
+/* a6 + a7: a Shift menu over the Mixer, Routing and the FM-1 layout owns the knob lights, the touch's header (no
+ * other popup), the turns and the jog, as in track view; Global settings over the Mixer: the jog its rows */
+static void menu_over(const char *where, int sh_step, int bits)
+{
+    char nm[48];
+    const int bpm = rfm_move_seq_bpm10(&M);
+    button(MR_CC_SHIFT, 1), step(sh_step, 1), step(sh_step, 0), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    CHECKF(M.seq.smenu != 0, "%s: open", where);
+    rest(), clear();
+    CHECKF(rings_menu(bits), "%s: the menu's knob lights", where);
+    touch(0, 1);
+    screen();
+    CHECKF(tick(0, 1) && M.pop != POP_ENC && M.pop != POP_TRKINFO && M.pop != POP_CC && M.pop != POP_TRIG, "%s: touch: header, pop %d",
+           where, M.pop);
+    snprintf(nm, sizeof nm, "menu_over_%s_k1", where);
+    write_pbm(nm);
+    knob(0, 1);
+    touch(0, 0);
+    CHECKF(!count(RFM_MOVE_ACT_TURN), "%s: no FM-1 turn", where);
+    if (M.seq.smenu == RFM_MOVE_SM_TEMPO) {
+        CHECKF(rfm_move_seq_bpm10(&M) == bpm + 10, "%s: knob 1 the tempo", where);
+        jog(-1);
+        CHECKF(rfm_move_seq_bpm10(&M) == bpm, "%s: the jog the tempo", where);
+    }
+    touch(5, 1);                                        /* (an unused knob: nothing) */
+    CHECKF(M.pop != POP_ENC && M.pop != POP_TRKINFO, "%s: unused knob", where);
+    touch(5, 0);
+    back(), rest();
+    CHECKF(!M.seq.smenu, "%s: Back closes", where);
+}
+static void test_menu_over_views(void)
+{
+    int row, ck, vm;
+    track_view();
+    menu_over("track", 4, 0x03);
+    tap_track(3), rest();                               /* the Mixer */
+    CHECK(M.seq.projects && M.fw.fx);
+    menu_over("mixer", 4, 0x03);
+    CHECK(M.seq.projects);
+    /* Global settings over the Mixer: the jog moves through the rows; the knobs dark and dead */
+    button(MR_CC_SHIFT, 1), step(1, 1), step(1, 0), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    CHECK(M.seq.smenu == RFM_MOVE_SM_GLOBAL);
+    row = M.gl_row, ck = M.seq.clock_mode, vm = M.s.vel_mode;
+    jog(1);
+    CHECK(M.gl_row == row + 1 && M.seq.clock_mode == ck);
+    knob(0, 3), knob(1, 3), knob(2, 3), knob(3, 3);
+    CHECK(M.seq.clock_mode == ck && M.s.vel_mode == vm && rings_menu(0));
+    write_pbm("menu_over_mixer_global");
+    back(), rest();
+    CHECK(!M.seq.smenu && M.seq.projects);
+    tap_track(3), rest();                               /* Routing */
+    CHECK(M.seq.projects && M.fw.fx);
+    menu_over("routing", 2, 0x07);
+    back(), rest();
+    /* the FM-1 layout: Track 4 held + step 5 opens Tempo */
+    tap_track(0), rest();
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && !M.seq.projects);
+    track(3, 1), step(4, 1), step(4, 0), track(3, 0), rest(), clear();
+    CHECK(M.seq.smenu == RFM_MOVE_SM_TEMPO && rings_menu(0x03));
+    touch(4, 1);                                        /* (knob 5, K1 in the FM-1 layout: not the menu's: nothing) */
+    CHECK(M.pop != POP_ENC);
+    touch(4, 0);
+    knob(4, 4);
+    CHECK(!count(RFM_MOVE_ACT_TURN));
+    back(), rest();
+    track(3, 1), step(4, 1), step(4, 0), track(3, 0), rest(), clear();
+    touch(0, 1);
+    screen();
+    CHECK(tick(0, 1) && M.pop != POP_ENC);
+    write_pbm("menu_over_fm1_k1");
+    knob(0, 2), touch(0, 0);
+    CHECK(!count(RFM_MOVE_ACT_TURN));
+    back(), tap_track(1), rest();
+}
+
 int main(void)
 {
     test_scenes();
@@ -2105,6 +2229,8 @@ int main(void)
     test_held_step();
     test_held_over_menu();
     test_menu_stays();
+    test_menu_heads();
+    test_menu_over_views();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }
