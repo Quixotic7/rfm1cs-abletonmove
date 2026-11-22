@@ -486,7 +486,7 @@ void rfm_move_release_all(rfm_move_t *m)
     rfmv_latch_drop_all(m);                             /* (0.5.3) */
     rfmv_seq_stop(m);                                   /* the link is gone: nothing may keep sounding */
     m->track_held = 0;
-    m->back_down = m->back_used = m->back_trk = 0;
+    m->back_down = m->back_used = m->back_trk = 0, m->back_cut = 0;
     m->touched = -1;
     m->pop = POP_NONE;
     rfmv_tk_release(m);                                 /* (0.7.0: the firmware's held controls too) */
@@ -1187,10 +1187,40 @@ static void play_toggle(rfm_move_t *m)
         rfmv_seq_start(m);
 }
 
+/* (0.12.x, the owner's) Back held: its shortcuts' layer, in the sequencer's track and session views (an open Shift menu
+ * too); not in the FM-1 layout, a takeover, the projects view, under a held Track or a held step */
+static const uint8_t BACK_CC[] = { MR_CC_LEFT, MR_CC_RIGHT, MR_CC_UP, MR_CC_DOWN, MR_CC_LOOP, MR_CC_PLAY, MR_CC_DELETE,
+                                   MR_CC_SHIFT, MR_CC_CAPTURE, MR_CC_UNDO, MR_CC_COPY, MR_CC_MUTE, MR_CC_REC,
+                                   MR_CC_SAMPLE };
+static int back_bit(int cc)
+{
+    int i;
+    for (i = 0; i < (int)sizeof BACK_CC; i++)
+        if (BACK_CC[i] == cc)
+            return i;
+    return -1;
+}
+int rfmv_back_keys(const rfm_move_t *m)
+{
+    return m->back_down && m->s.mode == RFM_MOVE_MODE_SEQ && !m->seq.projects && !m->track_held && !m->seq.step_held &&
+           !m->seq.fill;
+}
 static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
 {
     rfm_move_hold_t *h;
     int b, t;
+    if ((b = back_bit(cc)) >= 0) {                      /* (0.12.x) Back held + a button: at its press, Back's
+                                                         * shortcut (or nothing: dead); its release: nothing */
+        if (!down && (m->back_cut >> b & 1)) {
+            m->back_cut = (uint16_t)(m->back_cut & ~(1u << b));
+            return;
+        }
+        if (down && rfmv_back_keys(m)) {
+            m->back_cut = (uint16_t)(m->back_cut | 1u << b);
+            rfmv_seq_back_key(m, cc);
+            return;
+        }
+    }
     if (rfmv_t4_menu(m) && (cc == MR_CC_REC || cc == MR_CC_PLAY || cc == MR_CC_CAPTURE || cc == MR_CC_UNDO ||
                             cc == MR_CC_LOOP || cc == MR_CC_SAMPLE)) {
         if (down)                                       /* Track 4 held: Shift + Record (the record settings), Shift +
@@ -1689,7 +1719,7 @@ static int back_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)   /* 1:
 {
     if (ev->type == MR_EV_BUTTON && ev->index == MR_CC_BACK) {
         if (ev->value) {
-            m->back_down = 1, m->back_used = m->track_held != 0, m->back_ms = now;
+            m->back_down = 1, m->back_used = m->track_held != 0, m->back_ms = now, m->back_clk = rfmv_now_ms(m);
         } else if (m->back_down) {
             m->back_down = 0;
             if (!m->back_used && now - m->back_ms < RFM_MOVE_TAP_MS)
@@ -2094,6 +2124,22 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         w[L_WHITE0 + W_BACK][0] = 127;
     else if (!m->seq.projects)
         w[L_WHITE0 + W_BACK][0] = rfmv_back_has(m) ? 80 : 0;
+    if (rfmv_back_keys(m) && (m->back_used || rfmv_now_ms(m) - m->back_clk >= RFM_MOVE_TAP_MS)) {
+        /* (0.12.x) Back held (past a click's time, or something pressed with it): its shortcuts lit, a pressed one
+         * full, the other buttons dark (dead); none of this on a click */
+        for (i = 0; i < 13; i++) {
+            const int cc = WHITE_CC[i], b = back_bit(cc);
+            if (cc != MR_CC_BACK)
+                w[L_WHITE0 + i][0] = (uint8_t)(!rfmv_seq_back_lit(m, cc) ? 0
+                                               : (b >= 0 && (m->back_cut >> b & 1)) ? 127 : 100);
+        }
+        {
+            const int pb = back_bit(MR_CC_PLAY), pl = (m->back_cut >> pb & 1) ? 256 : 160;
+            const rgb_t pc = sc(m->seq.playing ? GREEN : WHITE, pl);
+            w[L_PLAY][0] = pc.r, w[L_PLAY][1] = pc.g, w[L_PLAY][2] = pc.b;
+        }
+        memset(w[L_REC], 0, 3), memset(w[L_SAMPLE], 0, 3);
+    }
     if (!lm && !t4m)
         rfmv_tk_leds(m, w);                             /* (0.7.0) a takeover: its claimed LEDs (0.8.0: not under a held
                                                          * Track's menu) */

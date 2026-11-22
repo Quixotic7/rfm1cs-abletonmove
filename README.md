@@ -499,7 +499,7 @@ the screen's corner while it records. (Tap tempo: Shift + step 5.)
 | Shift (the icons) | while Shift is held or locked (and in FM-1 mode while Track 1 is held), the white icon LEDs under the steps (CC 16..31) light every step with a shortcut: dim, full where it is on (a toggle on, its menu open); off otherwise and in MIDI and Control mode. Written on change only, like every LED; the step pads' own LEDs are separate |
 | Shift | double-tap (a tap, then a press within 300 ms): latched (its LED lit, every Shift combination without holding it); a press unlatches it. Shift + Sample: nothing (the Move has none; 0.12.0: its light dark while Shift is held) |
 | Menu | Track <-> Session view (or out of the project grid). (0.11.0) An open Shift menu stays (Back closes it): the view flips under it, named a second. (0.12.0) Shift + Menu, Back held + Menu, Track 1..3 held + Menu: the same, from every layout (above); out of session view: the slot's own layout |
-| Back | the universal escape: closes the latest layer still on, one a click (a Shift menu, the project grid, Loop's latch, Mute's latch, Shift's lock, the step / clip clipboard's marks, the page clipboard's); with none: nothing (never a mode change). Leaving Loop shows the sequencer at once. (0.12.0, a13) Its light: on only while there is a layer for its click to close, full at its press, else dark |
+| Back | the universal escape: closes the latest layer still on, one a click (a Shift menu, the project grid, Loop's latch, Mute's latch, Shift's lock, the step / clip clipboard's marks, the page clipboard's); with none: nothing (never a mode change). Leaving Loop shows the sequencer at once. (0.12.0, a13) Its light: on only while there is a layer for its click to close, full at its press, else dark. (0.12.x) Held: shortcuts with Left, Up, Loop, Play, Delete (see [Back](#back-043)) |
 | Track 1..4 | the modes (FM-1, MIDI, Control, Sequencer); Track 4 held in the sequencer: the tracks and the track's settings (above; the screen: layout, scale, what changed at 2x, the channel and the rate as strips) |
 
 **Shift + step** (the Move's printed functions, its manual's numbers; a menu opens on the screen, the same Shift +
@@ -604,6 +604,13 @@ Back works the same in every mode and in the projects view, on its release:
 | a click in FX setup (0.4.5) | FX setup is no layer: Back flips straight out (Menu alone toggles FX setup). The view remembers it: the next way in (Track 4's tap) opens FX setup again on the same page. Kept in the settings (`fw_fx`) |
 | held + Track 1..3 | (0.8.0) nothing of its own: the Track acts (a tap plays its slot), Back's click is cancelled |
 | held long, alone | nothing |
+| held, in the sequencer's track or session view (also under a Shift menu) | (0.12.x, the owner's) its shortcuts, each at the second button's press, named a second; the button's own job does not happen and Back's click does not come (a menu open stays open). Past a click's time (or once something is pressed with it) the shortcuts light (Left, Up in session view, Loop, Play, Delete, Menu; a pressed one full) and the other buttons go dark and dead; nothing of this shows on a click. Not in the FM-1 layout, a takeover, the projects view, or with a Track or a step held |
+| held + Left | home: track view bar 1 ("Bar 1", as Left's popup); session view track 1 at the left ("Track 1", the 16 tracks' strip) |
+| held + Up | session view: scene 1 on top ("Scene 1", the 16 scenes' strip). Track view: dead (no octave) |
+| held + Right, Down | dead |
+| held + Loop | the selected clip's loop back to the whole clip (from step 1 to its loop's end or its last note's bar, whichever is later), one undo step; already whole: the popup only ("Loop", the length, as the jog's) |
+| held + Play | the transport to bar 1, never started or stopped: playing, every clip again from its start (Shift + Play's restart); stopped, nothing (Play starts at bar 1 anyway). Its icon over "Bar 1" |
+| held + Delete | closes at once everything Back's clicks would (a Shift menu, Loop's and Mute's latches, Shift's lock, the clipboards' marks): "All closed"; nothing open: "None" (as Undo). Deletes nothing, arms no delete, the view and mode stay |
 
 Shift + step 1 and Track 4 held + step 1 open the sequencer's projects (0.8.0; as Track 4's double click).
 

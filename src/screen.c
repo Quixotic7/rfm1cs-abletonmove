@@ -1025,6 +1025,9 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             rfmv_seq_oct_range(m, r, sizeof r);
             rfmv_pop_screen(cv, "Octave", o, 0, 0, r);
             g_full = 1;
+        } else if (m->pop == POP_BACK) {                /* (0.12.x) Back held + a button: what it did */
+            rfmv_seq_back_pop(m, cv);
+            g_full = 1;
         } else if (m->pop >= POP_LAYOUT && m->pop <= POP_SEQ) {   /* (0.8.0) the Track buttons' popups (the board) */
             char nm[24], a[16], b[16];
             const int i = m->pop_i;

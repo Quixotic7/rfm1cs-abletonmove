@@ -874,6 +874,10 @@ typedef struct {
     uint8_t back_down, back_used;
     uint8_t back_trk;                                   /* bit t: Track t + 1 pressed with Back held (its release too) */
     uint32_t back_ms;
+    /* (0.12.x, the owner's) Back held: its shortcuts (+ Left, Up, Loop, Play, Delete; the other buttons dead) */
+    uint16_t back_cut;                                  /* bit: a button pressed with Back held (its release: nothing) */
+    uint32_t back_clk;                                  /* Back's press on the popups' clock (the shortcuts' lights
+                                                         * after RFM_MOVE_TAP_MS: none on a click) */
     /* (0.5.3) latch, MIDI and Control modes (Track 2 held + the top row's pad 8): RAM only */
     uint8_t latch;                                      /* on */
     uint8_t nlat;                                       /* notes latched now */

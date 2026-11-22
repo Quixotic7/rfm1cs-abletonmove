@@ -359,4 +359,13 @@ int rfmv_t4_menu(const rfm_move_t *m);                  /* Track 4 held, its men
 void rfmv_track_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0]);   /* (fw.c) Track 1..4 everywhere */
 const char *rfmv_jog_name(int i);                       /* "SELECT", "PRESET", "ALGO" */
 
+/* (0.12.x, the owner's) Back held + a button, in the sequencer's track and session views: Left home (bar 1; session:
+ * track 1), Up (session) scene 1, Loop the whole clip, Play to bar 1, Delete every layer closed; the rest dead */
+enum { POP_BACK = 60 };                                 /* (a popup: pop_i BK_*) */
+enum { BK_BAR1, BK_TRACK1, BK_SCENE1, BK_CLOSED, BK_NONE };
+int rfmv_back_keys(const rfm_move_t *m);                /* Back held where its shortcuts work */
+void rfmv_seq_back_key(rfm_move_t *m, int cc);          /* a button pressed with Back held there (its own job not done) */
+int rfmv_seq_back_lit(const rfm_move_t *m, int cc);     /* .. a shortcut there now (lit while Back is held) */
+void rfmv_seq_back_pop(const rfm_move_t *m, mr_canvas_t *cv);   /* POP_BACK's screen */
+
 #endif
