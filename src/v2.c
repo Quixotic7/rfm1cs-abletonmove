@@ -216,8 +216,9 @@ void v2_msg(mr_canvas_t *b, const char *a, const char *c)
 }
 void v2_modeName(mr_canvas_t *b, const char *s, int n, int cur)
 {
-    const int k = v2_tw(s, 4) <= 124 ? 4 : 3;
-    v2_TC(b, 64, k == 4 ? 14 : 18, s, k, 1);
+    /* (0.13.0, seen on the Move: "Sequencer" at 3x is 160 px wide and showed as "equence") 2x when 3x does not fit */
+    const int k = v2_tw(s, 4) <= 124 ? 4 : v2_tw(s, 3) <= 126 ? 3 : 2;
+    v2_TC(b, 64, k == 4 ? 14 : k == 3 ? 18 : 22, s, k, 1);
     v2_strip(b, n, 1u << cur, -1, 0, 128);
 }
 void v2_lpop(mr_canvas_t *b, const char *label, const char *val)

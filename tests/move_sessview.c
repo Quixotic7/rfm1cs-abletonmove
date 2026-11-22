@@ -1034,6 +1034,13 @@ static void test_sv_anywhere(void)
     button(MR_CC_SHIFT, 0);
     button(MR_CC_SHIFT, 1), press(MR_CC_MENU), button(MR_CC_SHIFT, 0);
     CHECK(!M.seq.view && !M.seq.shift_lock && rfmv_pop_up(&M, POP_VIEW) && M.pop_i == 0);
+    {   /* (seen on the Move) "Sequencer" whole on the screen: nothing lit in the edge columns of its rows */
+        int y, edge = 0, body = 0;
+        write_pbm("view_named_seq");
+        for (y = 8; y < 48; y++)
+            edge += px(0, y) + px(1, y) + px(126, y) + px(127, y), body += px(20, y) + px(64, y) + px(100, y);
+        CHECK(!edge && body);
+    }
     rest();
     /* Back held + Menu: in; Back's release: nothing (no click: no layer closed, the view stays) */
     clip_put(0, 0, 60);
