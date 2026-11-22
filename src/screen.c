@@ -794,15 +794,30 @@ static void loop_popup(const rfm_move_t *m, mr_canvas_t *cv)
         const int L = h - a, P = L / RFM_MOVE_SEQ_PAGE, S = L % RFM_MOVE_SEQ_PAGE;
         uint32_t sel = 0;
         if (!P)
-            snprintf(b, sizeof b, "%d St", S);
+            snprintf(b, sizeof b, "%d Step%s", S, S == 1 ? "" : "s");
         else if (S)
-            snprintf(b, sizeof b, "%d.%d", P, S * 10 / RFM_MOVE_SEQ_PAGE);
+            snprintf(b, sizeof b, "%d Bar%s +%d", P, P == 1 ? "" : "s", S);   /* (0.13.0: it said "1.3") */
         else
             snprintf(b, sizeof b, "%d %s", P, P == 1 ? "Bar" : "Bars");
         for (i = pa; i <= pb && i < 16; i++)
             sel |= 1u << i;
         v2_titleBox(cv, "Loop", b, 64, 124);
-        v2_strip(cv, 16, sel, -1, 0, 128);
+        if (h % RFM_MOVE_SEQ_PAGE) {                    /* (0.13.0, the owner's) the loop ends inside a bar: that bar's
+                                                         * 16 steps: in the loop a cell (filled: a note), after its
+                                                         * end a dot */
+            const int p0 = pb * RFM_MOVE_SEQ_PAGE;
+            for (i = 0; i < 16; i++) {
+                int nlo;
+                const int x = i * 8, has = rfmv_seq_range(m, clip, p0 + i, &nlo) > nlo;
+                if (p0 + i >= h)
+                    v2_R(cv, x + 3, 57, 2, 2, 1);
+                else if (has)
+                    v2_R(cv, x, 52, 7, 11, 1);
+                else
+                    v2_O(cv, x, 52, 7, 11, 1);
+            }
+        } else
+            v2_strip(cv, 16, sel, -1, 0, 128);
         return;
     }
     rfmv_seq_loop_edit(m, cv);                          /* (else: page edit's own screen) */

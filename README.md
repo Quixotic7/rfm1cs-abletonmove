@@ -375,7 +375,16 @@ Buttons, steps, ect, but pads stay in the MIDI layout, and Jogwheel is not taken
   others (outside the loop) dim, past the clip off. A step: show that page. Two steps held: the loop is those pages and
   the ones between (the page shown moves into it). A double tap (400 ms): the loop is that page alone. The jog:
   the length, a step a detent (Shift: a page), growing into new pages up to 16 (the owner's; the Move's wheel moves
-  bars). The popup: the length in bars (+ steps), a bar over the 16 pages.
+  bars). The popup: the length in bars (+ steps), a bar over the 16 pages. (0.13.0, the owner's) A length that ends
+  inside a bar ("5 Steps", "1 Bar +8"): the popup's bottom row is that bar's 16 steps (a cell: in the loop, filled
+  with a note; a dot: after its end), and for the popup's second the step lights are that bar's steps too (in the
+  loop the track's colour, a note white; after the end dark, a note there faint). **The pads** (0.13.0, the
+  owner's): the two lower rows set the loop's last bar's length, 1..16 steps (the upper of the two 1..8, the bottom
+  row 9..16: two bars and pad 8: 16 + 8 steps), lit up to the length (the length itself white); the two upper rows
+  are dark and dead; no pad plays while Loop is held or latched.
+- **A step entered after the loop's end in the loop's own last bar** leaves the loop's length alone (0.13.0, the
+  owner's; it used to stretch the loop to the bar's end): the note is outside the loop, its step dim. A step on a
+  later bar still grows the loop to that bar's end.
 - **Left / Right** (the owner's, in and out of page edit): the bar shown, through the bars the clip has (no wrap;
   Left stops at bar 1). A step held: micro timing, as before.
 - **Ghost bars** (Move's "+" bar): Right past the clip's last bar goes to bars it does not have yet ("Bar n" for a

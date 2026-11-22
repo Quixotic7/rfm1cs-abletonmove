@@ -645,6 +645,24 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
     {
         const int note = rfm_move_pad_note(&m->s, p), ch = q->tr[q->sel_track].ch, clip = edit_clip(m);
         int s;
+        if ((q->mods & SEQ_M_LOOP) && !q->projects) {   /* (0.13.0, the owner's: "while in the loop menu use the pads
+                                                         * to quickly set step length ... if I set step length on bar
+                                                         * two to 8 instead of 16 the whole thing is 16 steps for bar 1
+                                                         * + 8 steps for bar two") Loop held or latched: the two lower
+                                                         * rows are the loop's last bar's length, 1..16 steps (the
+                                                         * upper of them 1..8, the bottom one 9..16); the two upper
+                                                         * rows dark and dead; no pad plays */
+            const int n = rfmv_seq_loop_pad_n(p);
+            q->mods_used |= SEQ_M_LOOP;
+            if (n > 0) {
+                const int lo = rfmv_seq_loop_lo(m, clip), hi = rfmv_seq_loop_hi(m, clip);
+                rfmv_seq_group(m);
+                rfmv_seq_len_set(m, clip, (hi - 1) / RFM_MOVE_SEQ_PAGE * RFM_MOVE_SEQ_PAGE + n - lo);
+                rfmv_pop(m, POP_LOOP, 0);
+                m->pop_val = 1;                         /* (the jog's "Loop" and the length, the bar's steps) */
+            }
+            return;
+        }
         if (note < 0)
             return;
         if (q->mods & SEQ_M_DELETE) {
@@ -708,11 +726,25 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
     }
 }
 
-/* a step entered past the loop's end (a pending page, Right past the last): the loop grows to that page's end */
+/* (0.13.0) the Loop layer's pads: pad p's length for the loop's last bar, 1..16 steps (0: not one of them) */
+int rfmv_seq_loop_pad_n(int p) { return p >= 16 ? 0 : p >= 8 ? p - 8 + 1 : p + 9; }
+/* (0.13.0) the jog's loop length popup is up and the loop ends inside a bar: the steps show that bar's steps */
+int rfmv_seq_loop_steps(const rfm_move_t *m)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const int clip = SEQ_CLIP(q->sel_track, q->tr[q->sel_track].sel);
+    return m->pop == POP_LOOP && m->pop_val == 1 && rfmv_now_ms(m) - m->pop_ms < RFM_MOVE_POPUP_MS && !q->view &&
+           !q->projects && rfmv_seq_loop_hi(m, clip) % RFM_MOVE_SEQ_PAGE != 0;
+}
+/* a step entered past the loop's end (a pending page, Right past the last): the loop grows to that page's end.
+ * (0.13.0, the owner's: "If a bar is like 5 steps, then pressing and adding a step outsite that should not make the
+ * loop length of the page become a bar") Not within the loop's own last bar: a loop that ends inside a bar keeps its
+ * length when a step goes in after its end there (the note is outside the loop, its step dim) */
 static void grow_to(rfm_move_t *m, int clip, int abs)
 {
     const int lo = rfmv_seq_loop_lo(m, clip), hi = rfmv_seq_loop_hi(m, clip);
-    if (abs >= hi && rfmv_seq_clip_used(m, clip) && rfmv_seq_range(m, clip, abs, &(int){ 0 }) > 0)
+    if (abs >= hi && abs / RFM_MOVE_SEQ_PAGE > (hi - 1) / RFM_MOVE_SEQ_PAGE && rfmv_seq_clip_used(m, clip) &&
+        rfmv_seq_range(m, clip, abs, &(int){ 0 }) > 0)
         rfmv_seq_loop_set(m, clip, lo, (abs / RFM_MOVE_SEQ_PAGE + 1) * RFM_MOVE_SEQ_PAGE - lo);
 }
 
@@ -2844,6 +2876,11 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             }
             if (sv_unrouted(m, track) && !m->pad_down[i])
                 v = sc(v, 64);                          /* (0.12.0) not reaching the firmware played: a quarter */
+        } else if ((q->mods & SEQ_M_LOOP) && !q->projects) {   /* (0.13.0) Loop held or latched: the last bar's length
+                                                         * on the two lower rows: up to the length the track's colour,
+                                                         * the length itself white, past it dim; the upper rows dark */
+            const int n = rfmv_seq_loop_pad_n(i), S = (rfmv_seq_loop_hi(m, clip) - 1) % RFM_MOVE_SEQ_PAGE + 1;
+            v = !n ? RFMV_OFF : m->pad_down[i] || n == S ? RFMV_WHITE : n < S ? sc(tc, 160) : sc(RFMV_WHITE, 14);
         } else {
             const int note = rfm_move_pad_note(&m->s, i);
             if (note >= 0 && q->step_first >= 0) {      /* a step held: its notes bright white, the rest dim */
@@ -2909,6 +2946,16 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 v = sc(RFMV_WHITE, !L && lv == RFM_MOVE_AL_REST ? 14 : 70);
             if (i >= al_wave_n(q, rfmv_now_ms(m)))     /* (0.12.0) the takeover's flash and wave */
                 v = RFMV_WHITE;
+        } else if ((q->mods & SEQ_M_LOOP) && rfmv_seq_loop_steps(m)) {   /* (0.13.0, the owner's: "we need to show
+                                                         * the steps so you can see which steps are not in the loop
+                                                         * when reducing smaller than 16 steps") the jog sets a length
+                                                         * that ends inside a bar: for the popup's second the steps
+                                                         * are that bar's steps: in the loop the track's colour (a
+                                                         * note: white), after its end dark (a note there: faint) */
+            const int hi = rfmv_seq_loop_hi(m, clip), abs = (hi - 1) / RFM_MOVE_SEQ_PAGE * RFM_MOVE_SEQ_PAGE + i;
+            int nlo;
+            const int has = rfmv_seq_range(m, clip, abs, &nlo) > nlo;
+            v = abs < hi ? (has ? RFMV_WHITE : sc(tc, 120)) : has ? sc(RFMV_WHITE, 14) : RFMV_OFF;
         } else if (q->mods & SEQ_M_LOOP) {              /* the pages: the loop's in the track's colour, the one
                                                          * shown white, the playing one pulsing; the clip's others
                                                          * (outside the loop) dim; past the clip off */

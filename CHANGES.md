@@ -129,6 +129,17 @@ host carries the firmware state files with the project buffer; tested.
   playing before the first click stops it now (0.11.0 played it on). A clip that was not playing: played now, as
   before, with Launch on Instant too. (seq.pad_tap_play)
 
+### The loop's length in steps (the owner's, 2026-11-22, on 0.12.0)
+- "While in loop and changing the step length of the bars, we need to show the steps so you can see which steps are
+  not in the loop when reducing smaller than 16 steps": the jog's length popup says "5 Steps" / "1 Bar +8" (it said
+  "1.5") and, when the loop ends inside a bar, shows that bar's 16 steps (cells in the loop, dots after its end); for
+  the popup's second the step lights are that bar's steps. (screen.c loop_popup; seq_ui.c rfmv_seq_loop_steps)
+- "while in the loop menu use the pads to quickly set step length ... 16 steps for bar 1 + 8 steps for bar two": Loop
+  held or latched, the two lower pad rows are the last bar's length, 1..16 steps, lit up to the length; the upper
+  rows dark and dead; the pads do not play there. One undo a press. (seq_ui.c rfmv_seq_loop_pad_n)
+- "If a bar is like 5 steps, then pressing and adding a step outsite that should not make the loop length of the
+  page become a bar": a step entered after the loop's end in its own last bar no longer grows the loop (grow_to).
+
 ## 0.12.0 (2026-11-22, not released)
 
 The owner's answers on the review page, card by card. New fields in `rfm_move_seq_t` (after `tk_pend_clk`): rebuild

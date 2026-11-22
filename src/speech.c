@@ -321,7 +321,7 @@ static void loop_words(const rfm_move_t *m, char *o, int cap)
     if (!P)
         snprintf(o, (size_t)cap, "Loop: %d %s", S, S == 1 ? "step" : "steps");
     else if (S)
-        snprintf(o, (size_t)cap, "Loop: %d bars %d steps", P, S);
+        snprintf(o, (size_t)cap, "Loop: %d %s %d %s", P, P == 1 ? "bar" : "bars", S, S == 1 ? "step" : "steps");
     else
         snprintf(o, (size_t)cap, "Loop: %d %s", P, P == 1 ? "bar" : "bars");
 }

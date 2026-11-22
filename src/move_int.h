@@ -227,7 +227,9 @@ int rfmv_seq_cs_touch(rfm_move_t *m, int k);
 int rfmv_seq_cs_knobs(const rfm_move_t *m);             /* .. its knobs lit (bits), -1 not shown */            /* .. a knob touched while it is held: 1 taken */
 void rfmv_seq_cs_words(const rfm_move_t *m, int k, char *o, int cap);   /* .. words (k -1: the whole screen) */
 int rfmv_fw_level_turn(rfm_move_t *m, int slot, int d);
-int rfmv_fw_level_shown(const rfm_move_t *m);          /* (0.13.0) a slot's level popup is up */ /* (0.12.0) a slot's level (the Mixer's), its popup; 0 empty */            /* (0.12.0) Delete held: 1 (scissors), Copy: 2 */
+int rfmv_fw_level_shown(const rfm_move_t *m);
+int rfmv_seq_loop_pad_n(int p);                        /* (0.13.0) the Loop layer's pads: 1..16 steps, 0 none */
+int rfmv_seq_loop_steps(const rfm_move_t *m);          /* (0.13.0) the loop length popup with its bar's steps */          /* (0.13.0) a slot's level popup is up */ /* (0.12.0) a slot's level (the Mixer's), its popup; 0 empty */            /* (0.12.0) Delete held: 1 (scissors), Copy: 2 */
 void rfmv_seq_track_menu(const rfm_move_t *m, mr_canvas_t *cv);   /* Track 4 held */
 void rfmv_seq_msg(rfm_move_t *m, int msg);
 const char *rfmv_seq_msg_text(const rfm_move_t *m);    /* the message up now, NULL none */

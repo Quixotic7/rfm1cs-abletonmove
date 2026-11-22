@@ -3872,6 +3872,64 @@ static void test_x_gone_dbl_stop(void)
     }
 }
 
+/* ---- (0.13.0, the owner's, 2026-11-22) the loop's length in steps: "While in loop and changing the step length of
+ * the bars, we need to show the steps so you can see which steps are not in the loop when reducing smaller than 16
+ * steps": the jog's popup and the step lights show the loop's last bar's steps; "use the pads to quickly set step
+ * length": the two lower pad rows, 1..16 steps of the last bar; "adding a step outsite that should not make the loop
+ * length of the page become a bar": a step entered after the loop's end in its own bar leaves the length alone */
+static void test_loop_steps(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int clip, i, n;
+    fresh();
+    hold_track(1), hit(26), track(1, 0), rest();
+    tap_track(1), rest();
+    clip = SEQ_CLIP(M.seq.sel_track, M.seq.tr[M.seq.sel_track].sel);
+    rfmv_seq_note_put(&M, clip, 0, 60, 100, 24, 0), rfmv_seq_note_put(&M, clip, 8, 62, 100, 24, 0);
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && !M.seq.view && M.seq.len[clip] == 16);
+    button(MR_CC_LOOP, 1);
+    CHECK(!rfmv_seq_loop_steps(&M));
+    jog(-11);                                           /* 16 -> 5 steps */
+    CHECK(M.seq.len[clip] == 5 && rfmv_seq_loop_steps(&M));
+    screen(), leds(w);
+    write_pbm("loop_steps");
+    CHECK(white(w[L_STEP0 + 0]) && lit(w[L_STEP0 + 4]) && !white(w[L_STEP0 + 4]) && !lit(w[L_STEP0 + 5]) && !lit(w[L_STEP0 + 15]));
+    CHECK(lit(w[L_STEP0 + 8]) && bright(w[L_STEP0 + 8]) < bright(w[L_STEP0 + 4]));   /* (a note after the end: faint) */
+    for (n = 0, i = 0; i < 16; i++)                     /* the screen's row: 5 cells (the first filled: a note), then dots */
+        n += px(i * 8, 56);
+    CHECK(n == 5 && px(8 * 5 + 3, 57) && px(3, 57) && !px(8 + 3, 57));
+    adv_ms(RFM_MOVE_POPUP_MS + 50);                     /* the popup's second over: the steps are the pages again */
+    leds(w);
+    CHECK(!rfmv_seq_loop_steps(&M) && white(w[L_STEP0 + 0]) && !lit(w[L_STEP0 + 4]));
+    /* the pads: the last bar's length */
+    leds(w);
+    CHECK(white(w[L_PAD0 + 8 + 4]) && lit(w[L_PAD0 + 8]) && !white(w[L_PAD0 + 8]) && lit(w[L_PAD0 + 0]) &&
+          bright(w[L_PAD0 + 0]) < bright(w[L_PAD0 + 8]) && !lit(w[L_PAD0 + 16]) && !lit(w[L_PAD0 + 31]));
+    clear();
+    hit(8 + 7);                                         /* the upper of the two rows, its 8th pad: 8 steps */
+    CHECK(M.seq.len[clip] == 8 && rfmv_seq_loop_steps(&M) && !count(RFM_MOVE_ACT_MIDI));
+    hit(20);                                            /* an upper row: dead */
+    CHECK(M.seq.len[clip] == 8 && !count(RFM_MOVE_ACT_MIDI));
+    hit(7);                                             /* the bottom row's last pad: 16, the whole bar: the page strip */
+    CHECK(M.seq.len[clip] == 16 && !rfmv_seq_loop_steps(&M));
+    press(MR_CC_UNDO);
+    CHECK(M.seq.len[clip] == 8);
+    rfmv_seq_len_set(&M, clip, 32);                     /* two bars: the pads are bar 2's steps */
+    rest();
+    hit(8 + 7);
+    CHECK(M.seq.len[clip] == 24);
+    screen(), write_pbm("loop_steps_2bars");
+    hit(8 + 0);
+    CHECK(M.seq.len[clip] == 17);
+    button(MR_CC_LOOP, 0), rest();
+    CHECK(!(M.seq.mods & SEQ_M_LOOP));                  /* (used: no latch) */
+    /* a step entered after the loop's end, in its own bar: the loop keeps its length */
+    rfmv_seq_len_set(&M, clip, 5);
+    hit(3), rest();                                     /* (a pad played: the notes a step gets) */
+    step(10, 1), step(10, 0);
+    CHECK(rfmv_seq_range(&M, clip, 10, &i) > i && M.seq.len[clip] == 5);
+}
+
 int main(void)
 {
     test_scenes();
@@ -3927,6 +3985,7 @@ int main(void)
     test_fwp_page();
     test_fwp_trackflash();
     test_x_gone_dbl_stop();
+    test_loop_steps();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }
