@@ -923,6 +923,424 @@ static void test_arp(void)
     CHECK(!M.seq.smenu);
 }
 
+/* ---- (0.12.0) the arp package: the track view (a firmware's Track tapped), speech on */
+static void track_view(void)
+{
+    session_view();
+    press(MR_CC_MENU), rest();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    CHECK(!M.seq.view && M.s.mode == RFM_MOVE_MODE_SEQ);
+    rest(), clear();
+}
+static void led_flush(void)                             /* everything sent: from now only the changes come out */
+{
+    rfm_move_led_t o[RFM_MOVE_NLEDS];
+    rfm_move_leds_invalidate(&M);
+    (void)rfm_move_leds(&M, o, RFM_MOVE_NLEDS);
+}
+static void led_msgs(int *steps, int *pads)             /* the LED writes due now, counted */
+{
+    rfm_move_led_t o[RFM_MOVE_NLEDS];
+    const int n = rfm_move_leds(&M, o, RFM_MOVE_NLEDS);
+    int i;
+    for (i = 0; i < n; i++) {
+        if (o[i].cc || !o[i].rgb)
+            continue;
+        if (o[i].number >= MR_NOTE_STEP0 && o[i].number < MR_NOTE_STEP0 + 16)
+            ++*steps;
+        else if (o[i].number >= MR_NOTE_PAD0 && o[i].number < MR_NOTE_PAD0 + 32)
+            ++*pads;
+    }
+}
+static int full(const uint8_t c[3]) { return white(c) && c[0] > 200; }
+static int pixels(int x0, int y0, int w, int h)
+{
+    int x, y, n = 0;
+    for (y = y0; y < y0 + h; y++)
+        for (x = x0; x < x0 + w; x++)
+            n += px(x, y);
+    return n;
+}
+static void shift_step10(int hold_ms)                   /* Shift + step 11, let go after hold_ms */
+{
+    button(MR_CC_SHIFT, 1), step(10, 1), adv_ms((uint32_t)hold_ms), step(10, 0), button(MR_CC_SHIFT, 0);
+    now_ms += RFM_MOVE_DOUBLE_MS;                       /* (no Shift double tap) */
+}
+
+/* n2: Shift + step 11 gated (a click opens the menu at the release, a hold toggles the arp at 300 ms, the menu as
+ * it was); the jog's click and the hold: "Arp On" / "Arp Off" the whole screen; off: the menu's pictures dimmed */
+static void test_arp_toggle(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    rfm_move_arp_t *ap;
+    int on_px, off_px;
+    track_view();
+    ap = &M.seq.tr[M.seq.sel_track].arp;
+    CHECK(ap->mode == RFM_MOVE_AM_OFF);
+    /* the press: white, nothing else */
+    button(MR_CC_SHIFT, 1), step(10, 1);
+    leds(w);
+    CHECK(white(w[L_STEP0 + 10]) && !M.seq.smenu && ap->mode == RFM_MOVE_AM_OFF && !rfmv_pop_up(&M, POP_ARPW));
+    adv_ms(150);
+    CHECK(!M.seq.smenu && ap->mode == RFM_MOVE_AM_OFF);
+    /* a click: the menu at the release; nothing of the hold */
+    step(10, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_ARP && ap->mode == RFM_MOVE_AM_OFF && !rfmv_pop_up(&M, POP_ARPW));
+    /* again: closed (the Move's) */
+    step(10, 1), adv_ms(100), step(10, 0);
+    CHECK(!M.seq.smenu);
+    /* a hold: at 300 ms, still down, the arp on, the menu not opened; "Arp On" up, the icon full at once */
+    clear();
+    step(10, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS - 30);
+    CHECK(ap->mode == RFM_MOVE_AM_OFF && !rfmv_pop_up(&M, POP_ARPW));
+    adv_ms(40);
+    leds(w);
+    CHECK(ap->mode == RFM_MOVE_AM_ON && !M.seq.smenu && rfmv_pop_up(&M, POP_ARPW) && w[L_ICON0 + 10][0] == 127);
+    CHECKF(strstr(said, "Arp On") != NULL, "said %s", said);
+    write_pbm("arp_toggle_pop");
+    step(10, 0);                                        /* (its release: nothing) */
+    CHECK(!M.seq.smenu && ap->mode == RFM_MOVE_AM_ON);
+    leds(w);
+    CHECK(w[L_ICON0 + 10][0] == 127);
+    step(10, 1), adv_ms(320), step(10, 0);              /* (held again: off; "Arp Off") */
+    CHECK(ap->mode == RFM_MOVE_AM_OFF && !M.seq.smenu && rfmv_pop_up(&M, POP_ARPW));
+    leds(w);
+    CHECK(w[L_ICON0 + 10][0] == 24);
+    write_pbm("arp_toggle_offpop");
+    /* the menu open: a click closes it, a hold toggles and leaves it open */
+    step(10, 1), step(10, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_ARP);
+    step(10, 1), adv_ms(320);
+    CHECK(ap->mode == RFM_MOVE_AM_ON && M.seq.smenu == RFM_MOVE_SM_ARP);
+    step(10, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_ARP && ap->mode == RFM_MOVE_AM_ON);
+    button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    /* the jog's click: the popup at once; off, the walk dimmed (a checker), the header plain */
+    rest();
+    screen();
+    on_px = pixels(0, 30, 64, 30);
+    write_pbm("arp_on_main");
+    clear();
+    jog_click();
+    CHECK(ap->mode == RFM_MOVE_AM_OFF && rfmv_pop_up(&M, POP_ARPW));
+    CHECKF(strstr(said, "Arp Off") != NULL, "said %s", said);
+    rest();
+    screen();
+    off_px = pixels(0, 30, 64, 30);
+    CHECKF(off_px > 0 && off_px * 3 < on_px * 2, "walk on %d, off %d", on_px, off_px);
+    write_pbm("arp_offdim");
+    jog(1), rest();                                     /* (a lane while off: dimmed too) */
+    screen();
+    off_px = pixels(0, 19, 128, 37);
+    write_pbm("arp_offdim_lane");
+    jog_click(), rest();
+    screen();
+    on_px = pixels(0, 19, 128, 37);
+    CHECKF(off_px > 0 && off_px * 3 < on_px * 2, "lane on %d, off %d", on_px, off_px);
+    write_pbm("arp_on_lane");
+    back();
+    CHECK(!M.seq.smenu);
+}
+
+/* n3: the lanes take the step keys (a flash and a wave), a held lane step takes the pads, step 1 + step n the length */
+static void test_arp_lanes(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3], w0[RFM_MOVE_NLEDS][3];
+    rfm_move_arp_t *ap;
+    int clip, i, L, t, ns, np, peak, n0, ok;
+    track_view();
+    ap = &M.seq.tr[M.seq.sel_track].arp;
+    clip = SEQ_CLIP(M.seq.sel_track, M.seq.tr[M.seq.sel_track].sel);
+    rfmv_seq_note_put(&M, clip, 2, 60, 100, 24, 0);
+    shift_step10(20);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_ARP && M.seq.arp_page == 0);
+    ap->mode = RFM_MOVE_AM_ON;                          /* (on: the pictures plain, as the board shows them) */
+    /* the main page leaves the step keys to the clip: a tap enters a note */
+    step(6, 1), step(6, 0);
+    CHECK(rfmv_seq_find(&M, clip, 6, 60) >= 0 || rfmv_seq_range(&M, clip, 6, &n0) > n0);
+    step(6, 1), step(6, 0);
+    CHECK(rfmv_seq_range(&M, clip, 6, &n0) == n0);
+    leds(w0);
+    /* the lane page: a flash, then a wave left to right; the LED writes counted (steps: 32 in all, 16 at most at once) */
+    led_flush();
+    jog(1);
+    CHECK(M.seq.arp_page == 1);
+    ns = np = 0, peak = 0;
+    for (t = 0; t < 600; t += 10) {
+        int s1 = 0, p1 = 0;
+        led_msgs(&s1, &p1);
+        ns += s1, np += p1, peak = s1 > peak ? s1 : peak;
+        adv_ms(10);
+    }
+    printf("arp wave: %d step LED writes, at most %d in a frame\n", ns, peak);
+    CHECKF(ns <= 34 && peak <= 16 && np == 0, "wave: %d step writes, %d at once, %d pad writes", ns, peak, np);
+    leds(w);
+    for (i = 0, ok = 1; i < 16; i++)
+        ok &= !full(w[L_STEP0 + i]) || i == M.seq.arp_sel;
+    CHECK(ok);                                          /* (settled: the lane's lights) */
+    /* back on the main page: the clip's lights at once (no wave) */
+    jog(-1);
+    leds(w);
+    for (i = 0, ok = 1; i < 16; i++)
+        ok &= !memcmp(w[L_STEP0 + i], w0[L_STEP0 + i], 3);
+    CHECK(ok);
+    /* the wave's frames */
+    jog(1);
+    adv_ms(60);
+    leds(w);
+    for (i = 0, ok = 1; i < 16; i++)
+        ok &= full(w[L_STEP0 + i]);
+    CHECK(ok);                                          /* (the flash: all 16) */
+    write_pbm("arp_wave1");
+    adv_ms(100);                                        /* (160: 4 settled) */
+    leds(w);
+    for (i = 4, ok = 1; i < 16; i++)
+        ok &= full(w[L_STEP0 + i]);
+    CHECK(ok && !full(w[L_STEP0 + 1]));
+    write_pbm("arp_wave2");
+    adv_ms(160);                                        /* (320: 12 settled) */
+    leds(w);
+    for (i = 12, ok = 1; i < 16; i++)
+        ok &= full(w[L_STEP0 + i]);
+    CHECK(ok && !full(w[L_STEP0 + 9]));
+    write_pbm("arp_wave3");
+    adv_ms(100);
+    leds(w);
+    CHECK(!full(w[L_STEP0 + 9]) && !full(w[L_STEP0 + 15]));
+    /* a step pressed during the wave works at once and ends it */
+    jog(-1), jog(1), adv_ms(30);
+    step(5, 1);
+    leds(w);
+    CHECK(M.seq.arp_sel == 5 && full(w[L_STEP0 + 5]) && !full(w[L_STEP0 + 9]));
+    step(5, 0), rest();
+    /* step 1 held + step 12: the length 12 at that press (step 12 not picked); the steps past it dark at once */
+    step(0, 1), step(11, 1);
+    leds(w);
+    CHECK(ap->mlen == 12 && M.seq.arp_sel == 0 && !lit(w[L_STEP0 + 12]) && !lit(w[L_STEP0 + 15]) && lit(w[L_STEP0 + 11]));
+    CHECKF(strstr(said, "Length: 12") != NULL, "said %s", said);
+    write_pbm("arp_len");
+    step(11, 0);
+    step(11, 1), step(11, 0);                           /* (again: 1) */
+    CHECK(ap->mlen == 1);
+    step(15, 1), step(15, 0);                           /* (16) */
+    CHECK(ap->mlen == 16);
+    step(3, 1), step(3, 0);                             /* (4) */
+    adv_ms(400);                                        /* (step 1 held past 300 ms after a length: no pads) */
+    CHECK(ap->mlen == 4 && !M.seq.al_pads);
+    step(0, 0);
+    /* a step past the length: dark and dead (nothing picked, nothing reaches the clip) */
+    n0 = rfmv_seq_clip_used(&M, clip);
+    step(9, 1), step(9, 0);
+    CHECK(M.seq.arp_sel == 0 && rfmv_seq_clip_used(&M, clip) == n0 && rfmv_seq_range(&M, clip, 9, &L) == L);
+    knob(1, RFM_MOVE_LIST_TICKS * 12);
+    CHECK(ap->mlen == 16);
+    rest();
+    /* a quick click on a lane step: picked; the pads never change */
+    leds(w0);
+    step(4, 1), adv_ms(150);
+    leds(w);
+    CHECK(!memcmp(w[L_PAD0], w0[L_PAD0], 32 * 3) && M.seq.arp_sel == 4);
+    step(4, 0);
+    leds(w);
+    CHECK(!memcmp(w[L_PAD0], w0[L_PAD0], 32 * 3) && !M.seq.al_pads);
+    /* held 300 ms: the pads are its MOD shortcuts (the current one white, the notes' row lit, the rest dark) */
+    ap->lane[0][4] = RFM_MOVE_AL_PLAY;
+    step(4, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20);
+    leds(w);
+    CHECK(M.seq.al_pads && white(w[L_PAD0 + 0]) && lit(w[L_PAD0 + 2]) && !white(w[L_PAD0 + 2]) && lit(w[L_PAD0 + 13]) &&
+          !lit(w[L_PAD0 + 14]) && !lit(w[L_PAD0 + 16]) && !lit(w[L_PAD0 + 31]));
+    clear();
+    hit(2);                                             /* (Tie: at the press, no note played) */
+    leds(w);
+    CHECK(ap->lane[0][4] == RFM_MOVE_AL_TIE && count(RFM_MOVE_ACT_MIDI) == 0 && white(w[L_PAD0 + 2]) && !white(w[L_PAD0]));
+    CHECKF(strstr(said, "Step 5: Tie") != NULL, "said %s", said);
+    hit(10);                                            /* (Note 3) */
+    CHECK(ap->lane[0][4] == RFM_MOVE_AL_N1 + 2);
+    hit(20);                                            /* (dark: dead) */
+    CHECK(ap->lane[0][4] == RFM_MOVE_AL_N1 + 2 && count(RFM_MOVE_ACT_MIDI) == 0);
+    hit(2);
+    write_pbm("arp_modpads");
+    step(4, 0);                                         /* (let go: the pads back at once) */
+    leds(w);
+    CHECK(!M.seq.al_pads && !memcmp(w[L_PAD0], w0[L_PAD0], 32 * 3));
+    /* a pad pressed while the step is down (before 300 ms): the shortcut at once */
+    step(7, 1), adv_ms(50), hit(9);
+    CHECK(ap->lane[0][7] == RFM_MOVE_AL_N1 + 1 && M.seq.al_pads && count(RFM_MOVE_ACT_MIDI) == 0);
+    step(7, 0);
+    /* a note held on a pad when the takeover begins: it plays on and its release lets it go (no hanging note) */
+    ap->mode = RFM_MOVE_AM_OFF;                         /* (off: the pad plays its note, not the arp) */
+    clear();
+    pad(27, 100);
+    CHECK(count(RFM_MOVE_ACT_MIDI) == 1);
+    step(3, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20);
+    CHECK(M.seq.al_pads);
+    pad(27, 0);
+    CHECK(count(RFM_MOVE_ACT_MIDI) == 2);
+    step(3, 0);
+    ap->mode = RFM_MOVE_AM_ON;
+    /* every MOD function draws its sign, at every length, at rest and with knob 1 touched */
+    for (L = 1; L <= 16; L++) {
+        int k;
+        ap->mlen = (uint8_t)L;
+        for (i = 0; i < 16; i++)
+            ap->lane[0][i] = (int8_t)((i + L) % RFM_MOVE_AL_N);
+        for (k = 0; k < 2; k++) {
+            if (k)
+                raw(0x90, 0, 127);
+            screen();
+            for (i = 0, ok = 1; i < 16; i++) {
+                const int sg = pixels(i * 8 - 1, 22, 9, 22);
+                ok &= i < L ? sg > 0 : sg <= 4;
+                if (i < L && !sg)
+                    fprintf(stderr, "lane length %d: step %d (%d) has no sign\n", L, i + 1, ap->lane[0][i]);
+            }
+            CHECKF(ok, "length %d touched %d", L, k);
+            if (k)
+                raw(0x80, 0, 0);
+        }
+        rest();
+    }
+    for (i = 0; i < 16; i++)
+        ap->lane[0][i] = (int8_t)(i % RFM_MOVE_AL_N);
+    ap->mlen = 16;
+    screen();
+    write_pbm("arp_mod_all");
+    /* TRANSPOSE: the pads are -16..+15 from the bottom-left; 0 and the octaves marked; a press sets it */
+    jog(1), rest();
+    CHECK(M.seq.arp_page == 2);
+    for (i = 0; i < 16; i++)
+        ap->lane[1][i] = 0;
+    step(2, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20);
+    leds(w);
+    CHECK(M.seq.al_pads && white(w[L_PAD0 + 16]) && green(w[L_PAD0 + 28]) && green(w[L_PAD0 + 4]) && lit(w[L_PAD0 + 0]) &&
+          !green(w[L_PAD0 + 0]));
+    clear();
+    hit(23);
+    leds(w);
+    CHECK(ap->lane[1][2] == 7 && white(w[L_PAD0 + 23]) && !white(w[L_PAD0 + 16]) && count(RFM_MOVE_ACT_MIDI) == 0);
+    CHECKF(strstr(said, "Step 3: +7") != NULL, "said %s", said);
+    write_pbm("arp_transpads");
+    hit(0);
+    CHECK(ap->lane[1][2] == -16);
+    ap->lane[1][2] = 20;                                /* (out of the pads' range: none white) */
+    leds(w);
+    for (i = 0, ok = 1; i < 32; i++)
+        ok &= !white(w[L_PAD0 + i]);
+    CHECK(ok);
+    step(2, 0);
+    for (i = 0; i < 16; i++)
+        ap->lane[1][i] = (int8_t)((i * 7) % 25 - 12);
+    screen();
+    for (i = 0, ok = 1; i < 16; i++)
+        ok &= pixels(i * 8 + 1, 22, 6, 33) > 0;
+    CHECK(ok);                                          /* (every value drawn) */
+    back();
+}
+
+/* a9: Up / Down in track view: "Octave +1" with the pads' notes, a white row sweeping the way it went */
+static void test_octave(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int t, np, peak, i, ok, row;
+    track_view();
+    CHECK(M.s.octave == 0);
+    led_flush();
+    press(MR_CC_UP);
+    CHECK(M.s.octave == 1 && rfmv_pop_up(&M, POP_OCT));
+    CHECKF(strstr(said, "Octave 1, ") != NULL, "said %s", said);
+    np = peak = 0;
+    for (t = 0; t < 300; t += 10) {                     /* (the writes: a row a frame, few) */
+        int s1 = 0, p1 = 0;
+        led_msgs(&s1, &p1);
+        np += p1, peak = p1 > peak ? p1 : peak;
+        adv_ms(10);
+    }
+    printf("octave sweep: %d pad LED writes, at most %d in a frame\n", np, peak);
+    CHECKF(np <= 64 && peak <= 16, "sweep: %d pad writes, %d at once", np, peak);
+    /* the frames: Up, from the bottom row; Down, from the top */
+    press(MR_CC_UP);
+    screen();
+    write_pbm("octave_pop");
+    for (row = 0; row < 4; row++) {
+        leds(w);
+        for (i = row * 8, ok = 1; i < row * 8 + 8; i++)
+            ok &= white(w[L_PAD0 + i]);
+        CHECKF(ok, "up: row %d", row);
+        adv_ms(50);
+    }
+    leds(w);
+    for (i = 0, ok = 0; i < 8; i++)
+        ok += white(w[L_PAD0 + 24 + i]);
+    CHECK(ok < 8);                                      /* (done: the pads' own colours) */
+    rest();
+    press(MR_CC_DOWN);
+    leds(w);
+    for (i = 24, ok = 1; i < 32; i++)
+        ok &= white(w[L_PAD0 + i]);
+    CHECK(ok && M.s.octave == 1);
+    /* a pad pressed during the sweep plays at once */
+    clear();
+    pad(3, 100);
+    CHECK(count(RFM_MOVE_ACT_MIDI) == 1);
+    pad(3, 0), rest();
+    /* at the range's end: the popup (unchanged), no sweep */
+    M.s.octave = RFM_MOVE_OCT_MAX;
+    rest(), clear();
+    press(MR_CC_UP);
+    leds(w);
+    for (i = 0, ok = 0; i < 8; i++)
+        ok += white(w[L_PAD0 + i]);
+    CHECK(M.s.octave == RFM_MOVE_OCT_MAX && rfmv_pop_up(&M, POP_OCT) && ok < 8);
+    screen();
+    write_pbm("octave_max");
+    M.s.octave = 0;
+    rest();
+}
+
+/* a11: a held step: Up / Down transposes it and shows its notes; step 1 held + step 2 toggles its length 2 <-> 1 */
+static void test_held_step(void)
+{
+    int clip, lo;
+    track_view();
+    clip = SEQ_CLIP(M.seq.sel_track, M.seq.tr[M.seq.sel_track].sel);
+    rfmv_seq_note_put(&M, clip, 0, 60, 100, 24, 0);
+    rfmv_seq_note_put(&M, clip, 0, 64, 100, 24, 0);
+    rfmv_seq_note_put(&M, clip, 0, 67, 100, 24, 0);
+    step(0, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20);
+    clear();
+    press(MR_CC_UP);
+    CHECK(rfmv_seq_find(&M, clip, 0, 61) >= 0 && M.pop == POP_TRIG && M.pop_i == 8 && rfmv_pop_up(&M, POP_TRIG));
+    CHECKF(strstr(said, "Db3 F3 Ab3") != NULL, "said %s", said);
+    press(MR_CC_DOWN), press(MR_CC_DOWN);
+    CHECK(rfmv_seq_find(&M, clip, 0, 59) >= 0);
+    screen();
+    write_pbm("held_transpose");
+#define LEN0() (rfmv_seq_range(&M, clip, 0, &lo) > lo ? M.seq.notes[lo].len : -1)
+    /* the owner's three cases (step 1 held, step 2 pressed) and a wider span */
+    clear();
+    step(1, 1), step(1, 0);                             /* (1 step: 2) */
+    CHECK(LEN0() == 48 && M.pop == POP_TRIG && M.pop_i == 6 && rfmv_pop_up(&M, POP_TRIG));
+    CHECKF(strstr(said, "Length") != NULL, "said %s", said);
+    screen();
+    write_pbm("held_len2");
+    step(1, 1), step(1, 0);                             /* (2: 1) */
+    CHECK(LEN0() == 24);
+    step(1, 1), step(1, 0);                             /* (1: 2 again) */
+    CHECK(LEN0() == 48);
+    step(3, 1), step(3, 0);                             /* (step 4: 4 steps) */
+    CHECK(LEN0() == 96);
+    step(1, 1), step(1, 0);                             /* (more than 2: 2) */
+    CHECK(LEN0() == 48);
+    step(3, 1), step(3, 0), step(3, 1), step(3, 0);     /* (step 4 twice: 4, then 1) */
+    CHECK(LEN0() == 24);
+    rfmv_seq_note_put(&M, clip, 0, 59, 100, 40, 0);     /* (between 1 and 2 steps: 1) */
+    step(1, 1), step(1, 0);
+    CHECK(LEN0() == 24);
+#undef LEN0
+    step(0, 0);
+    CHECK(rfmv_seq_range(&M, clip, 0, &lo) > lo);       /* (the held step kept its notes) */
+}
+
 int main(void)
 {
     test_scenes();
@@ -936,6 +1354,10 @@ int main(void)
     test_launch();
     test_route();
     test_arp();
+    test_arp_toggle();
+    test_arp_lanes();
+    test_octave();
+    test_held_step();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

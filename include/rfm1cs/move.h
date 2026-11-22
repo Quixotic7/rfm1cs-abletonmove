@@ -672,6 +672,20 @@ typedef struct {
                                                          * its header: shown RFM_MOVE_POPUP_MS from sm_ms */
     uint32_t sm_ms;
     uint8_t arp_was[RFM_MOVE_SEQ_TRACKS];               /* each arp's mode before it was switched off (0: On) */
+    /* (0.12.0, the owner's) the arp's quick gestures */
+    uint8_t arp_sh;                                     /* Shift + step 11 down: 1 waiting (a click opens the menu at
+                                                         * the release), 2 held: the arp toggled (the release: nothing) */
+    uint32_t arp_sh_ms;                                 /* .. its press (the sequencer clock's ms) */
+    uint32_t al_wave_ms;                                /* the step keys passed to a lane: their flash and wave, from */
+    uint8_t al_wave;                                    /* .. running (a step pressed ends it) */
+    uint16_t al_down;                                   /* a lane page: its step keys down */
+    uint8_t al_hold;                                    /* .. the held step + 1 (0 none): held 300 ms (or a pad pressed),
+                                                         * the pads are its shortcuts */
+    uint8_t al_pads;                                    /* .. the pads taken */
+    uint8_t al_lenset;                                  /* .. step 1 held set the lane's length (step 1 + step n) */
+    uint32_t al_hold_ms;                                /* .. the held step's press */
+    int8_t oct_dir;                                     /* Up / Down: the octave's sweep over the pad rows (1 up, -1) */
+    uint32_t oct_ms;                                    /* .. from */
     /* a held Track's track (a step, or in session view a column's pad): the press's verdict, gated. A hold acts once
      * held RFM_MOVE_SEQ_HOLD_MS (not at the release); a click acts once RFM_MOVE_DOUBLE_MS have passed with no second
      * press (or the Track button is let go); a second press in that time is the double click, at once */

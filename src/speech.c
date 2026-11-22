@@ -273,6 +273,11 @@ static void trig_words(const rfm_move_t *m, char *o, int cap)
         abs = hi > lo ? q->notes[lo].step : abs;
     }
     v = q->trig && q->step_first < 0 ? rfmv_seq_tdef_val(m, k) : rfmv_seq_trig_val(m, clip, abs, k);
+    if (k == 8) {                                       /* (0.12.0) a held step transposed: its notes */
+        rfmv_seq_held_names(m, b, sizeof b, 0);
+        snprintf(o, (size_t)cap, "Transposed: %s", b);
+        return;
+    }
     if (!q->trig) {
         if (k == 0)
             snprintf(o, (size_t)cap, "Nudge: %+d%%", v * 100 / RFM_MOVE_SEQ_TPS);
@@ -492,6 +497,17 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
         return;
     }
     case POP_VIEW: snprintf(o, (size_t)cap, "%s", i ? "Session" : "Sequencer"); return;   /* (0.11.0: under a menu) */
+    case POP_ARPW: snprintf(o, (size_t)cap, "Arp %s", rfmv_seq_arp_mode_name(i)); return;   /* (0.12.0) */
+    case POP_OCT: {                                     /* (0.12.0) the octave, the pads' notes */
+        char r[24], *d;
+        rfmv_seq_oct_range(m, r, sizeof r);
+        if ((d = strstr(r, " - ")) != NULL) {           /* ("C2 to G4") */
+            *d = 0;
+            snprintf(o, (size_t)cap, "Octave %d, %s to %s", m->s.octave, r, d + 3);
+        } else
+            snprintf(o, (size_t)cap, "Octave %d", m->s.octave);
+        return;
+    }
     case POP_JOG: rfmv_tcase(rfmv_jog_name(i), l, sizeof l), snprintf(o, (size_t)cap, "Jog: %s", l); return;
     case POP_T4: snprintf(o, (size_t)cap, "%s", i ? "Routing" : "Mixer"); return;
     case POP_CCNUM: snprintf(o, (size_t)cap, "Knob %d: CC %d", (i & 7) + 1, m->s.slot[m->fw.active % 3].cc[i & 7]); return;
@@ -819,6 +835,8 @@ static void watch(rfm_move_t *m, int silent, said_now_t *sn)
     quiet = silent ? 0xFFFFFFFFu : 0;
     if (q->smenu == RFM_MOVE_SM_GLOBAL)
         quiet |= 1u << I_VEL;                           /* (0.6.2: the list says its own rows) */
+    if (m->pop == POP_OCT && rfmv_pop_up(m, POP_OCT))
+        quiet |= 1u << I_OCTAVE;                        /* (0.12.0: its popup said it, with the pads' notes) */
     for (i = 0; i < I_N; i++) {
         uint32_t h;
         item_words(m, i, w, sizeof w);
