@@ -50,23 +50,9 @@ void rfmv_shift_icons(const rfm_move_t *m, uint8_t icon[16])
     memset(icon, 0, 16);
     if (!((m->s.mode == RFM_MOVE_MODE_SEQ && (q->mods & SEQ_M_SHIFT)) || rfmv_t4_menu(m) ||
           (m->seq.projects && m->fw.fx && m->shift_down))) {
-        /* (0.11.0, the owner's rule: a step that is a function has its icon lit, a step that is a step, a track or a
-         * page has not) session view: the stop steps (the even ones, and step 16: every clip): dim, full with
-         * something to stop */
-        if (rfmv_sess_on(m) && !rfmv_seq_trk_held(m) && !(q->mods & (SEQ_M_MUTE | SEQ_M_LOOP)) &&
-            !(q->smenu == RFM_MOVE_SM_ARP && q->arp_page)) {
-            int any = 0;
-            for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++)
-                any |= (q->tr[i].active >= 0 && (q->playing || q->start_pending)) || q->tr[i].queued >= 0;
-            for (i = 1; i < RFM_MOVE_NSTEPS; i += 2) {
-                const int tr = q->track_page + i / 2;
-                if (i == RFM_MOVE_NSTEPS - 1)
-                    icon[i] = (uint8_t)(any ? 127 : 24);
-                else if (i / 2 < RFM_MOVE_SV_COLS && tr < RFM_MOVE_SEQ_TRACKS)
-                    icon[i] = (uint8_t)((q->tr[tr].active >= 0 && (q->playing || q->start_pending) &&
-                                         rfmv_seq_clip_has(m, SEQ_CLIP(tr, q->tr[tr].active))) || q->tr[tr].queued >= 0 ? 127 : 24);
-            }
-        }
+        /* (0.12.0, the owner's: "Icons should not be lit in session view or for the track sequencer steps. They get
+         * lit up for shortcuts like holding shift or if you're holding the track button") session view at rest: dark
+         * (0.11.0 lit the stop steps') */
         return;                                         /* (0.8.0: Track 4 held, Shift outside the FM-1 layout) */
     }
     for (i = 0; i < RFM_MOVE_NSTEPS; i++) {
@@ -1457,9 +1443,13 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
     case MR_CC_LEFT:
     case MR_CC_RIGHT: {
         const int d = cc == MR_CC_RIGHT ? 1 : -1;
-        if (q->view)                                    /* the tracks, one a press (8 of 16 in view) */
-            q->track_page = (uint8_t)clampi(q->track_page + d, 0, RFM_MOVE_SEQ_TRACKS - RFM_MOVE_SV_COLS);
-        else {
+        if (q->view) {                                  /* the tracks, one a press (7 of 16 in view); (0.12.0, the
+                                                         * owner's) Shift: a page, 7 tracks */
+            if (q->mods & SEQ_M_SHIFT)
+                q->mods_used |= SEQ_M_SHIFT;
+            q->track_page = (uint8_t)clampi(q->track_page + d * ((q->mods & SEQ_M_SHIFT) ? RFM_MOVE_SV_COLS : 1), 0,
+                                            RFM_MOVE_SEQ_TRACKS - RFM_MOVE_SV_COLS);
+        } else {
             const int clip = edit_clip(m), was = q->page, end = clip_end_page(m, clip);
             if (q->mods & SEQ_M_LOOP)                   /* (page edit: the same) */
                 q->mods_used |= SEQ_M_LOOP;
@@ -1474,9 +1464,12 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
     case MR_CC_UP:
     case MR_CC_DOWN: {
         const int d = cc == MR_CC_UP ? 1 : -1;
-        if (q->view)                                    /* the clip slots (4 of 16 in view; Up: the ones above) */
-            q->scene_off = (uint8_t)clampi(q->scene_off - d, 0, RFM_MOVE_SEQ_SCENES - 4);
-        else {
+        if (q->view) {                                  /* the clip slots (4 of 16 in view; Up: the ones above);
+                                                         * (0.12.0) Shift: a page, 4 rows */
+            if (q->mods & SEQ_M_SHIFT)
+                q->mods_used |= SEQ_M_SHIFT;
+            q->scene_off = (uint8_t)clampi(q->scene_off - d * ((q->mods & SEQ_M_SHIFT) ? 4 : 1), 0, RFM_MOVE_SEQ_SCENES - 4);
+        } else {
             const int o = clampi(m->s.octave + d, RFM_MOVE_OCT_MIN, RFM_MOVE_OCT_MAX);
             if (o != m->s.octave) {
                 m->s.octave = (int8_t)o;
@@ -2091,6 +2084,14 @@ static int scene_state(const rfm_move_t *m, int scene)
     return !any ? 0 : wait && will && !is ? 3 : wait && is && !will ? 4 : is ? 2 : 1;
 }
 
+/* (0.12.0, the owner's) session view: a column's track does not reach the firmware played (its pads dimmed to a quarter,
+ * its cells' outlines dotted). Not with no firmware list (no host), nor while a Track is held (the pads: the routing) */
+static int sv_unrouted(const rfm_move_t *m, int track)
+{
+    return m->fw.host && !rfmv_seq_trk_held(m) && track < RFM_MOVE_SEQ_TRACKS &&
+           !(m->seq.fx.ffilt[m->fw.active % RFM_MOVE_FW_SLOTS] >> track & 1);
+}
+
 /* (0.8.0, 0.9.0) the lock menu's steps (the board's colours): the track selected for the firmware in its colour, the
  * firmware's solo blue, not routed to it dim red, the others by their content */
 /* (0.11.0, the owner's) not routed: dark; routed: the firmware's colour (a track with nothing in it dimmer); the
@@ -2182,6 +2183,8 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             case CS_HOLLOW: v = sel ? sc(RFMV_WHITE, 60) : sc(TRACK_RGB[track], 22); break;
             default: v = sel ? sc(RFMV_WHITE, 60) : RFMV_OFF; break;
             }
+            if (sv_unrouted(m, track) && !m->pad_down[i])
+                v = sc(v, 64);                          /* (0.12.0) not reaching the firmware played: a quarter */
         } else {
             const int note = rfm_move_pad_note(&m->s, i);
             if (note >= 0 && q->step_first >= 0) {      /* a step held: its notes bright white, the rest dim */
@@ -2560,11 +2563,13 @@ static void session_screen(const rfm_move_t *m, mr_canvas_t *cv)
                 default: break;
                 }
             v2_cell(cv, c, r, s);
+            if (sv_unrouted(m, track))
+                v2_cellDots(cv, c, r);                  /* (0.12.0) the firmware played does not get this column */
             if (track == q->sel_track && q->tr[track].sel == scene) {   /* (0.9.2) the selected clip (or empty slot):
                                                          * a frame round its cell, in the gap between the cells; a
                                                          * filled cell (playing, recording) stands clear of it */
                 const int x = c * 16 + 1, y = 4 + r * 15;
-                if (s == 'P' || s == 'R')
+                if (s == 'P' || s == 'R' || s == 'S')
                     v2_O(cv, x, y, 14, 13, 0);
                 v2_O(cv, x - 1, y - 1, 16, 15, 1);
             }

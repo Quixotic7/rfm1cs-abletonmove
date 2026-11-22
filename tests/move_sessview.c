@@ -659,14 +659,15 @@ static void test_from_takeover(void)
 }
 
 /* ================================================================ (0.11.0) the owner's UX rules: session view === */
-static int cell_stop(int c, int r)                      /* an outline with the stop square in it (it stops at the bar) */
+static int cell_stop(int c, int r)                      /* (0.12.0) filled with a black stop square in it (it stops at
+                                                         * the bar; was an outline with a white square) */
 {
     const int x = c * 16 + 1, y = 4 + r * 15;
     int i, j, n = 0;
     for (j = y + 3; j < y + 10; j++)
         for (i = x + 4; i < x + 10; i++)
             n += px(i, j);
-    return cell_clip(c, r) && n == 42 && !px(x + 2, y + 6) && !px(x + 11, y + 6);
+    return cell_clip(c, r) && n == 0 && px(x + 2, y + 6) && px(x + 11, y + 6);
 }
 static unsigned area_hash(int x0, int y0, int w, int h)
 {
@@ -686,9 +687,10 @@ static void test_launch(void)
     owners_grid();
     hit(SCN(0));
     adv_ms(700), bar_start();
-    /* the stop steps' icons are lit (a step that is a function), the select steps' are not; step 16's too */
+    /* (0.12.0, the owner's) no icon under the steps is lit in session view at rest (0.11.0 lit the stop steps') */
     leds(w);
-    CHECK(w[L_ICON0 + 1][0] > 0 && !w[L_ICON0 + 0][0] && !w[L_ICON0 + 2][0] && w[L_ICON0 + 15][0] > 0 && !w[L_ICON0 + 14][0]);
+    for (i = 0; i < 16; i++)
+        CHECKF(!w[L_ICON0 + i][0], "icon %d", i + 1);
     /* the knobs are lit (a touch shows a track): knob 8 green (the scenes); a track the firmware played gets in its
      * colour, one it does not get faint white */
     M.seq.fx.ffilt[1] &= (uint16_t)~(1u << 3);
@@ -923,6 +925,89 @@ static void test_arp(void)
     CHECK(!M.seq.smenu);
 }
 
+/* ================================================================ (0.12.0) the stop icon, the icons, the routed columns, paging === */
+static void test_sv_marks(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3], w2[RFM_MOVE_NLEDS][3];
+    int i, stop = 0;
+    session_view();
+    owners_grid();
+    clip_put(4, 0, 70), clip_put(4, 1, 71);
+    /* n16: no icon lit at rest, stopped or playing; Shift held: the shortcuts' icons, as in track view */
+    leds(w);
+    for (i = 0; i < 16; i++)
+        CHECKF(!w[L_ICON0 + i][0], "icon %d at rest", i + 1);
+    button(MR_CC_SHIFT, 1);
+    leds(w);
+    CHECK(w[L_ICON0 + 0][0] > 0 && w[L_ICON0 + 4][0] > 0 && !w[L_ICON0 + 3][0]);
+    button(MR_CC_SHIFT, 0), rest();
+    hit(SCN(0)), adv_ms(700), bar_start();
+    leds(w);
+    for (i = 0; i < 16; i++)
+        CHECKF(!w[L_ICON0 + i][0], "icon %d playing", i + 1);
+    /* n9: tracks 2 and 5 do not reach the firmware played (felucca, slot 2): their pads a quarter, in every state;
+     * their cells' outlines dotted on the screen; the scene column never */
+    M.seq.fx.ffilt[1] &= (uint16_t)~((1u << 1) | (1u << 4));
+    now_ms += 1000, hit(PAD(4, 1));                     /* (track 5's clip 2 waits for the bar: blinking, selected) */
+    leds(w);
+    CHECKF(bright(w[L_PAD0 + PAD(1, 0)]) * 3 < bright(w[L_PAD0 + PAD(0, 0)]) && lit(w[L_PAD0 + PAD(1, 0)]),
+           "a playing clip not routed %d, routed %d", bright(w[L_PAD0 + PAD(1, 0)]), bright(w[L_PAD0 + PAD(0, 0)]));
+    CHECK(bright(w[L_PAD0 + PAD(1, 1)]) * 3 < bright(w[L_PAD0 + PAD(3, 1)]) && lit(w[L_PAD0 + PAD(1, 1)]));
+    CHECK(green(w[L_PAD0 + SCN(0)]) && bright(w[L_PAD0 + SCN(0)]) > 60);
+    for (i = 0; i < 60 && !stop; i++) {                 /* (the handover phase with the stop icon, for the board) */
+        adv_ms(10), screen();
+        stop = cell_stop(4, 0);
+    }
+    CHECK(stop);
+    write_pbm("routedcols");
+    {
+        const int y = 4;                                /* row 1's cells: routed solid, not routed dotted */
+        CHECK(px(0 * 16 + 1 + 1, y) && px(0 * 16 + 1 + 2, y) && px(3 * 16 + 1 + 1, y));
+        CHECK(!px(1 * 16 + 1 + 1, y) && px(1 * 16 + 1 + 2, y) && !px(1 * 16 + 1 + 3, y));   /* (track 2: playing, filled) */
+        CHECK(!px(4 * 16 + 1 + 1, y + 15) && px(4 * 16 + 1 + 2, y + 15));   /* (track 5's clip 2: an outline) */
+    }
+    /* a pressed pad is not dimmed (white: it is selected at the press) */
+    pad(PAD(1, 1), 100);
+    leds(w2);
+    CHECKF(bright(w2[L_PAD0 + PAD(1, 1)]) > 150, "pressed: %02x%02x%02x", w2[L_PAD0 + PAD(1, 1)][0], w2[L_PAD0 + PAD(1, 1)][1],
+           w2[L_PAD0 + PAD(1, 1)][2]);
+    pad(PAD(1, 1), 0);
+    /* a Track held (the routing pads) or no firmware list: nothing dimmed by it */
+    hold_track(1);
+    leds(w2);
+    CHECK(!lit(w2[L_PAD0 + PAD(4, 0)]) && bright(w2[L_PAD0 + PAD(0, 0)]) > 150);   /* (the routing: not routed dark) */
+    track(1, 0), rest();
+    M.fw.host = 0;
+    leds(w2), screen();
+    CHECK(bright(w2[L_PAD0 + PAD(1, 0)]) == bright(w2[L_PAD0 + PAD(0, 0)]) && px(1 * 16 + 1 + 1, 4));
+    M.fw.host = 1;
+    M.seq.fx.ffilt[1] |= (uint16_t)((1u << 1) | (1u << 4));
+    /* c11: Shift + Left / Right a page of 7 tracks, Shift + Up / Down 4 rows; clamped as the single steps */
+    rest();
+    button(MR_CC_SHIFT, 1);
+    press(MR_CC_RIGHT);
+    CHECK(M.seq.track_page == 7);
+    press(MR_CC_RIGHT);
+    CHECK(M.seq.track_page == 9);
+    press(MR_CC_LEFT);
+    CHECK(M.seq.track_page == 2);
+    press(MR_CC_LEFT);
+    CHECK(M.seq.track_page == 0);
+    press(MR_CC_DOWN);
+    CHECK(M.seq.scene_off == 4);
+    press(MR_CC_DOWN), press(MR_CC_DOWN), press(MR_CC_DOWN);
+    CHECK(M.seq.scene_off == 12);
+    press(MR_CC_UP);
+    CHECK(M.seq.scene_off == 8);
+    button(MR_CC_SHIFT, 0);
+    CHECK(!M.seq.shift_lock && !(M.seq.mods & SEQ_M_SHIFT));
+    button(MR_CC_SHIFT, 1), button(MR_CC_SHIFT, 0);     /* (Shift used: its release was no tap; one tap: no latch) */
+    CHECK(!M.seq.shift_lock);
+    press(MR_CC_RIGHT), press(MR_CC_DOWN);
+    CHECK(M.seq.track_page == 1 && M.seq.scene_off == 9);
+    aligned("paged");
+}
+
 int main(void)
 {
     test_scenes();
@@ -936,6 +1021,7 @@ int main(void)
     test_launch();
     test_route();
     test_arp();
+    test_sv_marks();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

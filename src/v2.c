@@ -331,12 +331,17 @@ void v2_cell(mr_canvas_t *b, int c, int r, char s)
     const int x = c * 16 + 1, y = 4 + r * 15;
     if (s == '.')
         v2_R(b, x + 6, y + 5, 2, 2, 1);
-    else if (s == 'P' || s == 'R') {
+    else if (s == 'P' || s == 'R' || s == 'S') {         /* (0.12.0, the owner's: "the stop more like the play icon.
+                                                         * White filled with a square inside it") playing: filled, a
+                                                         * black play icon; on its way out: a black square; recording: a
+                                                         * black dot (it was the square) */
         v2_R(b, x, y, 14, 13, 1);
         if (s == 'P')
             v2_ic(b, V2I_PLAY, x + 2, y + 1, 0);
-        else
+        else if (s == 'S')
             v2_R(b, x + 4, y + 3, 6, 7, 0);
+        else
+            v2_ic(b, V2I_REC, x + 2, y + 1, 0);
     } else if (s == 'D')
         v2_dashO(b, x, y, 14, 13);
     else if (s == 'X')
@@ -345,8 +350,6 @@ void v2_cell(mr_canvas_t *b, int c, int r, char s)
         v2_O(b, x, y, 14, 13, 1), v2_O(b, x + 2, y + 2, 10, 9, 1);
     else if (s == 'A')                                  /* (0.10.0) armed: stopped, Play starts it */
         v2_O(b, x, y, 14, 13, 1), v2_ic(b, V2I_PLAY, x + 2, y + 1, 1);
-    else if (s == 'S')                                  /* (0.11.0) it stops at the bar */
-        v2_O(b, x, y, 14, 13, 1), v2_R(b, x + 4, y + 3, 6, 7, 1);
     else if (s == 'H' || s == 'h') {                    /* (0.10.0) a clip with no notes: its corners (h: it plays) */
         v2_R(b, x, y, 3, 1, 1), v2_R(b, x, y, 1, 3, 1), v2_R(b, x + 11, y, 3, 1, 1), v2_R(b, x + 13, y, 1, 3, 1);
         v2_R(b, x, y + 12, 3, 1, 1), v2_R(b, x, y + 10, 1, 3, 1), v2_R(b, x + 11, y + 12, 3, 1, 1), v2_R(b, x + 13, y + 10, 1, 3, 1);
@@ -354,4 +357,15 @@ void v2_cell(mr_canvas_t *b, int c, int r, char s)
             v2_ic(b, V2I_PLAY, x + 2, y + 1, 1);
     } else
         v2_O(b, x, y, 14, 13, 1);
+}
+/* (0.12.0) a cell's outline dotted: every other pixel of its edge cleared (session view: a column whose track does not
+ * reach the firmware played) */
+void v2_cellDots(mr_canvas_t *b, int c, int r)
+{
+    const int x = c * 16 + 1, y = 4 + r * 15;
+    int i;
+    for (i = 1; i < 14; i += 2)
+        v2_px(b, x + i, y, 0), v2_px(b, x + i, y + 12, 0);
+    for (i = 1; i < 13; i += 2)
+        v2_px(b, x, y + i, 0), v2_px(b, x + 13, y + i, 0);
 }

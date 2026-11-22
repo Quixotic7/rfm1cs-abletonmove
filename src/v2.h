@@ -52,6 +52,7 @@ void v2_steps(mr_canvas_t *b, int has, int copied, int cut, int held);
 /* a session cell: P playing, C clip, Q queued, R recording, . empty, D copied, X cut; (0.10.0) A armed (Play starts
  * it; flashing: it waits for the bar), H a clip with no notes, h one that plays or is armed, (0.11.0) S it stops */
 void v2_cell(mr_canvas_t *b, int c, int r, char s);
+void v2_cellDots(mr_canvas_t *b, int c, int r);
 
 #ifdef __cplusplus
 }
