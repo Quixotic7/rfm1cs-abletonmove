@@ -1224,10 +1224,11 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
             return;
         }
     }
-    if (m->s.mode != RFM_MOVE_MODE_SEQ && (cc == MR_CC_BACK || cc == MR_CC_MENU) &&
+    if (m->s.mode != RFM_MOVE_MODE_SEQ && cc == MR_CC_BACK &&
         (m->seq.smenu || m->seq.projects || m->seq.loop_latch || m->seq.shift_lock)) {
-        if (down)                                       /* (a sequencer layer open: Back or Session closes it, not the
-                                                         * FM-1's HOME) */
+        if (down)                                       /* (a sequencer layer open: Back closes it; 0.12.0, l2: Menu
+                                                         * never closes a menu: in the FM-1 layout it is the FM-1's
+                                                         * HOME, the menu stays) */
             rfmv_seq_button(m, MR_CC_BACK, 1, now);
         return;
     }
@@ -1452,7 +1453,8 @@ static void on_jog_click(rfm_move_t *m, int down)
 static void on_touch(rfm_move_t *m, int k, int on)
 {
     int t;
-    if (on && m->speech && m->seq.smenu && k < RFM_MOVE_NKNOBS) {   /* (0.6.3) a Shift menu's knob touched: its item */
+    if (on && m->speech && m->seq.smenu && k < RFM_MOVE_NKNOBS && !rfmv_seq_held_takes(m)) {   /* (0.6.3) a Shift menu's
+                                                         * knob touched: its item (0.12.0: not a held step's knob) */
         char w[64];
         rfmv_seq_smenu_words(m, k, w, sizeof w);
         if (w[0])
@@ -1818,7 +1820,7 @@ int rfmv_menu_knobs(const rfm_move_t *m)
     }
     if (rfmv_seq_cs_knobs(m) >= 0)
         return rfmv_seq_cs_knobs(m);                    /* (0.12.0) a select step held: Launch, After */
-    if (m->seq.smenu)
+    if (m->seq.smenu && !rfmv_seq_held_takes(m))       /* (0.12.0, l3: a held step has the knobs over it) */
         return rfmv_seq_menu_knobs(m);
     return -1;
 }

@@ -694,6 +694,12 @@ typedef struct {
     uint32_t al_hold_ms;                                /* .. the held step's press */
     int8_t oct_dir;                                     /* Up / Down: the octave's sweep over the pad rows (1 up, -1) */
     uint32_t oct_ms;                                    /* .. from */
+    /* (0.12.0, the owner's) Loop and Mute: a quick click (let go within RFM_MOVE_SEQ_HOLD_MS, nothing else pressed)
+     * latches the layer, a hold is the same layer until the release */
+    uint8_t mute_latch;                                 /* Mute's layer latched (until Mute's click again or Back) */
+    uint8_t mute_end;                                   /* the Mute press that ended the latch (its release: nothing) */
+    uint32_t loop_ms, mute_ms;                          /* Loop, Mute pressed (the sequencer clock's ms) */
+    uint32_t fill_ms;                                   /* FILL on since (its light, its pads' wave) */
     /* a held Track's track (a step, or in session view a column's pad): the press's verdict, gated. A hold acts once
      * held RFM_MOVE_SEQ_HOLD_MS (not at the release); a click acts once RFM_MOVE_DOUBLE_MS have passed with no second
      * press (or the Track button is let go); a second press in that time is the double click, at once */

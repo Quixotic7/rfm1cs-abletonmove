@@ -15,7 +15,8 @@ typedef rfmv_rgb_t rgb_t;
 
 #define NUDGE 2                                         /* ticks a Left / Right with a step held (~10 % of a step) */
 #define OCT_FRAME 50                                    /* (0.12.0) the octave sweep's frame, ms (4 rows: 200 ms) */
-#define LEN_FINE 2                                      /* ticks a jog detent with a step held (~10 % of a step) */
+#define HELD_MODS (SEQ_M_SHIFT | SEQ_M_LOOP | SEQ_M_COPY | SEQ_M_DELETE | SEQ_M_MUTE)   /* (0.12.0: over an arp lane) */
+#define LEN_FINE 2                                    /* ticks a jog detent with a step held (~10 % of a step) */
 
 /* the tracks' colours */
 static const rgb_t TRACK_RGB[RFM_MOVE_SEQ_TRACKS] = {
@@ -92,7 +93,7 @@ static int root_note(const rfm_move_t *m) { return clampi(48 + m->s.root + 12 * 
 static void al_pad(rfm_move_t *m, int p);
 
 /* the layers Back closes, the latest first */
-enum { LY_MENU = 1, LY_PROJ, LY_LOOP, LY_SHIFT, LY_CLIP, LY_PAGE };
+enum { LY_MENU = 1, LY_PROJ, LY_LOOP, LY_SHIFT, LY_CLIP, LY_PAGE, LY_MUTE, LY_LAST = LY_MUTE };   /* (0.12.0: Mute's latch) */
 static void layer(rfm_move_seq_t *q, int id)
 {
     int i, k = 0;
@@ -112,6 +113,7 @@ static int layer_on(const rfm_move_seq_t *q, int id)
     case LY_SHIFT: return q->shift_lock != 0;
     case LY_CLIP: return (q->clip_kind && (q->cut || q->paste)) || (q->clip_kind == 2 && q->sv_armed) || q->sc_armed;
     case LY_PAGE: return q->pg_kind != 0;
+    case LY_MUTE: return q->mute_latch != 0;
     default: return 0;
     }
 }
@@ -124,10 +126,45 @@ static int clip_end_page(const rfm_move_t *m, int clip)
             end = m->seq.notes[k].step / RFM_MOVE_SEQ_PAGE;
     return end;
 }
+/* (0.12.0, l3 + a17) the held controls over an open Shift menu. A held modifier (Loop, Copy, Delete, Mute: pressed
+ * now, not latched) has its picture over the menu while down; the menu keeps its knobs and jog (but Loop's: the jog
+ * the clip's length). Loop latched shows over a menu opened before the latch, under one opened after it (the layers'
+ * order, as Back closes them) */
+static int btn_down(const rfm_move_t *m, int cc) { return m->btn[cc].kind != H_NONE; }
+static int layer_pos(const rfm_move_seq_t *q, int id)
+{
+    int i;
+    for (i = q->nlayer - 1; i >= 0; i--)
+        if (q->layer[i] == id)
+            return i;
+    return -1;
+}
+int rfmv_seq_loop_over(const rfm_move_t *m)             /* Loop's layer shows (and has the jog) over an open menu */
+{
+    const rfm_move_seq_t *q = &m->seq;
+    if (m->s.mode != RFM_MOVE_MODE_SEQ || !(q->mods & SEQ_M_LOOP) || q->view || q->projects || q->fill)
+        return 0;
+    return !q->smenu || btn_down(m, MR_CC_LOOP) || (q->loop_latch && layer_pos(q, LY_LOOP) > layer_pos(q, LY_MENU));
+}
+int rfmv_seq_mute_on(const rfm_move_t *m)              /* Mute's layer shows (held, or latched and not under a menu
+                                                         * opened after it) */
+{
+    const rfm_move_seq_t *q = &m->seq;
+    if (!(q->mods & SEQ_M_MUTE))
+        return 0;
+    return !q->smenu || btn_down(m, MR_CC_MUTE) || (q->mute_latch && layer_pos(q, LY_MUTE) > layer_pos(q, LY_MENU));
+}
+int rfmv_seq_mod_over(const rfm_move_t *m)              /* Copy, Delete or Mute (held or latched) over an open menu */
+{
+    const rfm_move_seq_t *q = &m->seq;
+    if (m->s.mode != RFM_MOVE_MODE_SEQ || q->projects || !q->smenu)
+        return 0;
+    return (q->mods & (SEQ_M_COPY | SEQ_M_DELETE)) || rfmv_seq_mute_on(m) || rfmv_seq_loop_over(m);
+}
 int rfmv_seq_layer_open(const rfm_move_t *m)
 {
     int id;
-    for (id = LY_MENU; id <= LY_PAGE; id++)
+    for (id = LY_MENU; id <= LY_LAST; id++)
         if (layer_on(&m->seq, id))
             return 1;
     return 0;
@@ -150,6 +187,7 @@ static void layer_close(rfm_move_t *m, int id)
             q->clip_kind = 0;
         break;
     case LY_PAGE: q->pg_kind = 0; break;
+    case LY_MUTE: q->mute_latch = 0, q->mods &= (uint8_t)~SEQ_M_MUTE; break;
     default: break;
     }
 }
@@ -950,7 +988,7 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         }
         return;
     }
-    if (q->smenu == RFM_MOVE_SM_ARP && q->arp_page && !(q->mods & SEQ_M_SHIFT)) {
+    if (q->smenu == RFM_MOVE_SM_ARP && q->arp_page && !(q->mods & HELD_MODS)) {
         /* (0.11.0, the owner's) an arp lane's page: the 16 step keys are the lane's 16 steps: a press picks one (knob 1
          * its function or semitones). The menu has the steps while it is open: none reaches the clip under it.
          * (0.12.0) a step past the lane's length: dark and dead; step 1 held + step n: the lane's length n (n again:
@@ -1370,6 +1408,8 @@ void rfmv_seq_ui_poll(rfm_move_t *m)
 }
 /* ================================================================ held steps: nudge, transpose, velocity === */
 static int held_view(const rfm_move_t *m) { return !m->seq.view && !m->seq.projects && m->seq.step_held; }
+/* (0.12.0, l3) a held step (track view) has the knobs and the jog, over an open Shift menu too */
+int rfmv_seq_held_takes(const rfm_move_t *m) { return m->s.mode == RFM_MOVE_MODE_SEQ && held_view(m); }
 
 static void held_nudge(rfm_move_t *m, int d)
 {
@@ -1621,7 +1661,7 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
         }
         {
             int id;
-            for (id = LY_MENU; id <= LY_PAGE; id++)        /* (one opened some other way) */
+            for (id = LY_MENU; id <= LY_LAST; id++)        /* (one opened some other way) */
                 if (layer_on(q, id)) {
                     layer_close(m, id);
                     return 1;
@@ -2260,7 +2300,8 @@ void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now)
         }
         return;
     }
-    if (q->smenu) {                                     /* a Shift menu open: its values */
+    if (q->smenu && !held_view(m)) {                    /* a Shift menu open: its values (0.12.0, l3: a held step has
+                                                         * the knobs over it) */
         smenu_turn(m, k, d);
         return;
     }
@@ -2337,8 +2378,9 @@ void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now)
         }
         return;
     }
-    if (q->smenu) {                                     /* a Shift menu: its first value */
-        smenu_turn(m, -1, d);
+    if (q->smenu && !held_view(m) && !(rfmv_seq_loop_over(m) && q->smenu != RFM_MOVE_SM_GLOBAL)) {
+        smenu_turn(m, -1, d);                           /* a Shift menu: its first value (0.12.0, l3: a held step or
+                                                         * Loop held has the jog over it) */
         return;
     }
     if (!q->view && q->step_held) {                     /* held steps: the notes' length (Move: ~10 % of a step a
@@ -2604,7 +2646,7 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 v = TRACK_RGB[i];
             else
                 v = sc(TRACK_RGB[i], used ? 64 : 10);
-        } else if (q->smenu == RFM_MOVE_SM_ARP && q->arp_page && !(q->mods & SEQ_M_SHIFT)) {
+        } else if (q->smenu == RFM_MOVE_SM_ARP && q->arp_page && !(q->mods & HELD_MODS)) {
             /* (0.11.0) an arp lane: its steps: the one picked white, the one just played green, a step that does
              * something else than play (a transpose) orange, a rest faint; past the lane's length dark */
             const rfm_move_arp_t *a = &q->tr[q->sel_track].arp;
@@ -3293,12 +3335,15 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
     case MR_EV_BUTTON:
         if (ev->index >= MR_CC_TRACK4 && ev->index <= MR_CC_TRACK1)
             return 0;                                   /* (the Track buttons; Track 4's Shift layer: its own toggle) */
+        if (ev->index == MR_CC_MENU)
+            return 0;                                   /* (0.12.0, l2: Menu never closes a menu: the view flips under
+                                                         * it, or the FM-1 layout's HOME) */
         if (!ev->value)
-            return ev->index == MR_CC_BACK || ev->index == MR_CC_MENU;   /* (their press was ours) */
+            return ev->index == MR_CC_BACK;             /* (its press was ours) */
         if (ev->index == MR_CC_SHIFT && m->s.mode != RFM_MOVE_MODE_FM1)
             return 0;                                   /* (Shift + step 2 closes it in Sequencer mode and, 0.8.0, a note
                                                          * layout; in the FM-1 layout Shift is the FM-1's GLO) */
-        if (ev->index == MR_CC_BACK || ev->index == MR_CC_MENU) {
+        if (ev->index == MR_CC_BACK) {
             if (m->gl_edit)
                 m->gl_edit = 0, rfmv_say_text(m, "Done");
             else
@@ -3649,7 +3694,7 @@ static void held_icon(mr_canvas_t *cv, const uint16_t ic[11], int x, int y)
 int rfmv_seq_held_icon(const rfm_move_t *m)             /* 1 cutting, 2 copying, 0 none */
 {
     const rfm_move_seq_t *q = &m->seq;
-    if (m->s.mode != RFM_MOVE_MODE_SEQ || q->projects || q->smenu || (q->mods & (SEQ_M_MUTE | SEQ_M_LOOP | SEQ_M_SHIFT)) ||
+    if (m->s.mode != RFM_MOVE_MODE_SEQ || q->projects || (q->mods & (SEQ_M_MUTE | SEQ_M_LOOP | SEQ_M_SHIFT)) ||
         rfmv_seq_trk_held(m))
         return 0;
     return (q->mods & SEQ_M_DELETE) ? 1 : (q->mods & SEQ_M_COPY) ? 2 : 0;
@@ -3659,13 +3704,14 @@ void rfmv_seq_screen(const rfm_move_t *m, mr_canvas_t *cv)
     const rfm_move_seq_t *q = &m->seq;
     const int hi = rfmv_seq_held_icon(m);
     int r;
-    if (!q->projects && !q->smenu && !q->view && (q->mods & SEQ_M_LOOP) && !(q->mods & SEQ_M_MUTE))
-        rfmv_seq_loop_edit(m, cv);
-    else if (q->smenu)                                  /* (0.9.0: a Shift menu over the Mixer / Routing too) */
+    if (!q->projects && rfmv_seq_loop_over(m) && !rfmv_seq_mute_on(m))
+        rfmv_seq_loop_edit(m, cv);                      /* (0.12.0, l3: Loop held over an open menu too) */
+    else if (q->smenu && !rfmv_seq_mod_over(m))         /* (0.9.0: a Shift menu over the Mixer / Routing too; 0.12.0:
+                                                         * under a held Copy, Delete, Mute or Loop) */
         smenu_screen(m, cv);
     else if (q->projects)
         projects_screen(m, cv);
-    else if (q->mods & SEQ_M_MUTE)
+    else if (rfmv_seq_mute_on(m))
         mute_screen(m, cv);
     else if (rfmv_seq_cs_on(m))
         cs_screen(m, cv);                               /* (0.12.0) a select step held: its clip's settings */

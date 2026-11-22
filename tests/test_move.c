@@ -1564,8 +1564,10 @@ static void test_menus_leave_pads(void)
     CHECK(count(RFM_MOVE_ACT_KEY) >= 4 && m.seq.smenu == RFM_MOVE_SM_KEYS);   /* (a key and a step-key, down and up) */
     knob(&m, 1, RFM_MOVE_LIST_TICKS);
     CHECK(m.s.scale == 1);
-    button(&m, MR_CC_MENU, 1), button(&m, MR_CC_MENU, 0);   /* Session closes it (not the FM-1's HOME) */
-    CHECK(!m.seq.smenu && !has(RFM_MOVE_ACT_BTN, RFM_MOVE_B_HOME, 1, 0));
+    button(&m, MR_CC_MENU, 1), button(&m, MR_CC_MENU, 0);   /* (0.12.0, l2) Menu: the FM-1's HOME, the menu stays */
+    CHECK(m.seq.smenu == RFM_MOVE_SM_KEYS && has(RFM_MOVE_ACT_BTN, RFM_MOVE_B_HOME, 1, 0));
+    button(&m, MR_CC_BACK, 1), button(&m, MR_CC_BACK, 0);   /* (only Back closes it) */
+    CHECK(!m.seq.smenu);
 }
 
 /* a held Track (its menu or layer) or a Shift menu: only the knobs it uses lit, in the menu colour (deep orange, no

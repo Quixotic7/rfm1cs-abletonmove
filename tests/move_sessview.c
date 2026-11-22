@@ -1930,6 +1930,156 @@ static void test_held_step(void)
     CHECK(rfmv_seq_range(&M, clip, 0, &lo) > lo);       /* (the held step kept its notes) */
 }
 
+/* ================================================================ package C (0.12.0): buttons, menus, held controls === */
+static void touch(int k, int on) { raw(on ? 0x90 : 0x80, (uint8_t)k, on ? 127 : 0); }
+static uint8_t SAVED[MR_SCREEN_BYTES];
+static void scr_save(void) { screen(), memcpy(SAVED, SCR, sizeof SAVED); }
+static int scr_same(void) { screen(); return !memcmp(SAVED, SCR, sizeof SAVED); }
+static int ring_menu(const uint8_t c[3]) { return c[0] > 2 * c[1] && c[1] > 0 && c[2] == 0 && c[0] >= 100; }   /* (deep
+                                                         * orange: a menu's knob) */
+static int rings_menu(int bits)                         /* the knob lights are the menu's: its knobs orange, the rest off */
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int k, ok = 1;
+    leds(w);
+    for (k = 0; k < 8; k++)
+        ok &= (bits >> k & 1) ? ring_menu(w[L_RING0 + k]) : !lit(w[L_RING0 + k]);
+    return ok;
+}
+static void shift_step(int s) { button(MR_CC_SHIFT, 1), step(s, 1), step(s, 0), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS; }
+
+/* l3 + a17: with a Shift menu open, a held step, Loop, Copy, Delete, Mute and Shift take over while held; the menu is
+ * back at their release with its knobs, jog and screen; a Track tap's popup over the menu, then the menu */
+static void test_held_over_menu(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    rfm_move_track_t *t;
+    int clip, lo = 0, ch, len;
+    track_view();
+    t = &M.seq.tr[M.seq.sel_track];
+    clip = SEQ_CLIP(M.seq.sel_track, t->sel);
+    rfmv_seq_note_put(&M, clip, 0, 60, 100, 24, 0);
+    shift_step(2);                                      /* Workflow: knobs 1..3 */
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
+    rest(), scr_save();
+    CHECK(rings_menu(0x07));
+    write_pbm("over_menu_rest");
+    ch = t->ch;
+    /* a held step: its popup at 300 ms over the menu; the knobs, jog, volume, arrows its; the menu stays */
+    step(0, 1);
+    CHECK(rfmv_seq_held_takes(&M) && !rings_menu(0x07));
+    adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20);
+    CHECK(rfmv_pop_up(&M, POP_STEP) && !scr_same());
+    write_pbm("over_menu_step");
+    knob(0, 3);                                         /* (the TRIG page: micro) */
+    CHECK(t->ch == ch && rfmv_seq_range(&M, clip, 0, &lo) > lo && M.seq.notes[lo].micro == 3 && rfmv_pop_up(&M, POP_TRIG));
+    jog(2);
+    CHECK(t->ch == ch && M.seq.notes[lo].len == 24 + 4 && M.pop == POP_TRIG && M.pop_i == 6);
+    knob(8, 5);
+    CHECK(M.seq.notes[lo].vel == 105);
+    press(MR_CC_UP);
+    CHECK(rfmv_seq_find(&M, clip, 0, 61) >= 0);
+    write_pbm("over_menu_step_turn");
+    step(0, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW && rings_menu(0x07));
+    rest();
+    CHECK(scr_same());
+    knob(0, RFM_MOVE_LIST_TICKS);                       /* (the menu's knob again: the channel) */
+    CHECK(t->ch == ch + 1);
+    rest(), scr_save();
+    /* Loop held: its pages picture and the jog (the clip's length); the menu keeps its knobs, lit */
+    len = M.seq.len[clip];
+    button(MR_CC_LOOP, 1);
+    CHECK(!scr_same() && rings_menu(0x07));
+    write_pbm("over_menu_loop");
+    jog(1);
+    CHECK(M.seq.len[clip] == len + 1 && M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
+    knob(0, -RFM_MOVE_LIST_TICKS);
+    CHECK(t->ch == ch);
+    button(MR_CC_LOOP, 0);
+    CHECK(!M.seq.loop_latch && M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
+    rest(), scr_save();
+    /* Loop's quick click under the menu: latched, shown over it; Back closes the latch first, then the menu */
+    press(MR_CC_LOOP);
+    CHECK(M.seq.loop_latch && !scr_same() && rings_menu(0x07));
+    back();
+    CHECK(!M.seq.loop_latch && M.seq.smenu == RFM_MOVE_SM_WORKFLOW && scr_same());
+    /* Copy, Delete held: the track screen with their icon; Mute held: the 16 tracks, a step mutes */
+    button(MR_CC_COPY, 1);
+    CHECK(!scr_same() && rings_menu(0x07) && rfmv_seq_held_icon(&M) == 2);
+    write_pbm("over_menu_copy");
+    button(MR_CC_COPY, 0);
+    CHECK(scr_same());
+    button(MR_CC_DELETE, 1);
+    CHECK(!scr_same() && rfmv_seq_held_icon(&M) == 1);
+    button(MR_CC_DELETE, 0);
+    rest();
+    CHECK(scr_same());
+    button(MR_CC_MUTE, 1);
+    CHECK(!scr_same() && rings_menu(0x07));
+    write_pbm("over_menu_mute");
+    step(5, 1), step(5, 0);
+    CHECK(M.seq.tr[5].mute && M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
+    button(MR_CC_MUTE, 0);
+    rest();
+    CHECK(scr_same() && rings_menu(0x07) && M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
+    rfmv_seq_mute(&M, 5, 0);
+    /* Shift held: the shortcuts' icons; Shift + another menu's step switches, + its own closes it */
+    button(MR_CC_SHIFT, 1);
+    leds(w);
+    CHECK(w[L_ICON0 + 2][0] == 127 && w[L_ICON0 + 6][0] == 24);
+    step(6, 1), step(6, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_GROOVE);
+    step(6, 1), step(6, 0);
+    CHECK(!M.seq.smenu);
+    button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    /* a Track tap under the menu: the slot changes, its popup a second, the menu back (it stays open) */
+    shift_step(2);
+    rest(), scr_save();
+    tap_track(0);
+    CHECK(M.fw.active == 0 && M.seq.smenu == RFM_MOVE_SM_WORKFLOW && (rfmv_pop_up(&M, POP_LAYOUT) || rfmv_pop_up(&M, POP_TK)));
+    screen();
+    CHECK(lit_rows(0, 64) > 0);
+    write_pbm("over_menu_tracktap");
+    rest();
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW && rings_menu(0x07));
+    write_pbm("over_menu_tracktap_after");
+    tap_track(1), rest();
+    CHECK(M.fw.active == 1 && M.seq.smenu == RFM_MOVE_SM_WORKFLOW && scr_same());
+    back();
+    CHECK(!M.seq.smenu);
+}
+
+/* l2: Menu never closes a Shift menu: a note layout and session view flip under it, the FM-1 layout's Menu is HOME */
+static void test_menu_stays(void)
+{
+    track_view();
+    shift_step(4);                                      /* Tempo */
+    CHECK(M.seq.smenu == RFM_MOVE_SM_TEMPO);
+    press(MR_CC_MENU);
+    CHECK(M.seq.view && M.seq.smenu == RFM_MOVE_SM_TEMPO);
+    press(MR_CC_MENU);
+    CHECK(!M.seq.view && M.seq.smenu == RFM_MOVE_SM_TEMPO);
+    back();
+    CHECK(!M.seq.smenu);
+    shift_step(1);                                      /* Global settings: the same */
+    CHECK(M.seq.smenu == RFM_MOVE_SM_GLOBAL);
+    press(MR_CC_MENU);
+    CHECK(M.seq.view && M.seq.smenu == RFM_MOVE_SM_GLOBAL);
+    press(MR_CC_MENU), back();
+    CHECK(!M.seq.smenu && !M.seq.view);
+    /* the FM-1 layout (slot 1): Track 4 held + step 9 opens Keys & Scales; Menu: HOME, the menu stays */
+    tap_track(0), rest();
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1);
+    track(3, 1), step(8, 1), step(8, 0), track(3, 0), rest(), clear();
+    CHECK(M.seq.smenu == RFM_MOVE_SM_KEYS);
+    press(MR_CC_MENU);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_KEYS && find(RFM_MOVE_ACT_BTN) && find(RFM_MOVE_ACT_BTN)->index == RFM_MOVE_B_HOME);
+    back();
+    CHECK(!M.seq.smenu);
+    tap_track(1), rest();
+}
+
 int main(void)
 {
     test_scenes();
@@ -1953,6 +2103,8 @@ int main(void)
     test_arp_lanes();
     test_octave();
     test_held_step();
+    test_held_over_menu();
+    test_menu_stays();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }
