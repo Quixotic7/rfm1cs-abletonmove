@@ -126,7 +126,11 @@ int rfmv_seq_redo(rfm_move_t *m);
 void rfmv_seq_copy_step(rfm_move_t *m, int clip, int step);
 void rfmv_seq_copy_clip(rfm_move_t *m, int clip);
 void rfmv_seq_cset_set(rfm_move_t *m, int clip, int v); /* (0.12.0) a clip's launch settings (journaled) */
-void rfmv_seq_clip_delete(rfm_move_t *m, int clip);    /* a clip deleted (playing: the track stops at the bar) */
+void rfmv_seq_clip_delete(rfm_move_t *m, int clip);
+int rfmv_seq_lq_of(const rfm_move_t *m, int track, int scene);   /* (0.12.0) the launch quantization a launch uses */
+const char *rfmv_lq_name(int lq);                       /* .. "1 Bar", "Instant" .. */
+int rfmv_lq_step(int lq, int d);                        /* .. the next in the list (Instant .. Clip) */
+int rfmv_seq_after_next(const rfm_move_t *m, int track, int scene);   /* .. After = Next's clip */    /* a clip deleted (playing: the track stops at the bar) */
 void rfmv_seq_scene_copy(rfm_move_t *m, int scene);     /* (0.12.0) a row into the scene buffer */
 void rfmv_seq_scene_paste(rfm_move_t *m, int scene);    /* .. the scene buffer onto a row (all 16 tracks) */
 int rfmv_seq_scene_has(const rfm_move_t *m, int scene); /* .. a row has a clip */

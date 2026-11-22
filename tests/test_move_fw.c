@@ -783,7 +783,7 @@ static void test_fx(void)
     {
         static uint8_t blob[RFM_MOVE_PROJECT_MAX];
         const int n = rfm_move_project_save(m, blob, sizeof blob);
-        CHECK(n == RFM_MOVE_PROJECT_FIXED && blob[4] == 7);
+        CHECK(n == RFM_MOVE_PROJECT_FIXED && blob[4] == 8);
         rfm_move_init(&M2, NULL, on_act, NULL);
         rfm_move_fw_list(&M2, E, NFW);
         rfm_move_fx_modules(&M2, RFM_MOVE_FX_AUDIO, AFX, 5);   /* (no MIDI FX modules: kept by name) */
@@ -892,14 +892,17 @@ static void test_mroute(void)
     CHECK(rfm_move_midi_route_set(m, 2, RFM_MOVE_MROUTE_OUT) == 1 && (a = last(RFM_MOVE_ACT_ROUTE)) &&
           a->a.mroute[0] == 10 && a->a.mroute[1] == 4 && a->a.mroute[2] == 8);
     CHECK(rfm_move_midi_route_set(m, 2, RFM_MOVE_MROUTE_OUT) == 0 && rfm_move_midi_route(m, 3) == -1);
-    /* saved and loaded (version 7; the load tells the host) */
+    /* saved and loaded (version 7; the load tells the host; 0.12.0: version 8's launch settings after them) */
     n = rfm_move_project_save(m, blob, sizeof blob);
-    CHECK(n > 0 && blob[4] == 7 && blob[n - 4 - 3] == 10 && blob[n - 4 - 2] == 4 && blob[n - 4 - 1] == 8);
+    CHECK(n > 0 && blob[4] == 8 && blob[n - 4 - 257 - 3] == 10 && blob[n - 4 - 257 - 2] == 4 && blob[n - 4 - 257 - 1] == 8);
     rfm_move_init(&M2, NULL, on_act, NULL);
     rfm_move_fw_list(&M2, E, NFW);
     clear();
     CHECK(rfm_move_project_load(&M2, 0, blob, (uint32_t)n) == 0 && !memcmp(M2.seq.fx.mroute, m->seq.fx.mroute, 3));
     CHECK((a = last(RFM_MOVE_ACT_ROUTE)) && a->a.mroute[0] == 10 && a->a.mroute[2] == 8);
+    /* (0.12.0) made a version 7 blob (version 8's launch settings off its end): the routes last */
+    memmove(blob + n - 4 - 1 - RFM_MOVE_SEQ_CLIPS, blob + n - 4, 4);
+    n -= 1 + RFM_MOVE_SEQ_CLIPS, blob[4] = 7;
     /* a cycle or an own bit in a blob: refused */
     {
         static uint8_t bad[RFM_MOVE_PROJECT_MAX];
@@ -1106,8 +1109,9 @@ static void test_old_formats(void)
     rfmv_seq_note_put(m, 0, 3, 64, 90, 24, 0);
     m->seq.fx.send[0][1] = 33;
     n = rfm_move_project_save(m, blob, sizeof blob);
-    CHECK(blob[4] == RFM_MOVE_PROJECT_VERSION && RFM_MOVE_PROJECT_VERSION == 7);
-    n4 = n - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS;   /* a version 4 blob: no FX setup (0.6.6: nor MIDI routes) */
+    CHECK(blob[4] == RFM_MOVE_PROJECT_VERSION && RFM_MOVE_PROJECT_VERSION == 8);
+    n4 = n - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS - 1 - RFM_MOVE_SEQ_CLIPS;   /* a version 4 blob: no FX setup (0.6.6:
+                                                         * nor MIDI routes; 0.12.0: nor launch settings) */
     blob[4] = 4;
     for (h = 2166136261u, k = 0; k < n4 - 4; k++)
         h = (h ^ blob[k]) * 16777619u;
@@ -1990,13 +1994,14 @@ static void test_fx_pages(void)
     CHECK(count(RFM_MOVE_ACT_FX_PARAM) == 4 + 3 + 10 + 16 + 3);   /* (Arp, Chord, Big; CloudSeed, Delay) */
     /* saved and loaded: all 16 values */
     n = rfm_move_project_save(m, blob, sizeof blob);
-    CHECK(n > 0 && blob[4] == 7);
+    CHECK(n > 0 && blob[4] == 8);
     rfm_move_init(&M2, NULL, on_act, NULL), fx6(&M2);
     CHECK(rfm_move_project_load(&M2, 0, blob, (uint32_t)n) == 0 && M2.seq.fx.afx[0].mod == 5);
     CHECK(!memcmp(M2.seq.fx.afx[0].val, sl->val, 16) && M2.seq.fx.afx[0].val[14] == 99);
     CHECK(M2.seq.fx.mfx[2].val[9] == 20);               /* (page 2's knob 2 turned +1) */
     /* a version 5 project (8 values a slot): those 8, the rest the defaults */
-    body = n - 4 - RFM_MOVE_FW_SLOTS - RFM_MOVE_FXSET_BYTES;   /* (0.6.6: the MIDI routes after FX setup) */
+    body = n - 4 - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_FW_SLOTS - RFM_MOVE_FXSET_BYTES;   /* (0.6.6: the MIDI routes after FX
+                                                         * setup; 0.12.0: the launch settings after them) */
     memcpy(b5, blob, (size_t)body);
     {
         const uint8_t *p = blob + body;
@@ -2010,7 +2015,7 @@ static void test_fx_pages(void)
         memcpy(o, p, 18), o += 18;
         n5 = (int)(o - b5) + 4;
     }
-    CHECK(n5 == n - RFM_MOVE_FW_SLOTS - (RFM_MOVE_FXSET_BYTES - RFM_MOVE_FXSET_BYTES_V5));
+    CHECK(n5 == n - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_FW_SLOTS - (RFM_MOVE_FXSET_BYTES - RFM_MOVE_FXSET_BYTES_V5));
     b5[4] = 5;
     for (h = 2166136261u, k = 0; k < n5 - 4; k++)
         h = (h ^ b5[k]) * 16777619u;

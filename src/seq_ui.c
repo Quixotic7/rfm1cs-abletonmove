@@ -2814,9 +2814,26 @@ static void fit2(mr_canvas_t *cv, int x, int y, const char *s, int w)   /* 2x wh
  * its value (the value inverted, the jog changes it), a click again (or Back) leaves the edit; Back closes the menu.
  * While it is open it takes the Move's controls (nothing reaches the FM-1, the firmware or the sequencer); releases
  * pass, so nothing pressed before stays held; Track buttons and Shift + step 2 (its own toggle) pass too */
-enum { GL_SPEECH, GL_CLOCK, GL_VEL, GL_LEVEL, GL_POPUP, GL_N };   /* (0.6.10: the battery a header, no longer a row;
+enum { GL_SPEECH, GL_CLOCK, GL_VEL, GL_LEVEL, GL_POPUP, GL_LAUNCH, GL_N };   /* (0.12.0: Launch, the project's launch
+                                                         * quantization) */   /* (0.6.10: the battery a header, no longer a row;
                                                          * 0.6.12: Speech first, the rest scroll) */
-static const char *const GL_NAME[GL_N] = { "Speech", "Clock", "Velocity", "Fixed level", "Popup size" };
+static const char *const GL_NAME[GL_N] = { "Speech", "Clock", "Velocity", "Fixed level", "Popup size", "Launch" };
+/* (0.12.0) the launch quantizations as a list (the menus' order) and their names */
+static const uint8_t LQ_ORDER[RFM_MOVE_LQ_N] = { RFM_MOVE_LQ_INSTANT, RFM_MOVE_LQ_BEAT, RFM_MOVE_LQ_BAR, RFM_MOVE_LQ_2BARS,
+                                                 RFM_MOVE_LQ_4BARS, RFM_MOVE_LQ_CLIP };
+const char *rfmv_lq_name(int lq)
+{
+    static const char *const N[RFM_MOVE_LQ_N] = { "1 Bar", "Instant", "1 Beat", "2 Bars", "4 Bars", "Clip" };
+    return lq >= 0 && lq < RFM_MOVE_LQ_N ? N[lq] : "?";
+}
+int rfmv_lq_step(int lq, int d)                         /* the next one in the list, d away (clamped) */
+{
+    int i, k = 0;
+    for (i = 0; i < RFM_MOVE_LQ_N; i++)
+        if (LQ_ORDER[i] == lq)
+            k = i;
+    return LQ_ORDER[clampi(k + d, 0, RFM_MOVE_LQ_N - 1)];
+}
 #define GL_ROWS 4                                       /* rows on screen (more scroll) */
 int rfmv_global_rows(void) { return GL_N; }
 static void gl_words(const rfm_move_t *m, int r, const char *pre, char *o, int cap);
@@ -2830,6 +2847,7 @@ static void gl_value(const rfm_move_t *m, int r, char *o, int cap, int spoken)
     case GL_CLOCK: snprintf(o, (size_t)cap, "%s", (spoken ? CKS : CK)[m->seq.clock_mode % 3]); break;
     case GL_VEL: rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), o, cap); break;
     case GL_LEVEL: snprintf(o, (size_t)cap, "%d", m->s.vel_level); break;
+    case GL_LAUNCH: snprintf(o, (size_t)cap, "%s", rfmv_lq_name(m->seq.launch_q)); break;
     default: snprintf(o, (size_t)cap, "%s", m->s.pop_half ? "Half" : "Full"); break;
     }
 }
@@ -2866,6 +2884,7 @@ static void gl_change(rfm_move_t *m, int r, int d)
             m->s.pop_half = (uint8_t)h, rfmv_changed(m);
         break;
     }
+    case GL_LAUNCH: m->seq.launch_q = (uint8_t)rfmv_lq_step(m->seq.launch_q, d); break;   /* (0.12.0: the project's) */
     default: break;
     }
     rfmv_seq_dirty(m);

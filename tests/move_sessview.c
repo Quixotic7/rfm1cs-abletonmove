@@ -1234,6 +1234,153 @@ static void test_sv_scenes(void)
     }
 }
 
+/* ================================================================ (0.12.0) launch quantization, a clip's own launch settings === */
+static int32_t next_mul(int32_t T, int32_t q) { return (T / q + 1) * q; }
+/* track 0 playing: its other clip (scene 0 <-> 1) pressed mid-beat; the tick it took over at, and the tick pressed */
+static int32_t switch_at(int32_t *pressed, int *queued)
+{
+    const int to = M.seq.tr[0].active == 0 ? 1 : 0;
+    int i;
+    bar_start(), adv_ms(130);
+    *pressed = M.seq.T;
+    now_ms += 1000, hit(PAD(0, to));
+    *queued = M.seq.tr[0].queued == to;
+    for (i = 0; i < 2000 && M.seq.tr[0].active != to; i++)
+        adv_ms(10);
+    return M.seq.tr[0].active == to ? M.seq.tr[0].t0 : -1;
+}
+static void test_sv_launch_q(void)
+{
+    static rfm_move_t M2;
+    static uint8_t blob[RFM_MOVE_PROJECT_MAX];
+    const int32_t BAR = RFM_MOVE_SEQ_BAR, BEAT = RFM_MOVE_SEQ_BAR / 4;
+    int32_t p, t;
+    int qd, n, i, k;
+    session_view();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    clip_put(0, 0, 60), clip_put(0, 1, 62), clip_put(2, 3, 64), clip_put(0, 3, 65);
+    CHECK(M.seq.launch_q == RFM_MOVE_LQ_BAR);
+    /* Global settings, Launch: Instant .. Clip (1 Bar at first); said */
+    button(MR_CC_SHIFT, 1), step(1, 1), step(1, 0), button(MR_CC_SHIFT, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_GLOBAL);
+    jog(5), clear();
+    CHECK(M.gl_row == 5);
+    screen();
+    write_pbm("global_launch");
+    jog_click(), jog(-2), jog_click();
+    CHECKF(M.seq.launch_q == RFM_MOVE_LQ_INSTANT && strstr(said, "Launch: Instant") != NULL, "said \"%s\"", said);
+    back();
+    CHECK(!M.seq.smenu);
+    hit(SCN(0)), adv_ms(300);
+    CHECK(M.seq.playing && M.seq.tr[0].active == 0);
+    /* Instant: at the press, nothing waits (no flashing phase), in the bar's phase */
+    t = switch_at(&p, &qd);
+    CHECKF(!qd && t == p - p % BAR, "instant: pressed %d, from %d", (int)p, (int)t);
+    /* 1 Beat, 1 Bar, 2 Bars, 4 Bars: the next one from the song's start */
+    {
+        static const int LQ[4] = { RFM_MOVE_LQ_BEAT, RFM_MOVE_LQ_BAR, RFM_MOVE_LQ_2BARS, RFM_MOVE_LQ_4BARS };
+        static const int32_t Q[4] = { RFM_MOVE_SEQ_BAR / 4, RFM_MOVE_SEQ_BAR, 2 * RFM_MOVE_SEQ_BAR, 4 * RFM_MOVE_SEQ_BAR };
+        for (k = 0; k < 4; k++) {
+            M.seq.launch_q = (uint8_t)LQ[k];
+            t = switch_at(&p, &qd);
+            CHECKF(qd && t == next_mul(p, Q[k]), "%s: pressed %d, from %d, want %d", rfmv_lq_name(LQ[k]), (int)p, (int)t,
+                   (int)next_mul(p, Q[k]));
+        }
+    }
+    /* Clip: the end of the playing clip's loop (24 steps: 1.5 bars, not on a bar) */
+    M.seq.launch_q = RFM_MOVE_LQ_CLIP;
+    rfmv_seq_len_set(&M, SEQ_CLIP(0, 0), 24), rfmv_seq_len_set(&M, SEQ_CLIP(0, 1), 24);
+    {
+        int32_t t0;
+        t0 = M.seq.tr[0].t0;
+        t = switch_at(&p, &qd);
+        CHECKF(qd && t > p && (t - t0) % (24 * RFM_MOVE_SEQ_TPS) == 0 && t - p <= 24 * RFM_MOVE_SEQ_TPS, "clip: from %d, pressed %d, at %d",
+               (int)t0, (int)p, (int)t);
+    }
+    rfmv_seq_len_set(&M, SEQ_CLIP(0, 0), 16), rfmv_seq_len_set(&M, SEQ_CLIP(0, 1), 16);
+    /* a clip's own Launch wins over the project's: 4 Bars, but clip 2 says 1 Beat */
+    M.seq.launch_q = RFM_MOVE_LQ_4BARS;
+    M.seq.cset[SEQ_CLIP(0, 0)] = M.seq.cset[SEQ_CLIP(0, 1)] = RFM_MOVE_LQ_BEAT + 1;
+    t = switch_at(&p, &qd);
+    CHECKF(qd && t == next_mul(p, BEAT), "own 1 Beat: pressed %d, from %d", (int)p, (int)t);
+    M.seq.cset[SEQ_CLIP(0, 0)] = M.seq.cset[SEQ_CLIP(0, 1)] = 0;
+    /* a scene with mixed settings: track 1's clip Instant (at once), track 3's the project's (1 Bar: at the bar) */
+    M.seq.launch_q = RFM_MOVE_LQ_BAR;
+    M.seq.cset[SEQ_CLIP(0, 3)] = RFM_MOVE_LQ_INSTANT + 1;
+    bar_start(), adv_ms(130);
+    p = M.seq.T;
+    now_ms += 1000, hit(SCN(3));
+    CHECK(M.seq.tr[0].active == 3 && M.seq.tr[0].queued == SEQ_NONE && M.seq.tr[2].queued == 3);
+    for (i = 0; i < 400 && M.seq.tr[2].active != 3; i++)
+        adv_ms(10);
+    CHECKF(M.seq.tr[2].t0 == next_mul(p, BAR), "track 3 from %d, want %d", (int)M.seq.tr[2].t0, (int)next_mul(p, BAR));
+    /* After = Next: track 2's clips 1, 2, 3 (a run), each Next: 1 -> 2 -> 3 -> 1 at each loop's end, seamless; clip 5
+     * alone in its run: it loops */
+    clip_put(1, 0, 50), clip_put(1, 1, 51), clip_put(1, 2, 52), clip_put(1, 4, 54);
+    for (k = 0; k < 5; k++)
+        M.seq.cset[SEQ_CLIP(1, k)] = RFM_MOVE_CS_AFTER_NEXT;
+    CHECK(rfmv_seq_after_next(&M, 1, 0) == 1 && rfmv_seq_after_next(&M, 1, 2) == 0 && rfmv_seq_after_next(&M, 1, 4) == 4);
+    bar_start();
+    now_ms += 1000, hit(PAD(1, 0));
+    for (i = 0; i < 400 && M.seq.tr[1].active != 0; i++)
+        adv_ms(10);
+    t = M.seq.tr[1].t0;
+    {
+        static const int WANT[4] = { 1, 2, 0, 1 };
+        for (k = 0; k < 4; k++) {
+            for (i = 0; i < 400 && M.seq.tr[1].t0 == t; i++)
+                adv_ms(10);
+            CHECKF(M.seq.tr[1].active == WANT[k] && M.seq.tr[1].t0 == t + BAR, "after %d: clip %d from %d (was %d)", k,
+                   M.seq.tr[1].active + 1, (int)M.seq.tr[1].t0, (int)t);
+            t = M.seq.tr[1].t0;
+        }
+    }
+    M.seq.scene_off = 1;                                /* (rows 2..5 in view: clip 5 on the pads' row 4) */
+    bar_start(), now_ms += 1000, hit(PAD(1, 3));
+    for (i = 0; i < 400 && M.seq.tr[1].active != 4; i++)
+        adv_ms(10);
+    adv_ms(2 * 2000 + 100);
+    CHECK(M.seq.tr[1].active == 4 && M.seq.tr[1].queued == SEQ_NONE);
+    M.seq.scene_off = 0;
+    /* kept with the project (version 8): the project's and every clip's; copied with a clip; undone */
+    M.seq.launch_q = RFM_MOVE_LQ_2BARS, M.seq.cset[SEQ_CLIP(5, 7)] = RFM_MOVE_LQ_CLIP + 1 + RFM_MOVE_CS_AFTER_NEXT;
+    clip_put(5, 7, 40);
+    n = rfm_move_project_save(&M, blob, sizeof blob);
+    CHECK(n > 0 && blob[4] == 8);
+    rfm_move_init(&M2, NULL, NULL, NULL);
+    CHECK(rfm_move_project_load(&M2, 0, blob, (uint32_t)n) == 0 && M2.seq.launch_q == RFM_MOVE_LQ_2BARS &&
+          M2.seq.cset[SEQ_CLIP(5, 7)] == RFM_MOVE_LQ_CLIP + 1 + RFM_MOVE_CS_AFTER_NEXT && M2.seq.cset[SEQ_CLIP(1, 0)] == RFM_MOVE_CS_AFTER_NEXT &&
+          !M2.seq.cset[SEQ_CLIP(4, 4)]);
+    {                                                   /* a clip's settings out of range: refused */
+        uint32_t h = 2166136261u;
+        blob[n - 4 - RFM_MOVE_SEQ_CLIPS + 3] = 0x17;
+        for (k = 0; k < n - 4; k++)
+            h = (h ^ blob[k]) * 16777619u;
+        for (k = 0; k < 4; k++)
+            blob[n - 4 + k] = (uint8_t)(h >> (8 * k));
+        CHECK(rfm_move_project_check(blob, (uint32_t)n) < 0);
+    }
+    {                                                   /* a version 7 blob: loads, with the defaults */
+        uint32_t h = 2166136261u;
+        n = rfm_move_project_save(&M, blob, sizeof blob);
+        memmove(blob + n - 4 - 1 - RFM_MOVE_SEQ_CLIPS, blob + n - 4, 4);
+        n -= 1 + RFM_MOVE_SEQ_CLIPS, blob[4] = 7;
+        for (k = 0; k < n - 4; k++)
+            h = (h ^ blob[k]) * 16777619u;
+        for (k = 0; k < 4; k++)
+            blob[n - 4 + k] = (uint8_t)(h >> (8 * k));
+        M2.seq.launch_q = RFM_MOVE_LQ_4BARS, M2.seq.cset[3] = 5;
+        CHECK(rfm_move_project_load(&M2, 0, blob, (uint32_t)n) == 0 && M2.seq.launch_q == RFM_MOVE_LQ_BAR && !M2.seq.cset[3] &&
+              !M2.seq.cset[SEQ_CLIP(5, 7)] && rfmv_seq_find(&M2, SEQ_CLIP(5, 7), 0, 40) >= 0);
+    }
+    /* Copy + an empty slot: the settings come with the clip; Undo: the slot as it was */
+    M.seq.scene_off = 4;                                /* (rows 5..8: clip 8 on the pads' row 4) */
+    button(MR_CC_COPY, 1), hit(PAD(5, 3)), hit(PAD(6, 3)), button(MR_CC_COPY, 0);
+    CHECK(M.seq.cset[SEQ_CLIP(6, 7)] == RFM_MOVE_LQ_CLIP + 1 + RFM_MOVE_CS_AFTER_NEXT && clip_note(6, 7, 40));
+    press(MR_CC_UNDO);
+    CHECK(!M.seq.cset[SEQ_CLIP(6, 7)] && !clip_has(6, 7));
+}
+
 int main(void)
 {
     test_scenes();
@@ -1250,6 +1397,7 @@ int main(void)
     test_sv_marks();
     test_sv_anywhere();
     test_sv_scenes();
+    test_sv_launch_q();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

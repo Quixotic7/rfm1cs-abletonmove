@@ -905,7 +905,7 @@ static void test_global(void)
     SAID("V:Done|");
     CHECK(M.seq.smenu == RFM_MOVE_SM_GLOBAL && !M.gl_edit);
     jog(&M, 5);
-    SAID("V:Popup size: Full|");                        /* (the last row: it stays, said) */
+    SAID("V:Launch: 1 Bar|");                           /* (the last row: it stays, said; 0.12.0: Launch) */
     rfm_move_set_battery(&M, 63, 0);
     rfm_move_screen(&M, NULL, out), write_pbm("global_battery.pbm", out);
     press(&M, MR_CC_BACK);
@@ -913,8 +913,8 @@ static void test_global(void)
     CHECK(!M.seq.smenu);
     open_global(&M);                                    /* (again: the row kept, no edit; the battery said) */
     SAID("E:Global settings, battery 63%|");
-    CHECK(M.gl_row == 4 && !M.gl_edit);
-    jog(&M, -3);
+    CHECK(M.gl_row == 5 && !M.gl_edit);
+    jog(&M, -4);
     SAID("V:Clock: Internal|");
     open_global(&M);                                    /* (its own toggle closes it) */
     SAID("E:Felucca, FM-1 layout|");

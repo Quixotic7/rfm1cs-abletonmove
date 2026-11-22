@@ -521,8 +521,9 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 7                      /* (versions 1..6 load too; 5 adds FX setup, 6 its 128
-                                                         * values a slot, 7 the firmwares' MIDI routes) */
+#define RFM_MOVE_PROJECT_VERSION 8                      /* (versions 1..7 load too; 5 adds FX setup, 6 its 128
+                                                         * values a slot, 7 the firmwares' MIDI routes, 8 the launch
+                                                         * quantization and each clip's launch settings) */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -535,7 +536,9 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_PROJECT_EXT_V4 (RFM_MOVE_PROJECT_EXT_V3 + RFM_MOVE_SEQ_TRACKS * 8)   /* + the trig defaults (version 4) */
 #define RFM_MOVE_PROJECT_EXT_V5 (RFM_MOVE_PROJECT_EXT_V4 + RFM_MOVE_FXSET_BYTES_V5)   /* + FX setup (version 5) */
 #define RFM_MOVE_PROJECT_EXT_V6 (RFM_MOVE_PROJECT_EXT_V4 + RFM_MOVE_FXSET_BYTES)   /* .. 128 values a slot (version 6) */
-#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V6 + RFM_MOVE_FW_SLOTS)   /* + the MIDI routes (version 7, 0.6.6) */
+#define RFM_MOVE_PROJECT_EXT_V7 (RFM_MOVE_PROJECT_EXT_V6 + RFM_MOVE_FW_SLOTS)   /* + the MIDI routes (version 7, 0.6.6) */
+#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V7 + 1 + RFM_MOVE_SEQ_CLIPS)   /* + the launch quantization, each
+                                                         * clip's launch settings (version 8, 0.12.0) */
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 7 + RFM_MOVE_SEQ_LOCKS * 4)
 enum { RFM_MOVE_CLOCK_AUTO = 0, RFM_MOVE_CLOCK_INTERNAL = 1, RFM_MOVE_CLOCK_EXTERNAL = 2 };

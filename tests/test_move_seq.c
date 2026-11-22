@@ -570,7 +570,7 @@ static void test_external(void)
         jog(m, 9);                                      /* (the last row; (0.6.10) the battery the header: "--" until
                                                          * its first STATUS) */
         rfm_move_screen(m, NULL, out);
-        CHECK(m->battery == -1 && m->gl_row == rfmv_global_rows() - 1 && rfmv_global_rows() == 5);
+        CHECK(m->battery == -1 && m->gl_row == rfmv_global_rows() - 1 && rfmv_global_rows() == 6);   /* (0.12.0: Launch) */
         CHECK(rfm_move_set_battery(m, 63, 0) == 1 && rfm_move_set_battery(m, 63, 0) == 0);
         CHECK(rfm_move_set_battery(m, 120, 0) == 1 && m->battery == 100);   /* (clamped) */
         rfm_move_set_battery(m, 63, 0);
@@ -1950,8 +1950,9 @@ static void test_trig(void)
         rfm_move_init(&M2, NULL, on_act, NULL);
         CHECK(rfm_move_project_load(&M2, 1, blob, (uint32_t)nb) == 0 && M2.seq.tr[0].tdef[1] == 2 && M2.seq.tr[0].tdef[2] == 75);
         {                                               /* a version 3 blob (no defaults) still loads: the plain ones */
-            const int n3 = nb - RFM_MOVE_SEQ_TRACKS * 8 - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS;   /* (0.4.0: and no
-                                                         * FX setup; 0.6.6: no MIDI routes) */
+            const int n3 = nb - RFM_MOVE_SEQ_TRACKS * 8 - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS - 1 - RFM_MOVE_SEQ_CLIPS;   /* (0.4.0:
+                                                         * and no FX setup; 0.6.6: no MIDI routes; 0.12.0: no launch
+                                                         * settings) */
             uint32_t h = 2166136261u;
             int k;
             blob[4] = 3;

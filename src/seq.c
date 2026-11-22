@@ -648,6 +648,8 @@ void rfmv_seq_project_clear(rfm_move_t *m)
     for (c = 0; c < RFM_MOVE_SEQ_CLIPS; c++)
         q->len[c] = RFM_MOVE_SEQ_PAGE, q->lstart[c] = 0;
     memset(q->made, 0, sizeof q->made);
+    q->launch_q = RFM_MOVE_LQ_BAR;                      /* (0.12.0) */
+    memset(q->cset, 0, sizeof q->cset);
     q->nnotes = q->nlocks = 0;
     q->un = q->utop = 0, q->broken = 0;
     q->clip_kind = 0, q->cut = 0;
@@ -1027,6 +1029,57 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
     }
 }
 
+/* ---- (0.12.0, the owner's) launch quantization: a waiting launch (or stop) takes effect at its clip's own Launch, else
+ * the project's (Global settings, Launch): the next beat, bar, 2 or 4 bars (from the song's start), or the end of the
+ * loop the track plays (none: the next bar). Instant: at once (rfmv_seq_launch). A recording's start: the bar */
+int rfmv_seq_lq_of(const rfm_move_t *m, int track, int scene)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    if (scene >= 0 && (q->cset[SEQ_CLIP(track, scene)] & 7))
+        return (q->cset[SEQ_CLIP(track, scene)] & 7) - 1;
+    return q->launch_q < RFM_MOVE_LQ_N ? q->launch_q : RFM_MOVE_LQ_BAR;
+}
+static int32_t loop_ticks(const rfm_move_t *m, int track)   /* the active clip's loop, ticks (0: none) */
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const rfm_move_track_t *t = &q->tr[track];
+    int lo, hi;
+    if (t->active < 0)
+        return 0;
+    loop_of(q, track, SEQ_CLIP(track, t->active), &lo, &hi);
+    return (int32_t)(hi - lo) * rfmv_seq_tps(t->rate);
+}
+static int launch_due(const rfm_move_t *m, int tr, int32_t T)
+{
+    const rfm_move_track_t *t = &m->seq.tr[tr];
+    const int lq = t->grow ? RFM_MOVE_LQ_BAR : rfmv_seq_lq_of(m, tr, t->queued);
+    if (T == 0)
+        return 1;
+    switch (lq) {
+    case RFM_MOVE_LQ_INSTANT: return 1;
+    case RFM_MOVE_LQ_BEAT: return T % (BAR / 4) == 0;
+    case RFM_MOVE_LQ_2BARS: return T % (2 * BAR) == 0;
+    case RFM_MOVE_LQ_4BARS: return T % (4 * BAR) == 0;
+    case RFM_MOVE_LQ_CLIP: {
+        const int32_t L = loop_ticks(m, tr);
+        if (L > 0 && T >= t->t0 && rfmv_seq_clip_has(m, SEQ_CLIP(tr, t->active)))
+            return T > t->t0 && (T - t->t0) % L == 0;
+        return T % BAR == 0;
+    }
+    default: return T % BAR == 0;
+    }
+}
+/* (0.12.0) a clip's After = Next: the clip below it in its track, or (none) the top of the run of clips it is in */
+int rfmv_seq_after_next(const rfm_move_t *m, int track, int scene)
+{
+    int s = scene;
+    if (scene + 1 < RFM_MOVE_SEQ_SCENES && rfmv_seq_clip_has(m, SEQ_CLIP(track, scene + 1)))
+        return scene + 1;
+    while (s > 0 && rfmv_seq_clip_has(m, SEQ_CLIP(track, s - 1)))
+        s--;
+    return s;
+}
+
 static void play_tick(rfm_move_t *m, int32_t T)
 {
     rfm_move_seq_t *q = &m->seq;
@@ -1039,10 +1092,20 @@ static void play_tick(rfm_move_t *m, int32_t T)
         rfmv_emit(m, RFM_MOVE_ACT_AUDIO_REC, (int)((T - q->arec_T) / BAR), 0, 0, 0);
         q->arec = 0;
     }
-    if (T % BAR == 0)
-        for (tr = 0; tr < RFM_MOVE_SEQ_TRACKS; tr++)
-            if (q->tr[tr].queued != SEQ_NONE)
-                launch_now(m, tr, q->tr[tr].queued, T);
+    for (tr = 0; tr < RFM_MOVE_SEQ_TRACKS; tr++) {
+        rfm_move_track_t *t = &q->tr[tr];
+        if (t->queued != SEQ_NONE) {
+            if (launch_due(m, tr, T))                   /* (0.12.0: its launch quantization; was the bar) */
+                launch_now(m, tr, t->queued, T);
+        } else if (t->active >= 0 && !t->grow && T > t->t0 && (q->cset[SEQ_CLIP(tr, t->active)] & RFM_MOVE_CS_AFTER_NEXT)) {
+            const int32_t L = loop_ticks(m, tr);        /* (0.12.0) After = Next: at its loop's end, the next clip */
+            if (L > 0 && (T - t->t0) % L == 0) {
+                const int nx = rfmv_seq_after_next(m, tr, t->active);
+                if (nx != t->active)
+                    launch_now(m, tr, nx, T);
+            }
+        }
+    }
     for (tr = 0; tr < RFM_MOVE_SEQ_TRACKS; tr++)
         track_tick(m, tr, T);
 }
@@ -1435,6 +1498,10 @@ void rfmv_seq_launch(rfm_move_t *m, int track, int scene)
         t->active = (int8_t)scene, t->queued = SEQ_NONE, t->t0 = 0, t->pos = -1;
         if (scene < 0)
             t->grow = 0;
+        return;
+    }
+    if (q->playing && !t->grow && rfmv_seq_lq_of(m, track, scene) == RFM_MOVE_LQ_INSTANT) {
+        rfmv_seq_launch_now(m, track, scene);           /* (0.12.0: Instant: nothing waits) */
         return;
     }
     t->queued = (int8_t)(scene < 0 ? SEQ_STOP : scene);
