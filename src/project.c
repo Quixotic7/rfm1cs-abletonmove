@@ -379,8 +379,14 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
     rfmv_seq_ui_release(m);
     rfmv_seq_project_clear(m);
     if (b && n) {
+        int c;
         parse(b, n, q);
         q->proj_used |= 1u << slot;
+        for (c = 0; c < RFM_MOVE_SEQ_CLIPS; c++)        /* (0.10.0, the owner's review) clips with no notes or locks
+                                                         * (before 0.10.0 every press on an empty session slot made
+                                                         * one) are empty slots again */
+            if ((q->made[c >> 3] >> (c & 7) & 1) && !rfmv_seq_clip_used(m, c))
+                q->made[c >> 3] = (uint8_t)(q->made[c >> 3] & ~(1u << (c & 7)));
     }
     if (q->clock_mode != RFM_MOVE_CLOCK_EXTERNAL)
         q->following = 0;

@@ -49,7 +49,8 @@ void v2_keysMenu(mr_canvas_t *b, const char *name, int layout, int root, int ch,
 void v2_pages(mr_canvas_t *b, int n, int lo, int hi, int shown, const char *marks);
 /* the 16 steps as cells: has (a bit a step), copied, cut, held (-1 none) */
 void v2_steps(mr_canvas_t *b, int has, int copied, int cut, int held);
-/* a session cell: P playing, C clip, Q queued, R recording, . empty, D copied, X cut */
+/* a session cell: P playing, C clip, Q queued, R recording, . empty, D copied, X cut; (0.10.0) A armed (Play starts
+ * it), H a clip with no notes, h one that plays or is armed */
 void v2_cell(mr_canvas_t *b, int c, int r, char s);
 
 #ifdef __cplusplus

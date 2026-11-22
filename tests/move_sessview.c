@@ -169,6 +169,13 @@ static int m_tk_shown(void) { return rfm_move_tk_shown(&M); }
 /* ---- the session grid on the screen (seq_ui.c session_screen, v2_cell): a cell 14 x 13 at (c * 16 + 1, 4 + r * 15) */
 static int cell_clip(int c, int r) { return px(c * 16 + 1, 4 + r * 15 + 6) || px(c * 16 + 2, 4 + r * 15 + 6); }
 static int cell_dot(int c, int r) { return px(c * 16 + 7, 4 + r * 15 + 5) && !cell_clip(c, r); }
+static int cell_icon(int c, int r)                      /* (0.10.0) something inside its outline (the play icon: armed) */
+{
+    int x, n = 0;
+    for (x = c * 16 + 3; x < c * 16 + 13; x++)
+        n += px(x, 4 + r * 15 + 6);
+    return cell_clip(c, r) && n > 0 && n < 10;
+}
 static int cell_framed(int c, int r)                    /* the selected clip's frame, in the gap round the cell */
 {
     return px(c * 16, 3 + r * 15) && px(c * 16 + 15, 3 + r * 15 + 14) && px(c * 16, 3 + r * 15 + 7);
@@ -219,84 +226,135 @@ static void owners_grid(void)
                 clip_put(t, s, 60 + t * 4 + s);
 }
 
-/* ================================================================ 1. scenes === */
+/* ================================================================ 1. scenes: the 8th column (0.10.0) === */
+#define SCN(r) PAD(7, r)                                /* the scene pad of row r */
 static void test_scenes(void)
 {
+    uint8_t w[RFM_MOVE_NLEDS][3];
     int t;
     session_view();
     owners_grid();
-    /* stopped: Shift + a clip of row 2: that scene the tracks' clips at once (they play with Play); the tracks with
-     * no clip there play nothing */
-    button(MR_CC_SHIFT, 1), adv_ms(150), hit(PAD(0, 1)), button(MR_CC_SHIFT, 0);
+    /* the scene pads are green: clips in the row brighter than none */
+    leds(w);
+    CHECK(green(w[L_PAD0 + SCN(0)]) && green(w[L_PAD0 + SCN(3)]) && w[L_PAD0 + SCN(0)][1] > w[L_PAD0 + SCN(3)][1]);
+    /* stopped: the scene pad of row 2: that scene the tracks' clips at once (they play with Play); the tracks with
+     * no clip there play nothing; its number underlined on the screen, its pad full green */
+    hit(SCN(1));
     CHECK(M.seq.tr[0].active == 1 && M.seq.tr[1].active == 1 && M.seq.tr[2].active == -1 && M.seq.tr[3].active == 1);
     CHECK(!M.seq.playing && !M.seq.start_pending);
+    leds(w), screen();
+    CHECK(w[L_PAD0 + SCN(1)][1] == 255 && px(7 * 16 + 3, 4 + 15 + 11) && !px(7 * 16 + 3, 4 + 11));
     press(MR_CC_PLAY), adv_ms(300);
     CHECK(M.seq.playing && M.seq.tr[0].active == 1);
-    /* playing: Shift + a clip of row 1: queued (the pads green), launched at the bar; again with a held Shift and
-     * a slow press, as a hand does it */
+    /* playing: the scene pad of row 1: queued (the clips' pads and the scene's green, blinking), launched at the bar */
     rest(), bar_start();
-    button(MR_CC_SHIFT, 1), adv_ms(400), pad(PAD(2, 0), 100), adv_ms(180), pad(PAD(2, 0), 0), adv_ms(200), button(MR_CC_SHIFT, 0);
+    pad(SCN(0), 100), adv_ms(180), pad(SCN(0), 0);
     for (t = 0; t < 4; t++)
         CHECKF(M.seq.tr[t].queued == 0, "track %d queued %d", t + 1, M.seq.tr[t].queued);
-    {
-        uint8_t w[RFM_MOVE_NLEDS][3];
-        leds(w);
-        CHECK(green(w[L_PAD0 + PAD(0, 0)]) && green(w[L_PAD0 + PAD(3, 0)]));
-    }
+    leds(w);
+    CHECK(green(w[L_PAD0 + PAD(0, 0)]) && green(w[L_PAD0 + PAD(3, 0)]) && green(w[L_PAD0 + SCN(0)]));
     adv_ms(2100);
     for (t = 0; t < 4; t++)
         CHECKF(M.seq.tr[t].active == 0 && M.seq.tr[t].queued == SEQ_NONE, "track %d active %d", t + 1, M.seq.tr[t].active);
+    screen();
+    write_pbm("scene");
+    CHECK(px(7 * 16 + 3, 4 + 11) && !px(7 * 16 + 3, 4 + 15 + 11));   /* (scene 1 underlined now) */
     /* row 3: tracks 1 and 3 have a clip there, 2 and 4 stop at the bar */
     bar_start();
-    button(MR_CC_SHIFT, 1), hit(PAD(0, 2)), button(MR_CC_SHIFT, 0);
+    hit(SCN(2));
     CHECK(M.seq.tr[0].queued == 2 && M.seq.tr[1].queued == SEQ_STOP && M.seq.tr[2].queued == 2 && M.seq.tr[3].queued == SEQ_STOP);
     adv_ms(2100);
     CHECK(M.seq.tr[0].active == 2 && M.seq.tr[1].active == -1 && M.seq.tr[2].active == 2 && M.seq.tr[3].active == -1);
     CHECK(M.seq.playing);
+    /* a modifier + a scene pad: nothing; Copy let go afterwards is no tap either */
+    button(MR_CC_SHIFT, 1), hit(SCN(0)), button(MR_CC_SHIFT, 0);
+    button(MR_CC_COPY, 1), hit(SCN(0)), button(MR_CC_COPY, 0);
+    button(MR_CC_DELETE, 1), hit(SCN(0)), button(MR_CC_DELETE, 0);
+    CHECK(M.seq.tr[0].queued == SEQ_NONE && M.seq.tr[0].active == 2 && clip_has(0, 0) && !clip_has(0, 3));
 }
 
-/* ================================================================ 2. the pressed clip shown as selected === */
+/* ================================================================ 2. the pressed clip shown as selected; Live's colours === */
 static void test_selected(void)
 {
     uint8_t w[RFM_MOVE_NLEDS][3];
+    int i, flash = 0, grn = 0;
     session_view();
     owners_grid();
-    /* at rest: track 2's clip 1 (the slot's track) is the selected one: its pad white, its cell framed, no other */
+    /* at rest: track 2's clip 1 (the slot's track) is the selected one: its pad white, its cell framed, no other;
+     * row 1's other clips are their tracks' clips (Play starts them): green, steady, the play icon in their outlines;
+     * the rest their track's colour, dim */
     leds(w), screen();
     write_pbm("rest");
     CHECK(white(w[L_PAD0 + PAD(1, 0)]) && cell_framed(1, 0) && nframed() == 1);
-    /* stopped: a clip pressed: it is the track's clip and the selected one, on the pad and on the screen */
-    hit(PAD(2, 2));
+    CHECK(green(w[L_PAD0 + PAD(0, 0)]) && w[L_PAD0 + PAD(0, 0)][1] == 255 && cell_icon(0, 0) && cell_icon(1, 0));
+    CHECK(!green(w[L_PAD0 + PAD(0, 1)]) && w[L_PAD0 + PAD(0, 1)][0] == 255 * 80 / 256 && !cell_icon(0, 1));
+    /* stopped: a clip pressed: it is the track's clip (Play starts it: the play icon in its outline) and the selected
+     * one, on the pad and on the screen; the clip selected before, its track's clip to play: green, steady */
+    hit(PAD(1, 0)), now_ms += 1000, hit(PAD(2, 2));
     leds(w), screen();
     write_pbm("selected");
-    CHECK(M.seq.sel_track == 2 && M.seq.tr[2].sel == 2 && M.seq.tr[2].active == 2);
-    CHECK(white(w[L_PAD0 + PAD(2, 2)]) && !white(w[L_PAD0 + PAD(1, 0)]) && lit(w[L_PAD0 + PAD(1, 0)]));
+    CHECK(M.seq.sel_track == 2 && M.seq.tr[2].sel == 2 && M.seq.tr[2].active == 2 && M.seq.tr[1].active == 0);
+    CHECK(white(w[L_PAD0 + PAD(2, 2)]) && green(w[L_PAD0 + PAD(1, 0)]) && w[L_PAD0 + PAD(1, 0)][1] == 255);
     CHECK(cell_framed(2, 2) && !cell_framed(1, 0) && nframed() == 1 && cell_clip(2, 2));
+    CHECK(cell_icon(2, 2) && !cell_icon(2, 0));         /* (the icon: armed; track 3's clip 1 no longer) */
     CHECK(px(2 * 16 + 1, 0) && !px(1 * 16 + 1, 0));     /* (the bar over the selected track's column) */
-    /* an empty slot pressed: a new clip there, selected the same way */
-    now_ms += 1000, hit(PAD(5, 1));
+    /* (0.10.0) an empty slot pressed: selected (white, framed round its dot), no clip made; stopped: the track's
+     * clip to play is none */
+    now_ms += 1000, hit(PAD(1, 2));
     leds(w), screen();
-    CHECK(M.seq.sel_track == 5 && M.seq.tr[5].sel == 1 && clip_has(5, 1));
-    CHECK(white(w[L_PAD0 + PAD(5, 1)]) && cell_framed(5, 1) && cell_clip(5, 1) && nframed() == 1);
+    CHECK(M.seq.sel_track == 1 && M.seq.tr[1].sel == 2 && !clip_has(1, 2) && M.seq.tr[1].active == -1);
+    CHECK(white(w[L_PAD0 + PAD(1, 2)]) && cell_framed(1, 2) && cell_dot(1, 2) && nframed() == 1);
+    CHECK(!green(w[L_PAD0 + PAD(1, 0)]));
+    /* .. the first note makes the clip (track view: a step), and it is the track's clip */
+    press(MR_CC_MENU);
+    CHECK(!M.seq.view && M.seq.sel_track == 1);
+    step(4, 1), step(4, 0);
+    CHECK(clip_has(1, 2) && M.seq.tr[1].active == 2);
+    press(MR_CC_MENU);
+    now_ms += 1000, hit(PAD(1, 0));
     /* playing: a clip pressed is selected at once on the screen (framed, its doubled outline while it waits) and
-     * its pad blinks green; at the bar it plays: the pad white (pulsing), the cell filled inside its frame */
+     * its pad blinks green; at the bar it plays: green, pulsing, white on the beat; the cell filled inside its frame */
     press(MR_CC_PLAY), adv_ms(700), bar_start();
     now_ms += 1000, pad(PAD(0, 1), 100), adv_ms(150), pad(PAD(0, 1), 0), adv_ms(60);
     leds(w), screen();
     write_pbm("queued");
     CHECK(M.seq.sel_track == 0 && M.seq.tr[0].sel == 1 && M.seq.tr[0].queued == 1 && M.seq.tr[0].active == 0);
     CHECK(cell_framed(0, 1) && nframed() == 1);
-    CHECK(green(w[L_PAD0 + PAD(0, 1)]));
+    CHECK(green(w[L_PAD0 + PAD(0, 1)]) || white(w[L_PAD0 + PAD(0, 1)]) || w[L_PAD0 + PAD(0, 1)][0] == 255 * 60 / 256);
     adv_ms(2100);
-    leds(w), screen();
+    screen();
     write_pbm("playing");
     CHECK(M.seq.tr[0].active == 1 && M.seq.tr[0].queued == SEQ_NONE);
-    CHECK(white(w[L_PAD0 + PAD(0, 1)]) && cell_framed(0, 1) && nframed() == 1);
+    CHECK(cell_framed(0, 1) && nframed() == 1);
     CHECK(!px(0 * 16 + 1, 4 + 15 + 6) && px(0 * 16 + 2, 4 + 15 + 6));   /* (filled, clear of its frame) */
-    CHECK(lit(w[L_PAD0 + PAD(0, 0)]) && !white(w[L_PAD0 + PAD(0, 0)]));  /* (the clip it replaced: its track's colour) */
+    for (i = 0; i < 50; i++) {                          /* a beat (500 ms): the selected playing clip white on the beat,
+                                                         * green after; another playing clip green throughout */
+        adv_ms(10), leds(w);
+        flash += w[L_PAD0 + PAD(0, 1)][0] == 255 && w[L_PAD0 + PAD(0, 1)][1] == 255;
+        grn += green(w[L_PAD0 + PAD(0, 1)]);
+        CHECKF(green(w[L_PAD0 + PAD(1, 0)]), "track 2's playing clip at %d ms: %02x%02x%02x", i * 10, w[L_PAD0 + PAD(1, 0)][0],
+               w[L_PAD0 + PAD(1, 0)][1], w[L_PAD0 + PAD(1, 0)][2]);
+    }
+    CHECKF(flash >= 4 && flash <= 12 && grn >= 36 && flash + grn == 50, "white %d, green %d of 50", flash, grn);
+    CHECK(w[L_PAD0 + PAD(0, 0)][0] == 255 * 80 / 256 && !green(w[L_PAD0 + PAD(0, 0)]));   /* (a stopped clip: its track's, dim) */
     /* the playing clip pressed again: it plays on, selected */
     now_ms += 1000, hit(PAD(0, 1)), adv_ms(100);
     CHECK(M.seq.tr[0].active == 1 && M.seq.tr[0].queued == SEQ_NONE && M.seq.sel_track == 0);
+    /* (0.10.0) Shift + a clip: selected for editing, nothing launched: track 2 plays its clip 1 on */
+    button(MR_CC_SHIFT, 1), hit(PAD(1, 1)), button(MR_CC_SHIFT, 0);
+    leds(w), screen();
+    write_pbm("shiftsel");
+    CHECK(M.seq.sel_track == 1 && M.seq.tr[1].sel == 1 && M.seq.tr[1].active == 0 && M.seq.tr[1].queued == SEQ_NONE);
+    CHECK(white(w[L_PAD0 + PAD(1, 1)]) && cell_framed(1, 1) && nframed() == 1);
+    /* .. Shift + an empty slot: selected, the track plays on (without Shift it stops at the bar) */
+    button(MR_CC_SHIFT, 1), hit(PAD(1, 3)), button(MR_CC_SHIFT, 0);
+    CHECK(M.seq.tr[1].sel == 3 && !clip_has(1, 3) && M.seq.tr[1].queued == SEQ_NONE && M.seq.tr[1].active == 0);
+    bar_start(), now_ms += 1000, hit(PAD(1, 3));
+    leds(w), screen();
+    write_pbm("empty");
+    CHECK(M.seq.tr[1].sel == 3 && !clip_has(1, 3) && M.seq.tr[1].queued == SEQ_STOP);
+    adv_ms(2100);
+    CHECK(M.seq.tr[1].active == -1 && M.seq.playing && !clip_has(1, 3));
 }
 
 /* ================================================================ 3. the screen and the pads === */
@@ -305,8 +363,8 @@ static void aligned(const char *what)
     uint8_t w[RFM_MOVE_NLEDS][3];
     int c, r;
     leds(w), screen();
-    for (r = 0; r < 4; r++)
-        for (c = 0; c < 8; c++) {
+    for (r = 0; r < 4; r++) {
+        for (c = 0; c < 7; c++) {
             const int track = M.seq.track_page + c, scene = M.seq.scene_off + r, has = clip_has(track, scene);
             const int sel = track == M.seq.sel_track && M.seq.tr[track].sel == scene;
             CHECKF(cell_clip(c, r) == has && cell_dot(c, r) == !has, "%s: the screen's column %d row %d (track %d clip %d: %d)", what,
@@ -315,13 +373,16 @@ static void aligned(const char *what)
                    c + 1, r + 1, track + 1, scene + 1, has);
             CHECKF(cell_framed(c, r) == sel, "%s: the frame at column %d row %d", what, c + 1, r + 1);
         }
+        CHECKF(green(w[L_PAD0 + SCN(r)]) && !cell_framed(7, r), "%s: the scene pad of row %d", what, r + 1);
+    }
 }
 static void test_aligned(void)
 {
+    uint8_t w[RFM_MOVE_NLEDS][3];
     int i;
     session_view();
     owners_grid();
-    clip_put(9, 6, 70), clip_put(15, 15, 71), clip_put(7, 3, 72);
+    clip_put(9, 6, 70), clip_put(15, 15, 71), clip_put(6, 3, 72);
     aligned("at rest");
     hit(PAD(3, 1)), aligned("a clip pressed");
     press(MR_CC_RIGHT), aligned("one track right");
@@ -332,18 +393,116 @@ static void test_aligned(void)
     aligned("scrolled, a clip pressed");
     for (i = 0; i < 20; i++)
         press(MR_CC_RIGHT), press(MR_CC_DOWN);
-    CHECK(M.seq.track_page == 8 && M.seq.scene_off == 12);
+    CHECK(M.seq.track_page == 9 && M.seq.scene_off == 12);   /* (7 tracks in view: 10 .. 16) */
     aligned("the far corner");
-    now_ms += 1000, hit(PAD(7, 3));                     /* (the bottom-right pad: track 16, clip 16) */
+    now_ms += 1000, hit(PAD(6, 3));                     /* (column 7's bottom pad: track 16, clip 16) */
     CHECK(M.seq.sel_track == 15 && M.seq.tr[15].sel == 15);
     aligned("the far corner, its clip pressed");
-    /* the knobs over the columns: a touch selects that column's track (its selected clip framed) */
-    raw(0x90, 3, 127), raw(0x80, 3, 0);
-    CHECK(M.seq.sel_track == 8 + 3);
-    aligned("a knob touched");
+    /* the scenes' numbers in the 8th column: 13 .. 16 here (two digits: pixels left of the cell's middle) */
+    screen();
+    {
+        int x, y, n1 = 0, n2 = 0;
+        for (y = 4; y < 17; y++)
+            for (x = 112; x < 128; x++)
+                n1 += px(x, y) && x < 120, n2 += px(x, y) && x >= 120;
+        CHECKF(n1 >= 5 && n2 >= 5, "the scene's number: %d + %d pixels", n1, n2);
+    }
+    /* the knobs over the columns: a touch selects that column's track and shows its popup while touched: the
+     * track, the firmwares it reaches (all three by default), its clip, its channel */
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    clear();
+    raw(0x90, 3, 127), adv_ms(60);
+    CHECK(M.seq.sel_track == 9 + 3 && M.pop == POP_TRKINFO && rfmv_pop_up(&M, POP_TRKINFO));
+    write_pbm("info");
+    {
+        char row[4][32];
+        rfmv_seq_track_info(&M, 12, row);
+        CHECKF(!strcmp(row[0], "Track 13") && !strcmp(row[2], "Clip 1, empty") && !strcmp(row[3], "Channel 13"), "\"%s\" \"%s\" \"%s\"",
+               row[0], row[2], row[3]);
+        CHECKF(strstr(row[1], "Felucca") != NULL, "the firmwares: \"%s\"", row[1]);
+        rfmv_seq_track_info(&M, 15, row);
+        CHECKF(!strcmp(row[2], "Clip 16, 1 bar"), "\"%s\"", row[2]);
+    }
+    CHECKF(strstr(said, "Track 13") != NULL && strstr(said, "Channel 13") != NULL, "said \"%s\"", said);
+    CHECK(!cell_framed(3, 0) && lit_rows(0, 18) > 60);  /* (the popup over the whole screen, not the grid) */
+    adv_ms(3000);
+    CHECK(rfmv_pop_up(&M, POP_TRKINFO));                /* (it stays while the knob is touched) */
+    raw(0x80, 3, 0), adv_ms(20);
+    CHECK(!rfmv_pop_up(&M, POP_TRKINFO));
+    aligned("a knob touched and let go");
+    raw(0x90, 7, 127), raw(0x80, 7, 0);                 /* (knob 8, over the scenes: nothing) */
+    CHECK(M.seq.sel_track == 12 && M.pop != POP_TRKINFO);
+    /* the steps under the columns (0.10.0, Control Live's): odd selects the column's track, even stops it; step 15
+     * nothing; the selected track's select step its full colour */
+    rfm_move_set_speech(&M, 0);
+    step(2, 1), step(2, 0);
+    CHECK(M.seq.sel_track == 9 + 1);
+    leds(w);
+    CHECK(bright(w[L_STEP0 + 2]) > 3 * bright(w[L_STEP0 + 0]) && bright(w[L_STEP0 + 0]) > 0 && !lit(w[L_STEP0 + 14]));
+    step(14, 1), step(14, 0);
+    CHECK(M.seq.sel_track == 9 + 1);
     /* a slot's Track tapped: its track view again (session view is the Menu button's) */
     tap_track(1), rest();
     CHECK(!M.seq.view && M.seq.sel_track == 1);
+}
+
+/* ================================================================ the steps: stop a track, stop every clip; Shift + Play === */
+static void test_stops(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    session_view();
+    owners_grid();
+    hit(SCN(0));
+    press(MR_CC_PLAY), adv_ms(700), bar_start();
+    leds(w);
+    CHECK(white(w[L_STEP0 + 1]) && white(w[L_STEP0 + 7]) && bright(w[L_STEP0 + 9]) < 30 && white(w[L_STEP0 + 15]));
+    /* step 4: track 2 stops at the bar (its stop step blinks; the others play on) */
+    step(3, 1), step(3, 0);
+    CHECK(M.seq.tr[1].queued == SEQ_STOP && M.seq.tr[0].queued == SEQ_NONE && M.seq.sel_track == 1);
+    adv_ms(2100);
+    CHECK(M.seq.tr[1].active == -1 && M.seq.tr[0].active == 0 && M.seq.playing);
+    /* Mute + a step: the 16 tracks' mutes, as everywhere (not the column pairs) */
+    button(MR_CC_MUTE, 1), step(2, 1), step(2, 0), button(MR_CC_MUTE, 0);
+    CHECK(M.seq.tr[2].mute && !M.seq.tr[1].mute && M.seq.tr[2].active == 0);
+    button(MR_CC_MUTE, 1), step(2, 1), step(2, 0), button(MR_CC_MUTE, 0);
+    CHECK(!M.seq.tr[2].mute);
+    /* Shift + Play: every clip from its start, as in track view (before 0.10.0: every clip stopped) */
+    button(MR_CC_SHIFT, 1), press(MR_CC_PLAY), button(MR_CC_SHIFT, 0);
+    adv_ms(300);
+    CHECK(M.seq.playing && M.seq.tr[0].active == 0 && M.seq.tr[0].queued == SEQ_NONE && M.seq.tr[2].queued == SEQ_NONE);
+    /* step 16: every clip stops at the bar; the transport runs on */
+    bar_start();
+    step(15, 1), step(15, 0);
+    CHECK(M.seq.tr[0].queued == SEQ_STOP && M.seq.tr[2].queued == SEQ_STOP && M.seq.tr[3].queued == SEQ_STOP);
+    leds(w), screen();
+    write_pbm("stopall");
+    adv_ms(2100);
+    CHECK(M.seq.tr[0].active == -1 && M.seq.tr[2].active == -1 && M.seq.tr[3].active == -1 && M.seq.playing);
+    leds(w);
+    CHECK(bright(w[L_STEP0 + 15]) < 30 && bright(w[L_STEP0 + 1]) < 30);
+}
+
+/* ================================================================ clips with no notes (0.10.0) === */
+static void test_hollow(void)
+{
+    static uint8_t blob[RFM_MOVE_PROJECT_MAX];
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int n;
+    session_view();
+    owners_grid();
+    /* a clip made with no notes (as every press on an empty slot made one before 0.10.0): its corners only on the
+     * screen, its pad much dimmer than a clip with notes */
+    rfmv_seq_clip_make(&M, SEQ_CLIP(3, 2), 1), rfmv_seq_clip_make(&M, SEQ_CLIP(5, 1), 1);
+    leds(w), screen();
+    write_pbm("hollow");
+    CHECK(clip_has(3, 2) && !cell_clip(3, 2) && !cell_dot(3, 2) && px(3 * 16 + 1, 4 + 2 * 15) && px(3 * 16 + 14, 4 + 2 * 15 + 12));
+    CHECK(lit(w[L_PAD0 + PAD(3, 2)]) && bright(w[L_PAD0 + PAD(3, 2)]) * 3 < bright(w[L_PAD0 + PAD(3, 0)]));
+    /* saved and loaded: the clips with no notes are empty slots again; the others stay */
+    n = (int)rfm_move_project_save(&M, blob, sizeof blob);
+    CHECK(n > 0 && rfm_move_project_load(&M, 0, blob, (uint32_t)n) == 0);
+    CHECK(!clip_has(3, 2) && !clip_has(5, 1) && clip_has(0, 0) && clip_has(2, 2) && clip_note(3, 1, 73));
+    screen();
+    CHECK(cell_dot(3, 2) && cell_clip(3, 1));
 }
 
 /* ================================================================ 4. clips cut and copied as steps are === */
@@ -396,20 +555,33 @@ static void test_cut_copy(void)
     CHECK(clip_note(6, 0, 60) && clip_note(6, 3, 60) && clip_note(0, 0, 60) && !M.seq.paste);
     /* Copy + a clip, Copy let go, then a press: pasted there once (Move's way), a clip there replaced; the press
      * after it is a press again */
-    clip_put(7, 0, 71);
+    clip_put(5, 0, 71);
     button(MR_CC_COPY, 1), hit(PAD(0, 0)), button(MR_CC_COPY, 0);
     CHECK(M.seq.paste == 1 && rfmv_seq_src_clip(&M, SEQ_CLIP(0, 0)) == 1);
-    clear(), now_ms += 400, hit(PAD(7, 0));
-    CHECK(clip_note(7, 0, 60) && !clip_note(7, 0, 71) && !M.seq.paste);
-    CHECKF(strstr(said, "Track 8 clip 1 replaced") != NULL, "said \"%s\"", said);
+    clear(), now_ms += 400, hit(PAD(5, 0));
+    CHECK(clip_note(5, 0, 60) && !clip_note(5, 0, 71) && !M.seq.paste);
+    CHECKF(strstr(said, "Track 6 clip 1 replaced") != NULL, "said \"%s\"", said);
     press(MR_CC_UNDO);
-    CHECK(clip_note(7, 0, 71) && !clip_note(7, 0, 60));
-    now_ms += 1000, hit(PAD(7, 0));
-    CHECK(clip_note(7, 0, 71) && M.seq.sel_track == 7 && M.seq.tr[7].active == 0);
+    CHECK(clip_note(5, 0, 71) && !clip_note(5, 0, 60));
+    now_ms += 1000, hit(PAD(5, 0));
+    CHECK(clip_note(5, 0, 71) && M.seq.sel_track == 5 && M.seq.tr[5].active == 0);
     /* Back drops a waiting copy's mark (a layer), then leaves session view */
     button(MR_CC_COPY, 1), hit(PAD(0, 0)), button(MR_CC_COPY, 0);
     back();
     CHECK(!M.seq.paste && M.seq.view == 1);
+    /* (0.10.0, the owner's) Copy tapped alone: nothing here (in track view it duplicates the clip, as the Move) */
+    {
+        int t, sn, before = 0, after = 0;
+        for (t = 0; t < 16; t++)
+            for (sn = 0; sn < 16; sn++)
+                before += clip_has(t, sn);
+        now_ms += 1000, hit(PAD(0, 0)), now_ms += 1000;
+        press(MR_CC_COPY);
+        for (t = 0; t < 16; t++)
+            for (sn = 0; sn < 16; sn++)
+                after += clip_has(t, sn);
+        CHECKF(after == before && M.seq.msg != SEQ_MSG_DUP && M.seq.tr[0].sel == 0, "%d clips, then %d", before, after);
+    }
     back();
     CHECK(M.seq.view == 0);
 }
@@ -422,6 +594,7 @@ static void test_led_writes(void)
     session_view();
     for (t = 0; t < 8; t++)
         clip_put(t, 0, 60 + t);
+    hit(PAD(7, 0));                                     /* (the scene: every track's clip 1; 7 in view) */
     press(MR_CC_PLAY), adv_ms(500);
     rfm_move_leds(&M, o, RFM_MOVE_NLEDS);
     for (i = 0; i < 2000 / 3; i++) {                    /* 2 s (4 beats at 120 BPM), a block every 3 ms as a host has */
@@ -462,7 +635,7 @@ static void test_from_takeover(void)
     adv_ms(2100);
     CHECKF(M.seq.tr[0].active == 1 && M.seq.tr[0].queued == SEQ_NONE, "active %d queued %d", M.seq.tr[0].active, M.seq.tr[0].queued);
     bar_start();
-    button(MR_CC_SHIFT, 1), hit(PAD(1, 0)), button(MR_CC_SHIFT, 0);
+    hit(SCN(0));
     adv_ms(2100);
     CHECK(M.seq.tr[0].active == 0 && M.seq.tr[1].active == 0 && M.seq.tr[2].active == 0 && M.seq.tr[3].active == 0);
 }
@@ -472,9 +645,11 @@ int main(void)
     test_scenes();
     test_selected();
     test_aligned();
+    test_stops();
+    test_hollow();
     test_cut_copy();
     test_led_writes();
     test_from_takeover();
-    (void)count, (void)find, (void)step, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)lit_rows, (void)bright, (void)m_nlat;
+    (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

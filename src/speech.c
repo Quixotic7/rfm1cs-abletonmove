@@ -446,6 +446,12 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
     case POP_STEP: step_words(m, o, cap); return;
     case POP_BAR: snprintf(o, (size_t)cap, "Bar %d", i + 1); return;
     case POP_TRACK: track_words(m, i, o, cap); return;
+    case POP_TRKINFO: {                                 /* (0.10.0) session's track popup: its rows */
+        char row[4][32];
+        rfmv_seq_track_info(m, (m->seq.track_page + i) & 15, row);
+        snprintf(o, (size_t)cap, "%s%s%s, %s, %s", row[0], row[1][0] ? ", " : "", row[1], row[2], row[3]);
+        return;
+    }
     case POP_PROJ: {
         rfm_move_proj_info_t in;
         rfmv_proj_info(m, i, &in);
@@ -652,7 +658,7 @@ static void item_words(const rfm_move_t *m, int i, char *o, int cap)
         break;
     case I_TRACKS:
         if (seq && q->view)
-            snprintf(o, (size_t)cap, "Tracks %d to %d", q->track_page + 1, q->track_page + 8);
+            snprintf(o, (size_t)cap, "Tracks %d to %d", q->track_page + 1, q->track_page + RFM_MOVE_SV_COLS);
         break;
     case I_OCTAVE:
         if (midi)

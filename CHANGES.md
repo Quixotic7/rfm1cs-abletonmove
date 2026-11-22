@@ -3,6 +3,37 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.10.0 (2026-11-21, not released)
+
+Session view after the owner's review as an Ableton Live user (14 answers on the review page; the board, made before
+the code: `remoteFM14Move/docs/design/session-view-v2.movedesign.json`). Items not answered are unchanged (Delete on
+clips, the double tap's stop, the way in, paging, scene copy / clear).
+
+- **A scene column** (as the Move's Control Live mode): the pads' 8th column launches scenes, columns 1..7 are tracks
+  (7 of 16 in view; Left / Right still one track). The scene pads are green: very dim no clip in the row, dim clips,
+  pulsing the scene that plays, blinking on its way. The screen's 8th column: the scenes' numbers (underlined: the one
+  that plays). Shift + a clip no longer launches its row.
+- **An empty slot pressed is selected, not filled**: no clip is made (the first note makes it); the track stops at the
+  bar, as Live's stop button. With Rec armed it still records a new clip there. **A project loaded: clips with no
+  notes or locks are empty slots again** (every press on an empty slot made one before: the owner's project had 8 of
+  them in 9 clips). The blob is unchanged.
+- **Clips with no notes are marked**: the pad very dim, the cell its corners only (`v2_cell` 'H', 'h').
+- **Live's colours**: a playing clip pulses green (the selected one white on the beat), the track's clip while stopped
+  is steady green (Play starts it; on the screen an outline with the play icon, `v2_cell` 'A'), a stopped clip its
+  track's colour, dim. Queued, stopping, recording, cut and copied as before.
+- **Shift + a slot selects it** for editing: nothing launched or stopped.
+- **The steps under the columns** (Control Live's): the odd one selects the column's track, the even one stops it;
+  step 16 stops every clip. (They were stop and mute.) Mute: Mute + a clip, or Mute + a step (the 16 tracks, as in
+  every view). **Shift + Play** restarts the clips in session view too (it stopped every clip there).
+- **A knob (1..7) touched** selects its column's track, as before, and shows the track's popup while touched
+  (`POP_TRKINFO`, `rfmv_seq_track_info`): the track, the firmwares it reaches, its selected clip and length, its
+  channel. Said too.
+- **Copy tapped alone does nothing in session view** (the owner's: Copy works held). In track view it still
+  duplicates the clip, as the Move's Note Mode.
+- Only Play starts the transport, launches wait for the next bar, a scene stops the tracks with no clip in it,
+  recording into an empty slot: kept, as answered.
+- Tests: `move_sessview` rewritten for it (878 checks); `move_seq`'s session parts and its screen hash.
+
 ## 0.9.2 (2026-11-21, not released)
 
 Session view (the owner, on the Move: "Scenes don't launch, clicking a clip won't show as selected, the screen and

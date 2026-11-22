@@ -64,6 +64,7 @@ static int pop_held(const rfm_move_t *m)
     case POP_MASTER: return m->touched == i;            /* (0.5.6: FM-1 mode, MIDI's NOTES too: a touch shows it) */
     case POP_LABEL: return rfmv_label_held(m, i);
     case POP_CC:
+    case POP_TRKINFO:
     case POP_TRIG: return m->touched == i;
     case POP_SELECT: return 0;                          /* (turning only: a moment after the last detent) */
     case POP_DRUM: return i < RFM_MOVE_NPADS && m->pad_down[i];
@@ -907,6 +908,9 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             snprintf(b, sizeof b, "Track %d", m->pop_i + 1);
             mr_gfx_clear(cv, 0);
             v2_msg(cv, nm, b);
+            g_full = 1;
+        } else if (m->pop == POP_TRKINFO) {             /* (0.10.0) session view, a knob touched: its track */
+            rfmv_seq_track_pop(m, cv, clampi(q->track_page + m->pop_i, 0, RFM_MOVE_SEQ_TRACKS - 1));
             g_full = 1;
         } else if (m->pop == POP_TRACK) {                 /* a track change: its name */
             char b[12];

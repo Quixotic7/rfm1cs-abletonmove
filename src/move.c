@@ -1440,6 +1440,8 @@ static void on_touch(rfm_move_t *m, int k, int on)
                                                          * popup goes, its count starts again) */
             return;
         }
+        if (m->pop == POP_TRKINFO && m->pop_i == k)
+            m->pop = POP_NONE;                          /* (0.10.0: session's track popup goes with the touch) */
         if (m->pop == POP_ENC || m->pop == POP_MASTER || m->pop == POP_CC || m->pop == POP_TRIG || m->pop == POP_CCNUM)
             rfmv_pop_let(m, m->pop, k);
         return;
@@ -1454,7 +1456,11 @@ static void on_touch(rfm_move_t *m, int k, int on)
     if (rfmv_t4_menu(m))
         return;
     if (m->s.mode == RFM_MOVE_MODE_SEQ && m->seq.view && !m->seq.projects && k < 8) {
-        rfmv_seq_select(m, m->seq.track_page + k);     /* (session: a knob touched selects the track in its column) */
+        if (k < RFM_MOVE_SV_COLS) {                     /* (session: a knob touched selects the track in its column;
+                                                         * 0.10.0: and shows its popup while touched) */
+            rfmv_seq_select(m, m->seq.track_page + k);
+            rfmv_pop(m, POP_TRKINFO, k);
+        }
         return;
     }
     if (rfmv_half(m)) {                                 /* (0.5.6, the owner's: FM-1 mode, MIDI's NOTES: a touch alone

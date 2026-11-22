@@ -28,7 +28,7 @@ log. This code lived in RemoteFM1 (`host/src/move/`) until 0.1.0; its history ca
 | `tests/test_move.c` | ctest `move` |
 | `tests/test_move_seq.c` | ctest `move_seq`: the sequencer |
 | `tests/test_move_v2.c`, `move_v2_ref.*` | ctest `move_v2`: the v2 screens against the mockup's pixels |
-| `tests/move_sessview.c` | ctest `move_sessview` (0.9.2): session view reached as on the Move (a Track tapped, Menu): scenes, the selected clip, the screen against the pads, clips cut / copied / pasted as steps, its LED writes |
+| `tests/move_sessview.c` | ctest `move_sessview` (0.9.2, 0.10.0): session view reached as on the Move (a Track tapped, Menu): the scene column, Live's colours, the selected clip, empty slots and clips with no notes, Shift + a slot, the screen against the pads, the track popup, the select / stop steps, clips cut / copied / pasted as steps, its LED writes |
 | `tests/move_e2e.c`, `move_e2e.sh` | ctest `move_e2e`: against Move Remote's simulator |
 | `tests/test_session.c` | ctest `session`: the session and the store against a fake Move |
 | `tests/session_e2e.c` | ctest `session_e2e`: the session over posix_tcp against the simulator |
@@ -342,14 +342,30 @@ double and the blob carry them. The engine walks each track with a playhead (`po
 chosen half way through a step (functions, conditions and chance decided then), so early notes of the next step
 sound in time.
 
-**Clips (session view)**: a press on a clip launches it at the next bar (queued, blinking; stopped: at once, playing
-with Play); on the playing clip it stays. The pressed clip is the selected one at once (0.9.2: also while it waits
-for the bar): its pad white (green while queued), its cell framed on the screen. Everything launches at the next bar (the owner's): **a double tap**
-(300 ms) on a clip that is not playing is a tap; **on the playing clip it stops it** at the next bar (as the
-track's stop step). **A press on an empty slot makes a new empty clip there** (drawn as a clip),
-selects it and launches it (with Rec armed: records into it, growing a bar at a time). **Shift + a clip** launches its
-whole row, that scene across the 16 tracks; **Shift + Play** stops every clip (at the bar). Cut, copy and paste as
-below.
+**Session view** (0.10.0, after the owner's review of 2026-11-21 as an Ableton Live user; the board:
+`remoteFM14Move/docs/design/session-view-v2.movedesign.json`): the pads' columns 1..7 are tracks (7 of 16 in view),
+the 8th column the scenes, a row a scene (4 of 16 in view), as the Move's Control Live mode.
+
+| Gesture | Does |
+|---|---|
+| A clip pressed | launched at the next bar (queued, blinking green; stopped: the track's clip at once, playing with Play) and the selected one at once: its cell framed on the screen. On the playing clip: it plays on, selected |
+| An empty slot pressed | selected (white), **no clip made**: the first note makes it (a step, the pads with Rec, Capture). The track stops at the bar, as Live's stop button. With Rec armed: a new clip there, recorded into (growing a bar at a time) |
+| Shift + a slot | selected for editing; nothing launched or stopped |
+| A scene pad (column 8) | its row launched across the 16 tracks; tracks with no clip in the row stop. Says "Scene 2". With Shift, Copy, Delete or Mute held: nothing (yet) |
+| A double tap (300 ms) on the playing clip | it stops at the next bar (on any other clip a double tap is a tap) |
+| The steps under a column | the odd one selects the column's track, the even one stops its clip (at the bar). Step 15: nothing. **Step 16: every clip stops** (the transport runs on) |
+| Mute + a clip, Mute + a step | the clip's track muted; the 16 tracks' mutes (as in every view) |
+| A knob (1..7) touched | its column's track selected, and its popup while touched: the track, the firmwares it reaches (a host with the firmware list; none: "Not routed"), its selected clip and length, its channel |
+| Copy tapped alone | nothing (in track view it duplicates the clip, as the Move's Note Mode) |
+| Shift + Play | every clip from its start, as in track view (before 0.10.0: every clip stopped) |
+
+The pads (Live's colours): **green pulsing** a playing clip (the selected one white on the beat), **green steady** the
+track's clip while stopped (Play starts it), **green blinking** waiting for the bar, **the track's colour, dim** a
+stopped clip (very dim: a clip with no notes), blinking in the track's colour: stopping, **white** the selected clip
+or slot, red recording. The scene pads are green: very dim no clip in the row, dim clips, pulsing (stopped: full) the
+scene that plays (every track with a clip in the row plays it, the others nothing), blinking on its way.
+A project loaded: clips with no notes or locks are empty slots again (before 0.10.0 every press on an empty slot
+made one). Cut, copy and paste as below.
 
 **Copy and cut** (the owner's; no popups: the source is marked, dashed when copied, an X when cut, on the steps row,
 the session grid and the LEDs). One clipboard for both:
@@ -420,7 +436,7 @@ the screen's corner while it records. (Tap tempo: Shift + step 5.)
 
 | Move | Sequencer |
 |---|---|
-| Play | start / stop (following an external clock: at its next bar). Shift + Play: every clip from its start (session view: every clip stops) |
+| Play | start / stop (following an external clock: at its next bar). Shift + Play: every clip from its start (0.10.0: in session view too; every clip stops: step 16 there) |
 | Record | the record mode's (above). Shift + Record: the record settings |
 | Capture | Capture (above) |
 | Sample | the audio loop (above) |
@@ -831,7 +847,7 @@ clock alone.
 | (Control mode, gone in 0.8.0) | (the note layouts show the pad map; the CCs in their popups) |
 | Track view (seq.track) | the shown page as a piano roll, full height (8 px a step, rows of 4 px, the page's notes centred, squeezed past 12 semitones; the beats dashed; the playhead a line); the strip: the clip's pages, the shown one thick, the playhead tick over the whole clip (a ghost page shown: the real pages a line, a + at the far end). The steps row always under it (the owner's: no popping in and out; the roll shrinks for it): notes filled, empty outlined, outside the loop a dashed line, copied dashed, cut crossed, the held ones (and Step record's cursor) marked above; Move's strip under the row. Recording: a record icon and "Recording" on top (rec.capture); the audio loop: a wave icon and "Sample" (armed, blinking) / "Sampling", the take's levels as a waveform scrolling in from the right (bars about the centre line, 60 of them 2 px apart; flat while armed), the bar lines dashed, the strip its bars and where it is (rec.sample, pixel for pixel) |
 | Loop page edit (loop.edit) | Loop held or latched: the loop icon, "Bars 3-6", the 16 pages as cells (looped filled, the clip's others outlined, past it a dot, cut crossed, copied dashed), the shown one underlined |
-| Session view (sess.rest) | the owner's mockup: 8 tracks across, 4 slots down; playing filled with a black play icon, recording with a black square, queued doubled (blinking), stopping blinking, a clip outlined, empty a dot, copied dashed, cut crossed; a bar over the selected track, a dashed line over muted ones; (0.9.2) the selected clip (or empty slot) framed: a 16 x 15 outline in the gap round its cell, a filled cell standing clear of it |
+| Session view (sess.rest) | the owner's mockup: (0.10.0) 7 tracks across and the scenes' numbers in the 8th column (the scene that plays underlined, one on its way blinking), 4 slots down; playing filled with a black play icon, (0.10.0) stopped and the track's clip (Play starts it): an outline with the play icon, a clip with no notes: its corners only, recording with a black square, queued doubled (blinking), stopping blinking, a clip outlined, empty a dot, copied dashed, cut crossed; a bar over the selected track, a dashed line over muted ones; (0.9.2) the selected clip (or empty slot) framed: a 16 x 15 outline in the gap round its cell, a filled cell standing clear of it |
 | Projects (proj.grid) | the 32 slots as the pads are: the open one filled, saved ones outlined, each with three bars (how full its tracks are), empty a dot; cut crossed, copied dashed; loading blinks. Entering: the set icon over "Projects" (mode.proj) |
 
 **FM-1 mode's drawing, live** (the owner's exact drawing; only these change): the touched knob's 2 × 2 dot inverted

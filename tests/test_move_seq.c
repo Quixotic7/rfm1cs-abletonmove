@@ -609,23 +609,19 @@ static void test_launch(void)
     CHECK(m->seq.tr[0].queued == 1 && m->seq.tr[0].active == 0 && nact == 0);
     adv(m, 12 * FPS);
     CHECK(m->seq.tr[0].active == 1 && find_midi(0x90, 62, 100, &at) && at == 16 * FPS && !find_midi(0x90, 60, -1, NULL));
-    /* press the playing clip: it plays on (Move); an empty slot in the track: a new (empty) clip there, selected
-     * and launched at the next bar (the owner) */
+    /* press the playing clip: it plays on (Move); an empty slot in the track (0.10.0, the owner's review: as Live's
+     * stop button): selected, no clip made, the track stops at the next bar */
     now_ms += 1000;
     pad(m, 16, 100), pad(m, 16, 0);
     CHECK(m->seq.tr[0].queued == SEQ_NONE && m->seq.tr[0].active == 1);
     pad(m, 8, 100), pad(m, 8, 0);                       /* track 1, scene 3: empty */
-    CHECK(m->seq.tr[0].queued == 2 && m->seq.tr[0].sel == 2 && rfmv_seq_clip_has(m, SEQ_CLIP(0, 2)));
-    CHECK(!rfmv_seq_clip_used(m, SEQ_CLIP(0, 2)));
-    button(m, MR_CC_DELETE, 1), pad(m, 8, 100), pad(m, 8, 0), button(m, MR_CC_DELETE, 0);   /* (the new clip cut: the
-                                                         * track stops at the bar instead) */
-    CHECK(!rfmv_seq_clip_has(m, SEQ_CLIP(0, 2)) && m->seq.tr[0].queued == SEQ_STOP);
-    m->seq.clip_kind = 0, m->seq.cut = 0;
+    CHECK(m->seq.tr[0].queued == SEQ_STOP && m->seq.tr[0].sel == 2 && !rfmv_seq_clip_has(m, SEQ_CLIP(0, 2)));
     adv(m, 16 * FPS);
-    CHECK(m->seq.tr[0].active == -1);
-    /* a scene: Shift + a clip launches its row, scene 2 (tracks without a clip there stop: track 3's long note ends) */
+    CHECK(m->seq.tr[0].active == -1 && !rfmv_seq_clip_has(m, SEQ_CLIP(0, 2)));
+    /* a scene (0.10.0: the 8th column's pad) launches its row, scene 2 (tracks without a clip there stop: track 3's
+     * long note ends) */
     clear();
-    button(m, MR_CC_SHIFT, 1), pad(m, 16, 100), pad(m, 16, 0), button(m, MR_CC_SHIFT, 0);
+    pad(m, 23, 100), pad(m, 23, 0);
     adv(m, 16 * FPS);
     CHECK(m->seq.tr[0].active == 1 && m->seq.tr[1].active == 1 && m->seq.tr[2].active == -1);
     CHECK(find_midi(0x82, 67, 0, &at) && at == 48 * FPS && sounding[2][67] == 0);   /* (the clip change let it go) */
@@ -645,20 +641,19 @@ static void test_launch(void)
     press(m, MR_CC_MUTE);
     button(m, MR_CC_MUTE, 1), tap_step(m, 1), button(m, MR_CC_MUTE, 0);
     CHECK(!m->seq.tr[0].mute && !m->seq.tr[1].mute);
-    /* stopped, a clip press makes it the track's clip at once (no start: Play, the owner's); Shift + clip only
-     * selects; an empty slot, stopped: the track plays nothing */
+    /* stopped, a clip press makes it the track's clip at once (no start: Play, the owner's); an empty slot, stopped:
+     * selected, the track plays nothing */
     rfm_move_seq_play(m, 0);
     CHECK(stuck() == 0);
     pad(m, 24, 100), pad(m, 24, 0);                     /* track 1, scene 1 */
     CHECK(m->seq.tr[0].active == 0 && !m->seq.start_pending && !m->seq.playing);
     rfm_move_seq_play(m, 0);
-    pad(m, 0, 100), pad(m, 0, 0);                       /* track 1, scene 4: empty: a new clip, no start */
-    CHECK(m->seq.tr[0].active == 3 && m->seq.tr[0].sel == 3 && !m->seq.start_pending);
-    CHECK(rfmv_seq_clip_has(m, SEQ_CLIP(0, 3)));
+    pad(m, 0, 100), pad(m, 0, 0);                       /* track 1, scene 4: empty: selected, no clip, no start */
+    CHECK(m->seq.tr[0].active == -1 && m->seq.tr[0].sel == 3 && !m->seq.start_pending);
+    CHECK(!rfmv_seq_clip_has(m, SEQ_CLIP(0, 3)));
     rfm_move_seq_play(m, 0);
-    button(m, MR_CC_SHIFT, 1), pad(m, 17, 100), pad(m, 17, 0), button(m, MR_CC_SHIFT, 0);   /* Shift + track 2 scene
-                                                         * 2: scene 2 across the tracks (stopped: at once, no
-                                                         * start) */
+    pad(m, 23, 100), pad(m, 23, 0);                     /* the scene pad of row 2: scene 2 across the tracks (stopped:
+                                                         * at once, no start) */
     CHECK(m->seq.tr[1].active == 1 && m->seq.tr[0].active == 1 && m->seq.tr[2].active == -1 && !m->seq.start_pending);
     rfm_move_seq_play(m, 0);
     /* the owner's session: a column a track (Left / Right one track at a time), a row a clip slot (Up / Down) */
@@ -668,7 +663,7 @@ static void test_launch(void)
     CHECK(m->seq.sel_track == 1 && m->seq.tr[1].sel == 1);
     for (i = 0; i < 20; i++)
         press(m, MR_CC_RIGHT), press(m, MR_CC_DOWN);
-    CHECK(m->seq.track_page == 8 && m->seq.scene_off == 12);
+    CHECK(m->seq.track_page == 9 && m->seq.scene_off == 12);   /* (0.10.0: 7 tracks in view) */
     for (i = 0; i < 20; i++)
         press(m, MR_CC_LEFT), press(m, MR_CC_UP);
     CHECK(m->seq.track_page == 0 && m->seq.scene_off == 0);
@@ -1405,7 +1400,7 @@ static void write_pbm(const char *path, const uint8_t *packed)
 
 #define GOLD_TRACK 0xa1088f61u
 #define GOLD_STEP 0x7923b304u
-#define GOLD_SESSION 0xb520851fu
+#define GOLD_SESSION 0x70363f4eu
 #define GOLD_PROJECTS 0x5204a535u
 #define GOLD_PROJECT 0xb8a42ba8u
 #define GOLD_TRACKS 0x0e18c2a2u                     /* (0.9.0: the merged menu, "FM-1" "Track 3" "selected") */
@@ -1527,13 +1522,14 @@ static void test_screens_leds(void)
     n = rfm_move_leds(m, leds, RFM_MOVE_NLEDS);
     for (i = 0; i < n; i++) {
         if (!leds[i].cc && leds[i].number == MR_NOTE_PAD0 + 17)       /* track 2 scene 2: has content */
-            CHECK(leds[i].r == 255 * 110 / 256 && leds[i].g == 128 * 110 / 256);
-        if (!leds[i].cc && leds[i].number == MR_NOTE_PAD0 + 24)       /* track 1 scene 1: playing, selected: white */
-            CHECK(leds[i].r > 100 && leds[i].r == leds[i].g && leds[i].g == leds[i].b);
+            CHECK(leds[i].r == 255 * 80 / 256 && leds[i].g == 128 * 80 / 256);   /* (0.10.0: its track's colour, dim) */
+        if (!leds[i].cc && leds[i].number == MR_NOTE_PAD0 + 24)       /* track 1 scene 1: playing, selected: green,
+                                                                       * white on the beat (0.10.0) */
+            CHECK((leds[i].r == 255 && leds[i].g == 255 && leds[i].b == 255) || (leds[i].r == 0 && leds[i].g > 90 && leds[i].b == 0));
         if (!leds[i].cc && leds[i].number == MR_NOTE_PAD0 + 10)       /* track 3 scene 3: queued: green (blinking) */
             CHECK(leds[i].r == 0 && leds[i].g > 0);
-        if (!leds[i].cc && leds[i].number == MR_NOTE_PAD0 + 25)       /* track 2 scene 1: playing: its colour */
-            CHECK(leds[i].r > leds[i].b && leds[i].g > 0);
+        if (!leds[i].cc && leds[i].number == MR_NOTE_PAD0 + 25)       /* track 2 scene 1: playing: green (0.10.0) */
+            CHECK(leds[i].r == 0 && leds[i].g > 90 && leds[i].b == 0);
         if (leds[i].cc && leds[i].number == MR_CC_PLAY)
             CHECK(leds[i].g == 255 && leds[i].r == 0);
         if (leds[i].cc && leds[i].number == MR_CC_MENU)
@@ -2287,7 +2283,8 @@ static void test_blob_v2(void)
     CHECK(n == RFM_MOVE_PROJECT_FIXED + 7 + 2 * 4 && a[4] == RFM_MOVE_PROJECT_VERSION);
     rfm_move_init(m2, NULL, on_act, NULL);
     CHECK(rfm_move_project_load(m2, 1, a, (uint32_t)n) == 0);
-    CHECK(m2->seq.lstart[0] == 16 && m2->seq.len[0] == 32 && rfmv_seq_clip_has(m2, SEQ_CLIP(2, 3)));
+    CHECK(m2->seq.lstart[0] == 16 && m2->seq.len[0] == 32 && rfmv_seq_clip_has(m2, 0));
+    CHECK(!rfmv_seq_clip_has(m2, SEQ_CLIP(2, 3)));      /* (0.10.0: a clip with no notes or locks: an empty slot again) */
     CHECK(rfmv_seq_trig(m2, 0, 20, RFM_MOVE_TRIG_JUMP) == 200 && m2->seq.tr[3].rate == 7 && m2->seq.tr[3].groove == 33);
     CHECK(m2->seq.tr[3].arp.pat == RFM_MOVE_AP_CONDIV && m2->seq.tr[3].arp.odist == -7);
     CHECK(m2->seq.rec_mode == RFM_MOVE_RM_STEP && m2->seq.rec_style == RFM_MOVE_RS_REPLACE);
@@ -2597,7 +2594,7 @@ static void test_round2(void)
 }
 
 /* the owner's session view: a column a track; the 2 steps under a column stop / mute its track; a knob touched
- * selects its column's track (turning does nothing); Shift + Play stops every clip; a double tap launches at once */
+ * selects its column's track (turning does nothing); step 16 stops every clip (0.10.0; it was Shift + Play) */
 static void test_session2(void)
 {
     rfm_move_t *m = &M;
@@ -2610,23 +2607,21 @@ static void test_session2(void)
     press(m, MR_CC_MENU);
     rfm_move_seq_play(m, 1), b0 = base;
     adv(m, 4 * FPS);
-    /* steps 5 / 6 (column 3): stop track 3 (at the bar), mute it */
+    /* (0.10.0, Control Live's) steps 5 / 6 (column 3): select track 3, stop it (at the bar) */
     tap_step(m, 4);
-    CHECK(m->seq.tr[2].queued == SEQ_STOP);
+    CHECK(m->seq.sel_track == 2 && m->seq.tr[2].queued == SEQ_NONE);
     tap_step(m, 5);
-    CHECK(m->seq.tr[2].mute);
+    CHECK(m->seq.tr[2].queued == SEQ_STOP && !m->seq.tr[2].mute);
     rfm_move_leds_invalidate(m);
     n = rfm_move_leds(m, leds, RFM_MOVE_NLEDS);
     for (i = 0; i < n; i++) {
-        if (!leds[i].cc && leds[i].number == MR_NOTE_STEP0 + 5)
-            CHECK(leds[i].r > leds[i].g && leds[i].r < 100);   /* (muted: red, dim) */
-        if (!leds[i].cc && leds[i].number == MR_NOTE_STEP0 + 0)
+        if (!leds[i].cc && leds[i].number == MR_NOTE_STEP0 + 4)
+            CHECK(leds[i].r == 255 && leds[i].g == 208 && leds[i].b == 0);   /* (the selected track: its colour, full) */
+        if (!leds[i].cc && leds[i].number == MR_NOTE_STEP0 + 1)
             CHECK(leds[i].r == 255 && leds[i].g == 255);       /* (track 1 plays: its stop lit) */
-        if (!leds[i].cc && leds[i].number == MR_NOTE_STEP0 + 2)
+        if (!leds[i].cc && leds[i].number == MR_NOTE_STEP0 + 3)
             CHECK(leds[i].r < 20);                             /* (track 2: nothing to stop) */
     }
-    tap_step(m, 5);
-    CHECK(!m->seq.tr[2].mute);
     /* a knob touched: its column's track; turning: nothing */
     clear();
     raw(m, 0x90, 2, 127);                               /* (knob 3 touched) */
@@ -2654,8 +2649,8 @@ static void test_session2(void)
     pad(m, 16, 100), pad(m, 16, 0);                     /* (again: playing at the next bar, for what follows) */
     adv(m, 16 * FPS);
     CHECK(m->seq.tr[0].active == 1);
-    /* Shift + Play (session): every clip stops at the bar */
-    button(m, MR_CC_SHIFT, 1), press(m, MR_CC_PLAY), button(m, MR_CC_SHIFT, 0);
+    /* (0.10.0) step 16 (session): every clip stops at the bar (before: Shift + Play, which restarts the clips now) */
+    tap_step(m, 15);
     CHECK(m->seq.playing && m->seq.tr[0].queued == SEQ_STOP);
     adv(m, 16 * FPS);
     CHECK(m->seq.tr[0].active == -1 && m->seq.tr[2].active == -1);

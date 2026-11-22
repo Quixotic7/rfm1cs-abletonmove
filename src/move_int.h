@@ -56,7 +56,7 @@ int rfmv_level(const rfm_move_t *m, int id);           /* the FM-1 LED level 0..
 /* ---- screen.c: the screen (every mode's picture, the popups, the held Track buttons' menus) */
 enum { POP_NONE = 0, POP_ENC, POP_MASTER, POP_CC, POP_SELECT, POP_DRUM, POP_TEMPO, POP_LOOP, POP_BANK, POP_STEP,
        POP_PROJ, POP_TRIG, POP_BAR, POP_TRACK, POP_MODE, POP_FW,
-       POP_HOST, POP_LABEL, POP_READ, POP_TK };   /* (POP_TK 0.7.0: a takeover's name, pop_i its slot) */   /* (POP_READ 0.5.7: a readout of its own, rd_pop) */   /* (POP_LABEL 0.5.6: a button's or key's label, pop_i its slot) */   /* (POP_HOST 0.5.4: rfm_move_popup's words) */   /* (POP_FW 0.4.3: Back + Track, a firmware) */
+       POP_HOST, POP_LABEL, POP_READ, POP_TK, POP_TRKINFO };   /* (POP_TRKINFO 0.10.0: session view, a knob touched: its track) */   /* (POP_TK 0.7.0: a takeover's name, pop_i its slot) */   /* (POP_READ 0.5.7: a readout of its own, rd_pop) */   /* (POP_LABEL 0.5.6: a button's or key's label, pop_i its slot) */   /* (POP_HOST 0.5.4: rfm_move_popup's words) */   /* (POP_FW 0.4.3: Back + Track, a firmware) */
 #define RFM_MOVE_TAP_MS 300                             /* a Track button released this soon: a tap (not its menu) */
 enum { MENU_NONE = 0, MENU_LAYOUT, MENU_SCALE, MENU_ROOT, MENU_CHANNEL, MENU_CC, MENU_TRACK, MENU_TCH, MENU_RATE, MENU_SHIFT,
        MENU_T4, MENU_OCT, MENU_LOCK };   /* (0.8.0: MENU_T4 Track 4 held's page, MENU_OCT a slot's octave, MENU_LOCK) */
@@ -68,6 +68,9 @@ int rfmv_seq_menu_knobs(const rfm_move_t *m);
 void rfmv_vel_step(rfm_move_t *m, int d);              /* the velocity option along the jog's order */
 void rfmv_tcase(const char *s, char *o, int cap);       /* Title Case ("CUTOFF" -> "Cutoff") */
 void rfmv_keys_menu(const rfm_move_t *m, mr_canvas_t *cv, int glob);   /* the key / scale screen (-1: channels) */
+#define RFM_MOVE_SV_COLS 7                              /* (0.10.0) session view: the track columns (the 8th: the scenes) */
+void rfmv_seq_track_info(const rfm_move_t *m, int track, char row[4][32]);   /* session's track popup: its 4 rows */
+void rfmv_seq_track_pop(const rfm_move_t *m, mr_canvas_t *cv, int track);    /* .. drawn */
 int rfmv_seq_msg_info(const rfm_move_t *m, const char **a, const char **b, int *icon);   /* the message up: its id */
 int rfmv_seq_end_page(const rfm_move_t *m, int clip);   /* the clip's last page (the loop's, or one with notes) */
 void rfmv_seq_loop_edit(const rfm_move_t *m, mr_canvas_t *cv);   /* Loop's page edit: the pages as cells */
