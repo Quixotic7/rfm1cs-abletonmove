@@ -20,7 +20,8 @@ int rfmv_tk_mode(const rfm_move_t *m)
     return m->s.mode == RFM_MOVE_MODE_FM1 && m->s.slot[s].lay == RFM_MOVE_LAY_TK && m->tk[s].claims;
 }
 /* .. and shown now: the claimed controls are the firmware's */
-int rfmv_tk_on(const rfm_move_t *m) { return rfmv_tk_mode(m) && !m->seq.projects && !m->seq.smenu; }
+int rfmv_tk_on(const rfm_move_t *m) { return rfmv_tk_mode(m) && !m->seq.projects && !m->seq.smenu && !m->fw.sl; }   /* (0.13.0:
+                                                         * nor under the States layer) */
 unsigned rfmv_tk_claims(const rfm_move_t *m) { return rfmv_tk_on(m) ? m->tk[tk_slot(m)].claims : 0; }
 int rfm_move_tk_shown(const rfm_move_t *m) { return rfmv_tk_on(m) ? tk_slot(m) : -1; }
 int rfm_move_mode(const rfm_move_t *m) { return rfmv_tk_mode(m) ? RFM_MOVE_MODE_TAKEOVER : m->s.mode; }

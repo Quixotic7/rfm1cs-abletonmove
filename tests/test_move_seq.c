@@ -1955,7 +1955,7 @@ static void test_trig(void)
         rfm_move_init(&M2, NULL, on_act, NULL);
         CHECK(rfm_move_project_load(&M2, 1, blob, (uint32_t)nb) == 0 && M2.seq.tr[0].tdef[1] == 2 && M2.seq.tr[0].tdef[2] == 75);
         {                                               /* a version 3 blob (no defaults) still loads: the plain ones */
-            const int n3 = nb - RFM_MOVE_SEQ_TRACKS * 8 - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS - 1 - RFM_MOVE_SEQ_CLIPS;   /* (0.4.0:
+            const int n3 = nb - RFM_MOVE_SEQ_TRACKS * 8 - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES;   /* (0.4.0:
                                                          * and no FX setup; 0.6.6: no MIDI routes; 0.12.0: no launch
                                                          * settings) */
             uint32_t h = 2166136261u;

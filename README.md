@@ -113,8 +113,11 @@ every loaded firmware (`RFM_MOVE_DEST_ALL`), so their own sequencers and arps fo
 
 **Track n held: one menu** (every layout): the top row's pads 1..6 FM-1 (white), the firmware's own takeover (purple;
 dark when it has none), Scale, Chroma, Drum, Octave (lime), the slot's own full, the others at 30 %; pad 8 latch
-(amber); rows 2..4 the 24 scales (the key the tracks use: the project's, or the selected track's own). The steps are
-the 16 tracks for firmware n: **a click selects** one (it is routed to firmware n; in a note layout it is the track
+(amber); (0.13.0, a host with `RFM_MOVE_CAP_PROJFW`) pad 7 **the firmware's States** (in the slot's colour while a
+firmware is loaded there; dark and dead with none, or with an older host; see
+[States](#projects-that-hold-their-firmwares-states-0130); in session view the pads stay the routing); rows 2..4 the 24
+scales (the key the tracks use: the project's, or the selected track's own). The steps are the 16 tracks for firmware
+n: **a click selects** one (it is routed to firmware n; in a note layout it is the track
 edited), **a double click solos** it on firmware n only (one solo a firmware: another moves it; again: off, the
 routing as it was; (0.11.0) the solo stays when another track is selected), **a hold** routes it to firmware n or not;
 Copy, Delete and Mute + a step copy, clear, mute a track. (0.11.0, `design/UX-RULES.md`) the three are gated: the hold
@@ -565,10 +568,19 @@ steps, the jog, the knobs (but one), the Shift shortcuts, the Track buttons.
   screen, its pad red and blinking); **Copy + a project**: copied (`..._COPY`; dashed, blinking); **Delete or Copy +
   an empty pad**: the buffer pasted there (`..._PASTE`; a cut once, a copy again and again). The open project cut:
   saved first, an empty project in its slot.
+- **Duplicating a project** (the owner's "a way to duplicate a project to make a new variation"): hold **Copy**,
+  press the project's pad, then (Copy still held) an empty pad: the copy is pasted there (`PROJECT_COPY` then
+  `PROJECT_PASTE`), clips, settings and (0.13.0) firmwares with it. A host with `RFM_MOVE_CAP_PROJFW` copies the
+  project's firmware state files along with its blob (its per-project copies of each firmware's memory).
 - **A pad held + knob 1**: its colour, one of 16 (the Move's palette; one every few ticks), shown big on the screen;
   stored with the project (blob byte 18, `..._COLOR`: the host sets it in the stored blob and makes its check again).
-- **Play**: the selected project plays (still loading: once loaded); Play again stops it.
+- **Play**: the selected project plays (still loading: once loaded; 0.13.0: once its firmwares are in); Play again
+  stops it.
 - **Back** or **Menu** leaves.
+- (0.13.0, `RFM_MOVE_CAP_PROJFW`) **A project holds its firmwares**: a stored project's pad shows the loading screen at
+  the press (its number, "Loading", a row a firmware slot with a bar), a pad held shows the project's number, tempo,
+  clips and its three firmwares (a dotted line: an empty slot, or a project from before 0.13.0), and an empty pad's
+  new project has its three slots empty. See [Projects that hold their firmwares](#projects-that-hold-their-firmwares-states-0130).
 
 Changes are autosaved 2 s after the last edit (`RFM_MOVE_AUTOSAVE_MS`), and on every switch. Blob version 3 (current) adds
 to version 2 the project's groove, key and scale, each track's GLOBAL / TRACK choices, own key and scale and solo,
@@ -600,7 +612,7 @@ Back works the same in every mode and in the projects view, on its release:
 
 | Back | Does |
 |---|---|
-| a click (let go within 300 ms, nothing else pressed, no Track held) | closes the latest layer still open (a Shift menu, Loop's latch, Shift's lock, the clipboard's marks; in the projects view Capture, States, the description, the selection, the catalog, FX setup's module list); with nothing to close it flips: (0.8.0) the slot's layout to the Sequencer and back ("Sequencer"; the layout named going out); the projects view back to where it came from. (0.4.5) Each flip is named for a second, as a Track tap names a mode: going out, the mode (FM-1, MIDI, Control, Seq); going in, "Firmwares", "Projects" (Track 4), "FX & Mix", or (0.5.2) "Mixer" when FX setup is on its Mixer. Menu's toggle between the firmware / project pages and FX setup is named the same way (0.5.2). The first press in the view drops the name |
+| a click (let go within 300 ms, nothing else pressed, no Track held) | closes the latest layer still open ((0.13.0) States first: their copy / delete marks, then the layer; a Shift menu, Loop's latch, Shift's lock, the clipboard's marks; in the projects view Capture, States, the description, the selection, the catalog, FX setup's module list); with nothing to close it flips: (0.8.0) the slot's layout to the Sequencer and back ("Sequencer"; the layout named going out); the projects view back to where it came from. (0.4.5) Each flip is named for a second, as a Track tap names a mode: going out, the mode (FM-1, MIDI, Control, Seq); going in, "Firmwares", "Projects" (Track 4), "FX & Mix", or (0.5.2) "Mixer" when FX setup is on its Mixer. Menu's toggle between the firmware / project pages and FX setup is named the same way (0.5.2). The first press in the view drops the name |
 | a click in FX setup (0.4.5) | FX setup is no layer: Back flips straight out (Menu alone toggles FX setup). The view remembers it: the next way in (Track 4's tap) opens FX setup again on the same page. Kept in the settings (`fw_fx`) |
 | held + Track 1..3 | (0.8.0) nothing of its own: the Track acts (a tap plays its slot), Back's click is cancelled |
 | held long, alone | nothing |
@@ -667,7 +679,7 @@ an empty slot faint white, a slot past the host's voices blinking slowly; in FX 
 | Delete | unloads this track's firmware at once (`FW_UNLOAD`), with a message |
 | Left / Right | banks (lit when there is one) |
 | Mute | the catalog: step 1 Update ready (on the Move, a newer version) / step 2 Not installed, one at a time (the lit one again: everything), 3..16 the same one category or tag; an update breathes with an up arrow, a firmware not on the Move faint white, dashed under; a jog press downloads or updates (`FW_DOWNLOAD`), and (0.4.2) loads one on the Move and current into this track (`FW_LOAD`). A download or update done while that firmware is still selected: the popup offers "Jog: load on Track n" |
-| Loop | the firmware's states (Move's Set Overview): a stored state loads, an empty pad saves there, Copy + pad saves over, Delete + pad deletes (`STATE_*`); Loop or Back leaves |
+| Loop | the firmware's states (Move's Set Overview): a stored state loads, an empty pad saves there, Copy + pad saves over, Delete + pad deletes (`STATE_*`); Loop or Back leaves. (0.13.0) With `RFM_MOVE_CAP_PROJFW`: the States layer and its gestures (below, [States](#projects-that-hold-their-firmwares-states-0130)); Loop or Back returns to the browser |
 | Track 1..3 held + volume | that slot's level (`FW_LEVEL`; in any mode with the browser on); the volume alone stays MASTER |
 | Session | FX setup (0.5.0: one layer, see [FX parameter pages](#fx-parameter-pages-050)): pad columns 1, 3, 5 the MIDI FX, firmware and audio FX slots; Track 1..3 select those columns, Track 4 the Mixer; steps a MIDI FX slot's track (one, or all: the same step again) or a firmware's 16-track filter; a slot's pad held + the jog chooses its module, the jog's click opens its pages; knobs the module's page, or a firmware's level, pan, sends; (0.4.5) a touch shows the parameter's popup while touched; Delete + pad empties an FX slot; Session toggles FX setup, Back (0.4.5) leaves the view. A host with no modules has no MIDI FX / Audio FX column |
 | Back | one level out (Capture, States, the description, the selection, the catalog), then out of the view, back to the mode (0.4.3: a click, as everywhere) |
@@ -702,6 +714,88 @@ other slots are dropped, voices are 1, and the popups say "Level" and "loaded" w
 the browser), and no `FX_LOAD`, `FX_PARAM`, `MIX` or `ROUTE` is emitted (`rfm_move_fx_sync` and project loads send
 none); the host-edit calls for FX, pan, sends and routing refuse (-1). A project keeps its FX setup untouched, so one
 made on the Move loads back there as it was.
+
+## Projects that hold their firmwares; States (0.13.0)
+
+The owner's review of 2026-11-22 ("Project should save firmwares"; cards P.1..P.11, the mock-ups in
+`remoteFM14Move/docs/design/mock_projstates_v1.c`). All of it is for a host that sets **`RFM_MOVE_CAP_PROJFW`**
+(`rfm_move_fw_caps(m, RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW)`; it is not in `RFM_MOVE_CAPS_ALL`). An older host (the
+web player, the phone apps, a RemoteFM14Move before it) keeps 0.12.0's behaviour: a project load never touches the
+firmwares (a version 9 project's firmware part is written back unchanged when it is saved), States keep the browser's
+Loop and its old gestures, a held Track's pad 7 is dark and dead.
+
+**The project (blob version 9)** adds, per firmware slot: the firmware's id ("" empty), its level, its layout,
+scale, root, channel, octave and knob CC numbers (`rfm_move_slotset_t`), the sequencer track its Track selects
+(`settings.lock`); and once: the slot played, the Drum layout's 32 notes, the velocity mode and level
+(`RFM_MOVE_PFW_BYTES`, 176 bytes before the check). Versions 1..8 load as before and "hold no firmwares": the slots,
+the levels and these settings stay as they are, and the next save writes version 9 with what is loaded then. The
+settings blob and the library blob keep their copies of these values (an older host, an older project). Each one the
+user changes now marks the project edited (its autosave), but only while a stored project is open (never at start,
+before the host has loaded one). A slot whose firmware was missing when the project loaded keeps the project's wish
+(saved again) until the user puts a firmware there or empties it.
+
+**Opening a project** (a pad in the grid, or the host's `rfm_move_project_load` at start): its settings are applied as
+the user's own edits (`FW_LEVEL`, `FW_ACTIVE` and the slot's layout played, `SETTINGS`), then the core sends one
+`RFM_MOVE_ACT_PROJECT_FW` per slot (slot 0 only without `RFM_MOVE_CAP_SLOTS`). The loading screen is up from the
+pad's press (the grid knows the project's firmwares from `rfm_move_project_info`) until every slot has settled: the
+project's number at 3x, "Loading" at 2x, a row a slot (its number, the firmware's name or a dotted line for an empty
+slot, a dotted bar while waiting, a bar filling 0..99, full when ready). A Track lights in its slot's colour once its
+firmware is ready, dark until then. Play pressed meanwhile starts the transport when all are settled (again: not). A
+slot with no news for `RFM_MOVE_PFW_WAIT_MS` (20 s, the sequencer's clock) is taken as failed. Then each missing or
+failed firmware is said for a second ("Felucca / not installed / Track 3 empty"; "failed"), its slot empty. Another
+project's pad pressed meanwhile loads that one (the host is told again). **A new project** (an empty pad): no clips,
+the default tempo, saved at once, and its three slots empty (`PROJECT_FW` with "" for each); everything else stays.
+
+**States** (P.6, P.7, P.9): **Track 1..3 held + the top row's pad 7** (a firmware loaded there), or **Loop** in the
+firmware browser. A layer over whatever is under it, which it returns to: **Back** (its click: the copy / delete marks
+first, then States) shows the layout or view it was opened over (the browser when opened by Loop there; Loop then
+closes it too). Opening: "States" at 2x over the firmware's name for a second (said "States, ChoralRoot") and the pads
+swept column by column in the slot's colour (50 ms a column, at most 8 LED writes a frame), settling into the states'
+lights; a press meanwhile acts at once.
+
+| In States | Does |
+|---|---|
+| The screen | the firmware's name at 2x (cut to fit; Copy / Delete held: their icon at its right end), the 32 states in 4 rows of 8: framed a stored one, filled the active one, a dot an empty one; dashed the copied one and crossed the deleted one while the buffer is armed |
+| Pads | the slot's colour (not the firmware's): the active state full, stored ones dim, empty dark, a pressed one white. **A stored state: loaded** (`STATE_LOAD`; it is the active one; "State 5 / loaded"); **an empty one: the firmware's memory saved there** (`STATE_SAVE`; the active one). There is no "save over": the host autosaves the active state |
+| Copy held + a state | a stored one: **copied** into the state buffer (`STATE_COPY`; armed, dashed); an empty one: **the buffer pasted** there (`STATE_PASTE`); a stored one while armed (the last state function a copy or a delete, not the very state just copied): **replaced** by the buffer. Pasting onto the active state also loads it (`value` 1). A paste disarms; Back's click clears the marks |
+| Delete held + a state | **deleted**, into the buffer (`STATE_DELETE`; armed, crossed). Delete never pastes. The active one deleted: the firmware keeps what it holds, no state is active |
+| Copy, Delete alone | nothing (their icon on the screen while held). Nothing loads while either is held. The buffer is one firmware's: another firmware's States do not offer it |
+| Step 14 (its icon lit; white at its press) | **New**: the firmware restarts as first installed (`STATE_NEW`); no state is active, none is touched. "New state / ChoralRoot". The other steps are dark and dead |
+| Undo (lit only while there) | right after New: the memory it held before is back and the state that was active is active again (`STATE_UNDO`). "Undo / New state". One step, no redo; any other state action, or leaving States, ends it |
+| Track 1..3 tap | that slot's States (named again); an empty slot: "Track 3 / empty", States stay where they were |
+| Track 4 tap, Menu | States close, then the button does its own job |
+| Knobs, jog, Shift, Capture, the arrows, Mute, Sample, Record | dark and dead. Play and the volume knob are the layer's under it |
+
+### The host's part (RemoteFM14Move)
+
+- **The capability**: `rfm_move_fw_caps(m, RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW)` once it can do all of the below.
+- **Per-project state files**: the host keeps, for each project slot, a copy of each of its firmwares' memory (a
+  firmware's 1 MB flash image). The copy, cut and paste of a project (`PROJECT_COPY` / `_CUT` / `_PASTE`) carry these
+  files with the blob; `PROJECT_DELETE` drops them.
+- **`RFM_MOVE_ACT_PROJECT_FW`** (slot 0..2, `index` the project slot 0..31, `data` / `len` the firmware id, "" empty):
+  first the host writes what each slot's firmware holds now into the copy of the project it last loaded there (the
+  outgoing project); then, for this slot: the same firmware already there: only its memory is swapped for this
+  project's copy; another firmware: it is loaded with this project's copy (no copy yet: as stored); "": the slot is
+  unloaded. It reports with **`rfm_move_proj_fw(m, slot, status)`**: `0..99` while it works (each report restarts the
+  20 s limit), `RFM_MOVE_PFW_READY`, `RFM_MOVE_PFW_MISSING` (the firmware is not on the device: the host leaves the
+  slot empty, unloading what was there), or `RFM_MOVE_PFW_FAILED` (the same). Nothing is needed for "". As after
+  `FW_LOAD`, it also calls `rfm_move_fw_slots` (and `rfm_move_set_takeover` for the slot), `rfm_move_fw_states` and:
+- **`rfm_move_fw_state_cur(m, slot, k)`**: the state active now (k 0..31, -1 none). After loading a project's copy the
+  host compares it with the firmware's stored states and names the one it equals (none: -1).
+- **The active state's autosave** ("Whichever slot is active gets auto saved"): whenever a firmware's memory changes,
+  the host writes it into that firmware's active state (`st_cur`, as the core last said: `STATE_LOAD`, `STATE_SAVE`,
+  `STATE_PASTE` with value 1, `STATE_UNDO`, or `rfm_move_fw_state_cur`) and into the open project's copy. No state
+  active (after New, a delete of the active one): only the project's copy.
+- **`STATE_SAVE`** (slot, index, id): the memory stored as that state. **`STATE_LOAD`**: that state into the firmware.
+- **The state buffer** (one, with its firmware's id): **`STATE_COPY`** (slot, index): that state copied into it;
+  **`STATE_DELETE`** (slot, index): the state moved into it (then forgotten); **`STATE_PASTE`** (slot, index, value):
+  the buffer stored as that state (replacing one there); `value` 1: it is the active state, so it is also loaded into
+  the firmware. The core only pastes onto the same firmware's States.
+- **`STATE_NEW`** (slot): keep the firmware's memory now (the undo, one per slot), then restart it as first installed.
+  **`STATE_UNDO`** (slot, `value` the state active again, -1 none; `index` the same, 255 for none): the kept memory back
+  into the firmware.
+- Opening the last project at start goes the same way (`rfm_move_project_load` sends `PROJECT_FW`; the same firmwares
+  already loaded: only the memory, or nothing when it is already this project's).
 
 ## FX parameter pages (0.5.0)
 
@@ -978,8 +1072,8 @@ short, digits for numbers, note names as the screen has them):
 
 | kind | when | examples |
 |---|---|---|
-| EVENT | the base view changes (not when a popup over it closes) | "FM-1 mode", "MIDI mode, Notes", "Control mode", "Felucca, Drum layout, Track 2" (0.9.0), "Session", "Track 3", "Firmwares, Slot 1, Felucca", "Slot 2, empty", "Catalog", "States, Felucca", "Projects", "FX setup, MIDI FX", "Routing", "Mixer", "Arp, Page 1" |
-| VALUE | a popup's words change, or the selection's | knobs "K1", "K1: +3", "Volume 75%", "CC 16: 65", readouts "Voicing: Wide"; held Track menus "Scale: Dorian", "Root: Db", "Layout: Drum", "Channel: 3", "Knob 1: CC 17", "Track 3, muted", "Rate: 1/16"; "Latch on"; a held label "SEL/KEYS"; host popups "FM-1 linked"; the sequencer "Playing", "Stopped", "Record on", "Step 5", "Chance: 50%", "Loop: 2 bars", "Tempo 120", "Bar 2", "Undo", "Metronome on", "Sync: EXT"; projects "Project 3, 120 BPM, 4 clips"; Down "Melodee, FM-1"; the browser "All firmwares", "Filter Synth", "Bank 2", the firmware selected ("Felucca"; in the catalog "Felucca, not installed"), its description (the jog's first detent, 250 characters at most), "Downloading Felucca 25%", "Felucca installed", "Felucca added to Favorites", "SLOOP, position 3 of 17", "Tagged Synth"; FX setup "MIDI FX 1: Arp", the module list "Arp", "Rate: 1/8", "Slot 1 Level: 100", "MIDI FX 1: track 3" |
+| EVENT | the base view changes (not when a popup over it closes) | "FM-1 mode", "MIDI mode, Notes", "Control mode", "Felucca, Drum layout, Track 2" (0.9.0), "Session", "Track 3", "Firmwares, Slot 1, Felucca", "Slot 2, empty", "Catalog", "States, Felucca" (0.13.0: the States layer from anywhere), "Projects", "FX setup, MIDI FX", "Routing", "Mixer", "Arp, Page 1" |
+| VALUE | a popup's words change, or the selection's | knobs "K1", "K1: +3", "Volume 75%", "CC 16: 65", readouts "Voicing: Wide"; held Track menus "Scale: Dorian", "Root: Db", "Layout: Drum", "Channel: 3", "Knob 1: CC 17", "Track 3, muted", "Rate: 1/16"; "Latch on"; a held label "SEL/KEYS"; host popups "FM-1 linked"; the sequencer "Playing", "Stopped", "Record on", "Step 5", "Chance: 50%", "Loop: 2 bars", "Tempo 120", "Bar 2", "Undo", "Metronome on", "Sync: EXT"; projects "Project 3, 120 BPM, 4 clips" (0.13.0: and its firmwares, "Project 7, 120 BPM, 12 clips, ChoralRoot, SLOOP, Felucca"), "Loading project 7", "Felucca not installed, Track 3 empty"; (0.13.0) States "State 5 loaded" (saved, copied, pasted, deleted), "New state, ChoralRoot", "Undo, new state", "Track 3, empty"; Down "Melodee, FM-1"; the browser "All firmwares", "Filter Synth", "Bank 2", the firmware selected ("Felucca"; in the catalog "Felucca, not installed"), its description (the jog's first detent, 250 characters at most), "Downloading Felucca 25%", "Felucca installed", "Felucca added to Favorites", "SLOOP, position 3 of 17", "Tagged Synth"; FX setup "MIDI FX 1: Arp", the module list "Arp", "Rate: 1/8", "Slot 1 Level: 100", "MIDI FX 1: track 3" |
 
 (0.6.1) Every FM-1 button press is said at once (its label, else its name, else the panel's word: "Play", "Octave
 down"). Values with no popup are said when they change: the track selected, mutes and solos, a step on or off, the

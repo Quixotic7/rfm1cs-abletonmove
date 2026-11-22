@@ -3,6 +3,66 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.13.0 (2026-11-22, not released)
+
+The owner's review of 2026-11-22, cards P.1..P.11: a project holds its firmwares, and the firmwares' states are a layer
+on the Move. Everything new is for a host that sets the new capability `RFM_MOVE_CAP_PROJFW` (not in
+`RFM_MOVE_CAPS_ALL`); an older host keeps 0.12.0's behaviour. New fields at the end of `rfm_move_fw_state_t`,
+`rfm_move_proj_info_t` and `rfm_move_t`: rebuild everything. The project blob is version 9 (versions 1..8 load);
+`RFM_MOVE_PROJECT_MAX` 40572. A new source file, `src/projfw.c` (CMake and `web/build.sh` list it).
+
+**A project holds its firmwares** (P.1, P.2, P.11; `projfw.c`, `project.c`)
+- Blob version 9 adds `RFM_MOVE_PFW_BYTES` (176): per slot the firmware's id, level, `rfm_move_slotset_t`, `lock`; the
+  slot played, the drum notes, the velocity mode and level. Every field checked (`rfmv_pfw_check`). A version 1..8
+  project holds no firmwares: its load leaves the slots and settings alone, its next save writes them. An older host
+  saves a loaded version 9 part back unchanged (`pfw_raw`).
+- A load applies the settings as the user's edits do (`FW_LEVEL`, `FW_ACTIVE` with its layout, `SETTINGS`) and sends
+  the new `RFM_MOVE_ACT_PROJECT_FW` per slot; the host answers with the new `rfm_move_proj_fw` (0..99,
+  `RFM_MOVE_PFW_READY`, `_MISSING`, `_FAILED`; `RFM_MOVE_PFW_WAIT_MS` 20 s with no news: failed).
+- A change of any of these values by the user marks the open stored project edited (`rfmv_pfw_watch`, at the end of
+  `rfm_move_input` and in `rfm_move_seq_advance`). A missing firmware stays wanted (saved again) until the user changes
+  that slot (`pfw_want`, `pfw_touched`, `rfmv_pfw_saved_ids`).
+- `rfm_move_proj_info_t` has `has_fw` and the three ids (`rfm_move_project_info`, the live project's).
+- A new project (an empty pad): its three slots empty (`PROJECT_FW` with ""), the rest as it is (`rfmv_pfw_new`).
+
+**Opening a project** (P.3, mock `proj_loading`, `proj_missing`)
+- The loading screen at the pad's press (`rfmv_pfw_press`), before the host answers: the number at 3x, "Loading", a
+  row a slot with its bar; a Track lit in its slot's colour once ready (`rfmv_pfw_track_leds`). Play meanwhile: the
+  transport once all are settled (`pfw_play`, `rfmv_pfw_play`). Then each missing / failed firmware a second ("Felucca
+  / not installed / Track 3 empty"). Another project's pad meanwhile loads that one.
+
+**A held project shows its firmwares** (P.4, mocks `proj_held`, `proj_held_empty`; `screen.c` `project_popup`): the
+number at 3x, the tempo and clips at 2x, a row a slot; the activity bars gone (with the capability).
+
+**Duplicating a project** (P.5's note): Copy held + a project, then an empty pad, as before; the README says it, the
+host carries the firmware state files with the project buffer; tested.
+
+**States as a layer** (P.6, P.7, P.9; mocks `trk_menu`, `states`, `state_new`, `state_undo`)
+- Track 1..3 held + the top row's pad 7 (lit in the slot's colour with a firmware; `lay_pad`, `lay_menu_leds`), or Loop
+  in the browser. The layer (`rfmv_st_*`) sits under Back and the Track buttons and over everything else; Back (its
+  click: the marks, then the layer) returns to what it was opened over; Loop to the browser when opened there. A
+  takeover is not shown under it (`rfmv_tk_on`). `design/UX-RULES.md`'s layer list has it; `rfmv_back_has` too.
+- Opening: "States" over the firmware's name a second, the pads swept column by column in the slot's colour
+  (`RFMV_ST_SWEEP_MS`, 50 ms a column, at most 8 LED writes a frame, 59 in all; a test counts them).
+- The screen: the name at 2x (Copy / Delete held: their icon at its end, `rfmv_held_icon`), 32 states in 4 rows of 8
+  (framed stored, filled active, a dot empty; dashed copied, crossed deleted while armed). The pads in the slot's
+  colour (active full, stored 108/256, empty dark, pressed white).
+- The gestures, as clips in session view: a stored state loads, an empty one saves (no save-over: the host autosaves
+  the active state); Copy + a state copies (`RFM_MOVE_ACT_STATE_COPY`), pastes on an empty one
+  (`RFM_MOVE_ACT_STATE_PASTE`) or over a stored one while armed (value 1 on the active one: the host loads it too);
+  Delete + a state deletes it into the buffer (armed). Copy / Delete alone do nothing; nothing loads while held; the
+  buffer is one firmware's.
+- Step 14 New (`RFM_MOVE_ACT_STATE_NEW`; its icon lit, white at its press), Undo right after it
+  (`RFM_MOVE_ACT_STATE_UNDO`; Undo lit only while there; one step). An undo after a load was not agreed: not built.
+- `rfm_move_fw_state_cur` (the host names the active state after a project's copy loads), `rfm_move_states_open`,
+  `rfm_move_proj_fw_loading`.
+- Words: "States, ChoralRoot", "State 5 loaded / saved / copied / pasted / deleted", "New state, ChoralRoot", "Undo,
+  new state", "Track 3, empty", "Loading project 7", "Felucca not installed, Track 3 empty", the held project's
+  firmwares.
+
+**Tests**: `tests/move_sessview.c` `test_ps_*` (nine functions; dumps `sessview_ps_*`). Older-version conversions in
+`test_move_seq.c`, `test_move_fw.c`, `move_sessview.c` strip the version 9 part too; `test_session.c`'s file size.
+
 ## 0.12.0 (2026-11-22, not released)
 
 The owner's answers on the review page, card by card. New fields in `rfm_move_seq_t` (after `tk_pend_clk`): rebuild

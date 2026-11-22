@@ -738,7 +738,9 @@ void rfm_move_fw_caps(rfm_move_t *m, int caps)
 {
     rfm_move_fw_state_t *f = F(m);
     int s;
-    f->caps = (uint8_t)(caps & RFM_MOVE_CAPS_ALL);
+    f->caps = (uint8_t)(caps & (RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW));   /* (0.13.0: PROJFW) */
+    if (!(f->caps & RFM_MOVE_CAP_PROJFW))
+        rfmv_st_close(m), m->pfw_on = 0, m->pfw_msg = 0;
     if (!(f->caps & RFM_MOVE_CAP_SLOTS)) {             /* one slot: the others emptied, slot 0 played */
         for (s = 1; s < RFM_MOVE_FW_SLOTS; s++)
             f->slot_id[s][0] = 0, f->slot_fw[s] = -1, f->st_used[s] = 0, f->st_cur[s] = -1;
@@ -1509,6 +1511,12 @@ static void fw_input(rfm_move_t *m, const mr_event_t *ev)
                 pop_clear(m);
             return;
         case MR_CC_LOOP:                                /* the firmware's states (a firmware on this track) */
+            if (rfmv_pfw_cap(m)) {                      /* (0.13.0) the States layer (Back or Loop: the browser again) */
+                if (slot_loaded(m, t) && !f->catalog)
+                    rfmv_st_open(m, t, 1);
+                pop_clear(m);
+                return;
+            }
             if (f->states)
                 f->states = 0, f->smods = 0;
             else if (slot_loaded(m, t) && !f->catalog)
@@ -2150,6 +2158,7 @@ void rfmv_track_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
         c[L_TRACK0 + t] = v;
     }
     c[L_TRACK0 + 3] = lit(TRACK4, (side && held < 0) || rfmv_track_held(m, 3) ? 256 : A(0.25));
+    rfmv_pfw_track_leds(m, c);                          /* (0.13.0) a project's firmwares loading: lit when ready */
 }
 
 static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
@@ -3635,3 +3644,32 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap)
     }
     return 0;
 }
+
+/* ---- (0.13.0) for projfw.c: a project's firmwares, States as a layer */
+/* a firmware's name by its id: the host's list, else the id itself ("" none) */
+void rfmv_fw_id_name(const rfm_move_t *m, const char *id, char *o, int cap)
+{
+    const int i = find_id(m, id);
+    if (i >= 0)
+        asc(ename(m, i), o, cap);
+    else
+        asc(id, o, cap);
+}
+/* the slot holds that firmware now ("" empty): another firmware forgets the slot's states (the host tells them) */
+void rfmv_fw_slot_set(rfm_move_t *m, int s, const char *id)
+{
+    rfm_move_fw_state_t *f = F(m);
+    char b[RFM_MOVE_FW_ID_MAX];
+    if (s < 0 || s >= RFM_MOVE_FW_SLOTS)
+        return;
+    snprintf(b, sizeof b, "%s", id && strlen(id) < RFM_MOVE_FW_ID_MAX ? id : "");
+    if (strcmp(f->slot_id[s], b)) {
+        strcpy(f->slot_id[s], b);
+        f->st_used[s] = 0, f->st_cur[s] = -1;
+        if (f->busy_kind == BUSY_LOAD && f->busy_slot == s)
+            f->busy_kind = BUSY_NONE, f->busy_fw = -1;
+        lib_changed(m);
+    }
+    f->slot_fw[s] = (int16_t)find_id(m, b);
+}
+int rfmv_fw_slot_loaded(const rfm_move_t *m, int s) { return slot_loaded(m, s); }

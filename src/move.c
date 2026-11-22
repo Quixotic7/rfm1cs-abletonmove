@@ -1018,7 +1018,9 @@ static void lay_pad(rfm_move_t *m, int t, int p)
         (void)ss;
         return;
     }
-    rfmv_menu(m, MENU_LAYOUT, rfmv_slot_lay(m, t));    /* (pad 7: nothing) */
+    if (p == 30 && rfmv_st_pad7(m, t))                  /* (0.13.0, the owner's) pad 7: the firmware's States */
+        rfmv_st_open(m, t, 0);
+    rfmv_menu(m, MENU_LAYOUT, rfmv_slot_lay(m, t));    /* (pad 7 with no firmware or no host's PROJFW: nothing) */
 }
 
 static void on_pad(rfm_move_t *m, int p, int vel, uint32_t now)
@@ -1579,6 +1581,14 @@ void rfmv_sv_toggle(rfm_move_t *m)
 }
 static void track_tap(rfm_move_t *m, int t)
 {
+    if (rfmv_st_on(m)) {                                /* (0.13.0) States open: Track 1..3 shows that slot's; Track 4
+                                                         * closes it and does its job */
+        if (t < 3) {
+            rfmv_st_track(m, t);
+            return;
+        }
+        rfmv_st_close(m);
+    }
     if (t == 3) {                                       /* the sequencer side: the Mixer <-> Routing (remembered); no
                                                          * FX setup (one firmware, no FX): the projects */
         if (!rfmv_fx_ok(m)) {
@@ -1609,6 +1619,7 @@ static void track_tap(rfm_move_t *m, int t)
 }
 static void track_double(rfm_move_t *m, int t)
 {
+    rfmv_st_close(m);                                   /* (0.13.0: the browser or the projects over States) */
     if (t == 3)
         rfmv_view_open(m, VIEW_PROJECTS);               /* the sequencer's projects */
     else if (t < rfmv_fw_nslots(m) && m->fw.host)
@@ -1663,6 +1674,9 @@ static int track_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
  * out of the view), and with nothing to close flips between the slot's layout and the Sequencer (proposal 2) */
 static void back_click(rfm_move_t *m, uint32_t now)
 {
+    if (rfmv_st_back(m))                                /* (0.13.0) States: its marks, then the layer (where it came
+                                                         * from shows again) */
+        return;
     if (m->seq.projects && m->seq.smenu) {              /* (0.9.0) a Shift menu over the Mixer / Routing: it closes */
         rfmv_seq_button(m, MR_CC_BACK, 1, now);
         return;
@@ -1741,6 +1755,8 @@ static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
         return;
     if (track_input(m, ev, now_ms))                   /* (0.8.0) the Track buttons, in every mode and the view */
         return;
+    if (rfmv_st_input(m, ev))                           /* (0.13.0) the States layer: the pads, steps, knobs, jog */
+        return;
     if (m->seq.tk_pend >= 0 && ev->value && ev->type != MR_EV_TOUCH && ev->type != MR_EV_PAD_PRESSURE &&
         ev->type != MR_EV_STEP && !(ev->type == MR_EV_PAD && rfmv_sess_on(m)))
         rfmv_seq_tk_flush(m);                           /* (0.11.0) a held Track's track clicked, then something else
@@ -1793,6 +1809,7 @@ void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
                   m->say_n == m->say_bdown;             /* .. where it left you is said */
     input(m, ev, now_ms);
     rfmv_slot_push(m);                                  /* (0.8.0: the active slot's record kept current) */
+    rfmv_pfw_watch(m);                                  /* (0.13.0: a firmware setting changed: the project edited) */
     rfmv_tk_sync(m);                                    /* (0.7.0: the takeover shown or gone) */
     rfmv_say_check(m);                                  /* (0.6.0: speech, when on) */
 }
@@ -1954,6 +1971,8 @@ static void lay_menu_leds(const rfm_move_t *m, int t, rgb_t c[L_WHITE0])
                 v = sc(LAYC[l], l == lay ? 256 : 77);
         } else if (i == 31)
             v = sc((rgb_t){ 255, 170, 0 }, m->latch ? 256 : 77);
+        else if (i == 30 && rfmv_st_pad7(m, t))         /* (0.13.0) pad 7: States, in the slot's colour */
+            v = RFMV_SLOT_RGB[t];
         else if (i < 24)
             v = (m->s.mode == RFM_MOVE_MODE_SEQ ? m->s.scale : m->seq.scale) == rfmv_scale_of_pad(i) ? WHITE
               : sc((rgb_t){ 26, 228, 255 }, 90);   /* (0.9.0: the key the tracks use) */
@@ -2094,6 +2113,7 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         w[L_WHITE0 + W_BACK][0] = 127;
     else if (!m->seq.projects)
         w[L_WHITE0 + W_BACK][0] = rfmv_back_has(m) ? 80 : 0;
+    rfmv_st_leds(m, w);                                 /* (0.13.0) the States layer: its pads, steps, buttons */
     if (!lm && !t4m)
         rfmv_tk_leds(m, w);                             /* (0.7.0) a takeover: its claimed LEDs (0.8.0: not under a held
                                                          * Track's menu) */

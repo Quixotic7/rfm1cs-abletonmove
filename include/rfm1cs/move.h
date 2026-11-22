@@ -26,9 +26,9 @@ extern "C" {
 
 /* rfm1cs-abletonmove's version (CHANGES.md); rfm_move_version() gives the built library's */
 #define RFM1CS_VERSION_MAJOR 0
-#define RFM1CS_VERSION_MINOR 12
+#define RFM1CS_VERSION_MINOR 13
 #define RFM1CS_VERSION_PATCH 0
-#define RFM1CS_VERSION "0.12.0"
+#define RFM1CS_VERSION "0.13.0"
 
 #define RFM_MOVE_NKEYS 27
 #define RFM_MOVE_NBTN 14
@@ -151,7 +151,10 @@ enum {
     RFM_MOVE_ACT_STATE_SAVE = 27,                       /* slot (firmware 0..2), index state slot 0..31, data the
                                                          * firmware's id: store its state there */
     RFM_MOVE_ACT_STATE_LOAD = 28,                       /* .. load that state into the firmware */
-    RFM_MOVE_ACT_STATE_DELETE = 29,                     /* .. forget it */
+    RFM_MOVE_ACT_STATE_DELETE = 29,                     /* .. forget it ((0.13.0) with RFM_MOVE_CAP_PROJFW: it goes
+                                                         * into the host's state buffer first (Delete is a cut); the
+                                                         * active one deleted: the firmware keeps what it holds, no
+                                                         * state is active) */
 };
 /* (0.6.0) words for a screen reader (rfm_move_set_speech): index RFM_MOVE_SAY_*, data / len the words (printable ASCII,
  * NUL-terminated, len < RFM_MOVE_SAY_MAX; valid during the callback only), param 0. Only while speech is on. A
@@ -166,6 +169,31 @@ enum {
  *    was sent as held). SAY actions carry slot too for a firmware's words (rfm_move_tk_say) */
 #define RFM_MOVE_ACT_TK_INPUT 31
 #define RFM_MOVE_ACT_TK_STATE 32
+/* (0.13.0) a project holds its firmwares; firmware states on the Move (README "Projects that hold their firmwares",
+ * "States"). Only for a host that sets RFM_MOVE_CAP_PROJFW (rfm_move_fw_caps); a firmware's id is in data / len (no
+ * NUL counted, valid during the callback only), as STATE_SAVE's.
+ *  - PROJECT_FW: slot 0..2 (and in index the PROJECT slot 0..31 it is for), data / len the firmware's id ("" / 0:
+ *    empty the slot). Sent once per firmware slot (slot 0 only without RFM_MOVE_CAP_SLOTS) when a version 9 project
+ *    has loaded, and with "" for each slot when a new (empty) project is made. The host, before anything else, writes
+ *    what each slot's firmware holds now into the copy of the project it last loaded (the outgoing one); then: the same
+ *    firmware already in the slot: only its memory is swapped for THIS project's copy; another firmware: it is loaded
+ *    with this project's copy (a project with no copy yet: the firmware as it is stored); "": the slot unloaded. It
+ *    answers with rfm_move_proj_fw (0..99 while it works, then READY / MISSING / FAILED; nothing is needed for "")
+ *    and, as after FW_LOAD, rfm_move_fw_slots, rfm_move_fw_states and rfm_move_fw_state_cur.
+ *  - STATE_COPY: slot, index the state 0..31: the host copies that stored state into its state buffer (one buffer,
+ *    with the firmware's id: the core offers it only to that firmware's States).
+ *  - STATE_PASTE: slot, index the target state: the buffer stored there (over a stored state: replaced). value 1: the
+ *    target is the active state, so the host also loads it into the firmware (else the autosave would write the
+ *    firmware's old memory back over it); value 0: the firmware is left as it is.
+ *  - STATE_NEW: slot: the host keeps what the firmware holds now (the undo), then restarts it as first installed (its
+ *    factory memory). No stored state is touched; none is active now (the core's st_cur -1).
+ *  - STATE_UNDO: slot, value the state active before New (-1 none; index the same, 255 for none): the memory kept at
+ *    New goes back into the firmware and that state is the active one again. Only right after a New (one step). */
+#define RFM_MOVE_ACT_PROJECT_FW 33
+#define RFM_MOVE_ACT_STATE_COPY 34
+#define RFM_MOVE_ACT_STATE_PASTE 35
+#define RFM_MOVE_ACT_STATE_NEW 36
+#define RFM_MOVE_ACT_STATE_UNDO 37
 typedef struct {
     uint8_t kind;                                       /* RFM_MOVE_ACT_* */
     uint8_t index, down, vel;
@@ -449,6 +477,25 @@ typedef struct {
     uint8_t caps;                                       /* the host's RFM_MOVE_CAP_* (rfm_move_fw_caps) */
     /* (0.12.0) */
     uint16_t steps_down;                                /* the browser's step keys down (white at the press, a14) */
+    /* (0.13.0, RFM_MOVE_CAP_PROJFW) States as a layer over any view (projfw.c) */
+    uint8_t sl;                                         /* open: the slot + 1, 0 closed */
+    uint8_t sl_from;                                    /* 0 a held Track's pad 7, 1 the browser's Loop */
+    uint32_t sl_ms;                                     /* opened (the sequencer clock's ms): its name, the sweep */
+    uint8_t sl_mods;                                    /* Copy (1), Delete (2) held */
+    uint32_t sl_pads;                                   /* the pads the layer took (their releases are its) */
+    uint16_t sl_steps;                                  /* .. the steps */
+    uint8_t sl_bt[16];                                  /* .. the buttons (bit cc) */
+    uint8_t sl_pop;                                     /* its popup: 0 none, 1 its name, 2 a state, 3 New, 4 Undo, 5 an
+                                                         * empty slot */
+    int8_t sl_pk, sl_pw, sl_pslot;                      /* .. the state, its word (0 saved .. 4 deleted), the slot */
+    uint32_t sl_pop_ms;
+    uint8_t sb_kind;                                    /* the host's state buffer: 0 none, 1 copied, 2 deleted */
+    int8_t sb_src;                                      /* .. the state it came from */
+    uint8_t sb_armed;                                   /* .. the last state function a copy or a delete (marks shown;
+                                                         * Copy + a stored state pastes over it) */
+    char sb_id[RFM_MOVE_FW_ID_MAX];                     /* .. the firmware it belongs to */
+    uint8_t undo;                                       /* New's undo is there: the slot + 1 */
+    int8_t undo_cur;                                    /* .. the state active before New, -1 */
 } rfm_move_fw_state_t;
 enum { RFM_MOVE_MIXP_LEVEL, RFM_MOVE_MIXP_PAN, RFM_MOVE_MIXP_SEND1, RFM_MOVE_MIXP_SEND2, RFM_MOVE_MIXP_SEND3,
        RFM_MOVE_MIXP_N };                               /* (0.5.0) the Mixer's choice (its right-hand pads) */
@@ -523,9 +570,11 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 8                      /* (versions 1..7 load too; 5 adds FX setup, 6 its 128
+#define RFM_MOVE_PROJECT_VERSION 9                      /* (versions 1..8 load too; 5 adds FX setup, 6 its 128
                                                          * values a slot, 7 the firmwares' MIDI routes, 8 the launch
-                                                         * quantization and each clip's launch settings) */
+                                                         * quantization and each clip's launch settings, 9 (0.13.0) the
+                                                         * firmwares: each slot's id, level, settings and track, the
+                                                         * slot played, the drum notes, the pads' velocity) */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -539,8 +588,14 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_PROJECT_EXT_V5 (RFM_MOVE_PROJECT_EXT_V4 + RFM_MOVE_FXSET_BYTES_V5)   /* + FX setup (version 5) */
 #define RFM_MOVE_PROJECT_EXT_V6 (RFM_MOVE_PROJECT_EXT_V4 + RFM_MOVE_FXSET_BYTES)   /* .. 128 values a slot (version 6) */
 #define RFM_MOVE_PROJECT_EXT_V7 (RFM_MOVE_PROJECT_EXT_V6 + RFM_MOVE_FW_SLOTS)   /* + the MIDI routes (version 7, 0.6.6) */
-#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V7 + 1 + RFM_MOVE_SEQ_CLIPS)   /* + the launch quantization, each
-                                                         * clip's launch settings (version 8, 0.12.0) */
+#define RFM_MOVE_PROJECT_EXT_V8 (RFM_MOVE_PROJECT_EXT_V7 + 1 + RFM_MOVE_SEQ_CLIPS)   /* + the launch quantization,
+                                                         * each clip's launch settings (version 8, 0.12.0) */
+/* (version 9, 0.13.0) the firmwares: 3 slots x { id 32 (NUL padded, "" empty), level 0..127, layout, scale, root,
+ * channel, octave, 8 CC numbers, the sequencer track 0..15 }, then the slot played 0..2, the drum layout's 32 notes,
+ * the velocity mode and its fixed level 1..127 */
+#define RFM_MOVE_PFW_SLOT_BYTES (RFM_MOVE_FW_ID_MAX + 1 + 5 + RFM_MOVE_NKNOBS + 1)
+#define RFM_MOVE_PFW_BYTES (RFM_MOVE_FW_SLOTS * RFM_MOVE_PFW_SLOT_BYTES + 1 + RFM_MOVE_NPADS + 2)   /* (176) */
+#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V8 + RFM_MOVE_PFW_BYTES)
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 7 + RFM_MOVE_SEQ_LOCKS * 4)
 enum { RFM_MOVE_CLOCK_AUTO = 0, RFM_MOVE_CLOCK_INTERNAL = 1, RFM_MOVE_CLOCK_EXTERNAL = 2 };
@@ -601,6 +656,9 @@ typedef struct {                                        /* a stored project in b
     uint16_t bpm10;
     uint16_t notes[RFM_MOVE_SEQ_TRACKS];                /* notes on each track */
     uint8_t color;                                      /* its colour 1..16 (RFM_MOVE_PROJ_COLORS), 0 the slot's own */
+    /* (0.13.0) its firmwares (version 9; older: has_fw 0, ids "") */
+    uint8_t has_fw;
+    char fw[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX];     /* each firmware slot's id ("" empty) */
 } rfm_move_proj_info_t;
 #define RFM_MOVE_PROJ_COLORS 16                         /* the projects' colours (the Move's palette) */
 
@@ -972,6 +1030,25 @@ typedef struct {
     uint8_t fw_tap_cell;                                /* .. its cell + 1, 0 none */
     uint8_t clk_on;                                     /* (0.9.0) the clock is going out (Start sent) */
     uint32_t in_ms;                                     /* (0.9.0) rfm_move_input's now_ms, the latest */                                   /* (speech) the held Tracks whose menu showed (said once up) */
+    /* (0.13.0, RFM_MOVE_CAP_PROJFW) a project's firmwares (projfw.c) */
+    char pfw_want[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX];   /* the open project's firmwares (a missing one kept) */
+    uint8_t pfw_touched;                                /* bits: the slot changed by the user since the project loaded */
+    uint8_t pfw_on;                                     /* the project's firmwares loading (its screen up) */
+    int8_t pfw_proj;                                    /* .. the project, 0..31 */
+    int16_t pfw_st[RFM_MOVE_FW_SLOTS];                  /* .. each slot's status (projfw.c PFW_*, RFM_MOVE_PFW_*) */
+    uint32_t pfw_ms[RFM_MOVE_FW_SLOTS];                 /* .. its last news (the sequencer clock's ms) */
+    uint8_t pfw_play;                                   /* .. Play pressed meanwhile: the transport starts once loaded */
+    uint8_t pfw_msg;                                    /* bits: the slots whose firmware is missing / failed: said */
+    uint8_t pfw_fail;                                   /* .. bits: failed (not missing) */
+    uint32_t pfw_msg_ms;                                /* .. from (a second each) */
+    uint32_t pfw_hash;                                  /* the project's firmware settings as last seen (an edit: the
+                                                         * project marked changed) */
+    char pfw_seen[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX];   /* .. the slots' ids as last seen */
+    uint8_t pfw_raw_ok;                                 /* a host without RFM_MOVE_CAP_PROJFW: the loaded project's */
+    uint8_t pfw_raw[RFM_MOVE_PFW_BYTES];                /* .. version 9 part, saved back unchanged */
+    char pfw_id[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX];  /* the firmwares the loading screen names */
+    uint8_t pfw_live;                                   /* a project was loaded or made (its edits may be saved) */
+    int8_t pfw_msg_k;                                   /* the missing slot said last (-1 none) */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
@@ -1143,8 +1220,37 @@ void rfm_move_fx_sync(rfm_move_t *m);
  * Call it after rfm_move_init, before rfm_move_fw_list (any time is safe: the view closes what it no longer has).
  * The project keeps its FX setup untouched, so a project made on the Move loads back there unchanged. */
 enum { RFM_MOVE_CAP_SLOTS = 1, RFM_MOVE_CAP_FX = 2, RFM_MOVE_CAPS_ALL = 3 };
+/* (0.13.0) RFM_MOVE_CAP_PROJFW (not in RFM_MOVE_CAPS_ALL: a host asks for it, rfm_move_fw_caps(m, RFM_MOVE_CAPS_ALL |
+ * RFM_MOVE_CAP_PROJFW)): the host keeps a copy of each firmware's memory per project and can load a project's
+ * firmwares (README "Projects that hold their firmwares", "States"). With it:
+ *  - a version 9 project's load sets each slot's level, layout settings and track, the slot played, the drum notes and
+ *    the velocity, and asks for its firmwares (RFM_MOVE_ACT_PROJECT_FW; the loading screen until rfm_move_proj_fw has
+ *    settled every slot); a new project empties the slots; a change of any of these marks the project edited;
+ *  - a held project in the grid shows its firmwares;
+ *  - States are a layer (Track 1..3 held + the top row's pad 7, or the browser's Loop) with the clips' gestures (a
+ *    stored state loads, an empty one saves, Copy / Delete + a state: STATE_COPY / _PASTE / _DELETE), step 14 New
+ *    (STATE_NEW) and Undo after it (STATE_UNDO). The host autosaves the firmware's memory into the active state.
+ * Without it (an older host) a project load never touches the firmwares (a version 9 project's firmware part is saved
+ * back as it was), and States keep the 0.12.0 gestures. */
+enum { RFM_MOVE_CAP_PROJFW = 4 };
 void rfm_move_fw_caps(rfm_move_t *m, int caps);
 int rfm_move_fw_caps_get(const rfm_move_t *m);
+/* (0.13.0) the host's answer to RFM_MOVE_ACT_PROJECT_FW: 0..99 loading (a percentage; each one restarts the slot's
+ * RFM_MOVE_PFW_WAIT_MS), RFM_MOVE_PFW_READY (the firmware is in the slot with the project's memory; its Track lights),
+ * RFM_MOVE_PFW_MISSING (not on the device: the slot is left empty, the project keeps wanting it), RFM_MOVE_PFW_FAILED.
+ * A slot with no news for RFM_MOVE_PFW_WAIT_MS (the sequencer's clock) is taken as failed. Ignored with no load under
+ * way or for a slot already settled */
+#define RFM_MOVE_PFW_READY 100
+#define RFM_MOVE_PFW_MISSING (-1)
+#define RFM_MOVE_PFW_FAILED (-2)
+#define RFM_MOVE_PFW_WAIT_MS 20000
+void rfm_move_proj_fw(rfm_move_t *m, int slot, int status);
+int rfm_move_proj_fw_loading(const rfm_move_t *m);       /* 1: a project's firmwares are loading (its screen is up) */
+/* (0.13.0) the state active on that slot's firmware now (k 0..31, -1 none): after the host loaded a project's copy of
+ * the firmware's memory it compares it with the stored states and says which one it equals. Also any time the host
+ * knows better (a web page's edit) */
+void rfm_move_fw_state_cur(rfm_move_t *m, int slot, int k);
+int rfm_move_states_open(const rfm_move_t *m);           /* (0.13.0) the States layer's slot, -1 closed */
 
 /* ---- (0.4.1) the host's edits: FX setup, the mix, the routing and the firmware slots changed outside the Move (a web
  * page), applied as the Move's own edit applies them. Call them on the core's thread (where rfm_move_input is

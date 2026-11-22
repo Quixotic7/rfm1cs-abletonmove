@@ -183,7 +183,7 @@ int rfmv_seq_mod_over(const rfm_move_t *m)              /* Copy, Delete or Mute 
  * the projects view, a sequencer layer (the grid, Loop's or Mute's latch, Shift's lock, the clipboard's marks) */
 int rfmv_back_has(const rfm_move_t *m)
 {
-    return m->seq.smenu || m->seq.projects || rfmv_seq_layer_open(m);
+    return m->seq.smenu || m->seq.projects || rfmv_seq_layer_open(m) || rfmv_st_on(m);   /* (0.13.0: States) */
 }
 int rfmv_seq_layer_open(const rfm_move_t *m)
 {
@@ -3892,6 +3892,10 @@ static void held_icon(mr_canvas_t *cv, const uint16_t ic[11], int x, int y)
         for (i = 0; i < 11; i++)
             if (ic[j] >> (10 - i) & 1)
                 v2_px(cv, x + i, y + j, 1);
+}
+void rfmv_held_icon(mr_canvas_t *cv, int kind, int x, int y)   /* (0.13.0: States' header too) */
+{
+    held_icon(cv, kind == 1 ? IC_CUT : IC_COPY, x, y);
 }
 int rfmv_seq_held_icon(const rfm_move_t *m)             /* 1 cutting, 2 copying, 0 none */
 {

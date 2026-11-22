@@ -857,6 +857,20 @@ static void project_popup(const rfm_move_t *m, mr_canvas_t *cv)
         return;
     }
     snprintf(b, sizeof b, "%02d", m->pop_i + 1);
+    if (rfmv_pfw_cap(m)) {                              /* (0.13.0, the owner's mock) its number at 3x, the tempo and
+                                                         * the clips at 2x, a row a firmware slot (the bars gone) */
+        v2_T(cv, 0, 0, b, 3, 1);
+        if (!in.ok)
+            return;
+        v2_ic(cv, V2I_PLAY, 40, 5, 1);
+        snprintf(b, sizeof b, "%d", (in.bpm10 + 5) / 10);
+        v2_T(cv, 53, 3, b, 2, 1);
+        v2_ic(cv, V2I_CLIP, 92, 5, 1);
+        snprintf(b, sizeof b, "%d", in.clips);
+        v2_T(cv, 105, in.clips >= 100 ? 6 : 3, b, in.clips >= 100 ? 1 : 2, 1);
+        rfmv_pfw_rows(m, cv, in.fw, NULL, 28);
+        return;
+    }
     v2_T(cv, 2, 4, b, 4, 1);
     if (!in.ok)
         return;
@@ -1297,7 +1311,7 @@ int rfm_move_screen_timed(const rfm_move_t *m)
             return 1;
     return q->playing || q->start_pending || rfmv_seq_msg_text(m) != NULL || (m->pop && rfmv_pop_up(m, m->pop)) ||
            (m->menu_what && rfmv_now_ms(m) - m->menu_ms < RFM_MOVE_POPUP_MS) ||
-           (q->projects && q->proj_pending >= 0) || rfmv_fw_timed(m);
+           (q->projects && q->proj_pending >= 0) || rfmv_fw_timed(m) || rfmv_pfw_timed(m) || rfmv_st_timed(m);
 }
 
 void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREEN_BYTES])
@@ -1308,6 +1322,11 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
         thumb_from(m, rgb565);
     if (m->pop == POP_HOST && rfmv_pop_up(m, POP_HOST)) {   /* (0.5.4) a host's message: over any screen */
         host_popup(m, &cv);
+        mr_gfx_pack(&cv, out);
+        return;
+    }
+    if (rfmv_pfw_screen(m, &cv) || rfmv_st_screen(m, &cv)) {   /* (0.13.0) a project's firmwares loading (or one
+                                                         * missing); the States layer, over every view */
         mr_gfx_pack(&cv, out);
         return;
     }

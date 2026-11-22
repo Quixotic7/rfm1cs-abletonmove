@@ -25,6 +25,8 @@
  *      (version 7) 3 firmwares' MIDI routes (bits 0..2 the slots, never its own; 8 USB out; no cycle)
  *      (version 8) the launch quantization (RFM_MOVE_LQ_*), 256 clips' launch settings (bits 0..2 its launch: 0 the
  *      project's, 1..6 RFM_MOVE_LQ_* + 1; bit 3 after its loop the next clip)
+ *      (version 9, 0.13.0) the firmwares (projfw.c): 3 slots x { id 32 NUL padded ("" empty), level, layout, scale,
+ *      root, channel, octave, 8 CC numbers, the sequencer track }, the slot played, 32 drum notes, velocity mode, level
  *      FNV-1a (32 bit) of everything before it */
 #include <string.h>
 
@@ -104,6 +106,7 @@ int rfm_move_project_save(rfm_move_t *m, uint8_t *out, uint32_t cap)
         *p++ = q->fx.mroute[i];
     *p++ = q->launch_q;                                 /* (version 8: the launch quantization, the clips' own) */
     memcpy(p, q->cset, RFM_MOVE_SEQ_CLIPS), p += RFM_MOVE_SEQ_CLIPS;
+    rfmv_pfw_write(m, p), p += RFM_MOVE_PFW_BYTES;      /* (version 9: the firmwares) */
     w32(p, fnv(out, (uint32_t)(p - out)));
     p += 4;
     return (int)(p - out);
@@ -137,7 +140,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
     ver = b[4];
     if (ver < 1 || ver > RFM_MOVE_PROJECT_VERSION)
         return -2;
-    ext = ver >= 8 ? RFM_MOVE_PROJECT_EXT : ver == 7 ? RFM_MOVE_PROJECT_EXT_V7 : ver == 6 ? RFM_MOVE_PROJECT_EXT_V6 : ver == 5 ? RFM_MOVE_PROJECT_EXT_V5 : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
+    ext = ver >= 9 ? RFM_MOVE_PROJECT_EXT : ver == 8 ? RFM_MOVE_PROJECT_EXT_V8 : ver == 7 ? RFM_MOVE_PROJECT_EXT_V7 : ver == 6 ? RFM_MOVE_PROJECT_EXT_V6 : ver == 5 ? RFM_MOVE_PROJECT_EXT_V5 : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
           ver == 2 ? RFM_MOVE_PROJECT_EXT_V2 : 0;
     ab = ver >= 3 ? RFM_MOVE_ARP_BYTES : RFM_MOVE_ARP_BYTES_V2;   /* (an arp's bytes) */
     fixed = RFM_MOVE_PROJECT_FIXED - RFM_MOVE_PROJECT_EXT + ext;
@@ -236,6 +239,8 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
                 if ((c[1 + i] & 7) > RFM_MOVE_LQ_N || (c[1 + i] & ~0x0Fu))
                     return -9;
         }
+        if (ver >= 9 && rfmv_pfw_check(x + RFM_MOVE_PROJECT_EXT_V8) != 0)
+            return -9;                                  /* (0.13.0: the firmwares) */
         for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++) {      /* (each track's layout and CC numbers) */
             const uint8_t *l = x + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_SEQ_CLIPS / 8 + RFM_MOVE_SEQ_TRACKS * (2 + ab) +
                                i * (1 + RFM_MOVE_NBANKS * RFM_MOVE_NKNOBS);
@@ -335,13 +340,16 @@ static void info_count(rfm_move_proj_info_t *o, uint8_t seen[RFM_MOVE_SEQ_CLIPS]
     if (note && o->notes[clip / RFM_MOVE_SEQ_SCENES] < 0xFFFF)
         o->notes[clip / RFM_MOVE_SEQ_SCENES]++;
 }
-static void info_live(const rfm_move_seq_t *q, rfm_move_proj_info_t *o)
+static void info_live(const rfm_move_t *m, rfm_move_proj_info_t *o)
 {
+    const rfm_move_seq_t *q = &m->seq;
     uint8_t seen[RFM_MOVE_SEQ_CLIPS];
     int i;
     memset(o, 0, sizeof *o);
     memset(seen, 0, sizeof seen);
     o->ok = 1, o->bpm10 = q->bpm10, o->color = q->color;
+    o->has_fw = 1;                                      /* (0.13.0: saved as version 9, with what it holds now) */
+    rfmv_pfw_saved_ids(m, o->fw);
     for (i = 0; i < q->nnotes; i++)
         info_count(o, seen, q->notes[i].clip, 1);
     for (i = 0; i < q->nlocks; i++)
@@ -351,7 +359,7 @@ void rfmv_proj_info(const rfm_move_t *m, int slot, rfm_move_proj_info_t *o)
 {
     const rfm_move_seq_t *q = &m->seq;
     if (slot == q->proj_cur && q->proj_pending < 0)
-        info_live(q, o);
+        info_live(m, o);
     else if (slot >= 0 && slot < RFM_MOVE_PROJECTS)
         *o = q->info[slot];
     else
@@ -371,6 +379,8 @@ int rfm_move_project_info(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
         return -1;
     memset(seen, 0, sizeof seen);
     o->ok = 1, o->bpm10 = (uint16_t)r16(b + 6), o->color = b[18];
+    if (b[4] >= 9)                                      /* (0.13.0) its firmwares */
+        o->has_fw = 1, rfmv_pfw_ids(b + n - 4 - RFM_MOVE_PFW_BYTES, o->fw);
     nn = r16(b + OFF_NOTES);
     for (i = 0, p = b + OFF_NOTES + 2; i < nn; i++, p += 7)
         info_count(o, seen, p[0], 1);
@@ -388,6 +398,7 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
     if (b && n && parse(b, n, NULL) != 0) {
         if (q->proj_pending == slot)
             q->proj_pending = -1;
+        rfmv_pfw_load_failed(m, slot);                  /* (0.13.0: its loading screen goes) */
         rfmv_seq_msg(m, SEQ_MSG_LOADFAIL);
         return -1;
     }
@@ -413,10 +424,18 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
     q->bank = (uint8_t)(q->sel_track / 4);
     rfmv_seq_load_track(m);                             /* (the selected track's layout, CC numbers, key) */
     q->proj_cur = (int8_t)slot, q->proj_pending = -1;   /* (projects mode stays: the owner's, left with Back / Menu) */
-    if (q->play_after_load || was)
-        q->play_after_load = 0, rfmv_seq_start(m);      /* (Play pressed while it loaded, or it was playing) */
+    rfmv_pfw_loaded(m, slot, b && n && b[4] >= 9 ? b + n - 4 - RFM_MOVE_PFW_BYTES : NULL);   /* (0.13.0: its
+                                                         * firmwares asked for; the loading screen) */
+    if (q->play_after_load || was) {                    /* (Play pressed while it loaded, or it was playing; 0.13.0:
+                                                         * once its firmwares are in) */
+        q->play_after_load = 0;
+        if (m->pfw_on)
+            m->pfw_play = 1;
+        else
+            rfmv_seq_start(m);
+    }
     q->dirty = 0;
-    info_live(q, &q->info[slot]);
+    info_live(m, &q->info[slot]);
     rfmv_fx_loaded(m);                                  /* (0.4.0: its FX setup to the host) */
     return 0;
 }
@@ -441,7 +460,7 @@ void rfmv_proj_save_now(rfm_move_t *m)
         return;
     q->dirty = 0;
     q->proj_used |= 1u << q->proj_cur;
-    info_live(q, &q->info[q->proj_cur]);
+    info_live(m, &q->info[q->proj_cur]);
     emit_slot(m, RFM_MOVE_ACT_PROJECT_SAVE, q->proj_cur, q->blob, (uint32_t)n);
 }
 
@@ -470,10 +489,12 @@ void rfmv_proj_open(rfm_move_t *m, int slot)
         rfmv_proj_save_now(m);
     if (q->proj_used >> slot & 1) {
         q->proj_pending = (int8_t)slot;
+        rfmv_pfw_press(m, slot);                        /* (0.13.0: its firmwares' loading screen at the press) */
         emit_slot(m, RFM_MOVE_ACT_PROJECT_LOAD, slot, NULL, 0);   /* (last: the host may answer at once) */
         return;
     }
     rfm_move_project_load(m, slot, NULL, 0);           /* a new, empty project, kept at once */
+    rfmv_pfw_new(m, slot);                              /* (0.13.0: its three slots empty) */
     rfmv_proj_save_now(m);
 }
 
@@ -640,7 +661,9 @@ void rfmv_proj_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
         if (cc == MR_CC_BACK || cc == MR_CC_MENU)       /* out */
             rfmv_proj_back(m);
         else if (cc == MR_CC_PLAY) {                    /* the selected project plays (loading: once loaded) */
-            if (q->playing || q->start_pending)
+            if (rfmv_pfw_play(m))
+                ;                                       /* (0.13.0: its firmwares loading: once they are in) */
+            else if (q->playing || q->start_pending)
                 rfmv_seq_stop(m);
             else if (q->proj_pending >= 0)
                 q->play_after_load = 1;

@@ -73,19 +73,30 @@ From the top (what takes an input first) down. A layer lists what it takes; ever
 
 1. **Global settings** (Shift + step 2): the whole surface.
 2. **A firmware's takeover**: what the firmware claims.
-3. **Back**, **the Track buttons**: always their own (a click, a double click, a hold's menu).
-4. **A held Track's menu**: pads, steps, knobs, jog, Up / Down. In session view: pads and steps only (the routing).
-5. **A held Track 4** (0.12.0): the whole layer once held 300 ms (or something pressed meanwhile): the step keys (the
+3. **Back**, **the Track buttons**: always their own (a click, a double click, a hold's menu). Over States (0.13.0)
+   Track 1..3's tap shows that slot's States, Track 4's tap closes States and does its own job.
+4. **States** (0.13.0, a host with `RFM_MOVE_CAP_PROJFW`; Track 1..3 held + the top row's pad 7, or the browser's
+   Loop): the pads (the 32 states), the step keys (step 14 New; the rest dark and dead), the knobs and the jog (dark,
+   dead), Copy, Delete, Undo (lit only while New's undo is there), Loop when opened by the browser, the screen and
+   the Track lights; Shift, Capture, the arrows, Mute, Sample and Record dark and dead. Play and the volume knob stay
+   the layer's under it; Menu closes States and does its own job. **Back's click** clears the copy / delete marks
+   first, then closes States: what it was opened over shows again (the layout, the view, a takeover; the browser when
+   opened from there). A firmware's takeover is not shown while States are open.
+5. **A held Track's menu**: pads, steps, knobs, jog, Up / Down. In session view: pads and steps only (the routing).
+6. **A held Track 4** (0.12.0): the whole layer once held 300 ms (or something pressed meanwhile): the step keys (the
    Shift shortcuts), pads 1 and 2, Record, Play, Capture, Undo, Loop, Sample; everything else dark and dead. A menu
    it opened owns the knobs and the jog.
-6. **The Shift layer** (Shift held or latched): the step keys (shortcuts, icons lit).
-7. **A held modifier** (Loop, Copy, Delete, Mute; Loop and Mute also latched by a quick click): the step keys, some
+7. **The Shift layer** (Shift held or latched): the step keys (shortcuts, icons lit).
+8. **A held modifier** (Loop, Copy, Delete, Mute; Loop and Mute also latched by a quick click): the step keys, some
    pads, the screen; Loop the jog.
-8. **A held step** (track view: its popups, the knobs, the jog, the volume knob, the arrows; an arp lane step: the
+9. **A held step** (track view: its popups, the knobs, the jog, the volume knob, the arrows; an arp lane step: the
    pads; a session select step: the clip's settings).
-9. **A Shift menu** (Workflow, Tempo, Groove, Layout, Keys, Velocity, Arp, Record): knobs, jog, jog click, the
+10. **A Shift menu** (Workflow, Tempo, Groove, Layout, Keys, Velocity, Arp, Record): knobs, jog, jog click, the
    screen; the arp's lanes also the step keys. Back closes it.
-10. **The view**: the projects view (browser, Mixer, Routing, project grid), or session view, or the track view.
-11. **The layout**: the FM-1 layout or a note layout.
+11. **The view**: the projects view (browser, Mixer, Routing, project grid), or session view, or the track view.
+12. **The layout**: the FM-1 layout or a note layout.
+
+(0.13.0) A project's firmwares loading: the loading screen is over every view until each slot has settled; it takes
+no control (the project grid stays usable under it).
 
 The lights and the screen follow the same order: the layer that takes a control lights it and names it.

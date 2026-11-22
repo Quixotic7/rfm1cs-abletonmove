@@ -93,7 +93,10 @@ enum { S_FW_TRACK0 = 0x11, S_FW_LAST = 0x23, S_FX0 = 0x100, S_FX_LAST = 0x3FF, S
        S_MENU0 = 0x400, S_MENU_LAST = 0x43F };
 static int base_words(const rfm_move_t *m, char *o, int cap)
 {
-    int s = rfmv_fw_say_base(m, o, cap);
+    int s = rfmv_st_base_words(m, o, cap);              /* (0.13.0) the States layer: "States, ChoralRoot" */
+    if (s)
+        return s;
+    s = rfmv_fw_say_base(m, o, cap);
     if (s)
         return s;
     if (m->seq.smenu && !m->seq.projects) {             /* (0.6.1) a Shift menu open: its name */
@@ -467,9 +470,11 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
         rfmv_proj_info(m, i, &in);
         if (m->pop_val == 1)
             snprintf(o, (size_t)cap, "Colour %s", rfmv_proj_colour_name(in.color ? in.color : i % RFM_MOVE_PROJ_COLORS + 1));
-        else if (in.ok)
+        else if (in.ok) {
             snprintf(o, (size_t)cap, "Project %d, %d BPM, %d %s", i + 1, (in.bpm10 + 5) / 10, in.clips,
                      in.clips == 1 ? "clip" : "clips");
+            rfmv_pfw_proj_words(m, &in, o + strlen(o), cap - (int)strlen(o));   /* (0.13.0) ", ChoralRoot, SLOOP" */
+        }
         else
             snprintf(o, (size_t)cap, "Project %d, empty", i + 1);
         return;
@@ -551,6 +556,10 @@ static int pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint
         *subj = 0x100 | POP_HOST, *stamp = m->pop_t0;
         return 1;
     }
+    if (rfmv_pfw_words(m, o, cap, subj, stamp))         /* (0.13.0) a project's firmwares loading, one missing */
+        return 1;
+    if (rfmv_st_on(m))                                  /* (0.13.0) the States layer: its popups only */
+        return rfmv_st_pop_words(m, o, cap, subj, stamp);
     if (rfmv_fw_say_pop(m, o, cap)) {
         *subj = 0x400 | m->fw.pop;
         return 1;

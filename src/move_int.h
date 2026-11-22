@@ -359,4 +359,44 @@ int rfmv_t4_menu(const rfm_move_t *m);                  /* Track 4 held, its men
 void rfmv_track_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0]);   /* (fw.c) Track 1..4 everywhere */
 const char *rfmv_jog_name(int i);                       /* "SELECT", "PRESET", "ALGO" */
 
+/* ---- (0.13.0) projfw.c: a project holds its firmwares; States as a layer (RFM_MOVE_CAP_PROJFW) */
+enum { PFW_WAIT = -3, PFW_EMPTY = 101 };                /* (pfw_st: no news yet; an empty slot: nothing to load) */
+#define RFMV_ST_SWEEP_MS 50                             /* the opening sweep: a pad column this long */
+int rfmv_pfw_cap(const rfm_move_t *m);                  /* the host has RFM_MOVE_CAP_PROJFW */
+int rfmv_pfw_check(const uint8_t *p);                   /* a version 9 part (RFM_MOVE_PFW_BYTES) valid: 0 */
+void rfmv_pfw_write(rfm_move_t *m, uint8_t *p);         /* .. written (a save) */
+void rfmv_pfw_ids(const uint8_t *p, char ids[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX]);   /* .. its ids */
+void rfmv_pfw_saved_ids(const rfm_move_t *m, char ids[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX]);   /* what a save keeps */
+void rfmv_pfw_loaded(rfm_move_t *m, int slot, const uint8_t *part);   /* a project loaded (part NULL: none, v1..8) */
+void rfmv_pfw_load_failed(rfm_move_t *m, int slot);     /* .. its blob refused */
+void rfmv_pfw_press(rfm_move_t *m, int slot);           /* a stored project's pad: the loading screen at once */
+void rfmv_pfw_new(rfm_move_t *m, int slot);             /* a new project: its slots emptied */
+int rfmv_pfw_play(rfm_move_t *m);                       /* the grid's Play while loading: 1 taken (waits) */
+void rfmv_pfw_poll(rfm_move_t *m);                      /* (advance) the time limit, the messages, the edits */
+void rfmv_pfw_watch(rfm_move_t *m);                     /* (input) the firmware settings changed: the project edited */
+int rfmv_pfw_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* the loading / missing screen: 1 drawn */
+int rfmv_pfw_timed(const rfm_move_t *m);
+void rfmv_pfw_track_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0]);
+void rfmv_pfw_rows(const rfm_move_t *m, mr_canvas_t *cv, const char ids[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX],
+                   const int16_t *st, int y0);          /* a row a slot: its number, the name; st: the bars */
+int rfmv_pfw_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);   /* 1 up */
+void rfmv_pfw_proj_words(const rfm_move_t *m, const rfm_move_proj_info_t *in, char *o, int cap);   /* ", ChoralRoot .." */
+int rfmv_st_on(const rfm_move_t *m);                    /* the States layer open: its slot + 1, 0 */
+int rfmv_st_pad7(const rfm_move_t *m, int t);           /* Track t held: its pad 7 (States) has a job */
+void rfmv_st_open(rfm_move_t *m, int t, int from);      /* from 0 a held Track's pad 7, 1 the browser's Loop */
+void rfmv_st_close(rfm_move_t *m);
+int rfmv_st_input(rfm_move_t *m, const mr_event_t *ev);   /* 1 taken */
+int rfmv_st_back(rfm_move_t *m);                        /* Back's click: 1 taken (the marks, then the layer) */
+void rfmv_st_track(rfm_move_t *m, int t);               /* Track 1..3 tapped while open: that slot's States */
+void rfmv_st_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3]);
+int rfmv_st_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* 1 drawn */
+int rfmv_st_timed(const rfm_move_t *m);
+int rfmv_st_base_words(const rfm_move_t *m, char *o, int cap);   /* its subject, 0 not open */
+int rfmv_st_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);   /* 1 up */
+/* fw.c and seq_ui.c for projfw.c */
+void rfmv_fw_id_name(const rfm_move_t *m, const char *id, char *o, int cap);   /* the list's name, else the id */
+void rfmv_fw_slot_set(rfm_move_t *m, int s, const char *id);   /* the slot holds that firmware now ("" empty) */
+int rfmv_fw_slot_loaded(const rfm_move_t *m, int s);
+void rfmv_held_icon(mr_canvas_t *cv, int kind, int x, int y);   /* 1 scissors (Delete held), 2 two sheets (Copy) */
+
 #endif

@@ -1346,14 +1346,14 @@ static void test_sv_launch_q(void)
     M.seq.launch_q = RFM_MOVE_LQ_2BARS, M.seq.cset[SEQ_CLIP(5, 7)] = RFM_MOVE_LQ_CLIP + 1 + RFM_MOVE_CS_AFTER_NEXT;
     clip_put(5, 7, 40);
     n = rfm_move_project_save(&M, blob, sizeof blob);
-    CHECK(n > 0 && blob[4] == 8);
+    CHECK(n > 0 && blob[4] == RFM_MOVE_PROJECT_VERSION);
     rfm_move_init(&M2, NULL, NULL, NULL);
     CHECK(rfm_move_project_load(&M2, 0, blob, (uint32_t)n) == 0 && M2.seq.launch_q == RFM_MOVE_LQ_2BARS &&
           M2.seq.cset[SEQ_CLIP(5, 7)] == RFM_MOVE_LQ_CLIP + 1 + RFM_MOVE_CS_AFTER_NEXT && M2.seq.cset[SEQ_CLIP(1, 0)] == RFM_MOVE_CS_AFTER_NEXT &&
           !M2.seq.cset[SEQ_CLIP(4, 4)]);
     {                                                   /* a clip's settings out of range: refused */
         uint32_t h = 2166136261u;
-        blob[n - 4 - RFM_MOVE_SEQ_CLIPS + 3] = 0x17;
+        blob[n - 4 - RFM_MOVE_PFW_BYTES - RFM_MOVE_SEQ_CLIPS + 3] = 0x17;
         for (k = 0; k < n - 4; k++)
             h = (h ^ blob[k]) * 16777619u;
         for (k = 0; k < 4; k++)
@@ -1363,8 +1363,8 @@ static void test_sv_launch_q(void)
     {                                                   /* a version 7 blob: loads, with the defaults */
         uint32_t h = 2166136261u;
         n = rfm_move_project_save(&M, blob, sizeof blob);
-        memmove(blob + n - 4 - 1 - RFM_MOVE_SEQ_CLIPS, blob + n - 4, 4);
-        n -= 1 + RFM_MOVE_SEQ_CLIPS, blob[4] = 7;
+        memmove(blob + n - 4 - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES, blob + n - 4, 4);
+        n -= 1 + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_PFW_BYTES, blob[4] = 7;
         for (k = 0; k < n - 4; k++)
             h = (h ^ blob[k]) * 16777619u;
         for (k = 0; k < 4; k++)
@@ -2607,6 +2607,599 @@ static void test_browser_icons(void)
     back(), rest();
 }
 
+/* ================================================================ (0.13.0) P-core: a project holds its firmwares;
+ * firmware States as a layer (RFM_MOVE_CAP_PROJFW). A fake host: the actions logged with their ids, the projects
+ * stored (PROJECT_SAVE / _LOAD answered), the firmwares answered by hand (rfm_move_proj_fw) */
+typedef struct { int kind, slot, index, value; char id[RFM_MOVE_FW_ID_MAX]; } ps_act_t;
+static ps_act_t PA[512];
+static int npa, ps_answer;
+static uint8_t PS_BLOB[RFM_MOVE_PROJECTS][RFM_MOVE_PROJECT_MAX];
+static uint32_t PS_N[RFM_MOVE_PROJECTS];
+static void ps_act(void *ctx, const rfm_move_act_t *a)
+{
+    rfm_move_t *m = ctx ? (rfm_move_t *)ctx : &M;
+    on_act(NULL, a);
+    if (a->kind == RFM_MOVE_ACT_SAY)
+        return;
+    if (npa < (int)(sizeof PA / sizeof PA[0])) {
+        ps_act_t *p = &PA[npa++];
+        p->kind = a->kind, p->slot = a->slot, p->index = a->index, p->value = a->value, p->id[0] = 0;
+        if (a->data && a->len < RFM_MOVE_FW_ID_MAX && a->kind != RFM_MOVE_ACT_PROJECT_SAVE)
+            memcpy(p->id, a->data, a->len), p->id[a->len] = 0;
+    }
+    if (a->kind == RFM_MOVE_ACT_PROJECT_SAVE && a->len <= RFM_MOVE_PROJECT_MAX)
+        memcpy(PS_BLOB[a->index], a->data, a->len), PS_N[a->index] = a->len;
+    else if (a->kind == RFM_MOVE_ACT_PROJECT_LOAD && ps_answer)
+        rfm_move_project_load(m, a->index, PS_BLOB[a->index], PS_N[a->index]);
+}
+static void ps_clear(void) { npa = 0, clear(); }
+static int ps_count(int kind)
+{
+    int i, n = 0;
+    for (i = 0; i < npa; i++)
+        n += PA[i].kind == kind;
+    return n;
+}
+static const ps_act_t *ps_find(int kind, int slot)      /* the last of that kind (slot -1: any) */
+{
+    int i;
+    for (i = npa - 1; i >= 0; i--)
+        if (PA[i].kind == kind && (slot < 0 || PA[i].slot == slot))
+            return &PA[i];
+    return NULL;
+}
+static void ps_slots(const char *a, const char *b, const char *c)
+{
+    const char *const ids[RFM_MOVE_FW_SLOTS] = { a, b, c };
+    rfm_move_fw_slots(&M, ids);
+}
+/* the Move's host: three slots, FX, and the project's firmwares */
+static void ps_fresh(int cap)
+{
+    fresh();
+    M.fn = ps_act, M.ctx = NULL;
+    rfm_move_fw_caps(&M, RFM_MOVE_CAPS_ALL | (cap ? RFM_MOVE_CAP_PROJFW : 0));
+    memset(PS_N, 0, sizeof PS_N);
+    ps_answer = 0;
+    rest(), ps_clear();
+}
+static int ps_pad(int slot) { return (3 - slot / 8) * 8 + slot % 8; }   /* a project's (or a state's) pad */
+static void ps_store(int slot)                          /* M's project as it is now, stored at slot (the grid knows it) */
+{
+    uint32_t used = M.seq.proj_used | 1u << slot;
+    PS_N[slot] = (uint32_t)rfm_move_project_save(&M, PS_BLOB[slot], sizeof PS_BLOB[slot]);
+    rfm_move_project_dir(&M, used);
+    rfm_move_project_info(&M, slot, PS_BLOB[slot], PS_N[slot]);
+}
+static const uint8_t *ps_part(int slot) { return PS_BLOB[slot] + PS_N[slot] - 4 - RFM_MOVE_PFW_BYTES; }
+static void refnv32(uint8_t *b, uint32_t n)
+{
+    uint32_t h = 2166136261u, k;
+    for (k = 0; k < n - 4; k++)
+        h = (h ^ b[k]) * 16777619u;
+    for (k = 0; k < 4; k++)
+        b[n - 4 + k] = (uint8_t)(h >> (8 * k));
+}
+static void grid(void)                                  /* the project grid (Track 4's double click) */
+{
+    dbl_track(3), rest();
+    CHECK(M.seq.projects && M.fw.track == 3);
+    ps_clear();
+}
+
+/* p1: the blob's version 9: the firmwares and their settings round trip; a version 8 project leaves them alone; a
+ * host without the capability never touches them and saves the part back as it came */
+static rfm_move_t M2;
+static void test_ps_blob(void)
+{
+    static uint8_t b8[RFM_MOVE_PROJECT_MAX], b9[RFM_MOVE_PROJECT_MAX];
+    const uint8_t *part;
+    int n, n8;
+    ps_fresh(1);
+    ps_slots("choralroot", "sloop", "felucca");
+    rfm_move_fw_set_level(&M, 1, 77);
+    M.s.slot[2].scale = RFM_MOVE_SCALE_DORIAN, M.s.slot[2].root = 3, M.s.slot[2].channel = 5, M.s.slot[2].octave = -2;
+    M.s.slot[2].lay = RFM_MOVE_LAY_DRUM, M.s.slot[2].cc[7] = 99, M.s.lock[2] = 11;
+    M.s.drum[0] = 41, M.s.vel_mode = RFM_MOVE_VEL_FIXED, M.s.vel_level = 90;
+    n = rfm_move_project_save(&M, b9, sizeof b9);
+    CHECK(n == RFM_MOVE_PROJECT_FIXED && b9[4] == 9 && rfm_move_project_check(b9, (uint32_t)n) == 0);
+    part = b9 + n - 4 - RFM_MOVE_PFW_BYTES;
+    CHECK(!strcmp((const char *)part, "choralroot") && !strcmp((const char *)part + RFM_MOVE_PFW_SLOT_BYTES, "sloop"));
+    CHECK(part[RFM_MOVE_PFW_SLOT_BYTES + RFM_MOVE_FW_ID_MAX] == 77);
+    /* a value out of range in it: refused */
+    memcpy(b8, b9, (size_t)n), b8[n - 4 - RFM_MOVE_PFW_BYTES + 2 * RFM_MOVE_PFW_SLOT_BYTES + RFM_MOVE_FW_ID_MAX + 1] = 9;
+    refnv32(b8, (uint32_t)n);
+    CHECK(rfm_move_project_check(b8, (uint32_t)n) == -9);
+    /* loaded on another Move: everything set, the firmwares asked for (one PROJECT_FW a slot, the project's slot) */
+    rfm_move_init(&M2, NULL, ps_act, &M2);
+    rfm_move_fw_list(&M2, E, NFW);
+    rfm_move_fw_caps(&M2, RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW);
+    ps_clear();
+    CHECK(rfm_move_project_load(&M2, 4, b9, (uint32_t)n) == 0);
+    CHECK(M2.fw.level[1] == 77 && M2.s.slot[2].scale == RFM_MOVE_SCALE_DORIAN && M2.s.slot[2].root == 3 &&
+          M2.s.slot[2].channel == 5 && M2.s.slot[2].octave == -2 && M2.s.slot[2].lay == RFM_MOVE_LAY_DRUM &&
+          M2.s.slot[2].cc[7] == 99 && M2.s.lock[2] == 11);
+    CHECK(M2.s.drum[0] == 41 && M2.s.vel_mode == RFM_MOVE_VEL_FIXED && M2.s.vel_level == 90);
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_FW) == 3 && ps_find(RFM_MOVE_ACT_FW_LEVEL, 1) && ps_count(RFM_MOVE_ACT_SETTINGS) >= 1);
+    CHECK(!strcmp(ps_find(RFM_MOVE_ACT_PROJECT_FW, 0)->id, "choralroot") && ps_find(RFM_MOVE_ACT_PROJECT_FW, 0)->index == 4);
+    CHECK(!strcmp(ps_find(RFM_MOVE_ACT_PROJECT_FW, 2)->id, "felucca") && rfm_move_proj_fw_loading(&M2));
+    CHECK(!M2.seq.dirty);                               /* (the load's own settings: no edit) */
+    /* a version 8 blob (no firmwares): the slots, the levels and the settings as they are; saved again as 9 with what
+     * is loaded */
+    n8 = n - RFM_MOVE_PFW_BYTES;
+    memcpy(b8, b9, (size_t)n8 - 4), b8[4] = 8;
+    refnv32(b8, (uint32_t)n8);
+    CHECK(rfm_move_project_check(b8, (uint32_t)n8) == 0);
+    ps_fresh(1);
+    ps_slots("dub", "", "");
+    rfm_move_fw_set_level(&M, 0, 50);
+    ps_clear();
+    CHECK(rfm_move_project_load(&M, 2, b8, (uint32_t)n8) == 0);
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_FW) == 0 && !rfm_move_proj_fw_loading(&M) && !strcmp(M.fw.slot_id[0], "dub"));
+    CHECK(M.fw.level[0] == 50 && M.s.drum[0] != 41 && M.s.vel_mode != RFM_MOVE_VEL_FIXED);
+    n = rfm_move_project_save(&M, b9, sizeof b9);
+    CHECK(b9[4] == 9 && !strcmp((const char *)b9 + n - 4 - RFM_MOVE_PFW_BYTES, "dub"));
+    {                                                   /* the grid's info of a version 8 project: no firmwares */
+        rfm_move_proj_info_t in;
+        CHECK(rfm_move_project_info(&M, 9, b8, (uint32_t)n8) == 0);
+        rfmv_proj_info(&M, 9, &in);
+        CHECK(in.ok && !in.has_fw && !in.fw[0][0]);
+    }
+    /* a host without the capability: the load touches no firmware, and the part goes back as it came */
+    ps_fresh(1);
+    ps_slots("choralroot", "sloop", "felucca");
+    n = rfm_move_project_save(&M, b9, sizeof b9);
+    ps_fresh(0);
+    rfm_move_fw_set_level(&M, 0, 33);
+    ps_clear();
+    CHECK(rfm_move_project_load(&M, 1, b9, (uint32_t)n) == 0);
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_FW) == 0 && !rfm_move_proj_fw_loading(&M) && M.fw.level[0] == 33 &&
+          !strcmp(M.fw.slot_id[1], "felucca"));
+    n8 = rfm_move_project_save(&M, b8, sizeof b8);
+    CHECK(n8 == n && !memcmp(b8 + n - 4 - RFM_MOVE_PFW_BYTES, b9 + n - 4 - RFM_MOVE_PFW_BYTES, RFM_MOVE_PFW_BYTES));
+    /* .. and its level changes: no project edit */
+    rfm_move_fw_set_level(&M, 0, 40), adv_ms(20);
+    CHECK(!M.seq.dirty);
+}
+
+/* p2: a project opened in the grid: its loading screen at the press (before the host answers), the bars as the host
+ * reports, a Track lit when its firmware is ready, Play waiting for the load, a missing firmware said and kept */
+static void ps_two_projects(void)                       /* project 1: ChoralRoot, Felucca, -; project 7: ChoralRoot,
+                                                         * SLOOP, Felucca at 120 BPM, 12 clips */
+{
+    int c;
+    ps_fresh(1);
+    ps_slots("choralroot", "sloop", "felucca");
+    rfm_move_seq_set_bpm(&M, 1200);
+    for (c = 0; c < 12; c++)
+        clip_put(c % 4, c / 4, 60 + c);
+    ps_store(6);
+    rfm_move_project_load(&M, 0, NULL, 0);
+    ps_slots("choralroot", "felucca", "");
+    ps_store(0);
+    ps_answer = 0;
+    rest(), ps_clear();
+}
+static void test_ps_loading(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    const ps_act_t *a;
+    ps_two_projects();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    grid();
+    /* the press: the loading screen at once, its rows from the grid's knowledge (no answer yet), the Tracks dark */
+    pad(ps_pad(6), 100);
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_LOAD) == 1 && rfm_move_proj_fw_loading(&M) && M.seq.proj_pending == 6);
+    screen();
+    CHECK(lit_rows(0, 21) > 60 && lit_rows(28, 36) > 20 && lit_rows(52, 60) > 20);
+    leds(w);
+    CHECK(!lit(w[L_TRACK0 + 0]) && !lit(w[L_TRACK0 + 1]) && !lit(w[L_TRACK0 + 2]));
+    CHECKF(strstr(said, "Loading project 7") != NULL, "said %s", said);
+    /* Play meanwhile: not yet */
+    press(MR_CC_PLAY);
+    CHECK(!M.seq.playing && !M.seq.start_pending && M.pfw_play);
+    /* the host answers: the project in, its firmwares asked for (the same one in slot 1: only its memory swapped) */
+    ps_clear();
+    CHECK(rfm_move_project_load(&M, 6, PS_BLOB[6], PS_N[6]) == 0);
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_FW) == 3 && (a = ps_find(RFM_MOVE_ACT_PROJECT_FW, 1)) && !strcmp(a->id, "sloop") &&
+          a->index == 6 && rfm_move_proj_fw_loading(&M));
+    rfm_move_proj_fw(&M, 0, RFM_MOVE_PFW_READY);
+    rfm_move_proj_fw(&M, 1, 60);
+    leds(w);
+    CHECK(lit(w[L_TRACK0 + 0]) && !lit(w[L_TRACK0 + 1]) && !lit(w[L_TRACK0 + 2]) && w[L_TRACK0 + 0][0] == 255);
+    screen();
+    CHECK(px(84 + 42, 28 + 3) && px(84 + 20, 40 + 3) && !px(84 + 30, 40 + 3) && px(84 + 30, 40 + 1));   /* (full, 60 %) */
+    write_pbm("ps_proj_loading");
+    pad(ps_pad(6), 0);
+    CHECK(rfm_move_proj_fw_loading(&M) && !M.seq.playing);
+    /* the rest settle: slot 2 ready, Felucca not on this Move: the transport starts, "Felucca / not installed" a
+     * second, the slot empty, the project still wants it */
+    rfm_move_proj_fw(&M, 1, RFM_MOVE_PFW_READY);
+    clear();
+    rfm_move_proj_fw(&M, 2, RFM_MOVE_PFW_MISSING);
+    CHECK(!rfm_move_proj_fw_loading(&M) && (M.seq.playing || M.seq.start_pending) && !M.fw.slot_id[2][0]);
+    CHECK(!strcmp(M.fw.slot_id[1], "sloop"));
+    CHECKF(strstr(said, "Felucca not installed, Track 3 empty") != NULL, "said %s", said);
+    screen();
+    CHECK(lit_rows(8, 22) > 40 && lit_rows(32, 39) > 20 && lit_rows(46, 53) > 20);
+    write_pbm("ps_proj_missing");
+    press(MR_CC_PLAY), rest();
+    CHECK(!M.seq.playing);
+    {                                                   /* saved: the missing one kept, the loaded ones as they are */
+        rfm_move_proj_info_t in;
+        rfm_move_project_flush(&M);
+        rfmv_proj_info(&M, 6, &in);
+        CHECK(in.has_fw && !strcmp(in.fw[0], "choralroot") && !strcmp(in.fw[1], "sloop") && !strcmp(in.fw[2], "felucca"));
+        rfmv_proj_save_now(&M);
+        CHECK(!strcmp((const char *)ps_part(6) + 2 * RFM_MOVE_PFW_SLOT_BYTES, "felucca"));
+        /* the user loads another firmware there, then empties it: the project no longer wants Felucca (an edit) */
+        ps_slots("choralroot", "sloop", "dub"), adv_ms(20);
+        CHECK(M.seq.dirty);
+        ps_slots("choralroot", "sloop", ""), adv_ms(20);
+        rfmv_proj_info(&M, 6, &in);
+        CHECK(!in.fw[2][0]);
+        adv_ms(RFM_MOVE_AUTOSAVE_MS + 50);
+        CHECK(!M.seq.dirty && !((const char *)ps_part(6))[2 * RFM_MOVE_PFW_SLOT_BYTES]);
+    }
+    back(), rest();
+}
+/* p3: no news for 20 s: failed; another project pressed while one loads: that one loads (the host told again) */
+static void test_ps_limit(void)
+{
+    ps_two_projects();
+    grid();
+    hit(ps_pad(6));
+    ps_clear();
+    rfm_move_project_load(&M, 6, PS_BLOB[6], PS_N[6]);
+    rfm_move_proj_fw(&M, 0, RFM_MOVE_PFW_READY), rfm_move_proj_fw(&M, 1, 30);
+    adv_ms(RFM_MOVE_PFW_WAIT_MS - 100);
+    CHECK(rfm_move_proj_fw_loading(&M));
+    rfm_move_proj_fw(&M, 1, 40);                        /* (news: its time starts again) */
+    adv_ms(200);
+    CHECK(rfm_move_proj_fw_loading(&M) && M.pfw_st[2] == RFM_MOVE_PFW_FAILED && M.pfw_st[1] == 40);
+    adv_ms(RFM_MOVE_PFW_WAIT_MS);
+    CHECK(!rfm_move_proj_fw_loading(&M) && M.pfw_st[1] == RFM_MOVE_PFW_FAILED && M.pfw_msg == 6 && !M.fw.slot_id[1][0]);
+    screen();
+    CHECK(lit_rows(32, 39) > 10);                       /* ("failed") */
+    write_pbm("ps_proj_failed");
+    rest();
+    /* restarted: project 7 again from project 1 while it loads */
+    ps_answer = 1;
+    hit(ps_pad(0));
+    CHECK(M.seq.proj_cur == 0 && rfm_move_proj_fw_loading(&M) && ps_find(RFM_MOVE_ACT_PROJECT_FW, 0)->index == 0);
+    ps_clear();
+    hit(ps_pad(6));
+    CHECK(M.seq.proj_cur == 6 && rfm_move_proj_fw_loading(&M) && ps_count(RFM_MOVE_ACT_PROJECT_FW) == 3 &&
+          ps_find(RFM_MOVE_ACT_PROJECT_FW, 0)->index == 6);
+    back(), rest();
+}
+/* p4: a new project: its three slots emptied (the host told), the rest as it is; saved as version 9 */
+static void test_ps_new(void)
+{
+    const ps_act_t *a;
+    ps_two_projects();
+    rfm_move_fw_set_level(&M, 1, 66);
+    grid();
+    hit(ps_pad(12));
+    CHECK(M.seq.proj_cur == 12 && ps_count(RFM_MOVE_ACT_PROJECT_FW) == 3 && (a = ps_find(RFM_MOVE_ACT_PROJECT_FW, 2)) &&
+          !a->id[0] && a->index == 12 && !rfm_move_proj_fw_loading(&M));
+    CHECK(!M.fw.slot_id[0][0] && !M.fw.slot_id[1][0] && M.fw.level[1] == 66);
+    CHECK(PS_N[12] && PS_BLOB[12][4] == 9 && !ps_part(12)[0] && ps_part(12)[RFM_MOVE_PFW_SLOT_BYTES + RFM_MOVE_FW_ID_MAX] == 66);
+    back(), rest();
+}
+/* p5: a held project shows its firmwares (the mock-ups' rows); a version 8 one three dotted lines; duplicated with
+ * Copy held + its pad, then an empty pad */
+static void test_ps_held(void)
+{
+    rfm_move_proj_info_t in;
+    ps_two_projects();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    ps_answer = 1;
+    grid();
+    hit(ps_pad(6));
+    clear();
+    rfm_move_proj_fw(&M, 0, RFM_MOVE_PFW_READY), rfm_move_proj_fw(&M, 1, RFM_MOVE_PFW_READY),
+        rfm_move_proj_fw(&M, 2, RFM_MOVE_PFW_READY);
+    CHECKF(strstr(said, "Project 7, 120 BPM, 12 clips, ChoralRoot, SLOOP, Felucca") != NULL, "said %s", said);   /* (the
+                                                         * pressed project's popup once loaded) */
+    rest(), clear();
+    pad(ps_pad(6), 100);                                /* (the open one: held, nothing loads) */
+    screen();
+    CHECK(M.pop == POP_PROJ && lit_rows(28, 36) > 30 && lit_rows(52, 60) > 20 && lit_rows(0, 22) > 80);
+    write_pbm("ps_proj_held");
+    pad(ps_pad(6), 0), rest();
+    /* an empty slot: a dotted line */
+    ps_slots("choralroot", "sloop", ""), adv_ms(20);
+    rfm_move_seq_set_bpm(&M, 960);
+    pad(ps_pad(6), 100);
+    screen();
+    CHECK(lit_rows(52, 60) > 5 && lit_rows(52, 60) < 40);
+    write_pbm("ps_proj_held_empty");
+    pad(ps_pad(6), 0), rest();
+    /* duplicated: Copy held + project 7, then an empty pad: the host's buffer pasted there (its firmwares too) */
+    ps_clear();
+    button(MR_CC_COPY, 1);
+    hit(ps_pad(6)), hit(ps_pad(20));
+    button(MR_CC_COPY, 0);
+    CHECK(ps_find(RFM_MOVE_ACT_PROJECT_COPY, -1) && ps_find(RFM_MOVE_ACT_PROJECT_COPY, -1)->index == 6);
+    CHECK(ps_find(RFM_MOVE_ACT_PROJECT_PASTE, -1) && ps_find(RFM_MOVE_ACT_PROJECT_PASTE, -1)->index == 20);
+    rfmv_proj_info(&M, 20, &in);
+    CHECK((M.seq.proj_used >> 20 & 1) && in.ok && in.has_fw && !strcmp(in.fw[1], "sloop") && M.seq.proj_cur == 6);
+    /* a version 8 project held: three dotted lines */
+    {
+        static uint8_t b8[RFM_MOVE_PROJECT_MAX];
+        const int n8 = (int)PS_N[6] - RFM_MOVE_PFW_BYTES;
+        memcpy(b8, PS_BLOB[6], (size_t)n8 - 4), b8[4] = 8;
+        refnv32(b8, (uint32_t)n8);
+        memcpy(PS_BLOB[3], b8, (size_t)n8), PS_N[3] = (uint32_t)n8;
+        rfm_move_project_dir(&M, M.seq.proj_used | 1u << 3);
+        CHECK(rfm_move_project_info(&M, 3, b8, (uint32_t)n8) == 0);
+        rfmv_pop(&M, POP_PROJ, 3);
+        screen();
+        CHECK(lit_rows(28, 60) > 30 && lit_rows(28, 60) < 120);
+    }
+    back(), rest();
+}
+
+/* p6: a held Track's pad 7 (the States layer): lit in the slot's colour with a firmware and the capability, dark and
+ * dead without; States opened there return to that layout with Back; opened by the browser's Loop, to the browser */
+static void test_ps_pad7(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int mode;
+    ps_fresh(0);                                        /* (an older host: dark, dead) */
+    hold_track(0);
+    leds(w);
+    CHECK(!lit(w[L_PAD0 + 30]));
+    hit(30);
+    CHECK(!M.fw.sl);
+    track(0, 0), rest();
+    dbl_track(0), rest();                               /* (.. and the browser's Loop: the old States, the old gestures) */
+    press(MR_CC_LOOP);
+    CHECK(M.fw.states && !M.fw.sl);
+    ps_clear();
+    button(MR_CC_COPY, 1), hit(ps_pad(3)), button(MR_CC_COPY, 0);
+    CHECK(ps_find(RFM_MOVE_ACT_STATE_SAVE, 0) && !ps_find(RFM_MOVE_ACT_STATE_COPY, -1));   /* (Copy + pad: saved over) */
+    back(), back(), rest();
+    ps_fresh(1);                                        /* (Felucca on Track 2, its Scale layout: the mock's menu) */
+    hold_track(1), hit(26), track(1, 0), rest();
+    mode = M.s.mode;
+    hold_track(1);
+    leds(w);
+    CHECK(w[L_PAD0 + 30][0] == 40 && w[L_PAD0 + 30][1] == 120 && w[L_PAD0 + 30][2] == 255);   /* (Track 2: blue) */
+    write_pbm("ps_trk_menu");
+    track(1, 0), rest();
+    CHECK(M.s.mode == mode && !M.fw.sl);
+    tap_track(0), rest();
+    hold_track(2);                                      /* (an empty slot: dark, dead) */
+    leds(w);
+    CHECK(!lit(w[L_PAD0 + 30]));
+    hit(30);
+    CHECK(!M.fw.sl);
+    track(2, 0), rest();
+    /* opened from Track 1's menu in the FM-1 layout; the Track let go: States stay; Back: the layout again */
+    mode = M.s.mode;
+    hold_track(0), hit(30);
+    CHECK(rfm_move_states_open(&M) == 0 && M.fw.sl_from == 0);
+    track(0, 0), rest();
+    CHECK(rfm_move_states_open(&M) == 0 && !M.seq.projects);
+    back(), rest();
+    CHECK(rfm_move_states_open(&M) < 0 && M.s.mode == mode && !M.seq.projects);
+    /* from the browser: Loop opens it over the browser, Back (or Loop) goes back to the browser */
+    dbl_track(0), rest();
+    CHECK(M.seq.projects && M.fw.track == 0);
+    press(MR_CC_LOOP);
+    CHECK(rfm_move_states_open(&M) == 0 && M.fw.sl_from == 1 && !M.fw.states);
+    back(), rest();
+    CHECK(rfm_move_states_open(&M) < 0 && M.seq.projects && M.fw.track == 0);
+    press(MR_CC_LOOP), press(MR_CC_LOOP);
+    CHECK(rfm_move_states_open(&M) < 0 && M.seq.projects && M.fw.track == 0);
+    back(), rest();
+    /* opened over a note layout's track view: Back there again, nothing else changed */
+    tap_track(1), rest();
+    hold_track(1), hit(26), track(1, 0), rest();
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && !M.seq.view);
+    hold_track(1), hit(30), track(1, 0), rest();
+    CHECK(rfm_move_states_open(&M) == 1);
+    back(), rest();
+    CHECK(rfm_move_states_open(&M) < 0 && M.s.mode == RFM_MOVE_MODE_SEQ && !M.seq.view && !M.seq.projects);
+}
+
+/* p7: the States screen and lights; the opening's name and sweep (LED writes counted); Track 1..3 taps */
+static void ps_states(void)                             /* ChoralRoot's States: 1, 2, 5 and 16 stored, 2 the active one */
+{
+    ps_fresh(1);
+    ps_slots("choralroot", "sloop", "felucca");
+    rfm_move_fw_states(&M, 0, 1u | 2u | 16u | 1u << 15);
+    rfm_move_fw_state_cur(&M, 0, 1);
+    rest(), ps_clear();
+}
+static void test_ps_layer(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int t, np, ns, peak;
+    ps_states();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    rest(), clear();
+    led_flush();
+    hold_track(0);
+    led_flush();
+    hit(30);
+    CHECK(rfm_move_states_open(&M) == 0);
+    CHECKF(strstr(said, "States, ChoralRoot") != NULL, "said %s", said);
+    screen();
+    CHECK(lit_rows(10, 24) > 40);                       /* ("States" at 2x, its name under it: the opening) */
+    write_pbm("ps_states_open");
+    track(0, 0);
+    /* the sweep: a column a frame in the slot's colour, settling into the states' lights; few writes a frame */
+    np = ns = peak = 0;
+    for (t = 0; t < 1000; t += 10) {
+        int s1 = 0, p1 = 0;
+        led_msgs(&s1, &p1);
+        np += p1, ns += s1, peak = p1 > peak ? p1 : peak;
+        if (t == 120) {
+            leds(w);
+            CHECK(w[L_PAD0 + 2][0] == 255 && w[L_PAD0 + 2][1] == 120 && w[L_PAD0 + 26][0] == 255);   /* (column 3) */
+        }
+        adv_ms(10);
+    }
+    printf("states sweep: %d pad LED writes in a second, at most %d at once\n", np, peak);
+    CHECKF(np <= 100 && peak <= 9, "sweep: %d pad writes, %d at once", np, peak);
+    leds(w);
+    CHECK(w[L_PAD0 + 25][0] == 255 && w[L_PAD0 + 25][1] == 120);   /* (state 2, the active one: full orange) */
+    CHECK(w[L_PAD0 + 24][0] == 107 && w[L_PAD0 + 28][0] == 107 && w[L_PAD0 + 23][0] == 107 && !lit(w[L_PAD0 + 26]));
+    CHECK(!lit(w[L_STEP0 + 0]) && w[L_STEP0 + 13][0] == 63 && w[L_ICON0 + 13][0] == 127 && w[L_ICON0 + 12][0] == 0);
+    CHECK(!lit(w[L_RING0 + 0]) && w[L_WHITE0 + W_BACK][0] == 80 && w[L_WHITE0 + W_UNDO][0] == 0);
+    CHECK(w[L_TRACK0 + 0][0] == 255 && w[L_TRACK0 + 1][2] == 63);
+    screen();
+    CHECK(px(1 + 16 + 1, 16 + 1) && px(1, 16) && !px(1 + 1, 16 + 1) && px(1 + 32 + 6, 16 + 5) && !px(1 + 32 + 1, 16 + 1));
+    write_pbm("ps_states");
+    /* dead: the other steps, the knobs, the jog, Shift */
+    ps_clear();
+    hit(30 - 24 + 0), step(3, 1), step(3, 0), knob(0, 3), jog(1), press(MR_CC_SHIFT), press(MR_CC_MUTE);
+    CHECK(npa == 1 && PA[0].kind == RFM_MOVE_ACT_STATE_SAVE);   /* (only the pad: state 31 saved) */
+    /* a Track's tap: that slot's States (its name again); an empty slot's: said, States stay */
+    ps_clear();
+    tap_track(1), adv_ms(20);
+    CHECK(rfm_move_states_open(&M) == 1);
+    CHECKF(strstr(said, "States, SLOOP") != NULL, "said %s", said);
+    rest();
+    ps_slots("choralroot", "sloop", "");
+    tap_track(2), adv_ms(20);
+    CHECK(rfm_move_states_open(&M) == 1);
+    CHECKF(strstr(said, "Track 3, empty") != NULL, "said %s", said);
+    screen();
+    write_pbm("ps_states_empty");
+    rest();
+    /* a press during the sweep acts at once, white */
+    tap_track(0), adv_ms(60);
+    pad(ps_pad(4), 100);
+    leds(w);
+    CHECK(white(w[L_PAD0 + ps_pad(4)]) && M.fw.st_cur[0] == 4);
+    pad(ps_pad(4), 0);
+    /* Track 4: the layer closes, Track 4 does its job */
+    rest();
+    tap_track(3), rest();
+    CHECK(rfm_move_states_open(&M) < 0);
+    back(), rest();
+}
+
+/* p8: the gestures on a state pad, as clips in session view: load, save, copy, paste, replace when armed, copy when
+ * not, delete (the active one too), paste onto the active one (value 1); Copy / Delete clicked alone: nothing */
+static void ps_open0(void)
+{
+    hold_track(0), hit(30), track(0, 0), rest(), ps_clear();
+}
+static void test_ps_gestures(void)
+{
+    const ps_act_t *a;
+    ps_states();
+    ps_open0();
+    hit(ps_pad(4));                                     /* a stored state: loaded, the active one */
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_LOAD, 0)) && a->index == 4 && !strcmp(a->id, "choralroot"));
+    CHECK(M.fw.st_cur[0] == 4 && M.fw.sl_pop == 2);
+    screen();
+    CHECK(lit_rows(10, 24) > 30);
+    write_pbm("ps_state_loaded");
+    rest(), ps_clear();
+    hit(ps_pad(2));                                     /* an empty one: saved there, the active one */
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_SAVE, 0)) && a->index == 2 && M.fw.st_cur[0] == 2 && (M.fw.st_used[0] >> 2 & 1));
+    rest(), ps_clear();
+    press(MR_CC_COPY), press(MR_CC_DELETE);             /* (clicked alone: nothing) */
+    CHECK(npa == 0 && !M.fw.sb_kind && M.fw.st_cur[0] == 2);
+    /* Copy held: its icon in the header; + a stored state: copied (dashed), armed */
+    button(MR_CC_COPY, 1);
+    screen();
+    CHECK(pixels(116, 1, 11, 11) > 10);
+    hit(ps_pad(0));
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_COPY, 0)) && a->index == 0 && M.fw.sb_armed && M.fw.st_cur[0] == 2);
+    screen();
+    CHECK(px(1 + 1, 16) && !px(1 + 3, 16));             /* (dashed: 2 on, 2 off) */
+    write_pbm("ps_states_copied");
+    /* + an empty one: pasted there (not active: value 0), disarmed */
+    hit(ps_pad(7));
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_PASTE, 0)) && a->index == 7 && a->value == 0 && !M.fw.sb_armed &&
+          (M.fw.st_used[0] >> 7 & 1) && M.fw.st_cur[0] == 2);
+    /* not armed: + a stored state copies it; armed: + another stored one pastes over it */
+    ps_clear();
+    hit(ps_pad(4));
+    CHECK(ps_find(RFM_MOVE_ACT_STATE_COPY, 0) && ps_find(RFM_MOVE_ACT_STATE_COPY, 0)->index == 4 && M.fw.sb_armed);
+    hit(ps_pad(15));
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_PASTE, 0)) && a->index == 15 && a->value == 0 && !M.fw.sb_armed);
+    /* the active one replaced: the host loads it too (value 1) */
+    ps_clear();
+    hit(ps_pad(0)), hit(ps_pad(2));
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_PASTE, 0)) && a->index == 2 && a->value == 1 && M.fw.st_cur[0] == 2);
+    CHECK(!ps_find(RFM_MOVE_ACT_STATE_LOAD, -1));       /* (nothing loads while Copy is held) */
+    button(MR_CC_COPY, 0), rest();
+    /* Delete held + a stored state: deleted into the buffer (crossed), armed; the active one: none active */
+    ps_clear();
+    button(MR_CC_DELETE, 1);
+    hit(ps_pad(15));
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_DELETE, 0)) && a->index == 15 && !(M.fw.st_used[0] >> 15 & 1) && M.fw.sb_kind == 2);
+    screen();
+    CHECK(px(1 + 7 * 16, 16 + 12) && px(1 + 7 * 16 + 13, 16 + 12 + 10));   /* (crossed) */
+    write_pbm("ps_states_deleted");
+    hit(ps_pad(9));                                     /* (an empty one: nothing; Delete never pastes) */
+    CHECK(npa == 1);
+    hit(ps_pad(2));
+    CHECK(ps_count(RFM_MOVE_ACT_STATE_DELETE) == 2 && M.fw.st_cur[0] == -1);
+    button(MR_CC_DELETE, 0);
+    /* Back: the marks first, then the layer */
+    CHECK(M.fw.sb_armed);
+    back(), adv_ms(20);
+    CHECK(!M.fw.sb_armed && rfm_move_states_open(&M) == 0);
+    /* the buffer is ChoralRoot's: SLOOP's States do not offer it */
+    tap_track(1), rest(), ps_clear();
+    button(MR_CC_COPY, 1), hit(ps_pad(3)), button(MR_CC_COPY, 0);
+    CHECK(npa == 0);
+    back(), rest();
+    CHECK(rfm_move_states_open(&M) < 0);
+}
+
+/* p9: step 14 New (the firmware as first installed; none active), Undo after it (its light only while there) */
+static void test_ps_new_undo(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    const ps_act_t *a;
+    ps_states();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    ps_open0();
+    clear();
+    step(13, 1);
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_NEW, 0)) && a->slot == 0 && !strcmp(a->id, "choralroot") && M.fw.st_cur[0] == -1);
+    leds(w);
+    CHECK(white(w[L_STEP0 + 13]) && w[L_ICON0 + 13][0] == 127 && w[L_WHITE0 + W_UNDO][0] == 127 && w[L_PAD0 + 25][0] == 107);
+    CHECKF(strstr(said, "New state, ChoralRoot") != NULL, "said %s", said);
+    write_pbm("ps_state_new");
+    step(13, 0);
+    CHECK(M.fw.st_used[0] == (1u | 2u | 16u | 1u << 15));   /* (no stored state touched) */
+    ps_clear(), clear();
+    press(MR_CC_UNDO);
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_UNDO, 0)) && a->value == 1 && a->index == 1 && M.fw.st_cur[0] == 1);
+    leds(w);
+    CHECK(w[L_WHITE0 + W_UNDO][0] == 0 && w[L_STEP0 + 13][0] == 63);
+    CHECKF(strstr(said, "Undo, new state") != NULL, "said %s", said);
+    write_pbm("ps_state_undo");
+    ps_clear();
+    press(MR_CC_UNDO);                                  /* (one step: nothing more) */
+    CHECK(npa == 0);
+    /* a New, then a load: the undo is gone */
+    step(13, 1), step(13, 0), rest();
+    hit(ps_pad(4));
+    leds(w);
+    CHECK(w[L_WHITE0 + W_UNDO][0] == 0);
+    ps_clear();
+    press(MR_CC_UNDO);
+    CHECK(npa == 0);
+    /* a New, then States left: gone too */
+    step(13, 1), step(13, 0), back(), rest();
+    ps_open0();
+    leds(w);
+    CHECK(w[L_WHITE0 + W_UNDO][0] == 0);
+    back(), rest();
+}
+
 int main(void)
 {
     test_scenes();
@@ -2642,6 +3235,15 @@ int main(void)
     test_knob_lights();
     test_dead_presses();
     test_browser_icons();
+    test_ps_blob();
+    test_ps_loading();
+    test_ps_limit();
+    test_ps_new();
+    test_ps_held();
+    test_ps_pad7();
+    test_ps_layer();
+    test_ps_gestures();
+    test_ps_new_undo();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }
