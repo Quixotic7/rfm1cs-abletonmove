@@ -1372,6 +1372,9 @@ static void test_walk(void)
                 continue;                               /* (the held Track pressed again: its release, no input) */
             if (CTX[c].set == c_step && !strcmp(INS[i].name, "step 5"))
                 continue;                               /* (the held step again: its release) */
+            if ((CTX[c].set == c_copy && !strcmp(INS[i].name, "Copy")) || (CTX[c].set == c_delete && !strcmp(INS[i].name, "Delete")))
+                continue;                               /* (0.12.0: the held Copy / Delete again: its release, the held
+                                                         * icon gone) */
             if (INS[i].kind == 2 && CTX[c].set != c_fw && CTX[c].set != c_fwsel && CTX[c].set != c_catalog &&
                 CTX[c].set != c_states && CTX[c].set != c_capture && CTX[c].set != c_fx && CTX[c].set != c_mixer &&
                 CTX[c].set != c_routing && CTX[c].set != c_grid && CTX[c].set != c_session && CTX[c].set != c_global &&
@@ -1424,10 +1427,10 @@ static void test_delete(void)
         rfm_move_screen(&M, NULL, b);
         CHECK(!memcmp(a, b, sizeof a) && !M.seq.msg);
         HAS("V:Delete: hold and press a step, pad or clip|");
-        button(&M, MR_CC_DELETE, 1);                    /* (held: the track view as ever, the canvas's seq.clip) */
+        button(&M, MR_CC_DELETE, 1);                    /* (held: the track view, (0.12.0) the scissors top right) */
         rfm_move_screen(&M, NULL, b);
         write_pbm("delete_held.pbm", b);
-        CHECK(!memcmp(a, b, sizeof a));
+        CHECK(memcmp(a, b, sizeof a) != 0 && rfmv_seq_held_icon(&M) == 1);
         tap_step(&M, 4);
         rfm_move_screen(&M, NULL, b);
         write_pbm("delete_cut.pbm", b);                 /* (step 5 crossed) */

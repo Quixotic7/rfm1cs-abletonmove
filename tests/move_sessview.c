@@ -277,7 +277,10 @@ static void test_scenes(void)
     button(MR_CC_SHIFT, 1), hit(SCN(0)), button(MR_CC_SHIFT, 0);
     button(MR_CC_COPY, 1), hit(SCN(0)), button(MR_CC_COPY, 0);
     button(MR_CC_DELETE, 1), hit(SCN(0)), button(MR_CC_DELETE, 0);
-    CHECK(M.seq.tr[0].queued == SEQ_NONE && M.seq.tr[0].active == 2 && clip_has(0, 0) && !clip_has(0, 3));
+    CHECK(M.seq.tr[0].queued == SEQ_NONE && M.seq.tr[0].active == 2 && !clip_has(0, 0) && !clip_has(0, 3));   /* (0.12.0: the
+                                                         * row deleted, nothing launched) */
+    press(MR_CC_UNDO);
+    CHECK(clip_has(0, 0) && clip_has(3, 0));
 }
 
 /* ================================================================ 2. the pressed clip shown as selected; Live's colours === */
@@ -523,71 +526,72 @@ static void test_hollow(void)
     CHECK(cell_dot(3, 2) && cell_clip(3, 1));
 }
 
-/* ================================================================ 4. clips cut and copied as steps are === */
+/* ================================================================ 4. clips deleted, copied, pasted (0.12.0, the owner's) === */
 static void test_cut_copy(void)
 {
     session_view();
     rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
     clip_put(0, 0, 60), clip_put(1, 0, 62), clip_put(2, 0, 64), clip_put(3, 0, 65);
     rest(), clear();
-    /* Delete held throughout (the steps' sequence, 0.6.3): cut A; A again: pasted back; an empty slot: pasted; B
-     * (a clip): cut; C right after: pasted over; C again: cut. The clipboard stays */
+    /* Delete held + a clip: deleted at the press, into the buffer (an X in its slot). Delete never pastes: the same
+     * slot again, an empty slot: nothing */
     button(MR_CC_DELETE, 1);
     hit(PAD(0, 0));
-    CHECK(!clip_has(0, 0) && M.seq.clip_kind == 2 && M.seq.cut && rfmv_seq_src_clip(&M, SEQ_CLIP(0, 0)) == 2);
+    CHECK(!clip_has(0, 0) && M.seq.clip_kind == 2 && M.seq.cut && M.seq.sv_armed && rfmv_seq_src_clip(&M, SEQ_CLIP(0, 0)) == 2);
     screen();
     write_pbm("cut");
     CHECK(px(0 * 16 + 1, 4 + 6) && px(0 * 16 + 4, 4 + 3));   /* (an X in its slot) */
     CHECKF(strstr(said, "Cut track 1 clip 1") != NULL, "said \"%s\"", said);
-    clear(), now_ms += 400, hit(PAD(0, 0));
-    CHECK(clip_note(0, 0, 60) && !M.seq.cut && M.seq.clip_kind == 2 && !rfmv_seq_src_clip(&M, SEQ_CLIP(0, 0)));
-    CHECKF(strstr(said, "Pasted to track 1 clip 1") != NULL, "said \"%s\"", said);
-    clear(), hit(PAD(0, 2));
-    CHECK(clip_note(0, 2, 60) && clip_note(0, 0, 60));
-    CHECKF(strstr(said, "Pasted to track 1 clip 3") != NULL, "said \"%s\"", said);
-    clear(), hit(PAD(1, 0));
-    CHECK(!clip_has(1, 0) && M.seq.cut && rfmv_seq_src_clip(&M, SEQ_CLIP(1, 0)) == 2);
-    clear(), hit(PAD(2, 0));
-    CHECK(clip_note(2, 0, 62) && !clip_note(2, 0, 64) && !M.seq.cut);
-    CHECKF(strstr(said, "Track 3 clip 1 replaced") != NULL, "said \"%s\"", said);
-    now_ms += 400, hit(PAD(2, 0));
-    CHECK(!clip_has(2, 0) && M.seq.cut);
+    clear(), now_ms += 400, hit(PAD(0, 0)), hit(PAD(0, 2));
+    CHECK(!clip_has(0, 0) && !clip_has(0, 2) && M.seq.cut);
     button(MR_CC_DELETE, 0);
-    /* the next hold starts fresh: a clip is cut; an empty slot gets the clipboard, again and again */
-    button(MR_CC_DELETE, 1), hit(PAD(3, 0)), button(MR_CC_DELETE, 0);
-    CHECK(!clip_has(3, 0) && M.seq.cut);
-    button(MR_CC_DELETE, 1), hit(PAD(4, 1)), button(MR_CC_DELETE, 0);
-    button(MR_CC_DELETE, 1), hit(PAD(5, 2)), button(MR_CC_DELETE, 0);
-    CHECK(clip_note(4, 1, 65) && clip_note(5, 2, 65) && M.seq.clip_kind == 2 && !M.seq.cut);
-    /* Undo: the last paste's notes back out */
+    /* one undo brings it back */
     press(MR_CC_UNDO);
-    CHECK(!clip_note(5, 2, 65) && clip_note(4, 1, 65));
-    /* Copy held: a clip copied (dashed while Copy is held), an empty slot gets it; the source stays */
-    rest();                                             /* (Undo's message gone) */
-    button(MR_CC_COPY, 1), hit(PAD(0, 0));
+    CHECK(clip_note(0, 0, 60));
+    rest();
+    /* Delete + B: gone; Copy + an empty slot: B pasted there (the buffer stays: again elsewhere) */
+    button(MR_CC_DELETE, 1), hit(PAD(1, 0)), button(MR_CC_DELETE, 0);
+    CHECK(!clip_has(1, 0));
+    clear();
+    button(MR_CC_COPY, 1), hit(PAD(4, 1));
+    CHECK(clip_note(4, 1, 62) && !M.seq.sv_armed && !rfmv_seq_src_clip(&M, SEQ_CLIP(1, 0)));
+    CHECKF(strstr(said, "Pasted to track 5 clip 2") != NULL, "said \"%s\"", said);
+    now_ms += 400, hit(PAD(5, 2));
+    CHECK(clip_note(5, 2, 62));
+    /* .. Copy + a clip now (not armed: the last was a paste): copied (dashed), armed; then Copy + another clip: replaced
+     * by it; once (the paste disarms): the next clip is copied */
+    clear(), now_ms += 400, hit(PAD(2, 0));
+    CHECK(clip_note(2, 0, 64) && M.seq.sv_armed && rfmv_seq_src_clip(&M, SEQ_CLIP(2, 0)) == 1);
     screen();
     write_pbm("copied");
-    CHECK(clip_note(0, 0, 60) && rfmv_seq_src_clip(&M, SEQ_CLIP(0, 0)) == 1);
-    hit(PAD(6, 0)), now_ms += 400, hit(PAD(6, 3));
+    now_ms += 400, hit(PAD(2, 0));                      /* (the very clip just copied: copied again, no self-paste) */
+    CHECK(clip_note(2, 0, 64) && M.seq.sv_armed && M.seq.clip_src == SEQ_CLIP(2, 0));
+    clear(), now_ms += 400, hit(PAD(3, 0));
+    CHECK(clip_note(3, 0, 64) && !clip_note(3, 0, 65) && !M.seq.sv_armed);
+    CHECKF(strstr(said, "Track 4 clip 1 replaced") != NULL, "said \"%s\"", said);
+    now_ms += 400, hit(PAD(5, 2));
+    CHECK(clip_note(5, 2, 62) && M.seq.sv_armed && M.seq.clip_src == SEQ_CLIP(5, 2));
     button(MR_CC_COPY, 0);
-    CHECK(clip_note(6, 0, 60) && clip_note(6, 3, 60) && clip_note(0, 0, 60) && !M.seq.paste);
-    /* Copy + a clip, Copy let go, then a press: pasted there once (Move's way), a clip there replaced; the press
-     * after it is a press again */
-    clip_put(5, 0, 71);
-    button(MR_CC_COPY, 1), hit(PAD(0, 0)), button(MR_CC_COPY, 0);
-    CHECK(M.seq.paste == 1 && rfmv_seq_src_clip(&M, SEQ_CLIP(0, 0)) == 1);
-    clear(), now_ms += 400, hit(PAD(5, 0));
-    CHECK(clip_note(5, 0, 60) && !clip_note(5, 0, 71) && !M.seq.paste);
-    CHECKF(strstr(said, "Track 6 clip 1 replaced") != NULL, "said \"%s\"", said);
     press(MR_CC_UNDO);
-    CHECK(clip_note(5, 0, 71) && !clip_note(5, 0, 60));
-    now_ms += 1000, hit(PAD(5, 0));
-    CHECK(clip_note(5, 0, 71) && M.seq.sel_track == 5 && M.seq.tr[5].active == 0);
-    /* Back drops a waiting copy's mark (a layer), then leaves session view */
+    CHECK(clip_note(3, 0, 65) && !clip_note(3, 0, 64));
+    /* armed survives Copy's release: Copy + a clip later pastes over it (the owner's: "replace a clip if the previous
+     * function was delete or copy"); nothing happens after Copy is let go: a plain press launches */
+    now_ms += 1000, hit(PAD(3, 0));
+    CHECK(clip_note(3, 0, 65) && M.seq.sel_track == 3 && !M.seq.paste);
+    button(MR_CC_COPY, 1), hit(PAD(3, 0)), button(MR_CC_COPY, 0);
+    CHECK(clip_note(3, 0, 62) && !clip_note(3, 0, 65));
+    press(MR_CC_UNDO);
+    /* Back: the marks go and armed with them; the buffer stays (Copy + an empty slot still pastes) */
     button(MR_CC_COPY, 1), hit(PAD(0, 0)), button(MR_CC_COPY, 0);
+    CHECK(M.seq.sv_armed && rfmv_seq_src_clip(&M, SEQ_CLIP(0, 0)) == 1);
     back();
-    CHECK(!M.seq.paste && M.seq.view == 1);
-    /* (0.10.0, the owner's) Copy tapped alone: nothing here (in track view it duplicates the clip, as the Move) */
+    CHECK(!M.seq.sv_armed && !rfmv_seq_src_clip(&M, SEQ_CLIP(0, 0)) && M.seq.clip_kind == 2 && M.seq.view == 1);
+    button(MR_CC_COPY, 1), hit(PAD(3, 0)), button(MR_CC_COPY, 0);   /* (not armed: a clip is copied, not replaced) */
+    CHECK(clip_note(3, 0, 65) && M.seq.clip_src == SEQ_CLIP(3, 0));
+    back();
+    button(MR_CC_COPY, 1), hit(PAD(6, 3)), button(MR_CC_COPY, 0);
+    CHECK(clip_note(6, 3, 65));
+    /* (0.10.0, 0.12.0: every view) Copy tapped alone: nothing */
     {
         int t, sn, before = 0, after = 0;
         for (t = 0; t < 16; t++)
@@ -1106,6 +1110,130 @@ static void test_sv_anywhere(void)
     CHECK(tk_sent(MR_CC_BACK) == 2 && m_tk_shown() == 0);
 }
 
+/* ================================================================ (0.12.0) scenes copied, pasted, deleted; the held icons === */
+static int row_clips(int scene)
+{
+    int t, n = 0;
+    for (t = 0; t < 16; t++)
+        n += clip_has(t, scene);
+    return n;
+}
+static int scene_icon(int r)                            /* the scene column's cell r: an icon (not a number) */
+{
+    int x, y, n = 0;
+    for (y = 4 + r * 15; y < 4 + r * 15 + 12; y++)
+        for (x = 113; x < 127; x++)
+            n += px(x, y);
+    return n > 18;
+}
+static void test_sv_scenes(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    static uint8_t a[MR_SCREEN_BYTES], b[MR_SCREEN_BYTES];
+    session_view();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    owners_grid();
+    clip_put(9, 0, 80);                                 /* (a clip out of view: the row is all 16 tracks) */
+    M.seq.cset[SEQ_CLIP(0, 0)] = 3;                     /* (a clip's launch settings go with it) */
+    hit(SCN(0)), adv_ms(700), bar_start();
+    rest(), clear();
+    /* the held icons, at the press: Delete: scissors in the scene column; Copy: the two sheets */
+    screen(), memcpy(a, SCR, sizeof a);
+    button(MR_CC_DELETE, 1);
+    screen();
+    CHECK(scene_icon(0) && scene_icon(3) && memcmp(a, SCR, sizeof a));
+    write_pbm("delete_held");
+    /* Delete + a scene pad: every clip of the row deleted, into the scene buffer; nothing launched; the row's cells
+     * crossed and its pads red while Delete is held; said */
+    hit(SCN(0));
+    CHECK(row_clips(0) == 0 && M.seq.sc_kind == 2 && M.seq.sc_armed && M.seq.sc_src == 0);
+    CHECK(M.seq.tr[0].queued == SEQ_STOP || M.seq.tr[0].active == -1);   /* (a playing clip deleted: as a clip's) */
+    CHECKF(strstr(said, "Scene 1 deleted") != NULL, "said \"%s\"", said);
+    screen(), leds(w);
+    CHECK(px(0 * 16 + 4, 4 + 3) && px(3 * 16 + 4, 4 + 3) && !px(4 * 16 + 4, 4 + 3));   /* (X in tracks 1..4; 5 had none) */
+    CHECK(w[L_PAD0 + PAD(0, 0)][0] > 0 && !w[L_PAD0 + PAD(0, 0)][1] && lit(w[L_PAD0 + PAD(2, 0)]) && !lit(w[L_PAD0 + PAD(4, 0)]));
+    write_pbm("scene_deleted");
+    button(MR_CC_DELETE, 0);
+    screen();
+    CHECK(!px(0 * 16 + 4, 4 + 3) && cell_dot(0, 0));    /* (the marks only while it is held) */
+    /* one undo: the row back */
+    press(MR_CC_UNDO);
+    CHECK(row_clips(0) == 5 && clip_note(9, 0, 80));
+    rest();
+    /* Delete + an empty row: nothing */
+    button(MR_CC_DELETE, 1), hit(SCN(3)), button(MR_CC_DELETE, 0);
+    CHECK(row_clips(3) == 0 && M.seq.sc_src == 0);
+    /* Copy + a scene: copied (armed), the row dashed while Copy is held; Copy + an empty row: pasted there, every track
+     * (the buffer's holes empty), the launch settings with it; nothing launched */
+    back(), clear();                                    /* (Back: not armed now; the buffer stays) */
+    button(MR_CC_COPY, 1);
+    screen();
+    CHECK(scene_icon(0));
+    write_pbm("copy_held");
+    hit(SCN(0));
+    CHECK(M.seq.sc_kind == 1 && M.seq.sc_armed && rfmv_seq_src_clip(&M, SEQ_CLIP(0, 0)) == 1 && !rfmv_seq_src_clip(&M, SEQ_CLIP(4, 0)));
+    CHECKF(strstr(said, "Scene 1 copied") != NULL, "said \"%s\"", said);
+    screen();
+    write_pbm("scene_copied");
+    clear(), hit(SCN(3));
+    CHECK(row_clips(3) == 5 && clip_note(0, 3, 60) && clip_note(9, 3, 80) && clip_has(2, 3) && !clip_has(4, 3) && !M.seq.sc_armed);
+    CHECK(M.seq.cset[SEQ_CLIP(0, 3)] == 3 && M.seq.tr[0].queued != 3);
+    CHECKF(strstr(said, "Pasted to scene 4") != NULL, "said \"%s\"", said);
+    button(MR_CC_COPY, 0);
+    press(MR_CC_UNDO);
+    CHECK(row_clips(3) == 0);
+    /* Copy + a row with clips, armed (the last scene function a copy): replaced, all 16 tracks (track 3 keeps none) */
+    button(MR_CC_COPY, 1), hit(SCN(0)), button(MR_CC_COPY, 0);   /* (copied) */
+    clear();
+    button(MR_CC_COPY, 1), hit(SCN(2)), button(MR_CC_COPY, 0);   /* (row 3: tracks 1 and 3) */
+    CHECK(row_clips(2) == 5 && clip_note(0, 2, 60) && !clip_note(0, 2, 62) && clip_note(2, 2, 68) && !clip_note(2, 2, 70) &&
+          clip_note(9, 2, 80));
+    CHECKF(strstr(said, "Scene 3 replaced") != NULL, "said \"%s\"", said);
+    press(MR_CC_UNDO);
+    CHECK(clip_note(0, 2, 62) && clip_note(2, 2, 70) && !clip_has(9, 2) && !clip_has(1, 2));
+    /* not armed (pasted last): Copy + the row copies it; the very row just copied: copied again */
+    button(MR_CC_COPY, 1), hit(SCN(2)), hit(SCN(2)), button(MR_CC_COPY, 0);
+    CHECK(M.seq.sc_src == 2 && M.seq.sc_armed && clip_note(0, 2, 62));
+    /* Back: the marks and armed go, the buffer stays */
+    back();
+    CHECK(!M.seq.sc_armed && M.seq.sc_kind == 1);
+    button(MR_CC_COPY, 1), hit(SCN(3)), button(MR_CC_COPY, 0);
+    CHECK(clip_note(0, 3, 62) && clip_note(2, 3, 70) && row_clips(3) == 2);
+    /* Delete, then Copy + an empty row: the deleted row pasted there */
+    button(MR_CC_DELETE, 1), hit(SCN(3)), button(MR_CC_DELETE, 0);
+    CHECK(row_clips(3) == 0);
+    button(MR_CC_COPY, 1), hit(SCN(1)), button(MR_CC_COPY, 0);   /* (armed by the delete: row 2 replaced) */
+    CHECK(clip_note(0, 1, 62) && !clip_has(1, 1) && clip_note(2, 1, 70) && !clip_has(3, 1));
+    /* the held icons in track view: top right; let go: gone; a quick click of Copy or Delete changes nothing */
+    press(MR_CC_MENU), rest();
+    screen(), memcpy(a, SCR, sizeof a);
+    button(MR_CC_DELETE, 1);
+    screen(), memcpy(b, SCR, sizeof b);
+    CHECK(memcmp(a, b, sizeof a) && px(116 + 5, 1 + 5));   /* (the blades cross at the middle) */
+    write_pbm("track_delete_held");
+    button(MR_CC_DELETE, 0);
+    button(MR_CC_COPY, 1);
+    screen();
+    CHECK(px(116, 1) && !px(116 + 5, 1 + 2));
+    write_pbm("track_copy_held");
+    button(MR_CC_COPY, 0);
+    rest();
+    {
+        int t, sn, before = 0, after = 0;
+        for (t = 0; t < 16; t++)
+            for (sn = 0; sn < 16; sn++)
+                before += clip_has(t, sn) * (1 + rfmv_seq_clip_used(&M, SEQ_CLIP(t, sn)));
+        press(MR_CC_DELETE), press(MR_CC_COPY), rest();
+        press(MR_CC_MENU), rest(), press(MR_CC_DELETE), press(MR_CC_COPY), rest();
+        for (t = 0; t < 16; t++)
+            for (sn = 0; sn < 16; sn++)
+                after += clip_has(t, sn) * (1 + rfmv_seq_clip_used(&M, SEQ_CLIP(t, sn)));
+        CHECKF(before == after && M.seq.msg != SEQ_MSG_DUP, "%d, then %d", before, after);
+        screen();
+        CHECK(!scene_icon(0));
+    }
+}
+
 int main(void)
 {
     test_scenes();
@@ -1121,6 +1249,7 @@ int main(void)
     test_arp();
     test_sv_marks();
     test_sv_anywhere();
+    test_sv_scenes();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

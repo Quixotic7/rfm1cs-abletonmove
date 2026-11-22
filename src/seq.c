@@ -87,12 +87,17 @@ int rfmv_seq_clip_has(const rfm_move_t *m, int clip)
 {
     return (m->seq.made[clip >> 3] >> (clip & 7) & 1) || rfmv_seq_clip_used(m, clip);
 }
+static void jot(rfm_move_t *m, int type, const rfm_move_note_t *n, int old, int nu);
 void rfmv_seq_clip_make(rfm_move_t *m, int clip, int on)
 {
     const uint8_t b = (uint8_t)(1u << (clip & 7));
     if (on != !!(m->seq.made[clip >> 3] & b)) {
+        rfm_move_note_t n;
         m->seq.made[clip >> 3] = (uint8_t)(on ? m->seq.made[clip >> 3] | b : m->seq.made[clip >> 3] & ~b);
-        rfmv_seq_dirty(m);
+        memset(&n, 0, sizeof n);                        /* (0.12.0: journaled: an undone paste or delete leaves the slot
+                                                         * as it was, not a clip with no notes) */
+        n.clip = (uint8_t)clip;
+        jot(m, OP_MADE, &n, !on, !!on);
     }
 }
 int rfmv_seq_loop_lo(const rfm_move_t *m, int clip) { return m->seq.lstart[clip]; }
@@ -300,6 +305,18 @@ void rfmv_seq_loop_set(rfm_move_t *m, int clip, int lo, int len)
         lstart_set(m, clip, lo), rfmv_seq_len_set(m, clip, len);
 }
 
+/* (0.12.0) a clip's own launch settings (its launch, after its loop), journaled: one undo with its gesture */
+void rfmv_seq_cset_set(rfm_move_t *m, int clip, int v)
+{
+    rfm_move_note_t n;
+    const int old = m->seq.cset[clip];
+    if (clip < 0 || clip >= RFM_MOVE_SEQ_CLIPS || old == (v & 0xFF))
+        return;
+    m->seq.cset[clip] = (uint8_t)v;
+    memset(&n, 0, sizeof n);
+    n.clip = (uint8_t)clip;
+    jot(m, OP_CSET, &n, old, v & 0xFF);
+}
 void rfmv_seq_step_clear(rfm_move_t *m, int clip, int step)
 {
     int lo, hi = rfmv_seq_range(m, clip, step, &lo);
@@ -318,6 +335,7 @@ void rfmv_seq_clip_clear(rfm_move_t *m, int clip)
     while (hi-- > lo)
         rfmv_seq_lock_set(m, clip, m->seq.locks[hi].step, m->seq.locks[hi].cc, -1);
     rfmv_seq_loop_set(m, clip, 0, RFM_MOVE_SEQ_PAGE);
+    rfmv_seq_cset_set(m, clip, 0);                      /* (0.12.0: its launch settings: the defaults) */
 }
 void rfmv_seq_clip_quantize(rfm_move_t *m, int clip)
 {
@@ -378,6 +396,12 @@ static void op_apply(rfm_move_t *m, const rfm_move_op_t *o, int forward)
     }
     case OP_LEN: q->len[o->n.clip] = forward ? o->nu : o->old; break;
     case OP_LSTART: q->lstart[o->n.clip] = (uint8_t)(forward ? o->nu : o->old); break;
+    case OP_CSET: q->cset[o->n.clip] = (uint8_t)(forward ? o->nu : o->old); break;
+    case OP_MADE: {
+        const uint8_t b = (uint8_t)(1u << (o->n.clip & 7));
+        q->made[o->n.clip >> 3] = (uint8_t)((forward ? o->nu : o->old) ? q->made[o->n.clip >> 3] | b : q->made[o->n.clip >> 3] & ~b);
+        break;
+    }
     default: break;
     }
 }
@@ -425,7 +449,7 @@ void rfmv_seq_copy_clip(rfm_move_t *m, int clip)
     rfm_move_seq_t *q = &m->seq;
     int lo, hi = rfmv_seq_clip_range(m, clip, &lo), i;
     q->clip_kind = 2, q->cut = 0, q->clip_nn = q->clip_nl = 0, q->clip_len = q->len[clip];
-    q->clip_lstart = q->lstart[clip];
+    q->clip_lstart = q->lstart[clip], q->clip_cset = q->cset[clip];
     for (i = lo; i < hi && q->clip_nn < RFM_MOVE_SEQ_POLY * RFM_MOVE_SEQ_MAXLEN; i++)
         q->clip_notes[q->clip_nn++] = q->notes[i];
     hi = rfmv_seq_clip_lock_range(m, clip, &lo);
@@ -490,6 +514,7 @@ void rfmv_seq_paste_clip(rfm_move_t *m, int clip)
     }
     for (i = 0; i < q->clip_nl; i++)
         rfmv_seq_lock_set(m, clip, q->clip_locks[i].step, q->clip_locks[i].cc, q->clip_locks[i].val);
+    rfmv_seq_cset_set(m, clip, q->clip_cset);           /* (0.12.0) */
 }
 void rfmv_seq_track_copy(rfm_move_t *m, int from, int to)
 {
@@ -512,6 +537,7 @@ void rfmv_seq_clip_dup(rfm_move_t *m, int from, int to)
         return;
     rfmv_seq_clip_clear(m, to);
     rfmv_seq_loop_set(m, to, q->lstart[from], q->len[from]);
+    rfmv_seq_cset_set(m, to, q->cset[from]);            /* (0.12.0) */
     rfmv_seq_clip_make(m, to, 1);
     n = rfmv_seq_clip_range(m, from, &lo) - lo;
     for (k = 0; k < n; k++) {                           /* (the range moves when `to` sorts before it) */
@@ -528,6 +554,63 @@ void rfmv_seq_clip_dup(rfm_move_t *m, int from, int to)
         rfmv_seq_lock_set(m, to, c.step, c.cc, c.val);
     }
     (void)hi;
+}
+
+/* ---- (0.12.0, the owner's) the scene buffer: a row across the 16 tracks, its own (not the clipboard). Copied: each
+ * track's clip there (notes, locks, loop, launch settings; none: a hole); pasted: onto a row, every track (a hole
+ * there: that track's clip deleted) */
+int rfmv_seq_scene_has(const rfm_move_t *m, int scene)
+{
+    int t;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++)
+        if (rfmv_seq_clip_has(m, SEQ_CLIP(t, scene)))
+            return 1;
+    return 0;
+}
+void rfmv_seq_scene_copy(rfm_move_t *m, int scene)
+{
+    rfm_move_seq_t *q = &m->seq;
+    int t, lo, hi, i;
+    q->sb_has = 0, q->sb_nn = q->sb_nl = 0;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++) {
+        const int clip = SEQ_CLIP(t, scene);
+        q->sb_len[t] = q->len[clip], q->sb_lstart[t] = q->lstart[clip], q->sb_cset[t] = q->cset[clip];
+        if (!rfmv_seq_clip_has(m, clip))
+            continue;
+        q->sb_has = (uint16_t)(q->sb_has | 1u << t);
+        hi = rfmv_seq_clip_range(m, clip, &lo);         /* (past the buffer's room: dropped) */
+        for (i = lo; i < hi && q->sb_nn < sizeof q->sb_notes / sizeof q->sb_notes[0]; i++)
+            q->sb_notes[q->sb_nn] = q->notes[i], q->sb_notes[q->sb_nn++].clip = (uint8_t)t;
+        hi = rfmv_seq_clip_lock_range(m, clip, &lo);
+        for (i = lo; i < hi && q->sb_nl < sizeof q->sb_locks / sizeof q->sb_locks[0]; i++)
+            q->sb_locks[q->sb_nl] = q->locks[i], q->sb_locks[q->sb_nl++].clip = (uint8_t)t;
+    }
+    q->sc_src = (uint8_t)scene;
+}
+void rfmv_seq_scene_paste(rfm_move_t *m, int scene)
+{
+    rfm_move_seq_t *q = &m->seq;
+    int t, i;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++) {
+        const int clip = SEQ_CLIP(t, scene);
+        if (!(q->sb_has >> t & 1)) {
+            if (rfmv_seq_clip_has(m, clip))
+                rfmv_seq_clip_delete(m, clip);          /* (a hole in the buffer: that track's clip goes) */
+            continue;
+        }
+        if (q->tr[t].active == scene)
+            rfmv_seq_release(m, t);                     /* (the replaced clip's sounding notes let go; it plays on) */
+        rfmv_seq_clip_clear(m, clip);
+        rfmv_seq_loop_set(m, clip, q->sb_lstart[t], q->sb_len[t]);
+        rfmv_seq_cset_set(m, clip, q->sb_cset[t]);
+        rfmv_seq_clip_make(m, clip, 1);
+    }
+    for (i = 0; i < q->sb_nn; i++) {
+        const rfm_move_note_t *n = &q->sb_notes[i];
+        rfmv_seq_note_put(m, SEQ_CLIP(n->clip, scene), n->step, n->note, n->vel, n->len, n->micro);
+    }
+    for (i = 0; i < q->sb_nl; i++)
+        rfmv_seq_lock_set(m, SEQ_CLIP(q->sb_locks[i].clip, scene), q->sb_locks[i].step, q->sb_locks[i].cc, q->sb_locks[i].val);
 }
 
 void rfmv_seq_track_clear(rfm_move_t *m, int track)

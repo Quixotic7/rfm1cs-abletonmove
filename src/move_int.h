@@ -88,7 +88,7 @@ void rfmv_fm1_art(const rfm_move_t *m, mr_canvas_t *cv);   /* FM-1 mode's left h
 /* ---- seq.c: the data model (sorted arrays), the journal, the clock, the engine */
 #define SEQ_CLIP(track, scene) ((track) * RFM_MOVE_SEQ_SCENES + (scene))
 enum { SEQ_NONE = -2, SEQ_STOP = -1 };
-enum { OP_NOTE_ADD = 1, OP_NOTE_DEL, OP_LOCK, OP_LEN, OP_LSTART };
+enum { OP_NOTE_ADD = 1, OP_NOTE_DEL, OP_LOCK, OP_LEN, OP_LSTART, OP_CSET, OP_MADE };   /* (0.12.0: a clip's launch settings) */
 #define SEQ_NOLOCK 0xFF
 
 void rfmv_seq_init(rfm_move_t *m);                     /* an empty project, the clock reset */
@@ -125,6 +125,11 @@ int rfmv_seq_redo(rfm_move_t *m);
 /* the clipboard: copy (kind 1 step, 2 clip) into it, paste from it */
 void rfmv_seq_copy_step(rfm_move_t *m, int clip, int step);
 void rfmv_seq_copy_clip(rfm_move_t *m, int clip);
+void rfmv_seq_cset_set(rfm_move_t *m, int clip, int v); /* (0.12.0) a clip's launch settings (journaled) */
+void rfmv_seq_clip_delete(rfm_move_t *m, int clip);    /* a clip deleted (playing: the track stops at the bar) */
+void rfmv_seq_scene_copy(rfm_move_t *m, int scene);     /* (0.12.0) a row into the scene buffer */
+void rfmv_seq_scene_paste(rfm_move_t *m, int scene);    /* .. the scene buffer onto a row (all 16 tracks) */
+int rfmv_seq_scene_has(const rfm_move_t *m, int scene); /* .. a row has a clip */
 void rfmv_seq_paste_step(rfm_move_t *m, int clip, int step);
 void rfmv_seq_copy_step_add(rfm_move_t *m, int clip, int step);   /* (0.6.3) one more step of a group */
 void rfmv_seq_paste_clip(rfm_move_t *m, int clip);
@@ -205,6 +210,7 @@ void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now);
 void rfmv_shift_icons(const rfm_move_t *m, uint8_t icon[16]);   /* the Shift layer's icon LEDs (0 off) */
 void rfmv_seq_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0], uint8_t white[13]);
 void rfmv_seq_screen(const rfm_move_t *m, mr_canvas_t *cv);
+int rfmv_seq_held_icon(const rfm_move_t *m);            /* (0.12.0) Delete held: 1 (scissors), Copy: 2 */
 void rfmv_seq_track_menu(const rfm_move_t *m, mr_canvas_t *cv);   /* Track 4 held */
 void rfmv_seq_msg(rfm_move_t *m, int msg);
 const char *rfmv_seq_msg_text(const rfm_move_t *m);    /* the message up now, NULL none */

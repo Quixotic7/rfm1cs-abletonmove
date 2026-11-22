@@ -539,6 +539,11 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 7 + RFM_MOVE_SEQ_LOCKS * 4)
 enum { RFM_MOVE_CLOCK_AUTO = 0, RFM_MOVE_CLOCK_INTERNAL = 1, RFM_MOVE_CLOCK_EXTERNAL = 2 };
+/* (0.12.0) launch quantization: when a clicked clip, scene or stop takes effect (1 Bar the default, 0). CLIP: at the end
+ * of the loop of the clip the track plays (none: the next bar) */
+enum { RFM_MOVE_LQ_BAR = 0, RFM_MOVE_LQ_INSTANT, RFM_MOVE_LQ_BEAT, RFM_MOVE_LQ_2BARS, RFM_MOVE_LQ_4BARS, RFM_MOVE_LQ_CLIP,
+       RFM_MOVE_LQ_N };
+#define RFM_MOVE_CS_AFTER_NEXT 0x08                     /* a clip's settings: after its loop, the next clip */
 
 typedef struct {                                        /* a note in a clip; sorted by (clip, step, note) */
     uint8_t clip, step, note, vel;
@@ -679,6 +684,26 @@ typedef struct {
     int8_t tk_pend;                                     /* the track whose click waits, -1 none */
     uint8_t tk_pend_kind, tk_pend_fw;                   /* .. 0 select (a step), 1 routed / not (a pad); its firmware */
     uint32_t tk_pend_clk;                               /* .. since when (the sequencer clock's ms) */
+    /* (0.12.0) session view's clip and scene buffers. The clip buffer is the clipboard (clip_kind 2); armed: the last
+     * clip function was a copy or a delete, so Copy + a clip pastes over it (cleared by a paste, Back) */
+    uint8_t sv_armed;
+    uint8_t sc_kind, sc_src, sc_armed;                  /* the scene buffer: 0 empty, 1 copied, 2 deleted; its row; armed */
+    uint16_t sb_has;                                    /* .. bits: the tracks with a clip in it */
+    uint16_t sb_nn, sb_nl;
+    uint16_t sb_len[RFM_MOVE_SEQ_TRACKS];
+    uint8_t sb_lstart[RFM_MOVE_SEQ_TRACKS], sb_cset[RFM_MOVE_SEQ_TRACKS];
+    rfm_move_note_t sb_notes[RFM_MOVE_SEQ_POLY * RFM_MOVE_SEQ_MAXLEN];   /* (clip: the track) */
+    rfm_move_lock_t sb_locks[RFM_MOVE_SEQ_LOCKS / 2];
+    /* (0.12.0) launch quantization: the project's (RFM_MOVE_LQ_*, saved) and each clip's own settings (saved, version
+     * 8): bits 0..2 its launch (0 the project's, else RFM_MOVE_LQ_* + 1), bit 3 after its loop: the next clip */
+    uint8_t launch_q;
+    uint8_t cset[RFM_MOVE_SEQ_CLIPS];
+    uint8_t clip_cset;                                  /* the clip clipboard's settings */
+    /* (0.12.0) session view: a column's select step held: the clip settings of its track's selected slot */
+    int8_t cs_step;                                     /* the step held (-1 none) */
+    uint8_t cs_shown;                                   /* .. its settings are shown (held 300 ms, or a knob touched) */
+    uint32_t cs_clk;                                    /* .. pressed when (the sequencer clock's ms) */
+    int8_t cs_k;                                        /* .. the knob touched or turned last (-1 none) */
     uint8_t layer[8], nlayer;                           /* what Back closes, the latest last (a Shift menu, the grid,
                                                          * Loop's latch, Shift's lock, the clipboard's marks) */
     uint8_t in_seq;                                     /* the settings hold the selected track's layout / CCs */

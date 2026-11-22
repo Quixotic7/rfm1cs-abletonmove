@@ -969,7 +969,7 @@ static void test_edits(void)
     knob(m, 1, 2);
     CHECK(find_midi(0xB0, 25, 66, NULL));
     /* session: Copy + clip, clip = a clip copy (the source dashed while Copy is held); Delete + clip = cut (an X),
-     * Delete + an empty slot = its paste */
+     * (0.12.0, the owner's) Delete + an empty slot = nothing (Delete never pastes) */
     press(m, MR_CC_MENU);
     button(m, MR_CC_COPY, 1), pad(m, 24, 100), pad(m, 24, 0);
     CHECK(rfmv_seq_src_clip(m, 0) == 1);
@@ -979,11 +979,11 @@ static void test_edits(void)
     button(m, MR_CC_DELETE, 1), pad(m, 26, 100), pad(m, 26, 0), button(m, MR_CC_DELETE, 0);
     CHECK(!rfmv_seq_clip_has(m, SEQ_CLIP(2, 0)) && rfmv_seq_src_clip(m, SEQ_CLIP(2, 0)) == 2);
     button(m, MR_CC_DELETE, 1), pad(m, 19, 100), pad(m, 19, 0), button(m, MR_CC_DELETE, 0);   /* track 4, scene 2 */
-    CHECK(nnotes_clip(m, SEQ_CLIP(3, 1)) == nnotes_clip(m, 0) && !m->seq.cut);
+    CHECK(nnotes_clip(m, SEQ_CLIP(3, 1)) == 0 && !rfmv_seq_clip_has(m, SEQ_CLIP(3, 1)) && m->seq.cut);
     /* Track 1 held (0.9.0: the merged menu): Copy + steps = a track copy; Delete + step = the track cleared */
     track(m, 0, 1);
-    button(m, MR_CC_COPY, 1), tap_step(m, 3), tap_step(m, 9), button(m, MR_CC_COPY, 0);
-    CHECK(nnotes_clip(m, SEQ_CLIP(9, 1)) == nnotes_clip(m, 0) && rfmv_seq_track_used(m, 9));
+    button(m, MR_CC_COPY, 1), tap_step(m, 0), tap_step(m, 9), button(m, MR_CC_COPY, 0);
+    CHECK(nnotes_clip(m, SEQ_CLIP(9, 0)) == nnotes_clip(m, 0) && rfmv_seq_track_used(m, 9));
     button(m, MR_CC_DELETE, 1), tap_step(m, 9), button(m, MR_CC_DELETE, 0);
     track(m, 0, 0);
     CHECK(!rfmv_seq_track_used(m, 9));
@@ -1013,25 +1013,27 @@ static void test_edits(void)
     CHECK(rfmv_seq_find(m, 0, 5, 60) >= 0 && !m->seq.paste && m->seq.msg == SEQ_MSG_NONE);
     tap_step(m, 6);                                     /* (then step entry again: the root, C3) */
     CHECK(rfmv_seq_find(m, 0, 6, 60) < 0 && rfmv_seq_find(m, 0, 6, 48) >= 0);
-    /* Copy alone with a copy waiting: dropped (Move: Copy again clears the clipboard) */
+    /* (0.12.0, the owner's) Copy alone with a copy waiting: nothing (Back drops it) */
     button(m, MR_CC_COPY, 1), tap_step(m, 0), button(m, MR_CC_COPY, 0);
     press(m, MR_CC_COPY);
-    CHECK(!m->seq.paste && m->seq.clip_kind == 0 && m->seq.msg == SEQ_MSG_NONE);
+    CHECK(m->seq.paste && m->seq.clip_kind == 1 && m->seq.msg == SEQ_MSG_NONE);
+    press(m, MR_CC_BACK);
+    CHECK(!m->seq.paste && m->seq.clip_kind == 0);
     tap_step(m, 7);
     CHECK(rfmv_seq_find(m, 0, 7, 60) < 0);
-    /* Copy alone (Move): the clip duplicated into the track's next empty slot, selected and playing */
+    /* (0.12.0, the owner's) Copy alone: nothing (it duplicated the clip into the track's next empty slot; Shift + step
+     * 14 / 15 make and double clips) */
     press(m, MR_CC_COPY);
-    CHECK(m->seq.msg == SEQ_MSG_DUP && nnotes_clip(m, SEQ_CLIP(0, 1)) == nnotes_clip(m, 0) && nnotes_clip(m, 0) == 4);
-    CHECK(m->seq.tr[0].sel == 1 && m->seq.tr[0].active == 1 && m->seq.len[SEQ_CLIP(0, 1)] == m->seq.len[0]);
-    press(m, MR_CC_UNDO);
-    CHECK(nnotes_clip(m, SEQ_CLIP(0, 1)) == 0);
-    button(m, MR_CC_SHIFT, 1), press(m, MR_CC_UNDO), button(m, MR_CC_SHIFT, 0);
-    /* session: Copy + clip, released, then a clip: pasted */
+    CHECK(m->seq.msg != SEQ_MSG_DUP && nnotes_clip(m, SEQ_CLIP(0, 1)) == 0 && nnotes_clip(m, 0) == 4 && m->seq.tr[0].sel == 0);
+    /* session: Copy + clip, released: nothing waits (a press launches); Copy + an empty slot: pasted */
     press(m, MR_CC_MENU);
     button(m, MR_CC_COPY, 1), pad(m, 24, 100), pad(m, 24, 0), button(m, MR_CC_COPY, 0);
-    CHECK(m->seq.paste && m->seq.clip_kind == 2);
+    CHECK(!m->seq.paste && m->seq.clip_kind == 2 && m->seq.sv_armed);
     pad(m, 26, 100), pad(m, 26, 0);
-    CHECK(nnotes_clip(m, SEQ_CLIP(2, 0)) == 4 && !m->seq.paste && m->seq.tr[2].queued == SEQ_NONE);
+    CHECK(nnotes_clip(m, SEQ_CLIP(2, 0)) == 0 && m->seq.sel_track == 2);
+    button(m, MR_CC_COPY, 1), pad(m, 26, 100), pad(m, 26, 0), pad(m, 16, 100), pad(m, 16, 0), button(m, MR_CC_COPY, 0);
+    CHECK(nnotes_clip(m, SEQ_CLIP(2, 0)) == 4 && nnotes_clip(m, SEQ_CLIP(0, 1)) == 4 && m->seq.tr[2].queued == SEQ_NONE);
+    pad(m, 16, 100), pad(m, 16, 0);                     /* (track 1's clip 2 selected) */
     /* Delete alone (0.6.3, the owner's: Delete is a modifier only): a tap, or a hold let go, changes nothing; a hint */
     press(m, MR_CC_MENU);
     CHECK(m->seq.sel_track == 0 && m->seq.tr[0].sel == 1);
