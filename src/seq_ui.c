@@ -1330,11 +1330,12 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
             q->projects = 0;
         else {                                          /* (0.11.0, the owner's) an open Shift menu stays (it has the
                                                          * knobs, the jog and the screen; Back closes it): the view
-                                                         * flips under it, named a second */
-            q->view = (uint8_t)!q->view;
-            q->pad_tap = -1;
-            if (q->smenu)
-                rfmv_pop(m, POP_VIEW, q->view);
+                                                         * flips under it, named a second; (0.12.0) Shift + Menu the
+                                                         * same (it had no job of its own); out of session view: the
+                                                         * slot's own layout (it may be the FM-1 layout) */
+            if (q->mods & SEQ_M_SHIFT)
+                q->mods_used |= SEQ_M_SHIFT;
+            rfmv_sv_toggle(m);
         }
         return 1;
     case MR_CC_BACK:                                    /* the universal escape: the latest layer still on closes

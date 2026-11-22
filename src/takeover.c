@@ -249,8 +249,9 @@ static int route(rfm_move_t *m, const mr_event_t *ev)
                                                          * firmware's held controls still get their releases) */
     if (ev->value && ev->type == MR_EV_BUTTON && (rfmv_lay_menu(m) || rfmv_t4_menu(m)) &&
         (btn_claim(i) != RFM_MOVE_TK_TRACKS) && (i == MR_CC_UP || i == MR_CC_DOWN || i == MR_CC_REC ||
-        i == MR_CC_PLAY || i == MR_CC_CAPTURE || i == MR_CC_UNDO || i == MR_CC_LOOP || i == MR_CC_SAMPLE))
-        return 0;
+        i == MR_CC_PLAY || i == MR_CC_CAPTURE || i == MR_CC_UNDO || i == MR_CC_LOOP || i == MR_CC_SAMPLE ||
+        i == MR_CC_MENU))
+        return 0;                                       /* (0.12.0: Track held + Menu: session view, the core's) */
     switch (ev->type) {
     case MR_EV_PAD:
         if (i < 0 || i >= RFM_MOVE_NPADS || !held(m, ev, (cl & RFM_MOVE_TK_PADS) != 0, m->tk_pad >> i & 1, &now))
@@ -313,8 +314,11 @@ static int route(rfm_move_t *m, const mr_event_t *ev)
             }
             return 1;
         }
-        if (ev->value && m->tk_back && btn_claim(i) == RFM_MOVE_TK_TRACKS)
+        if (ev->value && m->tk_back && (btn_claim(i) == RFM_MOVE_TK_TRACKS || i == MR_CC_MENU))
             m->tk_back_trk = 1;                         /* (Back + Track: the slots; Back is not the firmware's) */
+        if (ev->value && m->tk_back && i == MR_CC_MENU)
+            return 0;                                   /* (0.12.0: Back + Menu: session view, the core's; Back is not
+                                                         * sent either) */
         r = held(m, ev, (cl & (unsigned)btn_claim(i)) != 0, bit(m->tk_btn, i), &now);
         if (r)
             bit_set(m->tk_btn, i, now);

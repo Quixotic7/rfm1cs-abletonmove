@@ -339,9 +339,11 @@ static void test_seq(void)
     CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.sel_track == 0);
     back();                                             /* Back with nothing open: nothing (no flip) */
     CHECK(M.s.mode == RFM_MOVE_MODE_SEQ);
-    press(MR_CC_MENU);                                  /* Menu: session view; Back: the track view */
+    press(MR_CC_MENU);                                  /* Menu: session view; (0.12.0) Back: nothing; Menu: out */
     CHECK(M.seq.view);
     back();
+    CHECK(M.seq.view);
+    press(MR_CC_MENU);
     CHECK(!M.seq.view);
     press(MR_CC_MENU), tap_track(0);                    /* (0.11.0, the owner's) a Track tap in session view: the
                                                          * view stays (its own layer); Menu: the track view */

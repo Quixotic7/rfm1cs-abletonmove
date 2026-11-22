@@ -306,6 +306,7 @@ void rfmv_seq_tk_flush(rfm_move_t *m);                  /* (0.11.0) a held Track
 void rfmv_seq_route_pad(rfm_move_t *m, int fw, int p);  /* (0.11.0) session, a Track held: a column's pad */
 void rfmv_seq_route_leds(const rfm_move_t *m, int fw, rfmv_rgb_t c[L_WHITE0]);   /* .. its pads, steps and knobs */
 int rfmv_sess_on(const rfm_move_t *m);                  /* (0.11.0) session view is what the pads show */
+void rfmv_sv_toggle(rfm_move_t *m);                     /* (0.12.0) session view in / out, from any layout */
 void rfmv_seq_arp_toggle(rfm_move_t *m);                /* (0.11.0) the arp menu's jog click: on / off */
 void rfmv_seq_scene_pop(const rfm_move_t *m, mr_canvas_t *cv);   /* (0.11.0) session's knob 8 touched: the scenes */
 void rfmv_slot_screen(const rfm_move_t *m, mr_canvas_t *cv, int slot, int changed);   /* (0.11.0, screen.c) a slot's

@@ -380,14 +380,16 @@ static void test_modes(void)
     clear();
     rfm_move_release_all(&m);
     CHECK(nact == 0);
-    /* (0.9.0) Back's click with nothing open: nothing (no Sequencer mode to flip to); Menu: session view, Back: the
-     * track view again */
+    /* (0.9.0) Back's click with nothing open: nothing (no Sequencer mode to flip to); Menu: session view, (0.12.0)
+     * Menu again: the track view (Back: nothing) */
     clear();
     back(&m);
     CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && !m.seq.view && nact == 0);
     button(&m, MR_CC_MENU, 1), button(&m, MR_CC_MENU, 0);
     CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.seq.view);
-    back(&m);
+    back(&m);                                           /* (0.12.0, the owner's: Back never leaves the view; Menu) */
+    CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && m.seq.view);
+    button(&m, MR_CC_MENU, 1), button(&m, MR_CC_MENU, 0);
     CHECK(m.s.mode == RFM_MOVE_MODE_SEQ && !m.seq.view);
     clear();
     pad(&m, 0, 100);                                    /* the live pads: track 1's channel (1) */

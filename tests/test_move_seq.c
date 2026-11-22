@@ -1511,6 +1511,8 @@ static void test_screens_leds(void)
     rfmv_seq_mute(m, 4, 1);
     m->seq.tr[5].grow = 2, rfmv_seq_launch(m, 5, 1);    /* track 6: to record into scene 2 at the bar */
     press(m, MR_CC_MENU);
+    CHECK(rfmv_pop_up(m, POP_VIEW) && m->pop_i == 1);   /* (0.12.0: "Session" named a second) */
+    m->pop = POP_NONE;
     rfm_move_screen(m, NULL, out);
     CHECK(px_at(out, 1, 0) && px_at(out, 14, 1) && !px_at(out, 17, 0));      /* track 1 selected */
     CHECK(px_at(out, 65, 1) && px_at(out, 66, 1) && !px_at(out, 67, 1) && !px_at(out, 65, 0));   /* track 5 muted: dashed */

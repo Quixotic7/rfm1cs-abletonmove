@@ -1200,6 +1200,22 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
         }
         return;
     }
+    if (cc == MR_CC_MENU && !m->seq.projects && (m->back_down || rfmv_lay_menu(m))) {
+        /* (0.12.0, the owner's) Back held + Menu, or Track 1..3 held + Menu (the Move-side Shift where the FM-1 or a
+         * takeover has the Move's Shift): session view in or out, in every layout. The Track's hold is used up: its
+         * menu, tap and double click do not come (its release: nothing); Back's click does not come either */
+        if (down) {
+            int k;
+            for (k = 0; k < 3; k++)
+                if (track_held(m, k))
+                    m->track_held = (uint8_t)(m->track_held & ~(1u << k)), m->tbtn_up[k] = 0;
+            rfmv_menu(m, MENU_NONE, 0);
+            if (m->back_down)
+                m->back_used = 1;
+            rfmv_sv_toggle(m);
+        }
+        return;
+    }
     if (cc == MR_CC_LOOP && !down && m->seq.fill) {    /* (FILL's Loop let go: wherever Shift was) */
         m->seq.fill = 0;
         if (m->s.mode != RFM_MOVE_MODE_SEQ) {
@@ -1512,6 +1528,28 @@ static void name_layout(rfm_move_t *m)                  /* the slot played now n
     else
         rfmv_pop(m, POP_LAYOUT, t);
 }
+/* (0.12.0, the owner's) session view from anywhere (Menu in a note layout; Shift + Menu; Back held + Menu; Track 1..3
+ * held + Menu): in, from a note layout's track view or from the FM-1 layout / a takeover (the sequencer then, the
+ * slot's layout kept); out: the active slot's own layout (a note layout: its track view; the FM-1 layout or its
+ * takeover). Named either way (POP_VIEW; the FM-1 layout or the takeover: its own name) */
+void rfmv_sv_toggle(rfm_move_t *m)
+{
+    rfm_move_seq_t *q = &m->seq;
+    q->pad_tap = -1;
+    if (rfmv_sess_on(m)) {
+        q->view = 0;
+        if (m->s.slot[act_slot(m)].lay < RFM_MOVE_LAY_SCALE) {
+            slot_mode_fresh(m, 1);                      /* (the FM-1 layout, the takeover) */
+            name_layout(m);
+        } else
+            rfmv_pop(m, POP_VIEW, 0);
+        return;
+    }
+    if (m->s.mode != RFM_MOVE_MODE_SEQ)
+        set_mode(m, RFM_MOVE_MODE_SEQ);
+    q->view = 1;
+    rfmv_pop(m, POP_VIEW, 1);
+}
 static void track_tap(rfm_move_t *m, int t)
 {
     if (t == 3) {                                       /* the sequencer side: the Mixer <-> Routing (remembered); no
@@ -1615,9 +1653,8 @@ static void back_click(rfm_move_t *m, uint32_t now)
     }
     if (rfmv_seq_layer_open(m))
         rfmv_seq_button(m, MR_CC_BACK, 1, now);
-    else if (m->s.mode == RFM_MOVE_MODE_SEQ && m->seq.view)
-        m->seq.view = 0;                                /* (0.9.0) session view: back to the track view */
-                                                        /* (0.9.0, the owner's: nothing open, nothing: no flip) */
+    /* (0.9.0, the owner's: nothing open, nothing: no flip; 0.12.0: "Back never changes the mode or the view": session
+     * view stays too, Menu leaves it) */
 }
 static int back_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)   /* 1: taken */
 {

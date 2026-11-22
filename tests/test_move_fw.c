@@ -1707,9 +1707,11 @@ static void test_back(void)
     screen(m);
     CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ && count(RFM_MOVE_ACT_BTN) == 0 &&
           !memcmp(scr, base, sizeof base));
-    press(m, MR_CC_MENU);                               /* (0.9.0) session view: Back closes it */
+    press(m, MR_CC_MENU);                               /* (0.9.0) session view; (0.12.0) Back: nothing, Menu closes it */
     CHECK(m->seq.view);
     press(m, MR_CC_BACK);
+    CHECK(m->seq.view);
+    press(m, MR_CC_MENU);
     rest_pop(m), screen(m);
     CHECK(!m->seq.view && m->s.mode == RFM_MOVE_MODE_SEQ && !memcmp(scr, base, sizeof base));
     /* Shift + step 1 still opens the view; out: the note layout again */

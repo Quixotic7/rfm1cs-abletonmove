@@ -215,9 +215,12 @@ static void test_modes(void)
     tap1(&M, 1);                                        /* slot 2 again: its Drum layout, its track */
     SAID("E:Melodee, Drum layout, Track 2|V:Melodee, Drum|");
     CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && M.fw.active == 1 && M.seq.sel_track == 1);
-    press(&M, MR_CC_MENU);                              /* session view; Back closes it */
+    press(&M, MR_CC_MENU);                              /* session view; (0.12.0) Back: nothing; Menu closes it */
     SAID("E:Session|");
     press(&M, MR_CC_BACK);
+    SAID("V:Session|");                                 /* (a Back that changed nothing: where you are) */
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.view);
+    press(&M, MR_CC_MENU);
     SAID("E:Melodee, Drum layout, Track 2|");
     CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && !M.seq.view);
     tap1(&M, 0);

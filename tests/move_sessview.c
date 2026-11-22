@@ -600,8 +600,8 @@ static void test_cut_copy(void)
                 after += clip_has(t, sn);
         CHECKF(after == before && M.seq.msg != SEQ_MSG_DUP && M.seq.tr[0].sel == 0, "%d clips, then %d", before, after);
     }
-    back();
-    CHECK(M.seq.view == 0);
+    back();                                             /* (0.12.0) nothing open: Back leaves nothing */
+    CHECK(M.seq.view == 1);
 }
 
 /* ================================================================ the RGB writes a playing session view sends === */
@@ -1008,6 +1008,104 @@ static void test_sv_marks(void)
     aligned("paged");
 }
 
+/* ================================================================ (0.12.0) session view from anywhere; Back stays === */
+static int tk_sent(int cc)                              /* a button's press or release sent to the takeover */
+{
+    int i, n = 0;
+    for (i = 0; i < nact; i++)
+        n += A[i].kind == RFM_MOVE_ACT_TK_INPUT && A[i].pkt[1] == 0xB0 && A[i].pkt[2] == cc;
+    return n;
+}
+static void test_sv_anywhere(void)
+{
+    session_view();
+    /* a note layout: Menu out; Shift + Menu in and out (named; Shift used: no latch) */
+    press(MR_CC_MENU);
+    CHECK(!M.seq.view && M.s.mode == RFM_MOVE_MODE_SEQ);
+    rest();
+    button(MR_CC_SHIFT, 1), press(MR_CC_MENU);
+    CHECK(M.seq.view && rfmv_pop_up(&M, POP_VIEW) && M.pop_i == 1);
+    write_pbm("view_named");
+    button(MR_CC_SHIFT, 0);
+    button(MR_CC_SHIFT, 1), press(MR_CC_MENU), button(MR_CC_SHIFT, 0);
+    CHECK(!M.seq.view && !M.seq.shift_lock && rfmv_pop_up(&M, POP_VIEW) && M.pop_i == 0);
+    rest();
+    /* Back held + Menu: in; Back's release: nothing (no click: no layer closed, the view stays) */
+    clip_put(0, 0, 60);
+    button(MR_CC_COPY, 1), hit(PAD(0, 0)), button(MR_CC_COPY, 0);   /* (a layer Back would close: the copy's mark) */
+    press(MR_CC_MENU), rest();
+    button(MR_CC_COPY, 1), hit(PAD(0, 0)), button(MR_CC_COPY, 0);
+    press(MR_CC_MENU), rest();
+    CHECK(!M.seq.view && M.seq.clip_kind == 2);
+    button(MR_CC_BACK, 1), press(MR_CC_MENU);
+    CHECK(M.seq.view);
+    button(MR_CC_BACK, 0);
+    CHECK(M.seq.view);
+    rest();
+    /* Back in session view with nothing open: nothing (the owner's "Back never changes the mode or the view") */
+    while (rfmv_seq_layer_open(&M))
+        back();
+    back(), rest();
+    CHECK(M.seq.view && M.s.mode == RFM_MOVE_MODE_SEQ && M.fw.active == 1);
+    button(MR_CC_BACK, 1), press(MR_CC_MENU), button(MR_CC_BACK, 0);
+    CHECK(!M.seq.view && M.s.mode == RFM_MOVE_MODE_SEQ);
+    /* the FM-1 layout (slot 1): Track 1 held + Menu: session view; the Track's hold menu does not come, its release
+     * is nothing (no tap: no layout popup) */
+    tap_track(0), rest();
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && M.fw.active == 0);
+    track(0, 1), press(MR_CC_MENU);
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.view && rfm_move_slot_layout(&M, 0) == RFM_MOVE_LAY_FM1);
+    adv_ms(RFM_MOVE_TAP_MS + 200);
+    CHECK(!rfmv_hold_shown(&M, 0) && !rfmv_lay_menu(&M));
+    screen();
+    write_pbm("from_fm1");
+    track(0, 0), adv_ms(20);
+    CHECK(M.seq.view && M.s.mode == RFM_MOVE_MODE_SEQ && !rfmv_pop_up(&M, POP_LAYOUT) && M.fw.active == 0);
+    rest();
+    /* .. a Track tap there: the firmware played changes, the view stays; Track 2 held + Menu: out, to slot 2's own
+     * layout (its Scale layout: the track view) */
+    tap_track(1), rest();
+    CHECK(M.seq.view && M.fw.active == 1);
+    track(1, 1), press(MR_CC_MENU), track(1, 0);
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && !M.seq.view && M.fw.active == 1 && rfmv_pop_up(&M, POP_VIEW));
+    rest();
+    /* .. back in, slot 1 tapped there, out: its FM-1 layout, named */
+    press(MR_CC_MENU), tap_track(0), rest();
+    CHECK(M.seq.view && M.fw.active == 0 && M.s.mode == RFM_MOVE_MODE_SEQ);
+    track(0, 1), press(MR_CC_MENU), track(0, 0);
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && !M.seq.view && M.fw.active == 0 && rfmv_pop_up(&M, POP_LAYOUT));
+    rest();
+    /* Back + Menu from the FM-1 layout: in and out */
+    button(MR_CC_BACK, 1), press(MR_CC_MENU), button(MR_CC_BACK, 0);
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.view);
+    press(MR_CC_MENU);                                  /* (Menu alone: out, to the FM-1 layout) */
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && !M.seq.view);
+    rest();
+    /* a takeover that has the buttons (Back is its own): Back + Menu and Track held + Menu are the core's; neither
+     * Menu nor Back reaches the firmware */
+    rfm_move_set_takeover(&M, 0, 0x5F, "ChoralRoot");
+    hold_track(0), hit(25), track(0, 0), rest();
+    CHECK(m_tk_shown() == 0);
+    clear();
+    button(MR_CC_BACK, 1), press(MR_CC_MENU), button(MR_CC_BACK, 0);
+    CHECK(M.seq.view && M.s.mode == RFM_MOVE_MODE_SEQ && m_tk_shown() < 0);
+    CHECKF(!tk_sent(MR_CC_MENU) && !tk_sent(MR_CC_BACK), "sent: Menu %d, Back %d", tk_sent(MR_CC_MENU), tk_sent(MR_CC_BACK));
+    rest(), clear();
+    button(MR_CC_BACK, 1), press(MR_CC_MENU), button(MR_CC_BACK, 0);
+    CHECK(!M.seq.view && m_tk_shown() == 0 && rfm_move_mode(&M) == RFM_MOVE_MODE_TAKEOVER);
+    CHECKF(!tk_sent(MR_CC_MENU) && !tk_sent(MR_CC_BACK), "sent: Menu %d, Back %d", tk_sent(MR_CC_MENU), tk_sent(MR_CC_BACK));
+    rest(), clear();
+    track(0, 1), press(MR_CC_MENU), track(0, 0);
+    CHECK(M.seq.view && m_tk_shown() < 0 && !tk_sent(MR_CC_MENU));
+    rest();
+    track(0, 1), press(MR_CC_MENU), track(0, 0);
+    CHECK(!M.seq.view && m_tk_shown() == 0);
+    /* Back alone in the takeover is still the firmware's */
+    rest(), clear();
+    back();
+    CHECK(tk_sent(MR_CC_BACK) == 2 && m_tk_shown() == 0);
+}
+
 int main(void)
 {
     test_scenes();
@@ -1022,6 +1120,7 @@ int main(void)
     test_route();
     test_arp();
     test_sv_marks();
+    test_sv_anywhere();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

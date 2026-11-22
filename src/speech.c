@@ -491,7 +491,10 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
         snprintf(o + strlen(o), (size_t)cap - strlen(o), "%d %s routed", n, n == 1 ? "track" : "tracks");
         return;
     }
-    case POP_VIEW: snprintf(o, (size_t)cap, "%s", i ? "Session" : "Sequencer"); return;   /* (0.11.0: under a menu) */
+    case POP_VIEW:                                      /* (0.11.0: under a menu; 0.12.0: every flip. Back to the track
+                                                         * view with no menu open: the base says the layout and track) */
+        snprintf(o, (size_t)cap, "%s", i ? "Session" : m->seq.smenu ? "Sequencer" : "");
+        return;
     case POP_JOG: rfmv_tcase(rfmv_jog_name(i), l, sizeof l), snprintf(o, (size_t)cap, "Jog: %s", l); return;
     case POP_T4: snprintf(o, (size_t)cap, "%s", i ? "Routing" : "Mixer"); return;
     case POP_CCNUM: snprintf(o, (size_t)cap, "Knob %d: CC %d", (i & 7) + 1, m->s.slot[m->fw.active % 3].cc[i & 7]); return;
