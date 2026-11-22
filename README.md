@@ -744,7 +744,13 @@ firmware is ready, dark until then. Play pressed meanwhile starts the transport 
 slot with no news for `RFM_MOVE_PFW_WAIT_MS` (20 s, the sequencer's clock) is taken as failed. Then each missing or
 failed firmware is said for a second ("Felucca / not installed / Track 3 empty"; "failed"), its slot empty. Another
 project's pad pressed meanwhile loads that one (the host is told again). **A new project** (an empty pad): no clips,
-the default tempo, saved at once, and its three slots empty (`PROJECT_FW` with "" for each); everything else stays.
+the default tempo, saved at once, and its three slots empty (`PROJECT_FW` with "" for each); its routing (the
+owner's): tracks 1-4 to firmware 1, 5-8 to firmware 2, 9-12 to firmware 3, 13-16 to none, and in each group of four
+the MIDI channels 1..4 (tracks 1, 5, 9, 13 on channel 1 .. 4, 8, 12, 16 on channel 4); the Track buttons' sequencer
+tracks 1, 5 and 9; the MIDI FX filters "all" (a `ROUTE` and `SETTINGS`, as the user's edits). Everything else stays
+(levels, layouts, velocity). A fresh install's first project is a new one: the host calls `rfm_move_project_dir(m, 0)`
+(no project stored) after `rfm_move_fw_caps`. A loaded project, of any version, keeps what it stored. With one slot
+(no `RFM_MOVE_CAP_SLOTS`) a new project keeps 0.12.0's routing (all 16 tracks, track n on channel n).
 
 **States** (P.6, P.7, P.9): **Track 1..3 held + the top row's pad 7** (a firmware loaded there), or **Loop** in the
 firmware browser. A layer over whatever is under it, which it returns to: **Back** (its click: the copy / delete marks

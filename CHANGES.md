@@ -24,6 +24,10 @@ on the Move. Everything new is for a host that sets the new capability `RFM_MOVE
   that slot (`pfw_want`, `pfw_touched`, `rfmv_pfw_saved_ids`).
 - `rfm_move_proj_info_t` has `has_fw` and the three ids (`rfm_move_project_info`, the live project's).
 - A new project (an empty pad): its three slots empty (`PROJECT_FW` with ""), the rest as it is (`rfmv_pfw_new`).
+- (the owner's addendum) A new project's routing and channels (`rfmv_pfw_defaults`): tracks 1-4 to firmware 1, 5-8 to
+  2, 9-12 to 3, 13-16 to none; channels 1..4 in each group of four; the Track buttons' tracks 1, 5, 9 (the
+  orchestrator's call); MIDI FX filters "all". Also a fresh install's first project (`rfm_move_project_dir(m, 0)`,
+  `rfmv_pfw_first`). Three slots only; a loaded project keeps what it stored.
 
 **Opening a project** (P.3, mock `proj_loading`, `proj_missing`)
 - The loading screen at the pad's press (`rfmv_pfw_press`), before the host answers: the number at 3x, "Loading", a

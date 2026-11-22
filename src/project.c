@@ -440,7 +440,11 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
     return 0;
 }
 
-void rfm_move_project_dir(rfm_move_t *m, uint32_t used) { m->seq.proj_used = used; }
+void rfm_move_project_dir(rfm_move_t *m, uint32_t used)
+{
+    m->seq.proj_used = used;
+    rfmv_pfw_first(m, used);                            /* (0.13.0: a fresh install: a new project's routing) */
+}
 int rfm_move_project_slot(const rfm_move_t *m) { return m->seq.proj_cur; }
 
 static void emit_slot(rfm_move_t *m, int kind, int slot, const uint8_t *data, uint32_t len)

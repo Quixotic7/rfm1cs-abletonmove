@@ -3200,6 +3200,54 @@ static void test_ps_new_undo(void)
     back(), rest();
 }
 
+/* p10 (the owner's addendum): a new project's routing and channels: tracks 1-4 to firmware 1, 5-8 to 2, 9-12 to 3,
+ * 13-16 to none; channels 1..4 in each group of four; the Tracks' tracks 1, 5, 9 (the orchestrator's); MIDI FX "all".
+ * A loaded project keeps what it stored; a fresh install's first project is a new one; one slot: as before */
+static void test_ps_newproj(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int t, ok;
+    ps_two_projects();
+    ps_answer = 1;
+    grid();
+    hit(ps_pad(12));
+    CHECK(M.seq.proj_cur == 12 && M.seq.fx.ffilt[0] == 0x000F && M.seq.fx.ffilt[1] == 0x00F0 && M.seq.fx.ffilt[2] == 0x0F00);
+    for (t = 0, ok = 1; t < RFM_MOVE_SEQ_TRACKS; t++)
+        ok &= M.seq.tr[t].ch == t % 4;
+    CHECK(ok && M.s.lock[0] == 0 && M.s.lock[1] == 4 && M.s.lock[2] == 8 && M.seq.fx.mfx[0].filt == 0xFFFF);
+    CHECK(ps_find(RFM_MOVE_ACT_ROUTE, -1) && ps_find(RFM_MOVE_ACT_SETTINGS, -1));
+    CHECK(PS_BLOB[12][4] == 9);                         /* (saved with them) */
+    /* a loaded project keeps its own: project 1 (all routed, track n on channel n) */
+    hit(ps_pad(0));
+    CHECK(M.seq.proj_cur == 0 && M.seq.fx.ffilt[0] == 0xFFFF && M.seq.fx.ffilt[2] == 0xFFFF && M.seq.tr[9].ch == 9);
+    hit(ps_pad(12));
+    CHECK(M.seq.proj_cur == 12 && M.seq.fx.ffilt[1] == 0x00F0 && M.seq.tr[5].ch == 1);
+    /* session view: the columns in the colour of the slot their track reaches (grey: none) */
+    ps_slots("choralroot", "sloop", "felucca");
+    back(), rest();
+    tap_track(0), rest();
+    button(MR_CC_BACK, 1), press(MR_CC_MENU), button(MR_CC_BACK, 0), rest();
+    CHECK(M.seq.view == 1);
+    clip_put(0, 0, 60), clip_put(4, 0, 60), clip_put(5, 0, 60);
+    leds(w);
+    CHECK(w[L_STEP0 + 2][0] > w[L_STEP0 + 2][2] && w[L_STEP0 + 8][2] > w[L_STEP0 + 8][0]);   /* (the select steps:
+                                                         * tracks 1-4 orange, 5-8 blue) */
+    write_pbm("ps_newproj_session");
+    press(MR_CC_MENU), rest();
+    /* a fresh install: no project stored, the open (empty) project gets them */
+    ps_fresh(1);
+    rfm_move_project_dir(&M, 0);
+    CHECK(M.seq.fx.ffilt[1] == 0x00F0 && M.seq.tr[6].ch == 2 && M.s.lock[2] == 8);
+    ps_fresh(1);                                        /* (projects stored: nothing) */
+    rfm_move_project_dir(&M, 1u << 3);
+    CHECK(M.seq.fx.ffilt[1] == 0xFFFF && M.seq.tr[6].ch == 6 && M.s.lock[2] == 2);
+    /* one slot (the web page, the phone apps): as before */
+    ps_fresh(1);
+    rfm_move_fw_caps(&M, RFM_MOVE_CAP_PROJFW);
+    rfm_move_project_dir(&M, 0);
+    CHECK(M.seq.fx.ffilt[0] == 0xFFFF && M.seq.tr[6].ch == 6 && M.s.lock[1] == 1);
+}
+
 int main(void)
 {
     test_scenes();
@@ -3244,6 +3292,7 @@ int main(void)
     test_ps_layer();
     test_ps_gestures();
     test_ps_new_undo();
+    test_ps_newproj();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

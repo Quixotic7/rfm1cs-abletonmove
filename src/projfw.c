@@ -306,12 +306,44 @@ void rfmv_pfw_press(rfm_move_t *m, int slot)
     m->pfw_proj = (int8_t)slot, m->pfw_msg = 0;
     m->pfw_on = (uint8_t)any;
 }
+/* (0.13.0, the owner's addendum) a new project's routing and channels: tracks 1-4 to firmware 1, 5-8 to 2, 9-12 to 3
+ * (13-16 to none); in each group of four the channels 1..4; (the orchestrator's) each Track's sequencer track the
+ * first of its group (1, 5, 9). The MIDI FX filters stay "all". As the user's edits make them: ROUTE (the host's
+ * rfm_move_route_set path), SETTINGS, the project marked edited. Three slots only (one slot: as before) */
+void rfmv_pfw_defaults(rfm_move_t *m)
+{
+    static const int FILT[RFM_MOVE_FW_SLOTS] = { 0x000F, 0x00F0, 0x0F00 };
+    int t;
+    if (!rfmv_pfw_cap(m) || nslots(m) < RFM_MOVE_FW_SLOTS)
+        return;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++)
+        m->seq.tr[t].ch = (uint8_t)(t % 4);
+    for (t = 0; t < RFM_MOVE_FW_SLOTS; t++)
+        m->fsolo[t] = 0;
+    if (rfm_move_route_set(m, FILT, NULL) < 0)          /* (no FX setup: the filters still, no ROUTE) */
+        for (t = 0; t < RFM_MOVE_FW_SLOTS; t++)
+            m->seq.fx.ffilt[t] = (uint16_t)FILT[t];
+    for (t = 0; t < RFM_MOVE_FW_SLOTS; t++)
+        m->s.lock[t] = (uint8_t)(t * 4);
+    if (m->s.mode == RFM_MOVE_MODE_SEQ && !m->seq.view && m->s.slot[m->fw.active % RFM_MOVE_FW_SLOTS].lay >= RFM_MOVE_LAY_SCALE)
+        rfmv_seq_select(m, m->s.lock[m->fw.active % RFM_MOVE_FW_SLOTS]);   /* (a note layout: its slot's track) */
+    rfmv_changed(m);
+    rfmv_seq_dirty(m);
+    snapshot(m);
+}
+/* the host's rfm_move_project_dir with no project stored (a fresh install): the open empty project is a new one */
+void rfmv_pfw_first(rfm_move_t *m, uint32_t used)
+{
+    if (!used && !m->pfw_live && rfmv_pfw_cap(m) && !m->seq.nnotes && !m->seq.nlocks)
+        rfmv_pfw_defaults(m), m->pfw_live = 1;
+}
 /* a new project: its three slots empty (the host unloads them); everything else as it is */
 void rfmv_pfw_new(rfm_move_t *m, int slot)
 {
     int s;
     if (!rfmv_pfw_cap(m))
         return;
+    rfmv_pfw_defaults(m);                               /* (the owner's: the new project's routing and channels) */
     memset(m->pfw_want, 0, sizeof m->pfw_want);
     m->pfw_touched = 0, m->pfw_on = 0, m->pfw_msg = 0;
     for (s = 0; s < nslots(m); s++) {

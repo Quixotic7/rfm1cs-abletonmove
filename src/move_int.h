@@ -371,6 +371,8 @@ void rfmv_pfw_loaded(rfm_move_t *m, int slot, const uint8_t *part);   /* a proje
 void rfmv_pfw_load_failed(rfm_move_t *m, int slot);     /* .. its blob refused */
 void rfmv_pfw_press(rfm_move_t *m, int slot);           /* a stored project's pad: the loading screen at once */
 void rfmv_pfw_new(rfm_move_t *m, int slot);             /* a new project: its slots emptied */
+void rfmv_pfw_defaults(rfm_move_t *m);                  /* .. its routing (1-4, 5-8, 9-12), channels, Tracks' tracks */
+void rfmv_pfw_first(rfm_move_t *m, uint32_t used);      /* rfm_move_project_dir: none stored: the open one is new */
 int rfmv_pfw_play(rfm_move_t *m);                       /* the grid's Play while loading: 1 taken (waits) */
 void rfmv_pfw_poll(rfm_move_t *m);                      /* (advance) the time limit, the messages, the edits */
 void rfmv_pfw_watch(rfm_move_t *m);                     /* (input) the firmware settings changed: the project edited */
