@@ -1531,8 +1531,10 @@ static void on_touch(rfm_move_t *m, int k, int on)
         return;                                         /* (a menu or a held Track: its own screen, the legend ring) */
     if (k == 8)
         rfmv_pop(m, POP_MASTER, 8);
-    else if (k < RFM_MOVE_NKNOBS && m->s.mode == RFM_MOVE_MODE_SEQ && m->seq.trig && !m->seq.view)
-        rfmv_pop(m, POP_TRIG, k);
+    else if (k < RFM_MOVE_NKNOBS && m->s.mode == RFM_MOVE_MODE_SEQ && m->seq.trig && !m->seq.view) {
+        if (k < 7)
+            rfmv_pop(m, POP_TRIG, k);                   /* (0.12.0, a12: knob 8 has no job there: no popup) */
+    }
     else if (k < RFM_MOVE_NKNOBS && m->s.mode == RFM_MOVE_MODE_SEQ)
         rfmv_pop(m, POP_CC, k);
     else if (k < RFM_MOVE_NKNOBS && m->s.mode == RFM_MOVE_MODE_MIDI)
@@ -1837,7 +1839,8 @@ int rfmv_menu_knobs(const rfm_move_t *m)
                                                          * them) */
     if (m->seq.projects)                              /* (Track 4: knob 1 the colour; the firmware tracks and FX
                                                          * setup light their own) */
-        return m->fw.fx || m->fw.track < 3 ? -1 : 0x01;
+        return m->fw.fx || m->fw.track < 3 ? -1 : rfmv_proj_knob(m) ? 0x01 : 0;   /* (0.12.0, a12: knob 1 only
+                                                         * while a project's pad is held) */
     {                                                   /* (0.8.0) a firmware Track's menu: a note layout's CC numbers
                                                          * (all 8), the FM-1 layout none; the lock menu: the track's CC
                                                          * numbers; Track 4's: none */
@@ -2030,8 +2033,9 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         if (!fm1) {                                     /* (0.8.0) a note layout: the Control CCs, by their values */
             const rgb_t bc = { 0x1a, 0xe4, 0xff };
             r = m->touched == i ? bc : sc(bc, 16 + m->slot_ccv[act_slot(m)][i] * 240 / 127);
-        } else if (KNOB_ENC[i] >= 0)
-            r = sc(mode, m->touched == i ? 256 : 64);
+        } else if (KNOB_ENC[i] >= 0 && !enc_nojob(m, KNOB_ENC[i]))
+            r = sc(mode, m->touched == i ? 256 : 64);   /* (0.12.0, a12: a knob the firmware gives no job ("" its
+                                                         * label): dark) */
         c[L_RING0 + i] = r;
     }
     for (i = 0; i < 13; i++) {
@@ -2085,6 +2089,11 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         for (i = 0; i < 16; i++)
             w[L_ICON0 + i][0] = ic[i], w[L_ICON0 + i][1] = 0, w[L_ICON0 + i][2] = 0;
     }
+    if (m->back_down)                                   /* (0.12.0, a13) Back: full at its press; else lit only with a
+                                                         * layer for its click to close */
+        w[L_WHITE0 + W_BACK][0] = 127;
+    else if (!m->seq.projects)
+        w[L_WHITE0 + W_BACK][0] = rfmv_back_has(m) ? 80 : 0;
     if (!lm && !t4m)
         rfmv_tk_leds(m, w);                             /* (0.7.0) a takeover: its claimed LEDs (0.8.0: not under a held
                                                          * Track's menu) */

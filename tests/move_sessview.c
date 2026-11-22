@@ -2469,6 +2469,144 @@ static void test_fill(void)
     CHECK(scr_same());
 }
 
+/* a12: knob lights that match: TRIG page knob 8 dark and no popup; a held step's unlocked CC knobs dim; the project
+ * grid's knob 1 only while a pad is held (its touch: "Colour" and the name); the FM-1 layout's no-job knob dark */
+static void test_knob_lights(void)
+{
+    static const char *lbl[RFM_MOVE_LBL_N];
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int clip, i;
+    track_view();
+    CHECK(M.seq.trig);
+    leds(w);
+    CHECK(!lit(w[L_RING0 + 7]) && lit(w[L_RING0 + 0]));
+    touch(7, 1);
+    CHECK(!rfmv_pop_up(&M, POP_TRIG));
+    knob(7, 3);
+    CHECK(!rfmv_pop_up(&M, POP_TRIG));
+    touch(7, 0), rest();
+    /* bank 1 (the CC page), a step held, one lock: the locked knob bright, the others dim (not dark) */
+    jog(1), rest();
+    CHECK(!M.seq.trig);
+    clip = SEQ_CLIP(M.seq.sel_track, M.seq.tr[M.seq.sel_track].sel);
+    rfmv_seq_note_put(&M, clip, 0, 60, 100, 24, 0);
+    rfmv_seq_lock_set(&M, clip, 0, M.s.cc[M.s.bank][2], 127);
+    step(0, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20);
+    leds(w);
+    CHECK(lit(w[L_RING0 + 0]) && bright(w[L_RING0 + 2]) > 3 * bright(w[L_RING0 + 0]));
+    write_pbm("cc_locks_dim");
+    step(0, 0), jog(-1), rest();
+    /* the project grid: knob 1 dark, lit while a project's pad is held; touched: its colour by name */
+    press(MR_CC_UNDO), rest();
+    button(MR_CC_SHIFT, 1), step(0, 1), step(0, 0), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    CHECK(M.seq.projects && M.fw.track == 3);
+    rest();
+    CHECK(rings_menu(0));
+    M.seq.proj_used |= 1u << 5;
+    pad(PAD(5, 0), 100);
+    CHECK(rings_menu(0x01));
+    rest(), clear();
+    touch(0, 1);
+    CHECK(M.pop == POP_PROJ && M.pop_val == 1 && rfmv_pop_up(&M, POP_PROJ));
+    CHECKF(strstr(said, "Colour ") != NULL, "said %s", said);
+    write_pbm("proj_colour");
+    touch(0, 0), pad(PAD(5, 0), 0), rest();
+    CHECK(rings_menu(0));
+    back(), rest();
+    CHECK(!M.seq.projects);
+    /* the FM-1 layout: a knob whose label is "" has no job: dark */
+    tap_track(0), rest();
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1);
+    for (i = 0; i < RFM_MOVE_LBL_N; i++)
+        lbl[i] = NULL;
+    lbl[rfmv_enc_slot(RFM_MOVE_E_K1)] = "";
+    lbl[rfmv_enc_slot(RFM_MOVE_E_K2)] = "Cutoff";
+    rfm_move_set_labels(&M, lbl);
+    leds(w);
+    CHECK(!lit(w[L_RING0 + 4]) && lit(w[L_RING0 + 5]) && lit(w[L_RING0 + 0]) && !lit(w[L_RING0 + 3]));
+    rfm_move_set_labels(&M, NULL);
+    tap_track(1), rest();
+}
+
+/* a13: dead presses: Undo / Redo with nothing: "None"; Back lit only with a layer to close (full at its press);
+ * Shift + Sample dark */
+static void test_dead_presses(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    track_view();
+    while (M.seq.un)
+        press(MR_CC_UNDO);
+    rest(), clear();
+    press(MR_CC_UNDO);
+    CHECK(M.seq.msg == SEQ_MSG_NOUNDO && rfmv_seq_msg_text(&M) && !strcmp(rfmv_seq_msg_text(&M), "None"));
+    CHECKF(strstr(said, "None") != NULL, "said %s", said);
+    write_pbm("undo_none");
+    rest(), clear();
+    button(MR_CC_SHIFT, 1), press(MR_CC_UNDO);
+    CHECK(M.seq.msg == SEQ_MSG_NOUNDO && rfmv_seq_msg_text(&M));
+    leds(w);
+    CHECK(!lit(w[L_SAMPLE]));                           /* (Shift + Sample: no job) */
+    button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS, rest();
+    leds(w);
+    CHECK(w[L_WHITE0 + W_BACK][0] == 0);                /* (nothing to close: dark) */
+    button(MR_CC_BACK, 1);
+    leds(w);
+    CHECK(w[L_WHITE0 + W_BACK][0] == 127);              /* (pressed: full) */
+    button(MR_CC_BACK, 0), rest();
+    shift_step(2);
+    leds(w);
+    CHECK(w[L_WHITE0 + W_BACK][0] > 0);
+    back();
+    leds(w);
+    CHECK(w[L_WHITE0 + W_BACK][0] == 0);
+    press(MR_CC_LOOP);
+    leds(w);
+    CHECK(w[L_WHITE0 + W_BACK][0] > 0);
+    back(), press(MR_CC_MUTE);
+    leds(w);
+    CHECK(w[L_WHITE0 + W_BACK][0] > 0);
+    back(), press(MR_CC_MENU), rest();                  /* (session view at rest: dark too) */
+    leds(w);
+    CHECK(M.seq.view && w[L_WHITE0 + W_BACK][0] == 0);
+    press(MR_CC_MENU), rest();
+}
+
+/* a14: the browser's filter steps: an icon only under a filter that is on; a step white at its press (the toggle at
+ * the release, as before) */
+static void test_browser_icons(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int s, tagstep = -1, on, i;
+    track_view();
+    dbl_track(0), rest();
+    CHECK(M.seq.projects && M.fw.track == 0 && !M.fw.fx);
+    leds(w);
+    for (s = 2; s < 16 && tagstep < 0; s++)
+        if (lit(w[L_STEP0 + s]))
+            tagstep = s;
+    CHECK(tagstep >= 2);
+    for (i = 0, on = 0; i < 16; i++)
+        on += w[L_ICON0 + i][0] > 0;
+    CHECK(on == 1 && (w[L_ICON0 + 0][0] == 127 || w[L_ICON0 + 1][0] == 127));   /* (the scope only: no filter on) */
+    write_pbm("browser_icons");
+    step(tagstep, 1);
+    leds(w);
+    CHECK(white(w[L_STEP0 + tagstep]) && !(M.s.fw_filter >> tagstep & 1) && w[L_ICON0 + tagstep][0] == 0);
+    step(tagstep, 0);
+    leds(w);
+    CHECK((M.s.fw_filter >> tagstep & 1) && w[L_ICON0 + tagstep][0] == 127 && !white(w[L_STEP0 + tagstep]));
+    write_pbm("browser_filter_on");
+    step(tagstep, 1), step(tagstep, 0);                 /* (again: off) */
+    leds(w);
+    CHECK(!(M.s.fw_filter >> tagstep & 1) && w[L_ICON0 + tagstep][0] == 0);
+    step(tagstep, 1), adv_ms(RFM_MOVE_TAP_MS + 30);      /* (held: white, its popup; no toggle) */
+    leds(w);
+    CHECK(white(w[L_STEP0 + tagstep]));
+    step(tagstep, 0);
+    CHECK(!(M.s.fw_filter >> tagstep & 1));
+    back(), rest();
+}
+
 int main(void)
 {
     test_scenes();
@@ -2501,6 +2639,9 @@ int main(void)
     test_clear_clip();
     test_slot_colours();
     test_fill();
+    test_knob_lights();
+    test_dead_presses();
+    test_browser_icons();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

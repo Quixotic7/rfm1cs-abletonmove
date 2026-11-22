@@ -518,6 +518,15 @@ static int slot_full(const rfm_move_t *m, int slot)
 {
     return (m->seq.proj_used >> slot & 1) || (slot == m->seq.proj_cur && m->seq.dirty);
 }
+/* (0.12.0, a12) knob 1 has its job (the colour) only while a project's pad is held */
+int rfmv_proj_knob(const rfm_move_t *m) { return m->seq.proj_held >= 0 && slot_full(m, m->seq.proj_held); }
+const char *rfmv_proj_colour_name(int c)
+{
+    static const char *const N[RFM_MOVE_PROJ_COLORS] = { "Red", "Orange", "Yellow", "Lime", "Green", "Mint", "Cyan",
+                                                         "Blue", "Indigo", "Purple", "Magenta", "Pink", "Peach",
+                                                         "Brown", "Grey", "White" };
+    return N[(c - 1 + RFM_MOVE_PROJ_COLORS) % RFM_MOVE_PROJ_COLORS];
+}
 
 void rfmv_proj_enter(rfm_move_t *m)
 {
@@ -667,6 +676,10 @@ void rfmv_proj_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
     case MR_EV_TOUCH:
         if (!ev->value && ev->index == 0)
             m->list_acc[0] = 0;
+        if (ev->value && ev->index == 0 && rfmv_proj_knob(m)) {
+            rfmv_pop(m, POP_PROJ, q->proj_held);        /* (0.12.0, a12) touched: "Colour" and its name */
+            m->pop_val = 1;
+        }
         return;
     default: return;                                    /* (steps, the jog, the other knobs: nothing) */
     }

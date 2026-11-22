@@ -447,6 +447,8 @@ typedef struct {
     uint8_t fx_del;                                     /* Delete held in FX setup (Delete + pad empties a slot) */
     /* (0.5.10) */
     uint8_t caps;                                       /* the host's RFM_MOVE_CAP_* (rfm_move_fw_caps) */
+    /* (0.12.0) */
+    uint16_t steps_down;                                /* the browser's step keys down (white at the press, a14) */
 } rfm_move_fw_state_t;
 enum { RFM_MOVE_MIXP_LEVEL, RFM_MOVE_MIXP_PAN, RFM_MOVE_MIXP_SEND1, RFM_MOVE_MIXP_SEND2, RFM_MOVE_MIXP_SEND3,
        RFM_MOVE_MIXP_N };                               /* (0.5.0) the Mixer's choice (its right-hand pads) */

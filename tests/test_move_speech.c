@@ -704,7 +704,7 @@ static void test_rows(void)
     HAS("V:Step 1|");
     step(&M, 0, 1), adv_ms(&M, RFM_MOVE_SEQ_HOLD_MS + 20);
     SAID("V:Step 1|");
-    knob(&M, 7, 3);
+    knob(&M, 6, 3);                                     /* (0.12.0, a12: knob 8 on the TRIG page: no job; 7 the length) */
     HAS("V:");
     step(&M, 0, 0), rest_pop(&M), clear();
     press(&M, MR_CC_LEFT - 999 + 999);                  /* (Left on page 1: nothing to say) */

@@ -1430,6 +1430,7 @@ static void fw_input(rfm_move_t *m, const mr_event_t *ev)
         const int s = ev->index + 1;
         if (f->states || s < 1 || s > 16)
             return;
+        f->steps_down = (uint16_t)(ev->value ? f->steps_down | 1u << (s - 1) : f->steps_down & ~(1u << (s - 1)));
         if (!ev->value) {                               /* (0.4.2) a filter step let go: a tap toggles, a hold did not */
             if (f->hold_step != s)
                 return;
@@ -2281,6 +2282,9 @@ void rfmv_fw_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
         } else if (tag_defined(m, i))
             v = lit(i < CAT0 + 5 ? PAL[CATCOL[i - CAT0]] : i == VIRT_STEP ? VIRTCOL : WHITE,
                     m->s.fw_filter >> (i - 1) & 1 ? 256 : A(0.18));
+        if ((f->steps_down >> (i - 1) & 1) && (v.r || v.g || v.b))
+            v = WHITE;                                  /* (0.12.0, a14: pressed: white at once, R1; the toggle at the
+                                                         * release, the hold's popup at 300 ms, as before) */
         c[L_STEP0 + i - 1] = v;
     }
     c[L_SAMPLE] = fw >= 0 && !f->catalog ? lit(FAVCOL, is_fav(m, fw) ? 256 : A(0.2)) : OFF;
@@ -3181,6 +3185,28 @@ rgb_t rfmv_fw_rgb(const rfm_move_t *m, int slot)        /* a slot's colour (empt
     return m->fw.host && slot_loaded(m, slot) ? RFMV_SLOT_RGB[slot % RFM_MOVE_FW_SLOTS] : WHITE;
 }
 int rfmv_fx_ok(const rfm_move_t *m) { return m->fw.host && has_fx(m); }
+/* (0.12.0, a14, the owner's: "just show icons enabled for the filters that are on") the browser's step icons: full
+ * under a filter that is on (the scope steps 1, 2; a category or tag), dark otherwise; with Capture held the tags the
+ * selected firmware has. 1: the browser is up (the icons are its) */
+int rfmv_fw_step_icons(const rfm_move_t *m, uint8_t icon[16])
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    const int fw = f->sel;
+    int i;
+    if (!m->seq.projects || f->fx || f->track >= 3 || f->states)
+        return 0;
+    for (i = 1; i <= 16; i++) {
+        int on = 0;
+        if (f->capture && fw >= 0)
+            on = i >= CAT0 && has_tag(m, fw, i);
+        else if (i <= 2)
+            on = f->catalog ? (m->s.fw_cat_scope & i) != 0 : scope(m) == i - 1;
+        else
+            on = tag_defined(m, i) && (m->s.fw_filter >> (i - 1) & 1);
+        icon[i - 1] = (uint8_t)(on ? 127 : 0);
+    }
+    return 1;
+}
 int rfmv_t4_page(const rfm_move_t *m) { return m->s.fx_page == PG_MIX ? 0 : 1; }
 int rfmv_fw_activate(rfm_move_t *m, int t)
 {

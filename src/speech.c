@@ -23,7 +23,8 @@ static const char *const LAYOUT_LONG[4] = { "Scale", "Chromatic", "Drum", "Octav
 static const char *const MSG_WORDS[] = {
     "", "No empty clip", "Full", "Load failed", "Captured", "Undo", "Redo", "Copied", "Pasted", "", "Quantized",
     "Loop doubled", "External tempo", "Duplicated", "Cleared", "Capture cleared", "Sync: AUTO", "Sync: INT",
-    "Sync: EXT", "Full velocity", "Pad velocity", "Metronome on", "Metronome off", "New clip", "Clip cleared", "Not routed" };
+    "Sync: EXT", "Full velocity", "Pad velocity", "Metronome on", "Metronome off", "New clip", "Clip cleared", "Not routed",
+    "None" };
 static const char *const FN_WORDS[RFM_MOVE_FN_N] = { "None", "Restart", "Reverse", "Forward", "Flip", "Random",
                                                      "Random function", "Leap", "Jump", "Repeat" };
 
@@ -465,7 +466,7 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
         rfm_move_proj_info_t in;
         rfmv_proj_info(m, i, &in);
         if (m->pop_val == 1)
-            snprintf(o, (size_t)cap, "Colour %d", in.color ? in.color : i % RFM_MOVE_PROJ_COLORS + 1);
+            snprintf(o, (size_t)cap, "Colour %s", rfmv_proj_colour_name(in.color ? in.color : i % RFM_MOVE_PROJ_COLORS + 1));
         else if (in.ok)
             snprintf(o, (size_t)cap, "Project %d, %d BPM, %d %s", i + 1, (in.bpm10 + 5) / 10, in.clips,
                      in.clips == 1 ? "clip" : "clips");

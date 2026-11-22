@@ -851,8 +851,8 @@ static void project_popup(const rfm_move_t *m, mr_canvas_t *cv)
     g_full = 1;
     if (m->pop_val == 1) {                              /* the colour, once */
         const int c = in.color ? in.color : m->pop_i % RFM_MOVE_PROJ_COLORS + 1;
-        snprintf(b, sizeof b, "%d", c);
-        v2_titleBox(cv, "Color", b, 64, 124);
+        snprintf(b, sizeof b, "%s", rfmv_proj_colour_name(c));   /* (0.12.0, a12: its name) */
+        v2_titleBox(cv, "Colour", b, 64, 124);
         v2_strip(cv, 16, 1u << (c - 1), -1, 0, 128);
         return;
     }

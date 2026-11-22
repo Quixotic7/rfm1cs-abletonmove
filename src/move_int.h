@@ -197,7 +197,7 @@ enum { SEQ_MSG_NONE = 0, SEQ_MSG_NOCLIP, SEQ_MSG_FULL, SEQ_MSG_LOADFAIL, SEQ_MSG
        SEQ_MSG_REDO, SEQ_MSG_COPIED, SEQ_MSG_PASTED, SEQ_MSG_CUT, SEQ_MSG_QUANT, SEQ_MSG_DOUBLE, SEQ_MSG_EXTTAP,
        SEQ_MSG_DUP, SEQ_MSG_CLEARED, SEQ_MSG_CAPCLEAR, SEQ_MSG_CLK_AUTO, SEQ_MSG_CLK_INT, SEQ_MSG_CLK_EXT,
        SEQ_MSG_FULLVEL_ON, SEQ_MSG_FULLVEL_OFF, SEQ_MSG_METRO_ON, SEQ_MSG_METRO_OFF, SEQ_MSG_NEWCLIP, SEQ_MSG_CLIPCLEAR,
-       SEQ_MSG_NOTROUTED };                             /* (0.12.0: a select step held + volume, a track that reaches none) */
+       SEQ_MSG_NOTROUTED, SEQ_MSG_NOUNDO };                             /* (0.12.0: a select step held + volume, a track that reaches none) */
 void rfmv_seq_ui_release(rfm_move_t *m);
 void rfmv_seq_srec_now(rfm_move_t *m);                 /* Capture, playing, the clip empty: Rec records at once */
 #define RFM_MOVE_TRIG_NLENS 17                         /* the TRIG page's lengths (seq_ui.c LENS) */
@@ -316,6 +316,10 @@ int rfmv_fw_activate(rfm_move_t *m, int slot);          /* (fw.c) a Track's tap:
 rfmv_rgb_t rfmv_fw_rgb(const rfm_move_t *m, int slot);  /* a slot's colour (0.12.0: its own, not its firmware's; empty:
                                                          * white) */
 extern const rfmv_rgb_t RFMV_SLOT_RGB[RFM_MOVE_FW_SLOTS]; /* (0.12.0) orange, blue, yellow */
+int rfmv_fw_step_icons(const rfm_move_t *m, uint8_t icon[16]);   /* (0.12.0) the browser's filter icons; 0 not up */
+int rfmv_proj_knob(const rfm_move_t *m);                /* (0.12.0) the project grid's knob 1 has a job (a pad held) */
+const char *rfmv_proj_colour_name(int c);               /* .. a project colour's name (1..16) */
+int rfmv_back_has(const rfm_move_t *m);                 /* (0.12.0) Back's click has a layer to close */
 #define RFMV_SOLO_RGB ((rfmv_rgb_t){ 170, 60, 255 })    /* (0.12.0) solo: purple (blue is slot 2's) */
 int rfmv_fw_nslots(const rfm_move_t *m);                /* the slots the Track buttons play (1: no list, one slot) */
 enum { VIEW_SLOT0 = 0, VIEW_PROJECTS = 3, VIEW_MIXER = 4, VIEW_ROUTING = 5 };

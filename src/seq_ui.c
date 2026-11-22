@@ -55,6 +55,8 @@ void rfmv_shift_icons(const rfm_move_t *m, uint8_t icon[16])
     const rfm_move_seq_t *q = &m->seq;
     int i;
     memset(icon, 0, 16);
+    if (!(m->seq.projects && m->fw.fx && m->shift_down) && !rfmv_t4_menu(m) && rfmv_fw_step_icons(m, icon))
+        return;                                         /* (0.12.0, a14: the browser's filters on) */
     if (!((m->s.mode == RFM_MOVE_MODE_SEQ && (q->mods & SEQ_M_SHIFT)) || (rfmv_t4_menu(m) && rfmv_hold_shown(m, 3)) ||
           (m->seq.projects && m->fw.fx && m->shift_down))) {
         /* (0.12.0, the owner's: "Icons should not be lit in session view or for the track sequencer steps. They get
@@ -176,6 +178,12 @@ int rfmv_seq_mod_over(const rfm_move_t *m)              /* Copy, Delete or Mute 
     if (m->s.mode != RFM_MOVE_MODE_SEQ || q->projects || !q->smenu)
         return 0;
     return (q->mods & (SEQ_M_COPY | SEQ_M_DELETE)) || rfmv_seq_mute_on(m) || rfmv_seq_loop_over(m);
+}
+/* (0.12.0, a13) Back's click has something to close (its light: on; else dark): a Shift menu or Global settings,
+ * the projects view, a sequencer layer (the grid, Loop's or Mute's latch, Shift's lock, the clipboard's marks) */
+int rfmv_back_has(const rfm_move_t *m)
+{
+    return m->seq.smenu || m->seq.projects || rfmv_seq_layer_open(m);
 }
 int rfmv_seq_layer_open(const rfm_move_t *m)
 {
@@ -1797,10 +1805,9 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
     case MR_CC_UNDO:
         if (q->mods & SEQ_M_SHIFT) {
             q->mods_used |= SEQ_M_SHIFT;
-            if (rfmv_seq_redo(m))
-                rfmv_seq_msg(m, SEQ_MSG_REDO);
-        } else if (rfmv_seq_undo(m))
-            rfmv_seq_msg(m, SEQ_MSG_UNDO);
+            rfmv_seq_msg(m, rfmv_seq_redo(m) ? SEQ_MSG_REDO : SEQ_MSG_NOUNDO);
+        } else
+            rfmv_seq_msg(m, rfmv_seq_undo(m) ? SEQ_MSG_UNDO : SEQ_MSG_NOUNDO);   /* (0.12.0, a13: nothing: "None") */
         return 1;
     case MR_CC_LEFT:
     case MR_CC_RIGHT: {
@@ -2367,9 +2374,9 @@ void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now)
                                                          * with notes in the clip) */
         const int clip = edit_clip(m);
         int s;
-        rfmv_pop(m, POP_TRIG, k);
         if (k > 6)
-            return;
+            return;                                     /* (0.12.0, a12: knob 8: dark, dead, no popup) */
+        rfmv_pop(m, POP_TRIG, k);
         if ((k == 3 || k == 4) && !(d = rfmv_list_ticks(m, k, d)))
             return;                                     /* (COND, FUNC: lists, one item a few ticks) */
         if (!q->step_held) {                            /* none held: the track's defaults for new steps (the
@@ -2824,8 +2831,9 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
              : q->rec || q->srec == 2 || q->steprec ? RFMV_RED : sc(RFMV_RED, 30);
     if (q->arec)                                        /* Sample's loop: armed blinking, recording red */
         c[L_SAMPLE] = q->arec >= 2 ? RFMV_RED : sc(RFMV_RED, bl ? 256 : 30);
-    else if (q->mods & SEQ_M_SHIFT)                     /* (Shift: tap tempo, the beat) */
-        c[L_SAMPLE] = q->tl >= 0 && q->tl % 96 < 24 ? (q->following ? RFMV_GREEN : RFMV_WHITE) : sc(RFMV_WHITE, 16);
+    else if (q->mods & SEQ_M_SHIFT)                     /* (0.12.0, a13: Shift + Sample has no job: dark; it showed the
+                                                         * beat) */
+        c[L_SAMPLE] = RFMV_OFF;
     else
         c[L_SAMPLE] = sc(RFMV_WHITE, 40);
     /* knob rings: the held step's locks, else the CC values */
@@ -2852,7 +2860,8 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 v = sc(RFMV_WHITE, m->touched == i ? 120 : 20);
         } else if (!q->view && q->step_first >= 0) {
             const int l = rfmv_seq_lock_get(m, clip, q->page * RFM_MOVE_SEQ_PAGE + q->step_first, m->s.cc[m->s.bank][i]);
-            v = l < 0 ? RFMV_OFF : sc(bc, 32 + l * 224 / 127);
+            v = l < 0 ? sc(bc, 24) : sc(bc, 32 + l * 224 / 127);   /* (0.12.0, a12: no lock: dim, a turn writes
+                                                         * one) */
         } else
             v = m->touched == i ? bc : sc(bc, 16 + m->cc_val[m->s.bank][i] * 240 / 127);
         c[L_RING0 + i] = v;
@@ -2860,7 +2869,7 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
     /* the white LEDs */
     w[W_SHIFT] = (q->mods & SEQ_M_SHIFT) ? 127 : 24;
     w[W_MENU] = q->view ? 127 : 40;
-    w[W_BACK] = 40;
+    w[W_BACK] = rfmv_back_has(m) ? 80 : 0;             /* (0.12.0, a13: lit only with a layer to close) */
     w[W_CAPTURE] = q->ncap ? 100 : 16;
     if (q->view) {
         w[W_UP] = q->scene_off > 0 ? 100 : 8;           /* (the clip slots, the tracks) */
@@ -2898,6 +2907,7 @@ static const struct { const char *a, *b; int8_t icon; } MSG[] = {
     { "Cleared", "", -1 }, { "Capture", "Cleared", -1 }, { "Clock Auto", "", -1 }, { "Clock Int", "", -1 },
     { "Clock Ext", "", -1 }, { "Full Vel", "", V2I_VEL }, { "Pad Vel", "", V2I_VEL }, { "Click On", "", V2I_METRO },
     { "Click Off", "", V2I_METRO }, { "New Clip", "", V2I_CLIP }, { "Clip", "Cleared", -1 }, { "Not routed", "", -1 },
+    { "None", "", -1 },                                 /* (0.12.0, a13: Undo / Redo with nothing to undo, the owner's) */
 };
 const char *rfmv_seq_msg_text(const rfm_move_t *m)
 {
