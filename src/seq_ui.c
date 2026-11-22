@@ -1855,6 +1855,108 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
     }
 }
 
+/* (0.12.x, the owner's "shortcuts while holding it, in which case the flip should not occur") Back held + a button,
+ * at the button's press (move.c takes the press and its release: the button's own job does not happen, Back's click
+ * neither). Left: home (track view bar 1, session view track 1); Up (session view): scene 1; Loop: the selected
+ * clip's loop back to the whole clip; Play: the transport to bar 1, running or not (never started or stopped);
+ * Delete: every layer Back's clicks would close, at once. Each says what it did a second (POP_BACK, POP_BAR,
+ * POP_LOOP), also when nothing changed. Right, Down, Up in track view, the other buttons: dead */
+int rfmv_seq_back_lit(const rfm_move_t *m, int cc)
+{
+    switch (cc) {
+    case MR_CC_LEFT:
+    case MR_CC_LOOP:
+    case MR_CC_PLAY:
+    case MR_CC_DELETE:
+    case MR_CC_MENU: return 1;                          /* (Menu: move.c's Back + Menu, session view in or out) */
+    case MR_CC_UP: return m->seq.view != 0;
+    default: return 0;
+    }
+}
+static void loop_whole(rfm_move_t *m)
+{
+    const int clip = edit_clip(m);
+    int lo, hi = rfmv_seq_clip_range(m, clip, &lo), k, end = rfmv_seq_loop_hi(m, clip);
+    for (k = lo; k < hi; k++) {                         /* (the whole clip: from its start to its loop's end or its
+                                                         * last note's bar, whichever is later) */
+        const int e = (m->seq.notes[k].step / RFM_MOVE_SEQ_PAGE + 1) * RFM_MOVE_SEQ_PAGE;
+        if (e > end)
+            end = e;
+    }
+    end = clampi(end, 1, RFM_MOVE_SEQ_MAXLEN);
+    if (rfmv_seq_loop_lo(m, clip) != 0 || rfmv_seq_loop_hi(m, clip) != end) {
+        rfmv_seq_group(m);                              /* (one undo step; none when it was whole already) */
+        rfmv_seq_loop_set(m, clip, 0, end);
+    }
+    rfmv_pop(m, POP_LOOP, 0);
+    m->pop_val = 1;                                     /* (the jog's "Loop" and the length, the loop's pages) */
+}
+static int close_all(rfm_move_t *m)                     /* every layer Back's clicks would close: how many were open */
+{
+    rfm_move_seq_t *q = Q(m);
+    int id, n = 0;
+    for (id = LY_MENU; id <= LY_LAST; id++)
+        if (layer_on(q, id)) {
+            layer_close(m, id);
+            n++;
+        }
+    q->nlayer = 0;
+    return n;
+}
+void rfmv_seq_back_key(rfm_move_t *m, int cc)
+{
+    rfm_move_seq_t *q = Q(m);
+    switch (cc) {
+    case MR_CC_LEFT:
+        if (q->view) {
+            q->track_page = 0;
+            rfmv_pop(m, POP_BACK, BK_TRACK1);
+        } else {
+            q->page = 0;
+            rfmv_pop(m, POP_BAR, 0);                    /* (Left's own "Bar n") */
+        }
+        return;
+    case MR_CC_UP:
+        if (q->view) {
+            q->scene_off = 0;
+            rfmv_pop(m, POP_BACK, BK_SCENE1);
+        }
+        return;
+    case MR_CC_LOOP: loop_whole(m); return;
+    case MR_CC_PLAY:
+        if (q->playing)                                 /* (Shift + Play's restart; stopped, Play starts at bar 1
+                                                         * anyway: nothing to do, never a start) */
+            rfmv_seq_restart(m);
+        rfmv_pop(m, POP_BACK, BK_BAR1);
+        return;
+    case MR_CC_DELETE: rfmv_pop(m, POP_BACK, close_all(m) ? BK_CLOSED : BK_NONE); return;
+    default: return;
+    }
+}
+/* POP_BACK: the paging popups' look (Left's "Bar n": a word at 2x, the strip under it where the grid is now); Play: its
+ * icon over "Bar 1" (the messages' look); Delete: "All closed", "None" with nothing open (Undo's) */
+void rfmv_seq_back_pop(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    mr_gfx_clear(cv, 0);
+    switch (m->pop_i) {
+    case BK_BAR1:
+        v2_ic(cv, V2I_PLAY, 58, 4, 1);
+        v2_msg(cv, "Bar 1", NULL);
+        break;
+    case BK_TRACK1:
+        v2_TC(cv, 64, 22, "Track 1", 2, 1);
+        v2_strip(cv, RFM_MOVE_SEQ_TRACKS, ((1u << RFM_MOVE_SV_COLS) - 1) << q->track_page, -1, 0, 128);
+        break;
+    case BK_SCENE1:
+        v2_TC(cv, 64, 22, "Scene 1", 2, 1);
+        v2_strip(cv, RFM_MOVE_SEQ_SCENES, 15u << q->scene_off, -1, 0, 128);
+        break;
+    case BK_CLOSED: v2_msg(cv, "All closed", NULL); break;
+    default: v2_msg(cv, "None", NULL); break;
+    }
+}
+
 /* the TRIG page: knob k's value of a step (shown 0 none: micro 0, ratchet 1, chance 100, cond / func none) */
 int rfmv_seq_trig_val(const rfm_move_t *m, int clip, int abs, int k)
 {

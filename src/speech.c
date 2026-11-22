@@ -517,6 +517,11 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
             snprintf(o, (size_t)cap, "Octave %d", m->s.octave);
         return;
     }
+    case POP_BACK: {                                    /* (0.12.x) Back held + a button: what it did */
+        static const char *const BK[] = { "Bar 1", "Track 1", "Scene 1", "All closed", "None" };
+        snprintf(o, (size_t)cap, "%s", BK[i < (int)(sizeof BK / sizeof BK[0]) ? i : BK_NONE]);
+        return;
+    }
     case POP_JOG: rfmv_tcase(rfmv_jog_name(i), l, sizeof l), snprintf(o, (size_t)cap, "Jog: %s", l); return;
     case POP_T4: snprintf(o, (size_t)cap, "%s", i ? "Routing" : "Mixer"); return;
     case POP_CCNUM: snprintf(o, (size_t)cap, "Knob %d: CC %d", (i & 7) + 1, m->s.slot[m->fw.active % 3].cc[i & 7]); return;

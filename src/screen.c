@@ -1039,6 +1039,9 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             rfmv_seq_oct_range(m, r, sizeof r);
             rfmv_pop_screen(cv, "Octave", o, 0, 0, r);
             g_full = 1;
+        } else if (m->pop == POP_BACK) {                /* (0.12.x) Back held + a button: what it did */
+            rfmv_seq_back_pop(m, cv);
+            g_full = 1;
         } else if (m->pop >= POP_LAYOUT && m->pop <= POP_SEQ) {   /* (0.8.0) the Track buttons' popups (the board) */
             char nm[24], a[16], b[16];
             const int i = m->pop_i;
@@ -1338,7 +1341,7 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
     }
     if (!(m->pop == POP_MODE && (m->pop_i == 30 || m->pop_i == 31) && rfmv_pop_up(m, POP_MODE))) {
         for (t = 0; t < 4 && (!rfmv_hold_shown(m, t) || (t == 3 && m->seq.smenu && m->seq.t4_opened) ||
-                              (t < 3 && m->seq.projects && m->fw.pop == FP_LEVEL)); t++) {}   /* (a slot's level set in the
+                              (t < 3 && ((m->seq.projects && m->fw.pop == FP_LEVEL) || rfmv_fw_level_shown(m)))); t++) {}   /* (a slot's level set in the
                                                          * view: its popup) */   /* (0.9.0: over the view
                                                          * too; Track 4's gives way to a Shift menu it opened) */   /* (0.8.0) a held Track's menu: over any layout, a
                                                          * takeover too (a tap: nothing of it) */
@@ -1347,6 +1350,11 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
             mr_gfx_pack(&cv, out);
             return;
         }
+    }
+    if ((m->track_held & 7) && rfmv_fw_level_shown(m) && rfmv_fw_screen(m, &cv)) {   /* (0.13.0) a held Track + the
+                                                         * volume knob: the slot's level, over a takeover's screen too */
+        mr_gfx_pack(&cv, out);
+        return;
     }
     if (rfmv_tk_claims(m) & RFM_MOVE_TK_SCREEN) {       /* (0.7.0) a takeover with the screen: the firmware's, its
                                                          * name over it on entering */

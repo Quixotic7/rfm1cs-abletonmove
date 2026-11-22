@@ -1196,6 +1196,10 @@ int rfmv_fw_level_turn(rfm_move_t *m, int slot, int d)
     set_level(m, slot, d);
     return 1;
 }
+/* (0.13.0) a slot's level popup is up (the owner's, 2026-11-22: "Holding a track button and turning the volume knob
+ * should change that firmware's volume level and also visually update to communicate the change": the popup goes over
+ * the held Track's menu in every layout, not only in the firmware browser) */
+int rfmv_fw_level_shown(const rfm_move_t *m) { return pop_up(m, FP_LEVEL); }
 /* the volume knob with Track 1..3 held (the browser on, any mode): that slot's level. 1 taken */
 int rfmv_fw_volume(rfm_move_t *m, int d)
 {

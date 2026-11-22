@@ -3248,6 +3248,248 @@ static void test_ps_newproj(void)
     CHECK(M.seq.fx.ffilt[0] == 0xFFFF && M.seq.tr[6].ch == 6 && M.s.lock[1] == 1);
 }
 
+/* ---- (0.12.x) Back held: its shortcuts (the owner's card "Shortcuts on a held Back", 2026-11-22): + Left / Up home,
+ * + Loop the whole clip, + Play to bar 1, + Delete every layer closed; at the second button's press, its own job not
+ * done, Back's click not either */
+static void back_down(void) { button(MR_CC_BACK, 1); }
+static void back_up(void) { button(MR_CC_BACK, 0); }
+static int wl(const uint8_t w[RFM_MOVE_NLEDS][3], int k) { return w[L_WHITE0 + k][0]; }
+static int back_lights(const uint8_t w[RFM_MOVE_NLEDS][3], int up)   /* the held Back's layer on the buttons */
+{
+    return wl(w, W_BACK) == 127 && wl(w, W_LEFT) >= 100 && wl(w, W_LOOP) >= 100 && wl(w, W_DELETE) >= 100 &&
+           wl(w, W_MENU) >= 100 && (up ? wl(w, W_UP) >= 100 : wl(w, W_UP) == 0) && !wl(w, W_RIGHT) && !wl(w, W_DOWN) &&
+           !wl(w, W_SHIFT) && !wl(w, W_CAPTURE) && !wl(w, W_UNDO) && !wl(w, W_COPY) && !wl(w, W_MUTE) &&
+           bright(w[L_PLAY]) > 300 && !lit(w[L_REC]) && !lit(w[L_SAMPLE]);
+}
+static int edit_clip_now(void) { return SEQ_CLIP(M.seq.sel_track, M.seq.tr[M.seq.sel_track].sel); }
+
+/* gating: a click closes the latest layer and shows nothing of the hold; held past the click's time the shortcuts
+ * light (only they); held long and let go alone: nothing */
+static void test_back_gating(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    track_view();
+    press(MR_CC_LOOP), rest();
+    CHECK(M.seq.loop_latch);
+    back_down();
+    leds(w);
+    CHECK(wl(w, W_BACK) == 127 && wl(w, W_SHIFT) == 24 && wl(w, W_RIGHT) > 0 && wl(w, W_UNDO) > 0 && lit(w[L_REC]));
+    back_up();
+    CHECK(!M.seq.loop_latch);                           /* (the click) */
+    press(MR_CC_LOOP), rest(), scr_save();
+    back_down(), adv_ms(RFM_MOVE_TAP_MS + 20);
+    leds(w);
+    CHECK(back_lights(w, 0) && scr_same());
+    write_pbm("back_held_track");
+    adv_ms(500), back_up();
+    CHECK(M.seq.loop_latch && scr_same());              /* (held long, alone: nothing) */
+    leds(w);
+    CHECK(wl(w, W_SHIFT) == 24 && wl(w, W_RIGHT) > 0 && lit(w[L_REC]));
+    back();
+    CHECK(!M.seq.loop_latch);
+    press(MR_CC_MENU), rest();                          /* session view: Up lit too */
+    back_down(), adv_ms(RFM_MOVE_TAP_MS + 20);
+    leds(w);
+    CHECK(M.seq.view && back_lights(w, 1));
+    write_pbm("back_held_session");
+    back_up();
+    CHECK(M.seq.view);
+    press(MR_CC_MENU), rest();
+}
+
+/* + Left: bar 1 (track view), track 1 (session view); + Up (session view): scene 1; the rest dead */
+static void test_back_home(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int clip, oct;
+    track_view();
+    clip = edit_clip_now();
+    rfmv_seq_note_put(&M, clip, 3 * RFM_MOVE_SEQ_PAGE + 2, 60, 100, 24, 0);
+    rfmv_seq_loop_set(&M, clip, 0, 4 * RFM_MOVE_SEQ_PAGE);
+    press(MR_CC_RIGHT), press(MR_CC_RIGHT), rest(), clear();
+    CHECK(M.seq.page == 2);
+    back_down(), button(MR_CC_LEFT, 1);
+    leds(w);
+    CHECK(M.seq.page == 0 && M.pop == POP_BAR && M.pop_i == 0 && wl(w, W_LEFT) == 127);   /* (at the press) */
+    CHECKF(strstr(said, "Bar 1") != NULL, "said \"%s\"", said);
+    write_pbm("back_bar1");
+    button(MR_CC_LEFT, 0), back_up();
+    CHECK(M.seq.page == 0);
+    /* under an open Shift menu: the same, and Back's click does not close it */
+    press(MR_CC_RIGHT), shift_step(4);
+    CHECK(M.seq.page == 1 && M.seq.smenu == RFM_MOVE_SM_TEMPO);
+    back_down(), press(MR_CC_LEFT), back_up();
+    CHECK(M.seq.page == 0 && M.seq.smenu == RFM_MOVE_SM_TEMPO);
+    /* dead in track view: Up (no octave), Right, Down */
+    rest(), clear();
+    oct = M.s.octave;
+    back_down(), press(MR_CC_UP), press(MR_CC_RIGHT), press(MR_CC_DOWN), back_up();
+    CHECK(M.s.octave == oct && M.seq.page == 0 && M.seq.smenu == RFM_MOVE_SM_TEMPO &&
+          !rfmv_pop_up(&M, POP_OCT) && !rfmv_pop_up(&M, POP_BAR));
+    CHECKF(!strstr(said, "Octave") && !strstr(said, "Bar"), "said \"%s\"", said);
+    back();
+    CHECK(!M.seq.smenu);
+    /* session view */
+    press(MR_CC_MENU), rest();
+    press(MR_CC_RIGHT), press(MR_CC_RIGHT), press(MR_CC_RIGHT), press(MR_CC_DOWN), press(MR_CC_DOWN), rest(), clear();
+    CHECK(M.seq.view && M.seq.track_page == 3 && M.seq.scene_off == 2);
+    back_down(), button(MR_CC_LEFT, 1);
+    CHECK(M.seq.track_page == 0 && M.seq.scene_off == 2 && M.pop == POP_BACK && M.pop_i == BK_TRACK1);
+    CHECKF(strstr(said, "Track 1") != NULL, "said \"%s\"", said);
+    write_pbm("back_track1");
+    button(MR_CC_LEFT, 0), clear(), button(MR_CC_UP, 1);
+    leds(w);
+    CHECK(M.seq.scene_off == 0 && M.pop == POP_BACK && M.pop_i == BK_SCENE1 && wl(w, W_UP) == 127);
+    CHECKF(strstr(said, "Scene 1") != NULL, "said \"%s\"", said);
+    write_pbm("back_scene1");
+    button(MR_CC_UP, 0), back_up();
+    CHECK(M.seq.view && M.seq.track_page == 0 && M.seq.scene_off == 0);
+    back_down(), press(MR_CC_RIGHT), press(MR_CC_DOWN), back_up();   /* (dead) */
+    CHECK(M.seq.view && M.seq.track_page == 0 && M.seq.scene_off == 0);
+    press(MR_CC_MENU), rest();
+}
+
+/* + Loop: the selected clip's loop back to the whole clip, one undo step; whole already: the popup, no undo step */
+static void test_back_loop(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int clip, un;
+    track_view();
+    clip = edit_clip_now();
+    rfmv_seq_note_put(&M, clip, 2, 60, 100, 24, 0);
+    rfmv_seq_note_put(&M, clip, 3 * RFM_MOVE_SEQ_PAGE + 4, 62, 100, 24, 0);
+    rfmv_seq_group(&M);
+    rfmv_seq_loop_set(&M, clip, RFM_MOVE_SEQ_PAGE, RFM_MOVE_SEQ_PAGE);   /* (the loop: bar 2 only) */
+    rest(), clear();
+    back_down(), button(MR_CC_LOOP, 1);
+    leds(w);
+    CHECK(rfmv_seq_loop_lo(&M, clip) == 0 && rfmv_seq_loop_hi(&M, clip) == 4 * RFM_MOVE_SEQ_PAGE);
+    CHECK(!M.seq.loop_latch && !(M.seq.mods & SEQ_M_LOOP) && M.pop == POP_LOOP && M.pop_val == 1 && wl(w, W_LOOP) == 127);
+    CHECKF(strstr(said, "Loop: 4 bars") != NULL, "said \"%s\"", said);
+    write_pbm("back_loop");
+    button(MR_CC_LOOP, 0), back_up();
+    CHECK(!M.seq.loop_latch && !(M.seq.mods & SEQ_M_LOOP));   /* (Loop's click: no latch) */
+    rest();
+    press(MR_CC_UNDO);
+    CHECK(rfmv_seq_loop_lo(&M, clip) == RFM_MOVE_SEQ_PAGE && rfmv_seq_loop_hi(&M, clip) == 2 * RFM_MOVE_SEQ_PAGE);
+    back_down(), press(MR_CC_LOOP), back_up(), rest();
+    un = M.seq.un, clear();
+    back_down(), press(MR_CC_LOOP);
+    CHECK(M.seq.un == un && M.pop == POP_LOOP && rfmv_pop_up(&M, POP_LOOP) && rfmv_seq_loop_hi(&M, clip) == 4 * RFM_MOVE_SEQ_PAGE);
+    CHECKF(strstr(said, "Loop: 4 bars") != NULL, "said \"%s\"", said);
+    back_up();
+    CHECK(!M.seq.loop_latch);
+    rest();
+}
+
+/* + Play: the transport to bar 1, never started or stopped */
+static void test_back_play(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    track_view();
+    back_down(), button(MR_CC_PLAY, 1);
+    leds(w);
+    CHECK(!M.seq.playing && !M.seq.start_pending && M.pop == POP_BACK && M.pop_i == BK_BAR1 && bright(w[L_PLAY]) > 600);
+    CHECKF(strstr(said, "Bar 1") != NULL, "said \"%s\"", said);
+    write_pbm("back_play");
+    button(MR_CC_PLAY, 0), back_up(), adv_ms(100);
+    CHECK(!M.seq.playing && !M.seq.start_pending);      /* (stopped stays stopped) */
+    press(MR_CC_PLAY), adv_ms(1500);
+    CHECK(M.seq.playing && M.seq.T > 8 * RFM_MOVE_SEQ_TPS);
+    back_down(), button(MR_CC_PLAY, 1), adv_ms(20);
+    CHECK(M.seq.playing && M.seq.T < 4 * RFM_MOVE_SEQ_TPS && M.pop == POP_BACK && M.pop_i == BK_BAR1);
+    button(MR_CC_PLAY, 0), back_up(), adv_ms(100);
+    CHECK(M.seq.playing);                               /* (playing stays playing, from bar 1) */
+    press(MR_CC_PLAY), rest();
+    CHECK(!M.seq.playing);
+}
+
+/* + Delete: every layer Back's clicks would close, at once; nothing open: "None"; no delete armed, nothing deleted */
+static void test_back_delete(void)
+{
+    int clip;
+    track_view();
+    clip = edit_clip_now();
+    rfmv_seq_note_put(&M, clip, 0, 60, 100, 24, 0);
+    button(MR_CC_COPY, 1), step(0, 1), step(0, 0), button(MR_CC_COPY, 0);   /* (the clipboard's marks) */
+    CHECK(M.seq.paste);
+    shift_step(4);
+    press(MR_CC_LOOP), press(MR_CC_MUTE);
+    button(MR_CC_SHIFT, 1), button(MR_CC_SHIFT, 0), button(MR_CC_SHIFT, 1), button(MR_CC_SHIFT, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_TEMPO && M.seq.loop_latch && M.seq.mute_latch && M.seq.shift_lock && M.seq.paste);
+    rest(), clear();
+    back_down(), button(MR_CC_DELETE, 1);
+    CHECK(!M.seq.smenu && !M.seq.loop_latch && !M.seq.mute_latch && !M.seq.shift_lock && !M.seq.paste && !rfmv_back_has(&M));
+    CHECK(!(M.seq.mods & (SEQ_M_SHIFT | SEQ_M_LOOP | SEQ_M_MUTE | SEQ_M_DELETE)) && M.pop == POP_BACK && M.pop_i == BK_CLOSED);
+    CHECKF(strstr(said, "All closed") != NULL, "said \"%s\"", said);
+    write_pbm("back_closed");
+    button(MR_CC_DELETE, 0), back_up();
+    CHECK(M.s.mode == RFM_MOVE_MODE_SEQ && !M.seq.view && !(M.seq.mods & SEQ_M_DELETE) && rfmv_seq_find(&M, clip, 0, 60) >= 0);
+    rest(), clear();
+    back_down(), button(MR_CC_DELETE, 1);
+    CHECK(M.pop == POP_BACK && M.pop_i == BK_NONE);
+    CHECKF(strstr(said, "None") != NULL, "said \"%s\"", said);
+    write_pbm("back_none");
+    button(MR_CC_DELETE, 0), back_up();
+    press(MR_CC_MENU), rest();                          /* session view: the latch closes, the view stays */
+    press(MR_CC_MUTE);
+    CHECK(M.seq.view && M.seq.mute_latch);
+    back_down(), press(MR_CC_DELETE), back_up();
+    CHECK(M.seq.view && !M.seq.mute_latch && !(M.seq.mods & SEQ_M_DELETE));
+    press(MR_CC_MENU), rest();
+    /* not in the FM-1 layout (its buttons are the FM-1's): no shortcut, no popup */
+    tap_track(0), rest(), clear();
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1);
+    back_down(), press(MR_CC_LEFT), press(MR_CC_DELETE), press(MR_CC_LOOP), back_up();
+    CHECK(!rfmv_pop_up(&M, POP_BACK) && !rfmv_pop_up(&M, POP_LOOP) && !rfmv_pop_up(&M, POP_BAR) && !M.back_cut);
+    tap_track(1), rest();
+}
+
+/* ---- (0.13.0, the owner's, 2026-11-22: "Holding a track button and turning the volume knob should change that
+ * firmware's volume level and also visually update to communicate the change") a held Track 1..3 + the volume knob:
+ * the slot's level popup over the Track's menu in a note layout, session view and the FM-1 layout (it showed only in
+ * the firmware browser); a touch shows it too; a second later the menu is back */
+static void test_track_volume(void)
+{
+    static uint8_t MENU[MR_SCREEN_BYTES], POP[MR_SCREEN_BYTES];
+    int l0 = 0, v, a0;
+    for (v = 0; v < 3; v++) {                           /* a note layout, session view, the FM-1 layout */
+        if (v == 1)
+            session_view();
+        else {
+            fresh();
+            hold_track(1), hit(v ? 24 : 26), track(1, 0), rest();   /* (Felucca on Track 2: Scale, or the FM-1 layout) */
+            tap_track(1), rest();
+        }
+        CHECK(v == 2 ? M.s.mode == RFM_MOVE_MODE_FM1 : M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.view == (v == 1));
+        a0 = M.fw.active;
+        hold_track(1);
+        screen(), memcpy(MENU, SCR, sizeof MENU);
+        l0 = M.fw.level[1];
+        clear();
+        raw(0xB0, (uint8_t)(MR_CC_KNOB1 + 8), 3);       /* the volume knob, 3 up */
+        CHECK(M.fw.level[1] == l0 + 3 && count(RFM_MOVE_ACT_FW_LEVEL) == 1 && !count(RFM_MOVE_ACT_MASTER));
+        screen(), memcpy(POP, SCR, sizeof POP);
+        CHECK(memcmp(POP, MENU, sizeof MENU) != 0 && rfmv_fw_level_shown(&M));   /* the level, not the menu */
+        if (v == 0)
+            write_pbm("trk_volume");
+        raw(0xB0, (uint8_t)(MR_CC_KNOB1 + 8), 125);     /* 3 down: the level as it was */
+        CHECK(M.fw.level[1] == l0);
+        adv_ms(RFM_MOVE_POPUP_MS + 50);
+        screen();
+        CHECK(!memcmp(SCR, MENU, sizeof MENU));         /* the Track's menu is back while it is still held */
+        touch(8, 1);                                    /* a touch alone: the level shows, nothing changes */
+        screen();
+        CHECK(M.fw.level[1] == l0 && rfmv_fw_level_shown(&M) && memcmp(SCR, MENU, sizeof MENU) != 0);
+        touch(8, 0);
+        track(1, 0), rest();
+        CHECK(M.fw.active == a0 && M.seq.view == (v == 1));   /* (the Track used by the knob: its release no tap) */
+    }
+    clear();
+    raw(0xB0, (uint8_t)(MR_CC_KNOB1 + 8), 3);           /* no Track held: the master volume, as ever */
+    CHECK(M.fw.level[1] == l0 && !rfmv_fw_level_shown(&M) && count(RFM_MOVE_ACT_MASTER) == 1);
+}
+
 int main(void)
 {
     test_scenes();
@@ -3293,6 +3535,12 @@ int main(void)
     test_ps_gestures();
     test_ps_new_undo();
     test_ps_newproj();
+    test_back_gating();
+    test_back_home();
+    test_back_loop();
+    test_back_play();
+    test_back_delete();
+    test_track_volume();
     (void)count, (void)find, (void)knob, (void)jog, (void)jog_click, (void)dbl_track, (void)m_nlat;
     return check_done("move_sessview");
 }

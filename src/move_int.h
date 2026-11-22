@@ -226,7 +226,8 @@ int rfmv_seq_cs_on(const rfm_move_t *m);                /* (0.12.0) a select ste
 int rfmv_seq_cs_touch(rfm_move_t *m, int k);
 int rfmv_seq_cs_knobs(const rfm_move_t *m);             /* .. its knobs lit (bits), -1 not shown */            /* .. a knob touched while it is held: 1 taken */
 void rfmv_seq_cs_words(const rfm_move_t *m, int k, char *o, int cap);   /* .. words (k -1: the whole screen) */
-int rfmv_fw_level_turn(rfm_move_t *m, int slot, int d); /* (0.12.0) a slot's level (the Mixer's), its popup; 0 empty */            /* (0.12.0) Delete held: 1 (scissors), Copy: 2 */
+int rfmv_fw_level_turn(rfm_move_t *m, int slot, int d);
+int rfmv_fw_level_shown(const rfm_move_t *m);          /* (0.13.0) a slot's level popup is up */ /* (0.12.0) a slot's level (the Mixer's), its popup; 0 empty */            /* (0.12.0) Delete held: 1 (scissors), Copy: 2 */
 void rfmv_seq_track_menu(const rfm_move_t *m, mr_canvas_t *cv);   /* Track 4 held */
 void rfmv_seq_msg(rfm_move_t *m, int msg);
 const char *rfmv_seq_msg_text(const rfm_move_t *m);    /* the message up now, NULL none */
@@ -400,5 +401,13 @@ void rfmv_fw_id_name(const rfm_move_t *m, const char *id, char *o, int cap);   /
 void rfmv_fw_slot_set(rfm_move_t *m, int s, const char *id);   /* the slot holds that firmware now ("" empty) */
 int rfmv_fw_slot_loaded(const rfm_move_t *m, int s);
 void rfmv_held_icon(mr_canvas_t *cv, int kind, int x, int y);   /* 1 scissors (Delete held), 2 two sheets (Copy) */
+/* (0.12.x, the owner's) Back held + a button, in the sequencer's track and session views: Left home (bar 1; session:
+ * track 1), Up (session) scene 1, Loop the whole clip, Play to bar 1, Delete every layer closed; the rest dead */
+enum { POP_BACK = 60 };                                 /* (a popup: pop_i BK_*) */
+enum { BK_BAR1, BK_TRACK1, BK_SCENE1, BK_CLOSED, BK_NONE };
+int rfmv_back_keys(const rfm_move_t *m);                /* Back held where its shortcuts work */
+void rfmv_seq_back_key(rfm_move_t *m, int cc);          /* a button pressed with Back held there (its own job not done) */
+int rfmv_seq_back_lit(const rfm_move_t *m, int cc);     /* .. a shortcut there now (lit while Back is held) */
+void rfmv_seq_back_pop(const rfm_move_t *m, mr_canvas_t *cv);   /* POP_BACK's screen */
 
 #endif

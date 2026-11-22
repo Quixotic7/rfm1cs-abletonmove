@@ -67,6 +67,30 @@ host carries the firmware state files with the project buffer; tested.
 **Tests**: `tests/move_sessview.c` `test_ps_*` (nine functions; dumps `sessview_ps_*`). Older-version conversions in
 `test_move_seq.c`, `test_move_fw.c`, `move_sessview.c` strip the version 9 part too; `test_session.c`'s file size.
 
+### Shortcuts on a held Back (the owner's card, 2026-11-22)
+- Back held + a button, in the sequencer's track and session views (also under a Shift menu), at the button's
+  press; the button's own job and Back's click do not happen (an open menu stays):
+  - + Left: home: track view bar 1 ("Bar 1"), session view track 1 ("Track 1", the tracks' strip).
+  - + Up: session view scene 1 ("Scene 1", the scenes' strip). Track view: dead.
+  - + Loop: the selected clip's loop back to the whole clip (to its loop's end or its last note's bar), one undo
+    step; already whole: the popup only ("Loop", the length).
+  - + Play: the transport to bar 1, never started or stopped (playing: Shift + Play's restart; stopped: nothing).
+  - + Delete: every layer Back's clicks would close, at once ("All closed"; nothing open: "None").
+  - + Right, + Down and the other buttons: dead.
+- Held past a click's time (or once something is pressed with it), the shortcuts light (Left, Up in session view,
+  Loop, Play, Delete, Menu; a pressed one full) and the other buttons go dark; nothing of this shows on a click.
+- Not in the FM-1 layout, a takeover, the projects view, the States layer, or with a Track or a step held.
+- move.c rfmv_back_keys, on_button, wanted; seq_ui.c rfmv_seq_back_key, rfmv_seq_back_lit, rfmv_seq_back_pop;
+  POP_BACK (screen.c, speech.c); rfm_move_t.back_cut, back_clk.
+
+### A held Track + the volume knob shows the level (the owner's, 2026-11-22)
+- "Holding a track button and turning the volume knob should change that firmware's volume level and also visually
+  update to communicate the change." The level changed, but its popup ("Track 2 level", the value, the firmware)
+  was drawn only in the firmware browser: everywhere else the held Track's menu covered it. Now the popup goes over
+  the Track's menu in every layout and view (a note layout, session view, the FM-1 layout, a takeover's screen), a
+  second after the last turn the menu is back, and a touch of the volume knob with the Track held shows the level
+  without changing it (R5). fw.c rfmv_fw_level_shown; screen.c; move.c on_touch; test_track_volume.
+
 ## 0.12.0 (2026-11-22, not released)
 
 The owner's answers on the review page, card by card. New fields in `rfm_move_seq_t` (after `tk_pend_clk`): rebuild
