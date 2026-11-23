@@ -92,6 +92,18 @@ and their times.
   something else); the screen's X only while Delete is held, then the empty slot's dot; the pad's info popup closed so
   the grid shows.
 
+- (item 14, the owner's "Clearing the clip should only clear the steps on that clip and reset to 1 page/bar") Delete
+  held + Play clears the clip's notes and locks and sets its loop to one bar from step 1 (`clip_clear_sel` +
+  `rfmv_seq_loop_set`, one undo step; was: the length kept), the page shown bar 1. The host's trace: in the FM-1
+  page's level 2 (Knobs+Keys) `on_button` gave every mapped button to the firmware before the sequencer saw it, so
+  Delete + Play cleared nothing and ChoralRoot got LFO (its LOCK) and PLAY (its looper, its MIDI Start). Now Delete
+  and Copy there are the sequencer's modifiers at the press (`H_GATE`, `fwg`): while one is held the other buttons
+  and the steps are the sequencer's too; a click (released within `RFM_MOVE_TAP_MS`, nothing else pressed, the
+  modifier not used) is also sent to the firmware as a tap of LFO / EDIT at the release; their light full while held.
+  Shift, Mute, Loop and the other mapped buttons stay the firmware's in that level; Play alone there is the firmware's
+  PLAY only, as before. `test_o14_clear_clip` (levels 1 and 2: nothing reaches the firmware, the clip one bar, Undo
+  brings both back), `test_move_seq`'s clear-clip check.
+
 ## 0.13.0 (2026-11-23)
 
 The first tag since 0.9.1: it carries 0.9.2, 0.10.0, 0.11.0 and 0.12.0 below, which were never tagged by themselves.

@@ -2928,10 +2928,11 @@ static void test_capture_playing(void)
     }
     button(m, MR_CC_DELETE, 1), press(m, MR_CC_PLAY), button(m, MR_CC_DELETE, 0);
     CHECK(!m->seq.playing && !m->seq.start_pending);
-    CHECK(nnotes_clip(m, 0) == 0 && rfmv_seq_trig(m, 0, 3, RFM_MOVE_TRIG_CHANCE) < 0 && m->seq.len[0] == 32);
+    CHECK(nnotes_clip(m, 0) == 0 && rfmv_seq_trig(m, 0, 3, RFM_MOVE_TRIG_CHANCE) < 0 && m->seq.len[0] == 16 &&
+          m->seq.lstart[0] == 0);                       /* (0.14.0, the owner's: one bar again) */
     CHECK(m->seq.msg == SEQ_MSG_CLIPCLEAR && !strcmp(rfmv_seq_msg_text(m), "Clip"));
     press(m, MR_CC_UNDO);
-    CHECK(nnotes_clip(m, 0) == 2 && rfmv_seq_trig(m, 0, 3, RFM_MOVE_TRIG_CHANCE) == 50);
+    CHECK(nnotes_clip(m, 0) == 2 && rfmv_seq_trig(m, 0, 3, RFM_MOVE_TRIG_CHANCE) == 50 && m->seq.len[0] == 32);
 }
 
 /* REPEAT (the owner's): a step plays again on its next n steps, as if copied there (the steps under them skipped),

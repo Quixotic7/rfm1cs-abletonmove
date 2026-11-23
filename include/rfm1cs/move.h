@@ -1106,6 +1106,11 @@ typedef struct {
     uint8_t pj_used, pj_undo;
     int8_t pj_del, pj_ack;
     uint32_t pj_press_ms, pj_del_ms, pj_ack_ms;
+    /* (0.14.0) the FM-1 page's level 2 (Knobs+Keys): Delete and Copy are the sequencer's while held (fwg: bit 0
+     * Delete, bit 1 Copy; fwg_ms their press, input ms); fwg_other: something else pressed meanwhile (no firmware
+     * tap at the release) */
+    uint8_t fwg, fwg_other;
+    uint32_t fwg_ms[2];
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit

@@ -1217,7 +1217,7 @@ static void on_step(rfm_move_t *m, int s, int down, uint32_t now)
         rfmv_seq_step(m, s, 1, now);
         return;
     }
-    if (rfmv_fwp_full(m)) {                             /* (0.12.x) the FM-1 page's level 2: the steps are the FM-1's
+    if (rfmv_fwp_full(m) && !m->fwg) {                  /* (0.12.x) the FM-1 page's level 2: the steps are the FM-1's
                                                          * keys, as in the FM-1 layout */
         h->kind = H_KEY, h->a = (uint8_t)STEP_KEY[s];
         key_hold(m, h->a, 100);
@@ -1333,8 +1333,33 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
             rfmv_seq_button(m, MR_CC_BACK, 1, now);
         return;
     }
+    if (m->s.mode == RFM_MOVE_MODE_SEQ && (cc == MR_CC_DELETE || cc == MR_CC_COPY) &&
+        (down ? m->btn[cc].kind == H_NONE && rfmv_fwp_full(m) : m->btn[cc].kind == H_GATE)) {
+        /* (0.14.0, the owner's "Clearing the clip"; item 14) the FM-1 page's level 2: Delete and Copy are the
+         * sequencer's modifiers at the press (Delete + Play clears the clip, + a pad its notes, + a step); a click
+         * (let go within RFM_MOVE_TAP_MS, nothing else pressed) is then also the firmware's button, as a tap (down
+         * and up at the release); held longer or used with something: the firmware hears nothing of it */
+        const int bit = cc == MR_CC_DELETE ? 1 : 2, i = cc == MR_CC_DELETE ? 0 : 1;
+        if (down) {
+            m->btn[cc].kind = H_GATE;
+            m->fwg = (uint8_t)(m->fwg | bit), m->fwg_other = (uint8_t)(m->fwg_other & ~bit), m->fwg_ms[i] = now;
+            rfmv_seq_button(m, cc, 1, now);
+            return;
+        }
+        m->btn[cc].kind = H_NONE;
+        m->fwg = (uint8_t)(m->fwg & ~bit);
+        rfmv_seq_button(m, cc, 0, now);
+        if (!(m->fwg_other & bit) && !(m->seq.mods_used & (cc == MR_CC_DELETE ? SEQ_M_DELETE : SEQ_M_COPY)) &&
+            now - m->fwg_ms[i] < RFM_MOVE_TAP_MS && rfmv_fwp_full(m)) {
+            rfm_move_hold_t tap;
+            tap.kind = H_BTN, tap.a = (uint8_t)rfm_move_button_of(cc), tap.b = 0;
+            btn_hold(m, tap.a);
+            let_go(m, &tap);
+        }
+        return;
+    }
     if (m->s.mode == RFM_MOVE_MODE_SEQ && cc >= 0 && cc < 128 &&
-        (down ? m->btn[cc].kind == H_NONE && rfmv_fwp_full(m) && fwp_btn(cc) : m->btn[cc].kind == H_BTN)) {
+        (down ? m->btn[cc].kind == H_NONE && rfmv_fwp_full(m) && fwp_btn(cc) && !m->fwg : m->btn[cc].kind == H_BTN)) {
         h = &m->btn[cc];                                /* (0.12.x) the FM-1 page's level 2: the FM-1 layout's buttons
                                                          * (Play the firmware's PLAY too) */
         if (!down)
@@ -1971,6 +1996,10 @@ static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
         m->seq.mods_other |= (uint8_t)((m->btn[MR_CC_LOOP].kind != H_NONE ? SEQ_M_LOOP : 0) |
                                       (m->btn[MR_CC_MUTE].kind != H_NONE ? SEQ_M_MUTE : 0));   /* (0.12.0, a2: Loop or
                                                          * Mute held and something else pressed: not a click) */
+    if (m->fwg && ev->value && ev->type != MR_EV_TOUCH && ev->type != MR_EV_PAD_PRESSURE &&
+        !(ev->type == MR_EV_BUTTON && (ev->index == MR_CC_DELETE || ev->index == MR_CC_COPY) &&
+          m->btn[ev->index].kind == H_GATE))
+        m->fwg_other = (uint8_t)(m->fwg_other | m->fwg);   /* (0.14.0: Knobs+Keys' Delete / Copy used: no firmware tap) */
     if (back_input(m, ev, now_ms))
         return;
     if (track_input(m, ev, now_ms))                   /* (0.8.0) the Track buttons, in every mode and the view */
@@ -2257,7 +2286,9 @@ static void fwp_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
     c[L_REC] = sc(RED, alpha(level_of(m, RFM_MOVE_B_REC)));
     c[L_SAMPLE] = sc(WHITE, alpha(level_of(m, RFM_MOVE_B_SEL)));
     for (i = 0; i < 13; i++)
-        if (fwp_btn(WHITE_CC[i]))
+        if (m->btn[WHITE_CC[i]].kind == H_GATE)
+            wv[i] = 127;                                /* (0.14.0: Delete / Copy held: the sequencer's, full) */
+        else if (fwp_btn(WHITE_CC[i]))
             wv[i] = (uint8_t)clampi(alpha(level_of(m, rfm_move_button_of(WHITE_CC[i]))) * 127 / 256, 6, 127);
 }
 

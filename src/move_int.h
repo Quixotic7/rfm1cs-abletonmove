@@ -10,7 +10,7 @@
 
 typedef struct { uint8_t r, g, b; } rfmv_rgb_t;
 
-enum { H_NONE = 0, H_KEY, H_BTN, H_NOTE, H_MENU, H_SEQ, H_ARP };
+enum { H_NONE = 0, H_KEY, H_BTN, H_NOTE, H_MENU, H_SEQ, H_ARP, H_GATE };   /* (H_GATE 0.14.0: Knobs+Keys' Delete / Copy) */
 /* the LED list (rfm_move_leds): pads, steps, the RGB CC LEDs, then the 13 white ones (WHITE_CC order) */
 enum { L_PAD0 = 0, L_STEP0 = 32, L_PLAY = 48, L_REC, L_SAMPLE, L_TRACK0, L_RING0 = 55, L_WHITE0 = 63, L_ICON0 = 76 };
 enum { W_SHIFT, W_MENU, W_BACK, W_CAPTURE, W_DOWN, W_UP, W_UNDO, W_LOOP, W_COPY, W_LEFT, W_RIGHT, W_MUTE, W_DELETE };

@@ -323,6 +323,10 @@ static void clip_clear_sel(rfm_move_t *m)
     hi = rfmv_seq_clip_lock_range(m, clip, &lo);
     while (hi-- > lo)
         rfmv_seq_lock_set(m, clip, q->locks[hi].step, q->locks[hi].cc, -1);
+    rfmv_seq_loop_set(m, clip, 0, RFM_MOVE_SEQ_PAGE);   /* (0.14.0, the owner's: "Clearing the clip should only clear
+                                                         * the steps on that clip and reset to 1 page/bar": its loop one
+                                                         * bar from step 1, in the same undo step) */
+    q->page = 0;
     rfmv_seq_dirty(m);
     rfmv_seq_msg(m, SEQ_MSG_CLIPCLEAR);
 }

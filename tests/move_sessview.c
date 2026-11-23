@@ -4757,8 +4757,64 @@ static void test_o14_projects(void)
     back(), rest();
 }
 
+/* item 14: "Clearing the clip should only clear the steps on that clip and reset to 1 page/bar", and in Knobs+Keys
+ * (the FM-1 page's level 2) Delete + Play reached the firmware as LFO + PLAY and cleared nothing */
+static void test_o14_clear_clip(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int lv, clip;
+    track_view();
+    clip = edit_clip_now();
+    jog(1), rest();
+    for (lv = 1; lv <= 2; lv++) {
+        if (lv == 2)
+            jog_dbl(), rest();
+        CHECK(rfm_move_fwp_level(&M) == lv);
+        rfmv_seq_loop_set(&M, clip, 0, 32);
+        rfmv_seq_note_put(&M, clip, 3, 60, 100, 24, 0), rfmv_seq_note_put(&M, clip, 20, 62, 100, 24, 0);
+        clear(), button(MR_CC_DELETE, 1);
+        if (lv == 2) {
+            leds(w);
+            CHECK(w[L_WHITE0 + W_DELETE][0] == 127);     /* (the sequencer's Delete: full at the press) */
+        }
+        press(MR_CC_PLAY), button(MR_CC_DELETE, 0);
+        CHECKF(!count(RFM_MOVE_ACT_BTN) && !count(RFM_MOVE_ACT_MIDI) && !M.seq.playing && !M.seq.start_pending,
+               "level %d: %d buttons to the firmware", lv, count(RFM_MOVE_ACT_BTN));
+        CHECKF(!rfmv_seq_clip_used(&M, clip) && M.seq.len[clip] == 16 && M.seq.lstart[clip] == 0, "level %d: len %d", lv,
+               M.seq.len[clip]);
+        press(MR_CC_UNDO);                              /* (Undo: notes and length back; level 2: Undo is the FM-1's
+                                                         * SAVE, so the sequencer's undo is called directly) */
+        if (lv == 2)
+            rfmv_seq_undo(&M);
+        CHECK(rfmv_seq_clip_used(&M, clip) && M.seq.len[clip] == 32);
+        rest();
+    }
+    write_pbm("o14_clear_clip_l2");
+    /* level 2: Delete clicked alone: the firmware's LFO, a tap at the release */
+    clear(), button(MR_CC_DELETE, 1);
+    CHECK(!count(RFM_MOVE_ACT_BTN));
+    button(MR_CC_DELETE, 0);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_LFO) == 2);
+    /* .. held past the gate: nothing to the firmware */
+    rest(), clear(), button(MR_CC_DELETE, 1), adv_ms(RFM_MOVE_TAP_MS + 30), button(MR_CC_DELETE, 0);
+    CHECK(!count(RFM_MOVE_ACT_BTN));
+    /* .. Delete + a pad: its notes out of the clip, nothing to the firmware */
+    rest(), clear(), button(MR_CC_DELETE, 1), hit(0), button(MR_CC_DELETE, 0);
+    CHECK(!count(RFM_MOVE_ACT_BTN));
+    /* Copy: a click the firmware's EDIT; held + a step: the sequencer's (the step is not the FM-1's key) */
+    rest(), clear(), press(MR_CC_COPY);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_EDIT) == 2);
+    rest(), clear(), button(MR_CC_COPY, 1), step(3, 1), step(3, 0), button(MR_CC_COPY, 0);
+    CHECK(!count(RFM_MOVE_ACT_BTN) && !count(RFM_MOVE_ACT_KEY));
+    /* Play alone in level 2: the firmware's PLAY, the Move's sequencer stays stopped (unchanged; the owner's call) */
+    rest(), clear(), press(MR_CC_PLAY);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY) == 2 && !M.seq.playing && !M.seq.start_pending);
+    jog_dbl(), rest(), jog(-1), rest();
+}
+
 int main(void)
 {
+    test_o14_clear_clip();
     test_o14_projects();
     test_o14_shift_knob();
     test_o14_fwp_jog();
