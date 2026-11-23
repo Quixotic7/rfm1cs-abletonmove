@@ -741,7 +741,13 @@ void rfmv_st_track(rfm_move_t *m, int t)
         rfmv_st_open(m, t, f->sl_from);
 }
 
-/* the lights: the states in the slot's colour (the active one full, stored ones dim, empty dark, a pressed one white),
+/* (0.14.0, the owner's 2026-11-23: "The current state is not obvious on pads, Should be a different contrasting
+ * color") the active state's pad: white, breathing slowly (RFMV_ACTIVE_ON_MS full, then RFMV_ACTIVE_OFF_MS at a
+ * third), from the layer's opening: white is no slot's colour nor solo's purple, and the slow beat keeps it apart from
+ * a pressed pad (white, steady). The open project's pad (rfmv_active_rgb) is the same */
+rfmv_rgb_t rfmv_active_rgb(uint32_t ms) { return ms % (RFMV_ACTIVE_ON_MS + RFMV_ACTIVE_OFF_MS) < RFMV_ACTIVE_ON_MS ? RFMV_WHITE : rfmv_sc(RFMV_WHITE, 85); }
+rfmv_rgb_t rfmv_st_active_rgb(const rfm_move_t *m) { return rfmv_active_rgb(now_ms(m) - m->fw.sl_ms); }
+/* the lights: the states in the slot's colour (the active one white, breathing; stored ones dim, empty dark, a pressed one white),
  * swept in column by column on opening (unswept pads keep what they showed: 8 LED writes a frame at most); step 14
  * New; the buttons the layer uses lit, the rest dark */
 void rfmv_st_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
@@ -768,7 +774,7 @@ void rfmv_st_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         } else if (sw < 8 && (uint32_t)c == sw)
             v = col;
         else
-            v = f->st_cur[t] == k ? col : f->st_used[t] >> k & 1 ? rfmv_sc(col, 108) : RFMV_OFF;
+            v = f->st_cur[t] == k ? rfmv_st_active_rgb(m) : f->st_used[t] >> k & 1 ? rfmv_sc(col, 108) : RFMV_OFF;
         w[L_PAD0 + p][0] = v.r, w[L_PAD0 + p][1] = v.g, w[L_PAD0 + p][2] = v.b;
     }
     for (p = 0; p < RFM_MOVE_NSTEPS; p++) {

@@ -3063,7 +3063,7 @@ static void test_ps_layer(void)
     printf("states sweep: %d pad LED writes in a second, at most %d at once\n", np, peak);
     CHECKF(np <= 100 && peak <= 9, "sweep: %d pad writes, %d at once", np, peak);
     leds(w);
-    CHECK(w[L_PAD0 + 25][0] == 255 && w[L_PAD0 + 25][1] == 120);   /* (state 2, the active one: full orange) */
+    CHECK(white(w[L_PAD0 + 25]));                       /* (state 2, the active one: 0.14.0 white, breathing) */
     CHECK(w[L_PAD0 + 24][0] == 107 && w[L_PAD0 + 28][0] == 107 && w[L_PAD0 + 23][0] == 107 && !lit(w[L_PAD0 + 26]));
     CHECK(!lit(w[L_STEP0 + 0]) && w[L_STEP0 + 13][0] == 63 && w[L_ICON0 + 13][0] == 127 && w[L_ICON0 + 12][0] == 0);
     CHECK(!lit(w[L_RING0 + 0]) && w[L_WHITE0 + W_BACK][0] == 80 && w[L_WHITE0 + W_UNDO][0] == 0);
@@ -4406,8 +4406,48 @@ static void test_o14_kpage(void)
     CHECK(M.seq.trig);
 }
 
+/* item 3: "The current state is not obvious on pads, Should be a different contrasting color": the active state's pad
+ * white (no slot's colour, not solo's purple), breathing slowly; a pressed pad white and steady; stored ones the
+ * slot's colour, dim; for all three slots */
+static void test_o14_state_pad(void)
+{
+    static const char *const nm[3] = { "o14_states_slot1", "o14_states_slot2", "o14_states_slot3" };
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int t, k, hi = 0, lo = 0;
+    ps_states();
+    rfm_move_fw_states(&M, 1, 1u | 4u | 8u), rfm_move_fw_state_cur(&M, 1, 2);
+    rfm_move_fw_states(&M, 2, 1u | 2u), rfm_move_fw_state_cur(&M, 2, 0);
+    hold_track(0), hit(30), track(0, 0);
+    for (t = 0; t < 3; t++) {
+        const int cur = t == 0 ? 1 : t == 1 ? 2 : 0, other = t == 0 ? 4 : t == 1 ? 3 : 1;
+        if (t)
+            tap_track(t);
+        adv_ms(500);                                    /* (swept in; the beat's bright part) */
+        CHECK(rfm_move_states_open(&M) == t);
+        leds(w);
+        CHECKF(full(w[L_PAD0 + 24 + cur]), "slot %d: active %02x%02x%02x", t + 1, w[L_PAD0 + 24 + cur][0],
+               w[L_PAD0 + 24 + cur][1], w[L_PAD0 + 24 + cur][2]);
+        CHECKF(lit(w[L_PAD0 + 24 + other]) && !white(w[L_PAD0 + 24 + other]) &&
+               bright(w[L_PAD0 + 24 + other]) * 2 < bright(w[L_PAD0 + 24 + cur]), "slot %d: stored", t + 1);
+        write_pbm(nm[t]);
+        for (k = 0; k < 20; k++) {                      /* (a second: bright, then a third, then bright) */
+            adv_ms(50), leds(w);
+            hi += full(w[L_PAD0 + 24 + cur]);
+            lo += white(w[L_PAD0 + 24 + cur]) && !full(w[L_PAD0 + 24 + cur]);
+        }
+    }
+    CHECKF(hi >= 30 && lo >= 9, "breathing: %d bright, %d dim", hi, lo);
+    /* a pressed pad: white and steady, the active one meanwhile breathing (the press itself loads it: white too) */
+    pad(24 + 3, 100);
+    for (k = 0, hi = 0; k < 20; k++)
+        adv_ms(50), leds(w), hi += full(w[L_PAD0 + 24 + 3]);
+    CHECK(hi == 20);
+    pad(24 + 3, 0), back(), rest();
+}
+
 int main(void)
 {
+    test_o14_state_pad();
     test_o14_kpage();
     test_o14_arp_notes();
     test_scenes();

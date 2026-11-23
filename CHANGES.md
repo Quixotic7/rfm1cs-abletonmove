@@ -23,6 +23,11 @@ The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_se
   tap: was the TRIG page always). A bank page sets `s.bank` as the jog does. RAM only, not in the project: the blob's
   per-track bytes have no room the older cores accept (a version 10 for 16 bytes of view state was not worth it); a
   track never shown starts on TRIG, as before.
+- (item 3, "The current state is not obvious on pads, Should be a different contrasting color") the States layer's
+  active state's pad is white, breathing slowly (`RFMV_ACTIVE_ON_MS` 700 full, `RFMV_ACTIVE_OFF_MS` 300 at a third,
+  from the layer's opening: `rfmv_active_rgb`, `rfmv_st_active_rgb`), for all three slots; was the slot's colour at
+  full, next to the stored ones in the same colour dimmed. White is no slot's colour (orange, blue, yellow) nor solo's
+  purple; a pressed pad is white and steady, so the beat tells them apart. Two LED writes a second for it.
 
 ## 0.13.0 (2026-11-23)
 

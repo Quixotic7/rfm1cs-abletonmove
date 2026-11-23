@@ -329,6 +329,9 @@ int rfmv_proj_knob(const rfm_move_t *m);                /* (0.12.0) the project 
 const char *rfmv_proj_colour_name(int c);               /* .. a project colour's name (1..16) */
 int rfmv_back_has(const rfm_move_t *m);                 /* (0.12.0) Back's click has a layer to close */
 #define RFMV_SOLO_RGB ((rfmv_rgb_t){ 170, 60, 255 })    /* (0.12.0) solo: purple (blue is slot 2's) */
+#define RFMV_ACTIVE_ON_MS 700                               /* (0.14.0) the active state / open project: white so long */
+#define RFMV_ACTIVE_OFF_MS 300                              /* .. then a third as bright so long */
+rfmv_rgb_t rfmv_active_rgb(uint32_t ms);                    /* (0.14.0) white, breathing, ms into its beat */
 int rfmv_fw_nslots(const rfm_move_t *m);                /* the slots the Track buttons play (1: no list, one slot) */
 enum { VIEW_SLOT0 = 0, VIEW_PROJECTS = 3, VIEW_MIXER = 4, VIEW_ROUTING = 5 };
 void rfmv_view_open(rfm_move_t *m, int what);           /* the projects view on a slot's browser, the projects, FX */
@@ -399,6 +402,7 @@ int rfmv_st_input(rfm_move_t *m, const mr_event_t *ev);   /* 1 taken */
 int rfmv_st_back(rfm_move_t *m);                        /* Back's click: 1 taken (the marks, then the layer) */
 void rfmv_st_track(rfm_move_t *m, int t);               /* Track 1..3 tapped while open: that slot's States */
 void rfmv_st_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3]);
+rfmv_rgb_t rfmv_st_active_rgb(const rfm_move_t *m);     /* (0.14.0) the active state's pad now */
 int rfmv_st_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* 1 drawn */
 int rfmv_st_timed(const rfm_move_t *m);
 int rfmv_st_base_words(const rfm_move_t *m, char *o, int cap);   /* its subject, 0 not open */
