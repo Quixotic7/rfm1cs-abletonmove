@@ -3,7 +3,12 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
-## 0.13.0 (2026-11-22, not released)
+## 0.13.0 (2026-11-23)
+
+The first tag since 0.9.1: it carries 0.9.2, 0.10.0, 0.11.0 and 0.12.0 below, which were never tagged by themselves.
+
+- (found by the on-device run of 2026-11-22) The view's name is whole on the screen: `v2_modeName` draws it at 4x,
+  3x or 2x, whichever fits ("Sequencer" at 3x is wider than the screen and showed as "equence").
 
 The owner's review of 2026-11-22, cards P.1..P.11: a project holds its firmwares, and the firmwares' states are a layer
 on the Move. Everything new is for a host that sets the new capability `RFM_MOVE_CAP_PROJFW` (not in
@@ -194,7 +199,7 @@ host carries the firmware state files with the project buffer; tested.
   tracks (1, 5, 9): slot 2's pads then played channel 5. It applies a new project's routing, channels and tracks
   now (rfmv_pfw_defaults; hosts without RFM_MOVE_CAP_PROJFW as before; the project is not marked edited by it).
 
-## 0.12.0 (2026-11-22, not released)
+## 0.12.0 (2026-11-22, released in 0.13.0)
 
 The owner's answers on the review page, card by card. New fields in `rfm_move_seq_t` (after `tk_pend_clk`): rebuild
 everything. The project blob is version 8 (versions 1..7 load, with the defaults); `RFM_MOVE_PROJECT_MAX` 40396.
@@ -317,7 +322,7 @@ everything. The project blob is version 8 (versions 1..7 load, with the defaults
 - New `rfm_move_seq_t` fields after `oct_ms` (`mute_latch`, `mute_end`, `loop_ms`, `mute_ms`, `fill_ms`, `t4_opened`,
   `mods_other`), `rfm_move_fw_state_t.steps_down` at its end: rebuild everything.
 
-## 0.11.0 (2026-11-21, not released)
+## 0.11.0 (2026-11-21, released in 0.13.0)
 
 The owner's feedback on the arp, the held Track buttons and session view, and their UX rules (`design/UX-RULES.md`:
 feedback at once, gated click / hold / double click, a layer takes what it uses, lit knobs, knob labels, step icons).
@@ -365,7 +370,7 @@ The board, drawn from this build: `remoteFM14Move/docs/design/ux-0.11.movedesign
 Tests: `move_sessview` 958 checks (the handover, the double clicks, the scene stop, the routing pads, the gated steps,
 the arp's header, click and lanes); `move_seq`, `move`, `move_tracks`, `move_speech` moved to the gated timing.
 
-## 0.10.0 (2026-11-21, not released)
+## 0.10.0 (2026-11-21, released in 0.13.0)
 
 Session view after the owner's review as an Ableton Live user (14 answers on the review page; the board, made before
 the code: `remoteFM14Move/docs/design/session-view-v2.movedesign.json`). Items not answered are unchanged (Delete on
@@ -396,7 +401,7 @@ clips, the double tap's stop, the way in, paging, scene copy / clear).
   recording into an empty slot: kept, as answered.
 - Tests: `move_sessview` rewritten for it (878 checks); `move_seq`'s session parts and its screen hash.
 
-## 0.9.2 (2026-11-21, not released)
+## 0.9.2 (2026-11-21, released in 0.13.0)
 
 Session view (the owner, on the Move: "Scenes don't launch, clicking a clip won't show as selected, the screen and
 the pads don't seem aligned. I cannot cut and copy clips in the same way you can cut and copy steps"). No fault was
