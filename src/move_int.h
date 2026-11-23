@@ -352,6 +352,7 @@ int rfmv_sess_on(const rfm_move_t *m);                  /* (0.11.0) session view
 void rfmv_sv_toggle(rfm_move_t *m);                     /* (0.12.0) session view in / out, from any layout */
 void rfmv_seq_arp_toggle(rfm_move_t *m);                /* (0.11.0) the arp menu's jog click: on / off */
 const char *rfmv_seq_arp_mode_name(int mode);           /* (0.12.0) "Off", "On", "First" .. */
+int rfmv_seq_arp_silent(const rfm_move_t *m, int tr);   /* (0.14.0) on, but it can never sound (CHANCE 0, MOD all rests) */
 void rfmv_seq_al_take(rfm_move_t *m);                   /* (0.12.0) a held arp lane step takes the pads */
 int rfmv_seq_al_holding(const rfm_move_t *m);           /* .. a lane step is held: a pad press is its shortcut */
 void rfmv_seq_oct_range(const rfm_move_t *m, char *o, int cap);   /* (0.12.0) the pads' notes: "C2 - G4" */

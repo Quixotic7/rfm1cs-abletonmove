@@ -4391,6 +4391,34 @@ static void test_o14_arp_notes(void)
     hit(0), clear(), adv_ms(1000);
     CHECKF(arp_ons(tr + 1) >= 3, "Hold, let go: %d", arp_ons(tr + 1));
     rfmv_seq_arp_stop(&M), ap->mode = RFM_MOVE_AM_OFF;
+    /* the owner's project (the host's trace): CHANCE 0, GATE 2, OCT DIST -24, QUANT 0, the MOD lane's step 1 a tie.
+     * On, it can never sound: the core plays nothing (as the engine says), and the arp's screen says so: "Arp" /
+     * "Silent" the whole screen at the toggle, "Arp Silent" at rest, the walk dimmed as when off */
+    {
+        rfm_move_arp_t keep = *ap;
+        unsigned h_on;
+        ap->pat = 4, ap->rate = 11, ap->range = 2, ap->chance = 0, ap->gate = 2, ap->odist = -24, ap->quant = 0;
+        ap->reset = 1, ap->mlen = 9, ap->tlen = 10, ap->lane[0][0] = RFM_MOVE_AL_TIE;
+        button(MR_CC_SHIFT, 1), step(10, 1), step(10, 0), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+        clear(), jog_click();
+        CHECK(ap->mode != RFM_MOVE_AM_OFF && rfmv_seq_arp_silent(&M, tr) && rfmv_pop_up(&M, POP_ARPW) &&
+              M.pop_i == RFM_MOVE_AM_N);
+        CHECKF(strstr(said, "Silent") != NULL, "said %s", said);
+        write_pbm("o14_arp_silent_pop");
+        rest(), pad(0, 100), adv_ms(1000), pad(0, 0), adv_ms(300);
+        CHECK(arp_ons(tr + 1) == 0);
+        screen();
+        h_on = area_hash(0, 0, 128, 17);
+        write_pbm("o14_arp_silent");
+        knob(3, 50), knob(3, 50);                       /* (CHANCE up: it sounds; the header the mode again) */
+        CHECK(!rfmv_seq_arp_silent(&M, tr));
+        rest(), screen();
+        CHECK(area_hash(0, 0, 128, 17) != h_on);
+        clear(), pad(0, 100), adv_ms(1000), pad(0, 0), adv_ms(300);
+        CHECK(arp_ons(tr + 1) >= 3);
+        back(), rest();
+        rfmv_seq_arp_stop(&M), *ap = keep;
+    }
 }
 
 /* item 1: "if I have page set to a CC bank or FM-1 knobs, switching to another track and back the knobs reset to the

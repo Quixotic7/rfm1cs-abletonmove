@@ -2305,7 +2305,8 @@ void rfmv_seq_arp_toggle(rfm_move_t *m)
         rfmv_seq_arp_stop(m);
     }
     q->sm_k = 4, q->sm_ms = rfmv_now_ms(m);             /* (its header: the mode, as knob 5 shows it) */
-    rfmv_pop(m, POP_ARPW, a->mode);                     /* (0.12.0, the owner's: plain at a glance) "Arp On" / "Arp
+    rfmv_pop(m, POP_ARPW, rfmv_seq_arp_silent(m, q->sel_track) ? RFM_MOVE_AM_N : a->mode);   /* (0.14.0: "Silent") */
+                                                        /* (0.12.0, the owner's: plain at a glance) "Arp On" / "Arp
                                                          * Off", the whole screen, a second; its words said */
     rfmv_seq_dirty(m);
 }
@@ -2390,7 +2391,25 @@ static void al_wave_start(rfm_move_t *m)
 const char *rfmv_seq_arp_mode_name(int mode)
 {
     static const char *const AM[RFM_MOVE_AM_N] = { "Off", "On", "First", "Once", "Hold" };
+    if (mode == RFM_MOVE_AM_N)
+        return "Silent";                                /* (0.14.0: on, but it cannot sound) */
     return AM[mode >= 0 && mode < RFM_MOVE_AM_N ? mode : 0];
+}
+/* (0.14.0, the host's trace of the owner's "the arp sends no notes": CHANCE 0 and a MOD lane of ties) an arp that is on
+ * but can never sound: its CHANCE 0, or every MOD step in its length a rest, a tie or a repeat (a repeat of nothing) */
+int rfmv_seq_arp_silent(const rfm_move_t *m, int tr)
+{
+    const rfm_move_arp_t *a = &m->seq.tr[tr % RFM_MOVE_SEQ_TRACKS].arp;
+    const int len = clampi(a->mlen, 1, 16);
+    int i;
+    if (a->mode == RFM_MOVE_AM_OFF)
+        return 0;
+    if (!a->chance)
+        return 1;
+    for (i = 0; i < len; i++)
+        if (a->lane[0][i] != RFM_MOVE_AL_REST && a->lane[0][i] != RFM_MOVE_AL_TIE && a->lane[0][i] != RFM_MOVE_AL_REPEAT)
+            return 0;
+    return 1;
 }
 /* (0.12.0) what the menus' headers show, at a glance: a turn that changed none of it at a range's end still brings the
  * header up, so its words are said */
@@ -3929,7 +3948,10 @@ static void arp_head(const rfm_move_t *m, int k, char *o, int cap)
         else
             snprintf(o, (size_t)cap, "Sync Off");
         break;
-    default: snprintf(o, (size_t)cap, "Arp %s", AM[a->mode % RFM_MOVE_AM_N]); break;   /* (knob 5, and at rest) */
+    default:                                            /* (knob 5, and at rest; 0.14.0: at rest an arp that cannot
+                                                         * sound says so) */
+        snprintf(o, (size_t)cap, "Arp %s", k < 0 && rfmv_seq_arp_silent(m, q->sel_track) ? "Silent" : AM[a->mode % RFM_MOVE_AM_N]);
+        break;
     }
 }
 /* (0.12.0) a 50 % checker over an area: a picture dimmed (the arp off) */
@@ -4234,7 +4256,8 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
                 } else
                     arp_sign(cv, x, v);
             }
-            if (a->mode == RFM_MOVE_AM_OFF)              /* (0.12.0, the owner's) off: the lane dimmed */
+            if (a->mode == RFM_MOVE_AM_OFF || rfmv_seq_arp_silent(m, q->sel_track))   /* (0.12.0, the owner's) off: the
+                                                         * lane dimmed (0.14.0: silent too) */
                 dither(cv, 0, 19, 128, 37);
             v2_strip(cv, 3, 1u << q->arp_page, -1, 0, 128);
             break;
@@ -4258,7 +4281,8 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
             }
             for (i = 0; i < n; i++)
                 v2_R(cv, 2 + i * 10, 54 - walk[i] * 11, 8, 4, 1);
-            if (a->mode == RFM_MOVE_AM_OFF)              /* (0.12.0, the owner's) off: the walk dimmed (a checker) */
+            if (a->mode == RFM_MOVE_AM_OFF || rfmv_seq_arp_silent(m, q->sel_track))   /* (0.12.0, the owner's) off: the
+                                                         * walk dimmed (a checker; 0.14.0: silent too) */
                 dither(cv, 0, 30, 64, 30);
             snprintf(b, sizeof b, "Oct %d", a->range), v2_T(cv, 2, 22, b, 1, 1);   /* (its range: over the walk) */
             fit2(cv, 66, 23, AP_NAMES[a->pat % RFM_MOVE_AP_N], 62);

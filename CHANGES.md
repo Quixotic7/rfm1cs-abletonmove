@@ -16,6 +16,11 @@ The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_se
   played live (`track` 0: the active slot), they reach a firmware only through the host's routing of that track
   (`ffilt`, the same as a clip's notes); the selected track is routed to the slot on entering a note layout. No core
   change.
+  Then, from the host's trace (the owner's own project: track 1's arp with CHANCE 0, GATE 2, OCT DIST -24, QUANT 0,
+  MOD step 1 a tie; the engine rightly plays nothing): **an arp that is on but can never sound says so**
+  (`rfmv_seq_arp_silent`: CHANCE 0, or every MOD step in its length a rest, a tie or a repeat): turning it on shows
+  "Arp" / "Silent" the whole screen (said "Arp Silent"), its menu's header at rest "Arp Silent", and its walk and lanes
+  dimmed as when off. Stored values are never changed. (`test_o14_arp_notes`, pictures `sessview_o14_arp_silent*`.)
 - (item 1, "if I have page set to a CC bank or FM-1 knobs, switching to another track and back the knobs reset to the
   trig page, the page I am on should be remembered") each sequencer track keeps its knob page (TRIG, FM-1, banks 1..4:
   `seq.kpage[16]`, `rfmv_seq_kpage`, `rfmv_seq_kpage_restore`), set by the jog, brought back whenever the track is
