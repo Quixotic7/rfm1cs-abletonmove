@@ -594,7 +594,7 @@ lock dim (a turn writes one), locked ones by their value.
 | 2 Global Settings | (0.6.2) a list on the jog wheel, sticky (Shift + step 2 again, or Back when not editing, closes it; 0.12.0, l2: Menu no longer does, and it has its jog over the Mixer and Routing too). (0.6.10, the owner's direction A) On top the Move's battery: an icon filled to the charge and the percentage at 2x ("--" until the first STATUS: Move Remote's STATUS byte 4 as the surface reports it, taken as 0..100 %, clamped; the host passes it with `rfm_move_set_battery`), "GLOBAL" on the right, a rule under them. Rows (0.6.12: Speech first, then the others; four show, the list scrolls): Speech (Off, On, Jog: see Speech modes), Clock (Auto, Int, Ext; Int is the default (0.5.5); Auto follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), Velocity (the option, as the Velocity menu), Fixed level, Popup size (FM-1 mode's popups: Full, the default, or Half, 0.5.9), (0.12.0) Launch (when a clicked
 clip, scene or stop takes effect: Instant, 1 Beat, 1 Bar (the default), 2 Bars, 4 Bars, Clip: the end of the loop the
 track plays; saved with the project, version 8; a clip's own Launch wins). Turn the jog: the selected row (inverted) moves; click: edit its value (the row framed, the value inverted between small arrows), the jog changes it; click again or Back: done. While it is open it owns the controls: no knob, pad, step or button reaches the FM-1, the firmware or the sequencer (the knobs do nothing; their touches show nothing); releases pass, so a pad held before it opened lets go; the Track buttons and Shift + step 2 pass |
-| 3 Workflow Settings | menu: knob 1 (0.13.0: the jog's selection, as every menu's) the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent) |
+| 3 Workflow Settings | menu: knob 1 (0.13.0: the jog's selection, as every menu's) the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent). (0.14.0, the owner's) the selected row (the jog's, a knob touched or turned) is drawn in its place as Global settings' row: inverted while selecting, framed with its words inverted between two arrows while editing; nothing is copied to the top |
 | 5 Tempo | each press is a tap (tap tempo: the average of up to 4 taps) and opens the menu: the tempo at 4x; knob 1 1 BPM (Shift, or knob 2: 0.1; 0.13.0: the jog selects one, its click edits it); following the firmware's clock: locked (a padlock, EXT; taps ignored) |
 | 6 Metronome | on / off (off at first): a click a beat, the bar's first higher (`RFM_MOVE_ACT_CLICK`, frame-stamped; the web player plays it after the volume, never into a recording); also in the count-in |
 | 7 Groove | menu: knob 1 the groove (0.13.0: the jog selects, its click edits), 5 % a detent (Shift: 1 %), 0..150 %: the off 16ths late, 100 % a triplet swing (Move's). Knob 2: GLOBAL (the project's groove, the default) or TRACK (the track's own, starting from the global one) |
@@ -606,6 +606,14 @@ track plays; saved with the project, version 8; a clip's own Launch wins). Turn 
 | 14 New Clip | the track's next empty slot gets a new clip, selected |
 | 15 Double Loop | double the loop |
 | 16 Quantize | the clip's micro timing quantized by the Workflow amount (100 %: on the grid) |
+
+**The jog's selection in a Shift menu** (0.14.0, the owner's 2026-11-23: "it should just show a marker or something
+in front of the row that is selected, or do things the same way the global settings does"): one way for all of them,
+Global settings' row. Workflow draws it in the selected row; the menus with a picture (Tempo, Groove, Layout, Keys,
+Velocity, Record) in their top line, which, once the jog (or a knob's turn) has selected something, holds that
+parameter's name and value for as long as the menu is open: inverted while selecting, framed with the words inverted
+between two arrows while editing (was: the words copied to the top for a second, then the title again). A knob only
+touched still names itself there plainly (R5). The arp's menu keeps its own design.
 
 **Track rates**: 1/32T 1/32 1/16T 1/16 1/8T 1/8 1/4T 1/4 1/2T 1/2 (a step 8 .. 192 ticks at 96 PPQN); a step
 always has 24 micro ticks, scaled to the rate.

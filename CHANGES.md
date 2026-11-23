@@ -28,6 +28,13 @@ The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_se
   from the layer's opening: `rfmv_active_rgb`, `rfmv_st_active_rgb`), for all three slots; was the slot's colour at
   full, next to the stored ones in the same colour dimmed. White is no slot's colour (orange, blue, yellow) nor solo's
   purple; a pressed pad is white and steady, so the beat tells them apart. Two LED writes a second for it.
+- (item 4, "Using like Shift + Step 3 for the track settings. I don't like how when you turn the Jogwheel it is copying
+  the line up to the top, it should just show a marker or something in front of the row that is selected, or do
+  things the same way the global settings does") the jog's selection in every Shift menu that has one (all but the
+  arp's and Global settings) is drawn as Global settings draws its row (`sel_row`): inverted while selecting, framed
+  with its words inverted between two arrows while editing. Workflow (Shift + step 3) in the selected row itself, its
+  top line staying "Workflow"; the picture menus (Tempo, Groove, Layout, Keys, Velocity, Record) in their top line,
+  sticky once something is selected (was a plain copy for a second). Pictures: `sessview_mj_*_sel`, `sessview_mj_*_edit`.
 
 ## 0.13.0 (2026-11-23)
 

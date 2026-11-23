@@ -4026,36 +4026,63 @@ static void smenu_head(const rfm_move_t *m, int k, char *o, int cap)   /* knob k
     }
 }
 /* (0.13.0) an arrow 4 x 7 at x, y pointing left or right (the header's editing marks, as Global settings' value) */
-static void head_arrow(mr_canvas_t *cv, int x, int y, int right)
+static void head_arrow(mr_canvas_t *cv, int x, int y, int right, int v)
 {
     int i;
     for (i = 0; i < 4; i++)
-        v2_R(cv, right ? x + i : x + 3 - i, y + i, 1, 7 - 2 * i, 1);
+        v2_R(cv, right ? x + i : x + 3 - i, y + i, 1, 7 - 2 * i, v);
 }
-/* the top line (hk >= 0 or HEAD_JOG: the header over the menu's own; the arp's: always) and the knobs' ticks at 17.
- * (0.13.0) the tick long: the named knob's, else the jog's selection (the cursor); the jog editing: the header stays,
- * its words between two arrows (as Global settings' value being edited) */
-static void smenu_top(const rfm_move_t *m, mr_canvas_t *cv, int hk)
+/* (0.14.0, the owner's 2026-11-23: "when you turn the Jogwheel it is copying the line up to the top, it should just
+ * show a marker or something in front of the row that is selected, or do things the same way the global settings
+ * does") the jog's selection drawn as Global settings draws its row: a row y..y+h-1 holding b (2x where it fits in
+ * the width, else 1x): selecting, inverted; editing, framed with its words inverted between two arrows */
+static void sel_row(mr_canvas_t *cv, int y, int h, const char *b, int edit)
 {
-    const int mk = rfmv_seq_menu_knobs(m), sel = smenu_sel(m), cur = hk >= 0 ? hk : sel;
-    const int ed = sel >= 0 && m->seq.sm_edit && hk == sel;
-    char b[32];
-    int i;
-    if (hk != -1 || m->seq.smenu == RFM_MOVE_SM_ARP) {
-        smenu_head(m, hk, b, sizeof b);
-        v2_R(cv, 0, 0, 128, 17, 0);
-        if (ed) {
-            const int w = v2_tw(b, 2) <= 116 ? v2_tw(b, 2) : v2_tw(b, 1), x = 64 - w / 2;
-            head_arrow(cv, x - 9, 4, 0);
-            fit2(cv, x, 0, b, 116);
-            head_arrow(cv, x + w + 4, 4, 1);
-        } else
-            fit2(cv, 0, 0, b, 128);
+    const int k = v2_tw(b, 2) <= (edit ? 108 : 124) ? 2 : 1, w = v2_tw(b, k), ty = y + (h - 7 * k) / 2;
+    if (!edit) {
+        v2_R(cv, 0, y, 128, h, 1);
+        v2_T(cv, 3, ty, b, k, 0);
+        return;
     }
+    {
+        const int x = 64 - w / 2;
+        v2_O(cv, 0, y, 128, h, 1);
+        v2_R(cv, x - 9, y + 1, w + 18, h - 2, 1);
+        head_arrow(cv, x - 7, y + (h - 7) / 2, 0, 0);
+        v2_T(cv, x, ty, b, k, 0);
+        head_arrow(cv, x + w + 3, y + (h - 7) / 2, 1, 0);
+    }
+}
+/* the knobs' ticks at 17, the one at cur long */
+static void smenu_ticks(const rfm_move_t *m, mr_canvas_t *cv, int cur)
+{
+    const int mk = rfmv_seq_menu_knobs(m);
+    int i;
     v2_R(cv, 0, 17, 128, 2, 0);
     for (i = 0; i < 8; i++)
         if (mk >> i & 1)
             v2_R(cv, i == cur ? 3 + i * 16 : 6 + i * 16, 17, i == cur ? 10 : 4, i == cur ? 2 : 1, 1);
+}
+/* the top line (hk >= 0 or HEAD_JOG: the header over the menu's own; the arp's: always) and the knobs' ticks at 17.
+ * (0.13.0) the tick long: the named knob's, else the jog's selection (the cursor). (0.14.0) once the jog (or a knob's
+ * turn) has a selection in this menu, the top line is that selection for as long as the menu is open, drawn as Global
+ * settings' row: inverted while selecting, framed with its words inverted between arrows while editing; a knob
+ * touched shows its own name and value plain there meanwhile (R5) */
+static void smenu_top(const rfm_move_t *m, mr_canvas_t *cv, int hk)
+{
+    const int sel = smenu_sel(m), on = sel >= 0 && m->seq.sm_sel >= 0;
+    char b[32];
+    if (hk == -1 && on)
+        hk = sel;
+    if (hk != -1 || m->seq.smenu == RFM_MOVE_SM_ARP) {
+        smenu_head(m, hk, b, sizeof b);
+        v2_R(cv, 0, 0, 128, 17, 0);
+        if (on && hk == sel)
+            sel_row(cv, 0, 17, b, m->seq.sm_edit);
+        else
+            fit2(cv, 0, 0, b, 128);
+    }
+    smenu_ticks(m, cv, hk >= 0 ? hk : sel);
 }
 static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
@@ -4065,13 +4092,27 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
     char b[32], c[32];
     int i;
     switch (q->smenu) {
-    case RFM_MOVE_SM_WORKFLOW:                          /* the track's channel, rate and quantize: a row a knob */
+    case RFM_MOVE_SM_WORKFLOW: {                        /* the track's channel, rate and quantize: a row a knob.
+                                                         * (0.14.0) the selected row (the jog's, or a knob touched or
+                                                         * turned) drawn in its place as Global settings' row; the top
+                                                         * line stays "Workflow" */
+        const int sel = smenu_sel(m), cur = hk >= 0 ? hk : q->sm_sel >= 0 ? sel : -1;
         v2_TC(cv, 64, 0, "Workflow", 2, 1);
-        snprintf(b, sizeof b, "Ch %d", t->ch + 1), v2_T(cv, 0, 20, b, 2, 1);
-        snprintf(b, sizeof b, "Rate %s", rfm_move_seq_rate_name(t->rate)), v2_T(cv, 0, 35, b, 2, 1);
-        snprintf(b, sizeof b, "Quant %d%%", q->qstrength), v2_T(cv, 0, 50, b, 2, 1);
-        smenu_top(m, cv, hk);
+        for (i = 0; i < 3; i++) {
+            if (i == 0)
+                snprintf(b, sizeof b, "Ch %d", t->ch + 1);
+            else if (i == 1)
+                snprintf(b, sizeof b, "Rate %s", rfm_move_seq_rate_name(t->rate));
+            else
+                snprintf(b, sizeof b, "Quant %d%%", q->qstrength);
+            if (i == cur)
+                sel_row(cv, 19 + i * 15, 15, b, i == sel && q->sm_edit);
+            else
+                v2_T(cv, 3, 19 + i * 15 + 1, b, 2, 1);
+        }
+        smenu_ticks(m, cv, cur >= 0 ? cur : sel);
         break;
+    }
     case RFM_MOVE_SM_TEMPO: {                           /* the tap icon (following: a padlock), the BPM at 4x; the
                                                          * taps counted on the strip */
         const int b10 = rfm_move_seq_bpm10(m);

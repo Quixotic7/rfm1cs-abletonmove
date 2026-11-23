@@ -3977,6 +3977,22 @@ static int mj_head_arrows(void)                         /* the header's editing 
         r--;
     return l < r && mj_col(l, 0, 16) == 1 && px(l, 7) && mj_col(r, 0, 16) == 1 && px(r, 7);
 }
+/* (0.14.0, item 4) the jog's selection as Global settings' row: Workflow's in its row (19 + 15 n, 15 high), the
+ * other menus' in the top line (0, 17 high). Selecting: the row inverted (lit at both ends); editing: framed (both
+ * ends lit at the middle, clear just inside) with the words inverted in the middle */
+static void mj_row(int sm, int n, int *y0, int *h) { *y0 = sm == RFM_MOVE_SM_WORKFLOW ? 19 + n * 15 : 0, *h = sm == RFM_MOVE_SM_WORKFLOW ? 15 : 17; }
+static int mj_sel_row(int sm, int n)
+{
+    int y, h;
+    mj_row(sm, n, &y, &h), screen();
+    return px(1, y + 1) && px(126, y + 1) && px(1, y + h - 2) && px(126, y + h - 2);
+}
+static int mj_edit_row(int sm, int n)
+{
+    int y, h;
+    mj_row(sm, n, &y, &h), screen();
+    return px(0, y + h / 2) && px(127, y + h / 2) && !px(1, y + h / 2) && !px(126, y + h / 2) && px(64, y + 1);
+}
 static void mj_open(int sm)
 {
     if (sm == RFM_MOVE_SM_REC)
@@ -4003,7 +4019,8 @@ static void test_mj_menus(void)
         CHECKF(M.seq.smenu == MN[i].sm && rfmv_seq_menu_sel(&M) == f && !rfmv_seq_menu_editing(&M), "%s: opened: the first",
                MN[i].name);
         screen();
-        CHECKF(tick(f, 1) && !mj_head_arrows(), "%s: the first's tick long, no arrows", MN[i].name);
+        CHECKF(tick(f, 1) && !mj_head_arrows() && !mj_sel_row(MN[i].sm, f) && !mj_edit_row(MN[i].sm, f),
+               "%s: the first's tick long, no selection drawn yet", MN[i].name);
         scr_save(), mj_vals(v0, sizeof v0);
         /* the turn selects: nothing changes; the header names it at once, its tick long */
         jog(1);
@@ -4011,6 +4028,10 @@ static void test_mj_menus(void)
         CHECKF(!strcmp(v0, v1) && rfmv_seq_menu_sel(&M) == n, "%s: the turn selects (%d), changes nothing", MN[i].name, n);
         screen();
         CHECKF(tick(n, 1) && (n == f || !tick(f, 1)) && !scr_same(), "%s: the selection shown", MN[i].name);
+        CHECKF(mj_sel_row(MN[i].sm, n) && (MN[i].sm != RFM_MOVE_SM_WORKFLOW || !mj_sel_row(MN[i].sm, 0)),
+               "%s: the selection inverted in its row (0.14.0)", MN[i].name);
+        if (MN[i].sm == RFM_MOVE_SM_WORKFLOW)
+            CHECK(!px(1, 1) && !px(126, 1));          /* (the top line stays "Workflow", not inverted) */
         CHECKF(said[0] != 0, "%s: the selection said", MN[i].name);
         snprintf(nm, sizeof nm, "mj_%s_sel", MN[i].name);
         write_pbm(nm);
@@ -4024,7 +4045,7 @@ static void test_mj_menus(void)
         clear(), jog_click();
         CHECKF(rfmv_seq_menu_editing(&M) && strstr(said, "Editing "), "%s: editing, said %s", MN[i].name, said);
         rest();
-        CHECKF(mj_head_arrows() && tick(n, 1), "%s: editing shown (after the second too)", MN[i].name);
+        CHECKF(mj_edit_row(MN[i].sm, n) && tick(n, 1), "%s: editing shown (after the second too)", MN[i].name);
         snprintf(nm, sizeof nm, "mj_%s_edit", MN[i].name);
         write_pbm(nm);
         MC = M;
@@ -4048,7 +4069,7 @@ static void test_mj_menus(void)
         mj_vals(v2, sizeof v2);
         CHECKF(!strcmp(v1, v2) && rfmv_seq_menu_sel(&M) == f, "%s: selects again", MN[i].name);
         rest();
-        CHECKF(!mj_head_arrows(), "%s: no arrows selecting", MN[i].name);
+        CHECKF(!mj_edit_row(MN[i].sm, f) && mj_sel_row(MN[i].sm, f), "%s: selecting: inverted, not framed (0.14.0: kept after the second)", MN[i].name);
         /* a knob meanwhile: works, takes the cursor (editing ended) */
         jog_click();
         knob(last, MN[i].sm == RFM_MOVE_SM_TEMPO || MN[i].sm == RFM_MOVE_SM_WORKFLOW ? -1 : -RFM_MOVE_LIST_TICKS);
