@@ -318,6 +318,8 @@ void rfmv_slot_push(rfm_move_t *m);                    /* the active slot's mirr
 void rfmv_slot_pull(rfm_move_t *m);                    /* .. and back (a layout played again) */
 int rfmv_slot_lay(const rfm_move_t *m, int slot);
 int rfmv_set_slot_lay(rfm_move_t *m, int slot, int lay);   /* a slot's layout set (its menu's top row) */      /* RFM_MOVE_LAY_* it plays (TK with no takeover: FM1) */
+int rfmv_rd_valid(const rfm_move_t *m, int sl);        /* (0.14.0) knob slot sl's readout is this page's (the FM-1
+                                                         * buttons held now, the knob's label now) */
 void rfmv_slot_leaving(rfm_move_t *m);                 /* (fw.c) the active slot changes: what is held let go */
 void rfmv_slot_changed(rfm_move_t *m);                 /* (fw.c) .. it changed: its layout played */
 int rfmv_fw_activate(rfm_move_t *m, int slot);          /* (fw.c) a Track's tap: that slot played (FW_ACTIVE), any

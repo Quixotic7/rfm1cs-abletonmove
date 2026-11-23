@@ -204,6 +204,7 @@ static int rd_valid(const rfm_move_t *m, int sl)
     return sl >= 0 && sl < 8 && m->rd[sl].on && m->rd_mods[sl] == held_btns(m) &&
            !strcmp(m->rd_lbl[sl], enc_label(m, SLOT_ENC[sl]));
 }
+int rfmv_rd_valid(const rfm_move_t *m, int sl) { return rd_valid(m, sl); }
 /* (0.6.8) the full title seen for this control on this page with this label, NULL none */
 static const char *title_seen(const rfm_move_t *m, int sl)
 {

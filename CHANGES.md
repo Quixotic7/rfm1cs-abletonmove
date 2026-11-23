@@ -57,6 +57,17 @@ The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_se
   click there. A held step, Loop, Shift's tempo, a menu, a held Track, Track 4's layer still take the jog over it; a
   slot change turns it off. New fields at the end of `rfm_move_t`: `fwj`, `fwj_pend`, `fwj_ms`, `jog_enc_s`.
   `test_fwp_page` now double clicks.
+- (item 7, "ChoralRoot sequencer using FM-1 knobs, holding shift and turning the knob is changing the engine, which is
+  good, but there is no UI communicating what is happening or the new engine") what the core did: the knob's popup
+  drew the knob's kept readout whenever there was one (`rd[sl].on`), so with Shift held it showed the unshifted
+  page's last value ("Cutoff 1.2k") while the turn changed the engine; with none, the knob's plain name and a count. A
+  readout arriving during the gesture (`control` -1 within `RFM_MOVE_RD_PAIR_MS`, or the control named) was taken and
+  drawn in place, Shift or not. Now: the popup draws a kept readout only when it is this page's (`rfmv_rd_valid`,
+  speech's own test made public: the FM-1 buttons held then and the knob's label then, as now); with the FM-1's GLO
+  held and none, the title is "Shift" + the knob's label as it is now (a label the firmware changes while Shift is held
+  shows at once). The Move's Shift reaches the firmware as GLO in the FM-1 layout and the FM-1 page's level 2
+  (Knobs+Keys) only; on level 1 Shift is the sequencer's and a turn reaches the firmware unshifted, so nothing says
+  "Shift" there. Pictures `sessview_o14_shift_knob_*`.
 
 ## 0.13.0 (2026-11-23)
 

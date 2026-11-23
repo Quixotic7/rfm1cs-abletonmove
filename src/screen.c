@@ -524,9 +524,11 @@ static void value_popup(const rfm_move_t *m, mr_canvas_t *cv)
     case POP_ENC:
     case POP_MASTER: {                                  /* (0.5.7) a readout kept for the knob: it, not the detents */
         const int sl = rfmv_pop_slot(m);
-        if (sl >= 0 && m->rd[sl].on) {                  /* (0.5.8, the owner's: every knob, PRESETS too, the same: what
-                                                         * it controls (its label when the readout has no title), then
-                                                         * the value, whatever the readout's kind) */
+        if (sl >= 0 && m->rd[sl].on && (!m->rd_any || rfmv_rd_valid(m, sl))) {   /* (0.5.8, the owner's: every knob,
+                                                         * PRESETS too, the same: what it controls (its label when the
+                                                         * readout has no title), then the value, whatever the readout's
+                                                         * kind. 0.14.0: only this page's: with Shift (GLO) held, or
+                                                         * the knob's label changed, an older one is not shown) */
             knob_readout(m, cv, &m->rd[sl], sl);
             return;
         }
@@ -539,6 +541,15 @@ static void value_popup(const rfm_move_t *m, mr_canvas_t *cv)
     case POP_ENC: {                                     /* an FM-1 encoder: this turn's detents */
         const int e = m->pop == POP_SELECT ? RFM_MOVE_E_SELECT : rfm_move_knob_enc(i), t = m->pop_val;
         rfmv_tcase(enc_label(m, e), l, sizeof l);
+        if (m->btn_count[RFM_MOVE_B_GLO]) {             /* (0.14.0, the owner's: Shift + a knob "is changing the
+                                                         * engine .. but there is no UI communicating what is
+                                                         * happening") the FM-1's Shift (GLO) held, no readout of this
+                                                         * page yet: "Shift" before the knob's name (its label now: the
+                                                         * firmware's Shift label when it gives one) */
+            char s2[24];
+            snprintf(s2, sizeof s2, "Shift %s", l);
+            snprintf(l, sizeof l, "%s", s2);
+        }
         snprintf(v, sizeof v, t ? "%+d" : "0", t);
         if (m->pop_blank)                               /* (0.5.6: touched, not turned: the name alone) */
             v[0] = 0;

@@ -4615,8 +4615,68 @@ static void test_o14_fwp_jog(void)
     rfm_move_set_labels(&M, NULL);
 }
 
+/* item 7: "ChoralRoot sequencer using FM-1 knobs, holding shift and turning the knob is changing the engine, which is
+ * good, but there is no UI communicating what is happening or the new engine". On the FM-1 page's level 2 (Knobs+Keys,
+ * where the Move's Shift is the FM-1's GLO; the FM-1 layout the same) a knob turned with Shift held: no readout of
+ * that page yet: "Shift" + the knob's name (never the other page's last value); a readout then: shown; the knob's
+ * label changed by the firmware: the new one */
+static void test_o14_shift_knob(void)
+{
+    const char *lb[RFM_MOVE_LBL_N];
+    const int sl = rfmv_enc_slot(RFM_MOVE_E_K1);
+    int i, plain, shifted, eng;
+    track_view();
+    for (i = 0; i < RFM_MOVE_LBL_N; i++)
+        lb[i] = NULL;
+    lb[sl] = "Cutoff";
+    rfm_move_set_labels(&M, lb);
+    jog(1), rest(), jog_dbl(), rest();
+    CHECK(rfm_move_fwp_level(&M) == 2);
+    /* no Shift: the turn, its readout ("Cutoff 1.2k") */
+    knob(4, 2);
+    rfm_move_readout(&M, -1, RFM_MOVE_RD_PARAM, "Cutoff", "1.2k", 400, 0, 0);
+    CHECK(M.pop == POP_ENC && rfmv_rd_valid(&M, sl));
+    screen(), plain = lit_rows(0, 20);
+    write_pbm("o14_shift_knob_plain");
+    rest();
+    /* Shift held (the FM-1's GLO), the knob turned: "Shift Cutoff" and the count, not "1.2k" */
+    clear(), button(MR_CC_SHIFT, 1);
+    CHECK(count(RFM_MOVE_ACT_BTN) == 1 && M.btn_count[RFM_MOVE_B_GLO]);
+    knob(4, 2);
+    CHECK(M.pop == POP_ENC && rfmv_pop_up(&M, POP_ENC) && !rfmv_rd_valid(&M, sl) && count(RFM_MOVE_ACT_TURN) == 1);
+    screen(), shifted = lit_rows(0, 20);
+    CHECKF(shifted > plain + 20, "the title: %d lit, plain %d", shifted, plain);
+    write_pbm("o14_shift_knob_noreadout");
+    /* the firmware's readout for it: shown at once */
+    rfm_move_readout(&M, -1, RFM_MOVE_RD_PARAM, "Engine", "FM2", -1, 0, 0);
+    CHECK(rfmv_rd_valid(&M, sl) && !strcmp(M.rd[sl].title, "Engine") && rfmv_pop_up(&M, POP_ENC));
+    write_pbm("o14_shift_knob_readout");
+    /* the firmware renames the knob while Shift is held, no readout: "Shift Engine" */
+    lb[sl] = "Engine";
+    rfm_move_set_labels(&M, lb);
+    M.rd[sl].on = 0;
+    knob(4, 2);
+    screen(), eng = lit_rows(0, 20);
+    CHECK(rfmv_pop_up(&M, POP_ENC) && eng > 0);
+    write_pbm("o14_shift_knob_label");
+    /* Shift let go: the page's own again; the Shift page's readout is not shown there */
+    button(MR_CC_SHIFT, 0), rest();
+    lb[sl] = "Cutoff";
+    rfm_move_set_labels(&M, lb);
+    button(MR_CC_SHIFT, 1);
+    rfm_move_readout(&M, sl, RFM_MOVE_RD_PARAM, "Engine", "FM3", -1, 0, 0);   /* (a Shift-page readout, while held) */
+    button(MR_CC_SHIFT, 0), rest();
+    knob(4, 2);
+    CHECK(!strcmp(M.rd[sl].title, "Engine") && !rfmv_rd_valid(&M, sl) && rfmv_pop_up(&M, POP_ENC));   /* ("Cutoff +1") */
+    write_pbm("o14_shift_knob_after");
+    rest(), jog_dbl(), rest();
+    CHECK(rfm_move_fwp_level(&M) == 1);
+    rfm_move_set_labels(&M, NULL);
+}
+
 int main(void)
 {
+    test_o14_shift_knob();
     test_o14_fwp_jog();
     test_o14_shift_track();
     test_o14_state_pad();
