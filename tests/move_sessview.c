@@ -4672,8 +4672,32 @@ static void test_o14_shift_knob(void)
     knob(4, 2);
     CHECK(!strcmp(M.rd[sl].title, "Engine") && !rfmv_rd_valid(&M, sl) && rfmv_pop_up(&M, POP_ENC));   /* ("Cutoff +1") */
     write_pbm("o14_shift_knob_after");
-    rest(), jog_dbl(), rest();
+    rest();
+    /* (the host's trace) a turn that gets no readout of its own: the older readout no longer shown as current after
+     * RFM_MOVE_RD_PAIR_MS; the turn itself (name, count) until a readout comes, which then shows at once */
+    {
+        unsigned h_rd, h_turn;
+        knob(4, 2);
+        rfm_move_readout(&M, -1, RFM_MOVE_RD_PARAM, "Cutoff", "1.2k", 400, 0, 0);
+        screen(), h_rd = area_hash(0, 0, 128, 64);
+        rest();
+        knob(4, 2), adv_ms(RFM_MOVE_RD_PAIR_MS - 100), screen();
+        CHECK(area_hash(0, 0, 128, 64) == h_rd);       /* (its pair time: the readout may still come) */
+        adv_ms(150), screen(), h_turn = area_hash(0, 0, 128, 64);
+        CHECK(h_turn != h_rd && rfmv_pop_up(&M, POP_ENC));
+        write_pbm("o14_knob_turn_noreadout");
+        rfm_move_readout(&M, -1, RFM_MOVE_RD_PARAM, "Cutoff", "1.3k", 410, 0, 0);
+        screen();
+        CHECK(area_hash(0, 0, 128, 64) != h_turn);
+        rest();
+    }
+    jog_dbl(), rest();
     CHECK(rfm_move_fwp_level(&M) == 1);
+    /* level 1 (Knobs): Shift is the sequencer's, the firmware gets a plain turn (no GLO): nothing says "Shift" */
+    clear(), button(MR_CC_SHIFT, 1), knob(1, 2);
+    CHECK(!count(RFM_MOVE_ACT_BTN) && acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_PRESETS) == 1 && !M.btn_count[RFM_MOVE_B_GLO]);
+    write_pbm("o14_shift_knob_level1");
+    button(MR_CC_SHIFT, 0), rest();
     rfm_move_set_labels(&M, NULL);
 }
 

@@ -776,6 +776,7 @@ static void readout(rfm_move_t *m, int control, int kind, const char *title, con
         control = knob_up;
     if (control >= RFM_MOVE_LBL_KNOB0 && control < RFM_MOVE_LBL_BTN0) {
         m->rd[control] = r;                             /* (kept: the knob's touch shows it) */
+        m->rd_at[control & 7] = rfmv_now_ms(m);         /* (0.14.0: this turn's, or an older one) */
         rfmv_say_readout(m, control, expl);             /* (0.6.7: its label then, for speech) */
         if (knob_up == control)
             return;                                     /* (its popup is up: drawn in place) */
@@ -1443,6 +1444,8 @@ static void enc_turn(rfm_move_t *m, int k, int d, int jog)
         emit(m, RFM_MOVE_ACT_TURN, e, 0, 0, t);
     if (enc_nojob(m, e))                                /* (0.5.6: "" = no job: no popup) */
         return;
+    if (!(m->pop == POP_ENC && m->pop_i == k && rfmv_pop_up(m, POP_ENC) && !m->pop_blank))
+        m->turn_ms = rfmv_now_ms(m);                    /* (0.14.0: a turn begins) */
     rfmv_pop(m, POP_ENC, k);
     m->pop_val = (int16_t)clampi(acc + t, -9999, 9999);
     rfmv_say_turned(m);                                 /* (0.6.7: speech: its readout awaited) */
@@ -1540,6 +1543,8 @@ static void jog_target_turn(rfm_move_t *m, int d)
         emit(m, RFM_MOVE_ACT_TURN, RFM_MOVE_E_SELECT, 0, 0, d);
         {
             const int acc = rfmv_pop_up(m, POP_SELECT) ? m->pop_val : 0;
+            if (!rfmv_pop_up(m, POP_SELECT))
+                m->turn_ms = rfmv_now_ms(m);            /* (0.14.0: a turn begins) */
             rfmv_pop(m, POP_SELECT, 9);
             m->pop_val = (int16_t)clampi(acc + d, -9999, 9999);
             rfmv_say_turned(m);

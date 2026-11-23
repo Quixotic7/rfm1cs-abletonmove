@@ -68,6 +68,11 @@ The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_se
   shows at once). The Move's Shift reaches the firmware as GLO in the FM-1 layout and the FM-1 page's level 2
   (Knobs+Keys) only; on level 1 Shift is the sequencer's and a turn reaches the firmware unshifted, so nothing says
   "Shift" there. Pictures `sessview_o14_shift_knob_*`.
+  Then, from the host's trace (ChoralRoot sends no readout while its engine picker is held, one at Shift's release):
+  a turn that gets no readout of its own within `RFM_MOVE_RD_PAIR_MS` (250 ms) no longer shows the knob's older
+  readout as if current; it shows the turn (the name, "Shift" first with GLO held, the count) until a readout comes,
+  which shows at once (`rd_at[8]`, `turn_ms`, new at the end of `rfm_move_t`). The FM-1 layout's knobs and jog the
+  same. Picture `sessview_o14_knob_turn_noreadout`, `sessview_o14_shift_knob_level1`.
 
 The owner's six requests for the projects page (Track 4's double click; `project.c`; `test_o14_projects`, pictures
 `sessview_o14_proj_*`). New fields at the end of `rfm_move_t`: `pj_press`, `pj_used`, `pj_undo`, `pj_del`, `pj_ack`
