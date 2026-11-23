@@ -4582,6 +4582,13 @@ static void test_o14_fwp_jog(void)
     screen();
     CHECK(lit_rows(1, 15) > 80);                        /* ("Jog Select" on top while it lasts) */
     write_pbm("o14_fwp_jog_rest");
+    /* (the owner's 2026-11-23: "if not pushed [for takeover] ... Play should be the Move's host") with the jog on a
+     * knob the buttons are still the Move's: Play starts and stops its sequencer, the firmware hears no button */
+    clear(), press(MR_CC_PLAY);
+    CHECK(!count(RFM_MOVE_ACT_BTN) && (M.seq.playing || M.seq.start_pending) && M.fwj);
+    press(MR_CC_PLAY);
+    CHECK(!count(RFM_MOVE_ACT_BTN) && !M.seq.playing && !M.seq.start_pending && M.fwj);
+    rest();
     /* Shift + click: the next target at the press (PRESET, knob 2 white); its turn PRESETS */
     clear(), button(MR_CC_SHIFT, 1), jog_click();
     CHECK(M.jog_enc == 1 && M.fwj && rfmv_pop_up(&M, POP_FWJ) && M.pop_i == 2);
