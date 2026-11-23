@@ -87,6 +87,7 @@ From the top (what takes an input first) down. A layer lists what it takes; ever
 2. **A firmware's takeover**: what the firmware claims.
 3. **Back**, **the Track buttons**: always their own (a click, a double click, a hold's menu). Over States (0.13.0)
    Track 1..3's tap shows that slot's States, Track 4's tap closes States and does its own job.
+   (0.14.0) Shift held + Track 1..3, where Shift is ours: that firmware's track settings at the press.
 4. **States** (0.13.0, a host with `RFM_MOVE_CAP_PROJFW`; Track 1..3 held + the top row's pad 7, or the browser's
    Loop): the pads (the 32 states), the step keys (step 14 New; the rest dark and dead), the knobs and the jog (dark,
    dead), Copy, Delete, Undo (lit only while New's undo is there), Loop when opened by the browser, the screen and

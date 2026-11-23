@@ -961,6 +961,16 @@ void rfmv_seq_route_pad(rfm_move_t *m, int fw, int p)
         tk_click(m, fw, track, 1);
 }
 
+/* (0.14.0) a Shift menu opened from outside the step keys (Shift + a Track button: Workflow): as Shift + its step */
+void rfmv_seq_menu_open(rfm_move_t *m, int sm)
+{
+    rfm_move_seq_t *q = Q(m);
+    q->smenu = (uint8_t)sm;
+    q->arp_page = 0, m->gl_edit = 0, q->sm_ms = 0, q->sm_sel = -1, q->sm_edit = 0;
+    q->mods_used |= SEQ_M_SHIFT;                        /* (Shift's release: no latch) */
+    layer(q, LY_MENU);
+    rfmv_menu(m, MENU_NONE, 0);
+}
 void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
 {
     rfm_move_seq_t *q = Q(m);
@@ -4097,7 +4107,8 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
                                                          * turned) drawn in its place as Global settings' row; the top
                                                          * line stays "Workflow" */
         const int sel = smenu_sel(m), cur = hk >= 0 ? hk : q->sm_sel >= 0 ? sel : -1;
-        v2_TC(cv, 64, 0, "Workflow", 2, 1);
+        snprintf(c, sizeof c, "Track %d", q->sel_track + 1);   /* (0.14.0: the track's settings, named by it) */
+        v2_TC(cv, 64, 0, c, 2, 1);
         for (i = 0; i < 3; i++) {
             if (i == 0)
                 snprintf(b, sizeof b, "Ch %d", t->ch + 1);

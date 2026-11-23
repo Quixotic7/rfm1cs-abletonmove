@@ -35,6 +35,14 @@ The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_se
   with its words inverted between two arrows while editing. Workflow (Shift + step 3) in the selected row itself, its
   top line staying "Workflow"; the picture menus (Tempo, Groove, Layout, Keys, Velocity, Record) in their top line,
   sticky once something is selected (was a plain copy for a second). Pictures: `sessview_mj_*_sel`, `sessview_mj_*_edit`.
+- (item 5, "Using SHIFT + a track button should take you to Track settings similar to Ableton's Move software
+  shortcuts") Shift held + Track 1..3 (where the Move's Shift is ours: a note layout, session view, the Mixer and
+  Routing): at the press, that firmware played as its tap would (only when it is not already), its selected track
+  selected, and Shift + step 3's menu (`rfmv_seq_menu_open`) open over it; its title is now the track ("Track 5", was
+  "Workflow"), said "Track 5 settings". The Track's release and hold, and Shift's release, then do nothing
+  (`tbtn_shift`, a new field at the end of `rfm_move_t`). Before, Shift was ignored there (the Track tapped, held: its
+  menu). Not in the FM-1 layout or a takeover (Shift is the firmware's GLO there), not over Global settings or States.
+  Shift + Track 4 unchanged: it is no firmware's track. Back closes the menu and changes nothing else.
 
 ## 0.13.0 (2026-11-23)
 

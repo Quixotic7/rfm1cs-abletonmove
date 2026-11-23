@@ -133,6 +133,15 @@ solo); a step acted: "Felucca / Track 3 / Not Routed" over the same 16 tracks. *
 the routing only: a column's pad: a click routes its track to the firmware or not, a double click solos it; the
 knobs, the jog and Up / Down do nothing there.
 
+**Shift + Track 1..3** (0.14.0, the owner's: "Using SHIFT + a track button should take you to Track settings similar
+to Ableton's Move software shortcuts"): at the press, that firmware played (as its tap; session view stays) with its
+selected track, and the track's settings open over it: Shift + step 3's menu, titled with the track ("Track 5"; said
+"Track 5 settings"). The Track's release, its hold (no Track menu) and Shift's release (no lock) then do nothing; Back
+closes the menu (the view and the layout stay). Where the Move's Shift is ours: a note layout, session view, the
+Mixer and Routing; in the FM-1 layout and a takeover Shift is the firmware's GLO and the Track does its own jobs.
+**Shift + Track 4** is unchanged (its tap: the Mixer / Routing; its hold: the Shift layer): Track 4 is no firmware's,
+so it has no track settings to open.
+
 **Shift shortcuts** (0.9.0): Track 4 held + a step anywhere (its Shift menu on the screen at once), Shift + a step in
 a note layout and in the Mixer and Routing (a Shift menu opens over them; Back closes it). **Track 1..3 held** works
 over the projects view too.
@@ -594,7 +603,7 @@ lock dim (a turn writes one), locked ones by their value.
 | 2 Global Settings | (0.6.2) a list on the jog wheel, sticky (Shift + step 2 again, or Back when not editing, closes it; 0.12.0, l2: Menu no longer does, and it has its jog over the Mixer and Routing too). (0.6.10, the owner's direction A) On top the Move's battery: an icon filled to the charge and the percentage at 2x ("--" until the first STATUS: Move Remote's STATUS byte 4 as the surface reports it, taken as 0..100 %, clamped; the host passes it with `rfm_move_set_battery`), "GLOBAL" on the right, a rule under them. Rows (0.6.12: Speech first, then the others; four show, the list scrolls): Speech (Off, On, Jog: see Speech modes), Clock (Auto, Int, Ext; Int is the default (0.5.5); Auto follows a firmware only once it is a clock master: a Start or Continue, then 24 steady clocks, until its Stop), Velocity (the option, as the Velocity menu), Fixed level, Popup size (FM-1 mode's popups: Full, the default, or Half, 0.5.9), (0.12.0) Launch (when a clicked
 clip, scene or stop takes effect: Instant, 1 Beat, 1 Bar (the default), 2 Bars, 4 Bars, Clip: the end of the loop the
 track plays; saved with the project, version 8; a clip's own Launch wins). Turn the jog: the selected row (inverted) moves; click: edit its value (the row framed, the value inverted between small arrows), the jog changes it; click again or Back: done. While it is open it owns the controls: no knob, pad, step or button reaches the FM-1, the firmware or the sequencer (the knobs do nothing; their touches show nothing); releases pass, so a pad held before it opened lets go; the Track buttons and Shift + step 2 pass |
-| 3 Workflow Settings | menu: knob 1 (0.13.0: the jog's selection, as every menu's) the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent). (0.14.0, the owner's) the selected row (the jog's, a knob touched or turned) is drawn in its place as Global settings' row: inverted while selecting, framed with its words inverted between two arrows while editing; nothing is copied to the top |
+| 3 Workflow Settings | (0.14.0: also Shift + Track 1..3, for that firmware's track; titled "Track n") menu: knob 1 (0.13.0: the jog's selection, as every menu's) the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent). (0.14.0, the owner's) the selected row (the jog's, a knob touched or turned) is drawn in its place as Global settings' row: inverted while selecting, framed with its words inverted between two arrows while editing; nothing is copied to the top |
 | 5 Tempo | each press is a tap (tap tempo: the average of up to 4 taps) and opens the menu: the tempo at 4x; knob 1 1 BPM (Shift, or knob 2: 0.1; 0.13.0: the jog selects one, its click edits it); following the firmware's clock: locked (a padlock, EXT; taps ignored) |
 | 6 Metronome | on / off (off at first): a click a beat, the bar's first higher (`RFM_MOVE_ACT_CLICK`, frame-stamped; the web player plays it after the volume, never into a recording); also in the count-in |
 | 7 Groove | menu: knob 1 the groove (0.13.0: the jog selects, its click edits), 5 % a detent (Shift: 1 %), 0..150 %: the off 16ths late, 100 % a triplet swing (Move's). Knob 2: GLOBAL (the project's groove, the default) or TRACK (the track's own, starting from the global one) |

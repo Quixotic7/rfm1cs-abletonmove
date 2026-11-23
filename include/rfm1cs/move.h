@@ -1087,6 +1087,9 @@ typedef struct {
     char pfw_id[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX];  /* the firmwares the loading screen names */
     uint8_t pfw_live;                                   /* a project was loaded or made (its edits may be saved) */
     int8_t pfw_msg_k;                                   /* the missing slot said last (-1 none) */
+    /* (0.14.0, the owner's 2026-11-23) */
+    uint8_t tbtn_shift;                                 /* bits: that Track was pressed with Shift (its track settings
+                                                         * opened at the press; its release: nothing) */
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit

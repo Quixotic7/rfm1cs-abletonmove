@@ -4466,8 +4466,57 @@ static void test_o14_state_pad(void)
     pad(24 + 3, 0), back(), rest();
 }
 
+/* item 5: "Using SHIFT + a track button should take you to Track settings similar to Ableton's Move software
+ * shortcuts": Shift + Track 1..3, at the press, that firmware's selected track's settings (Shift + step 3's menu) */
+static void test_o14_shift_track(void)
+{
+    int tr;
+    track_view();
+    tr = M.s.lock[1] % RFM_MOVE_SEQ_TRACKS;
+    /* track view, the slot played: the menu at the press, named by its track */
+    clear(), button(MR_CC_SHIFT, 1), track(1, 1);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW && M.seq.sel_track == tr && M.fw.active == 1 && !M.seq.view);
+    CHECKF(strstr(said, "settings") != NULL, "said %s", said);
+    adv_ms(RFM_MOVE_TAP_MS + 50);                       /* (held on: no Track menu) */
+    CHECK(!rfmv_lay_menu(&M) && M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
+    track(1, 0), button(MR_CC_SHIFT, 0), rest();
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW && !(M.seq.mods & SEQ_M_SHIFT));
+    write_pbm("o14_shift_track");
+    /* the knobs are the track's settings: knob 2 its rate */
+    {
+        const int r = M.seq.tr[tr].rate;
+        knob(1, RFM_MOVE_LIST_TICKS);
+        CHECK(M.seq.tr[tr].rate != r);
+        knob(1, -RFM_MOVE_LIST_TICKS);
+    }
+    back(), rest();                                     /* (Back closes it; the view and mode stay) */
+    CHECK(!M.seq.smenu && M.s.mode == RFM_MOVE_MODE_SEQ && !M.seq.view && M.fw.active == 1);
+    /* session view: it stays; the firmware's selected track selected, its settings open */
+    press(MR_CC_MENU), rest();
+    raw(0x90, 4, 127), raw(0x80, 4, 0), rest();         /* (another track selected first) */
+    CHECK(M.seq.view && M.seq.sel_track != tr);
+    button(MR_CC_SHIFT, 1), track(1, 1);
+    CHECK(M.seq.view && M.seq.smenu == RFM_MOVE_SM_WORKFLOW && M.seq.sel_track == tr);
+    track(1, 0), button(MR_CC_SHIFT, 0), rest();
+    write_pbm("o14_shift_track_session");
+    back(), rest();
+    CHECK(M.seq.view && !M.seq.smenu);
+    press(MR_CC_MENU), rest();
+    /* Track 4 with Shift: its own tap (the Mixer), as before */
+    button(MR_CC_SHIFT, 1), tap_track(3), button(MR_CC_SHIFT, 0), rest();
+    CHECK(M.seq.projects && M.seq.smenu != RFM_MOVE_SM_WORKFLOW);
+    /* the Mixer: Shift + Track 2 leaves it for the slot's track view with the menu */
+    button(MR_CC_SHIFT, 1), track(1, 1), track(1, 0), button(MR_CC_SHIFT, 0), rest();
+    CHECK(!M.seq.projects && M.seq.smenu == RFM_MOVE_SM_WORKFLOW && M.seq.sel_track == tr && M.fw.active == 1);
+    back(), rest();
+    /* without Shift: the tap as ever (no menu) */
+    tap_track(1), rest();
+    CHECK(!M.seq.smenu && M.fw.active == 1);
+}
+
 int main(void)
 {
+    test_o14_shift_track();
     test_o14_state_pad();
     test_o14_kpage();
     test_o14_arp_notes();

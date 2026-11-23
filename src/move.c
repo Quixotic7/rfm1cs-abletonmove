@@ -1738,6 +1738,36 @@ static void track_double(rfm_move_t *m, int t)
     else if (t < rfmv_fw_nslots(m) && m->fw.host)
         rfmv_view_open(m, VIEW_SLOT0 + t);              /* the browser on that slot */
 }
+/* (0.14.0, the owner's 2026-11-23: "Using SHIFT + a track button should take you to Track settings similar to Ableton's
+ * Move software shortcuts") Shift held (the Move's Shift being ours: a note layout, session view, the Mixer and
+ * Routing; not the FM-1 layout or a takeover, where it is the firmware's GLO) + Track 1..3: at the press, that
+ * firmware played (as its tap: session view and the views stay as a tap leaves them) with its selected track, and
+ * the track's settings (Workflow, Shift + step 3's menu) open over it. Track 4 with Shift: its own jobs, unchanged */
+static int shift_ours(const rfm_move_t *m)
+{
+    if (m->seq.smenu == RFM_MOVE_SM_GLOBAL || rfmv_st_on(m) || m->track_held || m->back_down)
+        return 0;
+    if (m->seq.projects)
+        return m->shift_down && m->fw.fx;
+    return m->s.mode == RFM_MOVE_MODE_SEQ && (m->seq.mods & SEQ_M_SHIFT) && !rfmv_fwp_full(m);
+}
+static void track_tap(rfm_move_t *m, int t);
+static void shift_track(rfm_move_t *m, int t)
+{
+    const int sv = rfmv_sess_on(m);
+    if (t >= rfmv_fw_nslots(m))
+        return;
+    if (m->fw.active != t || m->seq.projects || (!sv && m->s.mode != RFM_MOVE_MODE_SEQ))
+        track_tap(m, t);
+    rfmv_seq_select(m, m->s.lock[t] % RFM_MOVE_SEQ_TRACKS);   /* (its selected track: session view selects it too) */
+    rfmv_seq_menu_open(m, RFM_MOVE_SM_WORKFLOW);
+    m->pop = POP_NONE, m->seq.tflash = 0;               /* (the menu at once, naming the track: no slot popup over it) */
+    {
+        char w[32];
+        snprintf(w, sizeof w, "Track %d settings", m->seq.sel_track + 1);
+        rfmv_say_text(m, w);
+    }
+}
 static int track_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
 {
     int t;
@@ -1745,6 +1775,16 @@ static int track_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
     if (ev->type != MR_EV_BUTTON || ev->index < MR_CC_TRACK4 || ev->index > MR_CC_TRACK1)
         return 0;
     t = MR_CC_TRACK1 - ev->index, bit = 1u << t;
+    if (!ev->value && (m->tbtn_shift & bit)) {
+        m->tbtn_shift = (uint8_t)(m->tbtn_shift & ~bit);   /* (0.14.0: Shift + Track's release: nothing) */
+        return 1;
+    }
+    if (ev->value && t < 3 && !(m->track_held & bit) && shift_ours(m)) {
+        m->tbtn_shift = (uint8_t)(m->tbtn_shift | bit);
+        m->tbtn_up[t] = 0;
+        shift_track(m, t);
+        return 1;
+    }
     if (ev->value) {
         if (m->track_held & bit)
             return 1;
