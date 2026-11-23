@@ -558,8 +558,11 @@ static void slot_seq_enter(rfm_move_t *m, int t, int fresh)
         m->s.layout = (uint8_t)(lay - RFM_MOVE_LAY_SCALE);   /* (the track takes the slot's layout) */
         rfmv_seq_sync(m);
     }
-    if (fresh)
-        q->trig = 1, q->fwp = 0, q->view = 0;           /* (the owner's: the TRIG page first; the track view) */
+    if (fresh) {
+        q->view = 0;                                    /* (the owner's: the track view) */
+        rfmv_seq_kpage_restore(m);                      /* (0.14.0, the owner's: the track's knob page as it was left;
+                                                         * TRIG for a track never shown) */
+    }
 }
 /* the active slot's layout played: the FM-1 layout or its takeover (FM-1 mode), or a note layout (the sequencer) */
 static void slot_mode_fresh(rfm_move_t *m, int fresh)

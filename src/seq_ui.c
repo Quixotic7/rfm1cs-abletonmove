@@ -422,6 +422,22 @@ void rfmv_seq_leave(rfm_move_t *m)
     m->s.layout = q->stash_layout, m->s.root = q->stash_root, m->s.scale = q->stash_scale;
     memcpy(m->s.cc, q->stash_cc, sizeof m->s.cc);
 }
+/* the knob page shown: 0 TRIG, 1 FM-1, 2..5 the CC banks 1..4 (the bank stored as before: s.bank 0..3) */
+int rfmv_seq_kpage(const rfm_move_t *m) { return m->seq.trig ? 0 : m->seq.fwp ? 1 : m->s.bank + 2; }
+static void kpage_set(rfm_move_t *m, int pg)
+{
+    rfm_move_seq_t *q = Q(m);
+    pg = clampi(pg, 0, RFM_MOVE_NBANKS + 1);
+    q->trig = (uint8_t)(pg == 0), q->fwp = (uint8_t)(pg == 1);
+    if (pg >= 2 && pg - 2 != m->s.bank) {
+        m->s.bank = (uint8_t)(pg - 2);
+        rfmv_changed(m);
+    }
+}
+/* (0.14.0, the owner's 2026-11-23: "if I have page set to a CC bank or FM-1 knobs, switching to another track and back
+ * the knobs reset to the trig page, the page I am on should be remembered") the selected track's page as it was left
+ * (TRIG for one never shown) */
+void rfmv_seq_kpage_restore(rfm_move_t *m) { kpage_set(m, m->seq.kpage[m->seq.sel_track % RFM_MOVE_SEQ_TRACKS]); }
 void rfmv_seq_select(rfm_move_t *m, int track)
 {
     rfm_move_seq_t *q = Q(m);
@@ -433,6 +449,8 @@ void rfmv_seq_select(rfm_move_t *m, int track)
     q->page = (uint8_t)(q->lstart[edit_clip(m)] / RFM_MOVE_SEQ_PAGE);
     q->steprec = 0;
     load_track(m);
+    if (q->in_seq)
+        rfmv_seq_kpage_restore(m);                      /* (0.14.0: its knob page as it was left) */
     rfmv_seq_dirty(m);
 }
 /* (0.12.0, the owner's) Copy or Delete held + a scene pad (a row across the 16 tracks; its own buffer). Copy: a row
@@ -2814,12 +2832,8 @@ void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now)
     }
     {                                                   /* the knob pages: TRIG, (0.12.x) FM-1, then banks 1..4 (the
                                                          * bank stored as before: 0..3) */
-        const int pg = clampi((q->trig ? 0 : q->fwp ? 1 : m->s.bank + 2) + d, 0, RFM_MOVE_NBANKS + 1);
-        q->trig = (uint8_t)(pg == 0), q->fwp = (uint8_t)(pg == 1);
-        if (pg >= 2 && pg - 2 != m->s.bank) {
-            m->s.bank = (uint8_t)(pg - 2);
-            rfmv_changed(m);
-        }
+        kpage_set(m, rfmv_seq_kpage(m) + d);
+        q->kpage[q->sel_track] = (uint8_t)rfmv_seq_kpage(m);   /* (0.14.0: the track's, kept) */
         rfmv_pop(m, POP_BANK, 0);
     }
 }

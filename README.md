@@ -101,7 +101,7 @@ nothing.
 
 | Track | Tap | Held | Double click |
 |---|---|---|---|
-| 1..3 | play that slot in its layout (`FW_ACTIVE`; an empty slot too); a note layout: its track view (the TRIG knob page first); (0.12.x, the owner's) there the steps show the slot's 16 tracks for 600 ms (routed: the slot's colour, not routed: dark, the selected one blinking white / the slot's colour, 100 ms each), then the clip's steps again; a step pressed meanwhile is a clip step and ends it (not in the FM-1 layout, a takeover or session view; not under the held Track's menu or the browser) | one menu (below) | the firmware browser on that slot (there a pad's double tap loads it) |
+| 1..3 | play that slot in its layout (`FW_ACTIVE`; an empty slot too); a note layout: its track view (0.14.0: the track's knob page as it was left; TRIG for a track never shown); (0.12.x, the owner's) there the steps show the slot's 16 tracks for 600 ms (routed: the slot's colour, not routed: dark, the selected one blinking white / the slot's colour, 100 ms each), then the clip's steps again; a step pressed meanwhile is a clip step and ends it (not in the FM-1 layout, a takeover or session view; not under the held Track's menu or the browser) | one menu (below) | the firmware browser on that slot (there a pad's double tap loads it) |
 | 4 | the Mixer or Routing, the one last shown (the Mixer at first); a tap there flips them | pad 1 the Mixer, pad 2 Routing; the steps the Shift shortcuts, Record / Play / Capture / Undo / Loop / Sample their Shift + button, in every layout | the sequencer's projects |
 
 **A note layout** (the sequencer): the pads play the layout into the selected track (live to the slot, recorded with
@@ -315,7 +315,7 @@ its 8 columns through the 16 tracks.
 | steps | the 16 steps of the page | the 2 under each column: the first stops that track's clips (at the bar; lit while it plays something, blinking while it stops), the second mutes it (the track's colour; muted: red, dim) |
 | Left / Right | the bar shown; Right past the last bar: a ghost bar (below); a step held: micro timing (the MICRO popup) | the tracks, one at a time (1..16); (0.12.0) Shift: 7 at a time |
 | Up / Down | octave (MIDI mode's); (0.12.0) at the press "Octave +2" a second, the pads' lowest and highest note under it ("C4 - E6"; at the range's end the same, unchanged), and a white row sweeps the pads the way it went (bottom up for Up, top down for Down; a row each 50 ms, 200 ms in all; pads play meanwhile). A step held: transpose, its notes by name a second ("E3 G3 B3", the TRANSPOSE popup) | the clip slots, one at a time; (0.12.0) Shift: 4 at a time |
-| knobs | the knob page: TRIG (below), (0.12.x) FM-1 (below), then Control mode's CC banks 1..4, live on the track's channel; a step held: its CC locks (the TRIG and FM-1 pages: its trig values) | nothing; a touch selects the track in that knob's column; (0.12.0) a select step held: knob 1 the clip's Launch, knob 2 its After |
+| knobs | the knob page: TRIG (below), (0.12.x) FM-1 (below), then Control mode's CC banks 1..4, live on the track's channel; (0.14.0, the owner's) each track keeps the page it was left on, brought back whenever it is selected again (a Track tap, a held Track's step, session view's selection; RAM only, TRIG for a track never shown); a step held: its CC locks (the TRIG and FM-1 pages: its trig values) | nothing; a touch selects the track in that knob's column; (0.12.0) a select step held: knob 1 the clip's Launch, knob 2 its After |
 | volume knob | MASTER; a step held: its notes' velocity (a VELO popup) | MASTER; (0.12.0) a select step held: the level of the firmware its track plays |
 | jog | the knob page (TRIG, FM-1, banks 1..4); a step held: its notes' length (the LENGTH popup); Loop held or latched: the loop's length; a Shift menu: (0.13.0) selects a parameter, or changes the one being edited (the arp: its pages); a drum pad held: its note | the knob page |
 | jog pressed | nothing (FILL is Shift + Loop held); (0.12.x) the FM-1 page: its level, Knobs <-> Knobs+Keys; (0.13.0) a Shift menu: edit the selected parameter / select again (the arp: off / on) | the same |
@@ -338,7 +338,7 @@ Buttons, steps, ect, but pads stay in the MIDI layout, and Jogwheel is not taken
   Up / Down (their octave), the jog (its turn the page, its click back to level 1), Back (as in the FM-1 layout: no
   held-Back shortcuts), the Track buttons, the volume knob. The sequencer's transport: Play in level 1 (or another
   page). Another page lets go of what level 2 held and gives the steps and buttons back; the FM-1 page again: the level
-  it was left in (a Track tap starts on TRIG). An empty slot: the page is there ("Empty slot"), its knobs dark and
+  it was left in (0.14.0: a Track tap brings the track's own page back, the FM-1 page too). An empty slot: the page is there ("Empty slot"), its knobs dark and
   dead, its click nothing. `rfm_move_fwp_level()` says which level shows (the host needs no change: labels, readouts
   and frames reach the core as ever).
 

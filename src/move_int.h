@@ -173,6 +173,8 @@ void rfmv_seq_sample(rfm_move_t *m);                   /* Record (Capture mode, 
 void rfmv_seq_audio_rec(rfm_move_t *m);                /* Sample: the audio loop armed / ended at the next bar */
 void rfmv_seq_ui_poll(rfm_move_t *m);
 void rfmv_seq_select(rfm_move_t *m, int track);        /* a track selected: its layout and CC numbers in */
+int rfmv_seq_kpage(const rfm_move_t *m);               /* (0.14.0) the knob page: 0 TRIG, 1 FM-1, 2..5 banks 1..4 */
+void rfmv_seq_kpage_restore(rfm_move_t *m);            /* .. the selected track's, as it was left */
 void rfmv_seq_enter(rfm_move_t *m);                    /* Sequencer mode entered / left: the settings swapped */
 void rfmv_seq_leave(rfm_move_t *m);
 void rfmv_seq_sync(rfm_move_t *m);

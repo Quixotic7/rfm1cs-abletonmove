@@ -4368,8 +4368,47 @@ static void test_o14_arp_notes(void)
     rfmv_seq_arp_stop(&M), ap->mode = RFM_MOVE_AM_OFF;
 }
 
+/* item 1: "if I have page set to a CC bank or FM-1 knobs, switching to another track and back the knobs reset to the
+ * trig page, the page I am on should be remembered": each track's knob page, by any way of selecting it */
+static void test_o14_kpage(void)
+{
+    int tr;
+    track_view();
+    tr = M.seq.sel_track;
+    CHECK(M.seq.trig && rfmv_seq_kpage(&M) == 0);
+    /* the FM-1 page; another firmware's Track and back: the FM-1 page again */
+    jog(1), rest();
+    CHECK(M.seq.fwp && !M.seq.trig);
+    tap_track(0), rest(), tap_track(1), rest();
+    CHECK(M.seq.sel_track == tr && M.seq.fwp && !M.seq.trig && rfmv_fwp_page(&M));
+    write_pbm("o14_kpage_fm1_back");
+    /* bank 3; another track selected (Track 2 held + a step): that one's page (never shown: TRIG); back: bank 3 */
+    jog(3), rest();
+    CHECK(rfmv_seq_kpage(&M) == 4 && M.s.bank == 2);
+    hold_track(1), step(6, 1), step(6, 0), track(1, 0), rest();
+    CHECK(M.seq.sel_track == 6 && M.seq.trig && rfmv_seq_kpage(&M) == 0);
+    jog(2), rest();                                     /* (track 7: bank 1) */
+    CHECK(rfmv_seq_kpage(&M) == 2 && M.s.bank == 0);
+    hold_track(1), step(tr, 1), step(tr, 0), track(1, 0), rest();
+    CHECK(M.seq.sel_track == tr && rfmv_seq_kpage(&M) == 4 && M.s.bank == 2);
+    write_pbm("o14_kpage_bank3_back");
+    /* session view: a knob's touch selects its column's track; Menu back: that track's page */
+    press(MR_CC_MENU), rest();
+    CHECK(M.seq.view);
+    raw(0x90, 6, 127), raw(0x80, 6, 0), rest();
+    CHECK(M.seq.sel_track == 6);
+    press(MR_CC_MENU), rest();
+    CHECK(!M.seq.view && rfmv_seq_kpage(&M) == 2 && M.s.bank == 0);
+    /* Track 2's tap: the slot's own track again (it was selected for it), its page kept */
+    tap_track(1), rest();
+    CHECK(M.seq.sel_track == tr && rfmv_seq_kpage(&M) == 4);
+    jog(-4), rest();
+    CHECK(M.seq.trig);
+}
+
 int main(void)
 {
+    test_o14_kpage();
     test_o14_arp_notes();
     test_scenes();
     test_selected();

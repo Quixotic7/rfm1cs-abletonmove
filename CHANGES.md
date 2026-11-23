@@ -16,6 +16,13 @@ The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_se
   played live (`track` 0: the active slot), they reach a firmware only through the host's routing of that track
   (`ffilt`, the same as a clip's notes); the selected track is routed to the slot on entering a note layout. No core
   change.
+- (item 1, "if I have page set to a CC bank or FM-1 knobs, switching to another track and back the knobs reset to the
+  trig page, the page I am on should be remembered") each sequencer track keeps its knob page (TRIG, FM-1, banks 1..4:
+  `seq.kpage[16]`, `rfmv_seq_kpage`, `rfmv_seq_kpage_restore`), set by the jog, brought back whenever the track is
+  selected (`rfmv_seq_select`: a held Track's step, session view's selection) and on entering a note layout (a Track
+  tap: was the TRIG page always). A bank page sets `s.bank` as the jog does. RAM only, not in the project: the blob's
+  per-track bytes have no room the older cores accept (a version 10 for 16 bytes of view state was not worth it); a
+  track never shown starts on TRIG, as before.
 
 ## 0.13.0 (2026-11-23)
 

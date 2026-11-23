@@ -883,6 +883,9 @@ typedef struct {
      * its ghost key does not confirm it; loop_tap_grp: the tap waiting for its double tap confirmed ghost bars (the
      * double tap joins its undo step) */
     uint8_t loop_shown, loop_tap_grp;
+    /* (0.14.0, the owner's 2026-11-23) each track's knob page, as it was left (0 TRIG, 1 FM-1, 2..5 banks 1..4; not
+     * saved): selecting the track again, by any way, brings it back */
+    uint8_t kpage[RFM_MOVE_SEQ_TRACKS];
 } rfm_move_seq_t;
 
 /* ---- the state */
