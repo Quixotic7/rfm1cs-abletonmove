@@ -21,6 +21,12 @@ The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_se
   (`rfmv_seq_arp_silent`: CHANCE 0, or every MOD step in its length a rest, a tie or a repeat): turning it on shows
   "Arp" / "Silent" the whole screen (said "Arp Silent"), its menu's header at rest "Arp Silent", and its walk and lanes
   dimmed as when off. Stored values are never changed. (`test_o14_arp_notes`, pictures `sessview_o14_arp_silent*`.)
+- (the owner's, the same day: "The arp I don't think worked because chance was set to 0% ... I don't think chance
+  makes sense anymore. The arp should be 100% and not changable as knob parameter") **the arp has no CHANCE**: every
+  step plays (`arp_tick` no longer rolls it), knob 4 of the arp's page is dark and dead until the arp's knobs are laid
+  out anew (the owner's: "rethink some of the arp's other settings ... and rethink the knob order": a proposal first),
+  its header and spoken value gone. A project's stored CHANCE is not looked at: read as 100, written as 100 (the blob's
+  byte stays, the version too), so the owner's arp sounds again; "Silent" is left for a MOD lane with no step that plays.
 - (item 1, "if I have page set to a CC bank or FM-1 knobs, switching to another track and back the knobs reset to the
   trig page, the page I am on should be remembered") each sequencer track keeps its knob page (TRIG, FM-1, banks 1..4:
   `seq.kpage[16]`, `rfmv_seq_kpage`, `rfmv_seq_kpage_restore`), set by the jog, brought back whenever the track is

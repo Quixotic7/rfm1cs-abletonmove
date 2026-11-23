@@ -1369,7 +1369,7 @@ static void arp_step(rfm_move_t *m)
     q->arp_tpos = (uint16_t)((q->arp_tpos + 1) % tlen);
     if ((a->reset == RFM_MOVE_AR_MPAT && q->arp_mpos == 0) || (a->reset == RFM_MOVE_AR_TPAT && q->arp_tpos == 0))
         q->arp_pos = 0, q->arp_oct = 0;
-    if (!np || (a->chance < 100 && (int)(rnd(q) % 100u) >= a->chance))
+    if (!np)                                            /* (0.14.0, the owner's: no CHANCE: every step plays) */
         return;
     {
         const int steplen = BAR / rfmv_seq_arp_rate_of(a->rate);

@@ -2281,7 +2281,7 @@ int rfmv_seq_menu_knobs(const rfm_move_t *m)
     case RFM_MOVE_SM_GROOVE: return 0x03;
     case RFM_MOVE_SM_LAYOUT: return 0x01;
     case RFM_MOVE_SM_KEYS: return 0x0F;
-    case RFM_MOVE_SM_ARP: return q->arp_page ? 0x07 : 0xFF;   /* (0.11.0: a lane: its value, length and RESET; the
+    case RFM_MOVE_SM_ARP: return q->arp_page ? 0x07 : 0xF7;   /* (0.11.0: a lane: its value, length and RESET; the
                                                          * step keys pick its step) */
     case RFM_MOVE_SM_REC: return 0x03;
     case RFM_MOVE_SM_VEL: return 0x03;                  /* (0.13.0: knob 2 the option, the jog's before) */
@@ -2396,7 +2396,8 @@ const char *rfmv_seq_arp_mode_name(int mode)
     return AM[mode >= 0 && mode < RFM_MOVE_AM_N ? mode : 0];
 }
 /* (0.14.0, the host's trace of the owner's "the arp sends no notes": CHANCE 0 and a MOD lane of ties) an arp that is on
- * but can never sound: its CHANCE 0, or every MOD step in its length a rest, a tie or a repeat (a repeat of nothing) */
+ * but can never sound: every MOD step in its length a rest, a tie or a repeat (a repeat of nothing). CHANCE is gone
+ * (the owner's, the same day: "The arp should be 100% and not changable as knob parameter") */
 int rfmv_seq_arp_silent(const rfm_move_t *m, int tr)
 {
     const rfm_move_arp_t *a = &m->seq.tr[tr % RFM_MOVE_SEQ_TRACKS].arp;
@@ -2404,8 +2405,6 @@ int rfmv_seq_arp_silent(const rfm_move_t *m, int tr)
     int i;
     if (a->mode == RFM_MOVE_AM_OFF)
         return 0;
-    if (!a->chance)
-        return 1;
     for (i = 0; i < len; i++)
         if (a->lane[0][i] != RFM_MOVE_AL_REST && a->lane[0][i] != RFM_MOVE_AL_TIE && a->lane[0][i] != RFM_MOVE_AL_REPEAT)
             return 0;
@@ -2526,7 +2525,8 @@ static void smenu_turn(rfm_move_t *m, int k, int d, int jog)   /* (jog: the jog 
         case 0: a->pat = (uint8_t)clampi(a->pat + d, 0, RFM_MOVE_AP_N - 1); break;
         case 1: a->rate = (uint8_t)clampi(a->rate + d, 0, RFM_MOVE_ARP_RATES - 1); break;
         case 2: a->range = (uint8_t)clampi(a->range + d, 1, 8); break;
-        case 3: a->chance = (uint8_t)clampi(a->chance + d * 5, 0, 100); break;
+        case 3: break;                                  /* (0.14.0, the owner's: CHANCE gone, always 100 %: knob 4 dark
+                                                         * and dead until the arp's knobs are laid out anew) */
         case 4:
             a->mode = (uint8_t)clampi(a->mode + d, 0, RFM_MOVE_AM_N - 1);
             if (a->mode == RFM_MOVE_AM_OFF)
@@ -3939,7 +3939,6 @@ static void arp_head(const rfm_move_t *m, int k, char *o, int cap)
     case 0: snprintf(o, (size_t)cap, "Pattern"); break;  /* (its name and picture are below) */
     case 1: arp_rate_name(rfmv_seq_arp_rate_of(a->rate), b, sizeof b), snprintf(o, (size_t)cap, "Rate %s", b); break;
     case 2: snprintf(o, (size_t)cap, "Octaves %d", a->range); break;
-    case 3: snprintf(o, (size_t)cap, "Chance %d", a->chance); break;
     case 5: snprintf(o, (size_t)cap, "Gate %d%%", a->gate); break;
     case 6: snprintf(o, (size_t)cap, "Spread %+d", a->odist); break;
     case 7:
@@ -4493,7 +4492,6 @@ void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap)
             case 0: snprintf(o, (size_t)cap, "Pattern: %s", AP_NAMES[a->pat % RFM_MOVE_AP_N]); break;
             case 1: arp_rate_name(rfmv_seq_arp_rate_of(a->rate), b, sizeof b), snprintf(o, (size_t)cap, "Rate: %s", b); break;
             case 2: snprintf(o, (size_t)cap, "Range: %d %s", a->range, a->range == 1 ? "octave" : "octaves"); break;
-            case 3: snprintf(o, (size_t)cap, "Chance: %d%%", a->chance); break;
             case 4: snprintf(o, (size_t)cap, "Arp: %s", AM[a->mode % RFM_MOVE_AM_N]); break;
             case 5: snprintf(o, (size_t)cap, "Gate: %d%%", a->gate); break;
             case 6: snprintf(o, (size_t)cap, "Octave step: %+d", a->odist); break;

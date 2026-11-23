@@ -882,10 +882,16 @@ static void test_arp(void)
     raw(0x80, 5, 0), adv_ms(RFM_MOVE_POPUP_MS + 100);
     screen();
     CHECK(area_hash(0, 0, 128, 17) == h0);
-    /* the knobs it uses are lit (all 8 on this page) */
+    /* the knobs it uses are lit (0.14.0, the owner's: all but knob 4, CHANCE gone: dark, and its turn nothing) */
     leds(w);
     for (i = 0; i < 8; i++)
-        CHECKF(lit(w[L_RING0 + i]), "knob %d", i + 1);
+        CHECKF(!lit(w[L_RING0 + i]) == (i == 3), "knob %d", i + 1);
+    {
+        const rfm_move_arp_t was = *ap;
+        knob(3, 50), knob(3, -50);
+        CHECK(!memcmp(&was, ap, sizeof was) && ap->chance == 100);
+        rest();
+    }
     /* Menu: the view flips under the menu, named a second; the menu stays, its knobs too; Back closes it */
     press(MR_CC_MENU);
     screen();
@@ -4393,26 +4399,39 @@ static void test_o14_arp_notes(void)
     hit(0), clear(), adv_ms(1000);
     CHECKF(arp_ons(tr + 1) >= 3, "Hold, let go: %d", arp_ons(tr + 1));
     rfmv_seq_arp_stop(&M), ap->mode = RFM_MOVE_AM_OFF;
-    /* the owner's project (the host's trace): CHANCE 0, GATE 2, OCT DIST -24, QUANT 0, the MOD lane's step 1 a tie.
-     * On, it can never sound: the core plays nothing (as the engine says), and the arp's screen says so: "Arp" /
-     * "Silent" the whole screen at the toggle, "Arp Silent" at rest, the walk dimmed as when off */
+    /* the owner's project (the host's trace): CHANCE 0, GATE 2, OCT DIST -24, QUANT 0, the MOD lane's step 1 a tie:
+     * it played nothing. The owner's, the same day: "The arp should be 100% and not changable as knob parameter": a
+     * stored CHANCE is not looked at any more: it sounds */
     {
         rfm_move_arp_t keep = *ap;
         unsigned h_on;
+        int i;
         ap->pat = 4, ap->rate = 11, ap->range = 2, ap->chance = 0, ap->gate = 2, ap->odist = -24, ap->quant = 0;
         ap->reset = 1, ap->mlen = 9, ap->tlen = 10, ap->lane[0][0] = RFM_MOVE_AL_TIE;
         button(MR_CC_SHIFT, 1), step(10, 1), step(10, 0), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+        clear(), jog_click();
+        CHECK(ap->mode != RFM_MOVE_AM_OFF && !rfmv_seq_arp_silent(&M, tr));
+        CHECKF(strstr(said, "Silent") == NULL, "said %s", said);
+        rest(), clear(), pad(0, 100), adv_ms(1000), pad(0, 0), adv_ms(300);
+        CHECKF(arp_ons(tr + 1) >= 3, "the owner's arp, CHANCE 0 stored: %d", arp_ons(tr + 1));
+        jog_click(), rest();                            /* (off) */
+        /* an arp that still can never sound (every MOD step in its length a rest): the core plays nothing, and the
+         * arp's screen says so: "Arp" / "Silent" the whole screen at the toggle, "Arp Silent" at rest, the walk dimmed
+         * as when off */
+        for (i = 0; i < 16; i++)
+            ap->lane[0][i] = RFM_MOVE_AL_REST;
         clear(), jog_click();
         CHECK(ap->mode != RFM_MOVE_AM_OFF && rfmv_seq_arp_silent(&M, tr) && rfmv_pop_up(&M, POP_ARPW) &&
               M.pop_i == RFM_MOVE_AM_N);
         CHECKF(strstr(said, "Silent") != NULL, "said %s", said);
         write_pbm("o14_arp_silent_pop");
-        rest(), pad(0, 100), adv_ms(1000), pad(0, 0), adv_ms(300);
+        rest(), clear(), pad(0, 100), adv_ms(1000), pad(0, 0), adv_ms(300);
         CHECK(arp_ons(tr + 1) == 0);
         screen();
         h_on = area_hash(0, 0, 128, 17);
         write_pbm("o14_arp_silent");
-        knob(3, 50), knob(3, 50);                       /* (CHANCE up: it sounds; the header the mode again) */
+        for (i = 1; i < 16; i++)                        /* (steps play again: it sounds; the header the mode again) */
+            ap->lane[0][i] = RFM_MOVE_AL_PLAY;
         CHECK(!rfmv_seq_arp_silent(&M, tr));
         rest(), screen();
         CHECK(area_hash(0, 0, 128, 17) != h_on);

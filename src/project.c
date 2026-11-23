@@ -92,7 +92,7 @@ int rfm_move_project_save(rfm_move_t *m, uint8_t *out, uint32_t cap)
         *p++ = q->tr[i].groove;
     for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++, p += RFM_MOVE_ARP_BYTES) {
         const rfm_move_arp_t *a = &q->tr[i].arp;
-        p[0] = a->pat, p[1] = a->rate, p[2] = a->range, p[3] = a->chance, p[4] = a->mode, p[5] = a->gate;
+        p[0] = a->pat, p[1] = a->rate, p[2] = a->range, p[3] = 100, p[4] = a->mode, p[5] = a->gate;
         p[6] = (uint8_t)a->odist, p[7] = a->quant, p[8] = a->reset, p[9] = a->mlen, p[10] = a->tlen;
         memcpy(p + 11, a->lane, sizeof a->lane);
     }
@@ -285,7 +285,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
             const uint8_t *a = r + 2 * RFM_MOVE_SEQ_TRACKS + i * ab;
             rfm_move_arp_t *o = &q->tr[i].arp;
             q->tr[i].rate = r[i], q->tr[i].groove = r[RFM_MOVE_SEQ_TRACKS + i];
-            o->pat = a[0], o->rate = a[1], o->range = a[2], o->chance = a[3], o->mode = a[4], o->gate = a[5];
+            o->pat = a[0], o->rate = a[1], o->range = a[2], o->chance = 100, o->mode = a[4], o->gate = a[5];
             o->odist = (int8_t)a[6];
             if (ver >= 3) {
                 o->quant = a[7], o->reset = a[8], o->mlen = a[9], o->tlen = a[10];
