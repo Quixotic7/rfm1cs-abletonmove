@@ -1833,7 +1833,6 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
         }
     }
     rfmv_seq_ui_poll(m);
-    rfmv_fwj_poll(m);                                   /* (0.14.0: the FM-1 page's jog click, after its double's time) */
     rfmv_pfw_poll(m);                                   /* (0.13.0: a project's firmwares: the time limit, its edits) */
     rfmv_proj_poll(m);
     rfmv_fw_poll(m);                                    /* (0.4.0: the library's FW_LIBRARY, debounced) */

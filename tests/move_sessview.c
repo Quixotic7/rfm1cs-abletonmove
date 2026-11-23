@@ -75,7 +75,6 @@ static void press(int cc) { button(cc, 1), button(cc, 0); }
 static void knob(int k, int d) { raw(0xB0, (uint8_t)(MR_CC_KNOB1 + k), (uint8_t)(d & 127)); }
 static void jog(int d) { raw(0xB0, MR_CC_JOG, (uint8_t)(d & 127)); }
 static void jog_click(void) { raw(0xB0, MR_CC_JOG_CLICK, 127), raw(0xB0, MR_CC_JOG_CLICK, 0); }
-static void jog_dbl(void) { jog_click(), raw(0xB0, MR_CC_JOG_CLICK, 127), raw(0xB0, MR_CC_JOG_CLICK, 0); }   /* (0.14.0) */
 static void track(int t, int down) { button(MR_CC_TRACK1 - t, down); }
 static void tap_track(int t) { track(t, 1), track(t, 0); }
 static void hold_track(int t) { track(t, 1), adv_ms(RFM_MOVE_TAP_MS + 20); }
@@ -3687,9 +3686,9 @@ static void test_fwp_page(void)
     knob(1, 1);
     CHECK(count(RFM_MOVE_ACT_TURN) == 0 && rfmv_seq_trig(&M, clip, 2, RFM_MOVE_TRIG_RATCHET) == 2);
     step(2, 0), rest();
-    /* the jog's double click (0.14.0; was its click): level 2 at the second press, named a second ("Knobs+Keys") */
+    /* the jog's click: level 2 at the press, named a second ("Knobs+Keys") */
     clear();
-    jog_click(), raw(0xB0, MR_CC_JOG_CLICK, 127);   /* (0.14.0: a double click, at its second press) */
+    raw(0xB0, MR_CC_JOG_CLICK, 127);
     CHECK(M.seq.fwp_full && rfmv_fwp_full(&M) && M.pop == POP_FWLV && M.pop_i == 1 && rfmv_pop_up(&M, POP_FWLV));
     CHECKF(strstr(said, "Knobs and keys") != NULL, "said \"%s\"", said);
     write_pbm("fwp_level2_pop");
@@ -3735,25 +3734,28 @@ static void test_fwp_page(void)
     /* Back's click: as in the FM-1 layout (nothing open: nothing); Back held + Left: no shortcut */
     clear(), back();
     CHECK(rfmv_fwp_full(&M) && count(RFM_MOVE_ACT_BTN) == 0);
-    /* the jog's turn is ours: another page ends the takeover of the steps and buttons; back: level 2 again */
+    /* (0.14.0, the owner's) level 2's jog is the FM-1 layout's: its turn the target (SELECT), the page stays; the
+     * click ends the takeover of the steps and buttons; the click again: level 2 */
     step(7, 1);                                          /* (a key held: let go when level 2 ends) */
     clear(), jog(1);
-    CHECK(!rfmv_fwp_full(&M) && M.seq.fwp_full && M.s.bank == 0 && acts_of(RFM_MOVE_ACT_KEY, rfm_move_step_key(7)) == 1);
+    CHECK(rfmv_fwp_full(&M) && acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_SELECT) == 1 && rfmv_seq_kpage(&M) == 1);
+    rest(), clear(), jog_click();
+    CHECK(!rfmv_fwp_full(&M) && !M.seq.fwp_full && acts_of(RFM_MOVE_ACT_KEY, rfm_move_step_key(7)) == 1);
     step(7, 0), step(9, 1), step(9, 0);
     CHECK(step_has(clip, 9) && count(RFM_MOVE_ACT_KEY) == 1);   /* (the key let go; step 10 the clip's again) */
     clear(), press(MR_CC_CAPTURE);
     CHECK(count(RFM_MOVE_ACT_BTN) == 0);
-    rest(), jog(-1);
+    rest(), jog_click();
     CHECK(rfmv_fwp_full(&M));
     rest();
     /* the double click again: level 1 ("Knobs") */
-    clear(), jog_dbl();
+    clear(), jog_click();
     CHECK(!M.seq.fwp_full && M.pop == POP_FWLV && M.pop_i == 0 && rfm_move_fwp_level(&M) == 1);
     CHECKF(strstr(said, "Knobs") != NULL, "said \"%s\"", said);
     write_pbm("fwp_level1_pop");
     rest();
     /* a held Track: its menu over the page (the steps its tracks); Track 4 held: its layer */
-    jog_dbl(), rest();
+    jog_click(), rest();
     hold_track(1), clear(), step(3, 1);
     CHECK(M.s.lock[1] == 3 && count(RFM_MOVE_ACT_KEY) == 0);
     step(3, 0), track(1, 0), rest();
@@ -4548,7 +4550,10 @@ static void test_o14_shift_track(void)
 
 /* item 2: "On the sequencer with FM-1 knobs it would be nice to be able to click the Jogwheel to make it control one
  * of the knobs like it does in the FM-1 layout. Click to exit. Shift + Click to change the target knob, should be
- * linked with the Fm-1 layout" */
+ * linked with the Fm-1 layout"; then, the same day: "No double click on the Jogwheel to toggle takeover. Single click
+ * and shift + jogwheel to change jogwheel mode. Single click for changing jogwheel mode is synced with FM-1 layout
+ * and FM-1 layout keeps the single click behaviour" */
+static void sh_jog_click(void) { button(MR_CC_SHIFT, 1), jog_click(), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS; }
 static void test_o14_fwp_jog(void)
 {
     const char *lb[RFM_MOVE_LBL_N];
@@ -4562,14 +4567,40 @@ static void test_o14_fwp_jog(void)
     rfm_move_set_labels(&M, lb);
     jog(1), rest();
     CHECK(rfmv_fwp_live(&M) && !M.fwj && M.jog_enc == 0);
-    /* the press: the target's knob (1, SELECT) white at once; nothing else until the double click's time is over */
-    clear(), raw(0xB0, MR_CC_JOG_CLICK, 127);
+    /* the click: the takeover at once (Knobs+Keys, no wait for a second click): the page is the FM-1 layout's, its
+     * jog too: on the target (SELECT), that knob white; Play the firmware's */
+    clear(), jog_click();
+    CHECK(M.seq.fwp_full && rfmv_pop_up(&M, POP_FWLV) && rfmv_fwj_on(&M) && !M.fwj);
     leds(w);
-    CHECK(full(w[L_RING0 + 0]) && !white(w[L_RING0 + 1]) && !M.fwj && !rfmv_pop_up(&M, POP_FWJ));
-    raw(0xB0, MR_CC_JOG_CLICK, 0), adv_ms(RFM_MOVE_DOUBLE_MS - 60);
-    CHECK(!M.fwj && !M.seq.fwp_full);
-    adv_ms(80);
-    CHECK(M.fwj && rfmv_fwj_on(&M) && rfmv_pop_up(&M, POP_FWJ) && M.pop_i == 1 && !M.seq.fwp_full);
+    CHECK(full(w[L_RING0 + 0]) && !white(w[L_RING0 + 1]));
+    write_pbm("o14_fwp_takeover");
+    rest(), clear(), jog(1);
+    a = find(RFM_MOVE_ACT_TURN);
+    CHECK(a && a->index == RFM_MOVE_E_SELECT && a->value == 1 && rfmv_seq_kpage(&M) == 1);
+    rest(), clear(), press(MR_CC_PLAY);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY) == 2 && !M.seq.playing && !M.seq.start_pending);
+    /* .. Shift + click there: the next target, as the FM-1 layout's click (PRESET), and on round to SELECT */
+    rest(), clear(), sh_jog_click();
+    CHECK(M.jog_enc == 1 && M.seq.fwp_full && rfmv_pop_up(&M, POP_FWJ) && M.pop_i == 2);
+    clear(), jog(1);
+    a = find(RFM_MOVE_ACT_TURN);
+    CHECK(a && a->index == RFM_MOVE_E_PRESETS);
+    rest(), sh_jog_click(), sh_jog_click();
+    CHECK(M.jog_enc == 0 && M.seq.fwp_full);
+    /* the click again: Knobs: the jog its pages again, no knob white, Play the Move's */
+    rest(), clear(), jog_click();
+    CHECK(!M.seq.fwp_full && rfmv_pop_up(&M, POP_FWLV) && !rfmv_fwj_on(&M));
+    rest(), leds(w);
+    for (i = 0; i < 3; i++)
+        CHECK(!white(w[L_RING0 + i]));
+    clear(), jog(1);
+    CHECK(!count(RFM_MOVE_ACT_TURN) && rfmv_seq_kpage(&M) == 2);
+    jog(-1), rest();
+    /* Shift + click, not taken over: the jog on a knob while the steps and buttons stay the sequencer's: SELECT first */
+    clear(), sh_jog_click();
+    CHECK(M.fwj && rfmv_fwj_on(&M) && rfmv_pop_up(&M, POP_FWJ) && M.pop_i == 1 && !M.seq.fwp_full && M.jog_enc == 0);
+    leds(w);
+    CHECK(full(w[L_RING0 + 0]) && !white(w[L_RING0 + 1]));
     CHECKF(strstr(said, "Jog: Select") != NULL, "said %s", said);
     write_pbm("o14_fwp_jog_on");
     /* its turn: SELECT, as the FM-1 layout's jog; the page stays */
@@ -4617,11 +4648,21 @@ static void test_o14_fwp_jog(void)
     CHECK(M.jog_enc == 0);
     tap_track(1), rest();
     CHECK(M.jog_enc == 2);
-    /* the click again: the jog its pages again ("Jog / Pages"), the knob's white gone */
+    /* Shift + click from the pages: SELECT first, whatever the FM-1 layout had; after ALGO: the jog its pages again
+     * ("Jog / Pages"), the knob's white gone, the target SELECT */
+    rest(), sh_jog_click();
+    CHECK(M.fwj && M.jog_enc == 0);
+    sh_jog_click(), sh_jog_click();
+    CHECK(M.fwj && M.jog_enc == 2);
+    /* .. a click in and out of the takeover: the jog its pages again too */
+    rest(), jog_click(), rest();
+    CHECK(M.seq.fwp_full && rfmv_fwj_on(&M) && M.jog_enc == 2);
     jog_click(), rest();
-    CHECK(M.fwj);
-    clear(), jog_click(), adv_ms(RFM_MOVE_DOUBLE_MS + 20);
-    CHECK(!M.fwj && rfmv_pop_up(&M, POP_FWJ) && M.pop_i == 0);
+    CHECK(!M.seq.fwp_full && !M.fwj && !rfmv_fwj_on(&M));
+    sh_jog_click(), sh_jog_click(), sh_jog_click();
+    CHECK(M.fwj && M.jog_enc == 2);
+    rest(), clear(), sh_jog_click();
+    CHECK(!M.fwj && rfmv_pop_up(&M, POP_FWJ) && M.pop_i == 0 && M.jog_enc == 0);
     write_pbm("o14_fwp_jog_off");
     rest(), leds(w), screen();
     for (i = 0; i < 3; i++)
@@ -4630,26 +4671,14 @@ static void test_o14_fwp_jog(void)
     clear(), jog(1);
     CHECK(!count(RFM_MOVE_ACT_TURN) && rfmv_seq_kpage(&M) == 2);
     jog(-1), rest();
-    /* the double click: Knobs <-> Knobs+Keys (was the click), at its second press; the jog's knob not toggled */
-    clear(), jog_dbl();
-    CHECK(M.seq.fwp_full && rfmv_pop_up(&M, POP_FWLV) && !M.fwj);
-    adv_ms(RFM_MOVE_DOUBLE_MS + 50);
-    CHECK(!M.fwj && M.seq.fwp_full);
-    /* level 2: the click puts the jog on the knob there too */
-    jog_click(), adv_ms(RFM_MOVE_DOUBLE_MS + 20);
-    CHECK(M.fwj && rfmv_fwj_on(&M));
-    clear(), jog(1);
-    a = find(RFM_MOVE_ACT_TURN);
-    CHECK(a && a->index == RFM_MOVE_E_ALGO);
-    jog_click(), adv_ms(RFM_MOVE_DOUBLE_MS + 20), jog_dbl(), rest();
-    CHECK(!M.fwj && !M.seq.fwp_full);
     /* a held step takes the jog (its length) over the knob */
-    jog_click(), adv_ms(RFM_MOVE_DOUBLE_MS + 20);
+    sh_jog_click(), rest();
     CHECK(M.fwj);
     step(3, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), clear(), jog(1);
     CHECK(!count(RFM_MOVE_ACT_TURN));
     step(3, 0), rest();
-    jog_click(), rest();
+    sh_jog_click(), sh_jog_click(), sh_jog_click(), rest();
+    CHECK(!M.fwj);
     rfm_move_set_labels(&M, NULL);
 }
 
@@ -4668,7 +4697,7 @@ static void test_o14_shift_knob(void)
         lb[i] = NULL;
     lb[sl] = "Cutoff";
     rfm_move_set_labels(&M, lb);
-    jog(1), rest(), jog_dbl(), rest();
+    jog(1), rest(), jog_click(), rest();
     CHECK(rfm_move_fwp_level(&M) == 2);
     /* no Shift: the turn, its readout ("Cutoff 1.2k") */
     knob(4, 2);
@@ -4726,7 +4755,7 @@ static void test_o14_shift_knob(void)
         CHECK(area_hash(0, 0, 128, 64) != h_turn);
         rest();
     }
-    jog_dbl(), rest();
+    jog_click(), rest();
     CHECK(rfm_move_fwp_level(&M) == 1);
     /* level 1 (Knobs): Shift is the sequencer's, the firmware gets a plain turn (no GLO): nothing says "Shift" */
     clear(), button(MR_CC_SHIFT, 1), knob(1, 2);
@@ -4762,7 +4791,8 @@ static void test_o14_projects(void)
     CHECK(!ps_count(RFM_MOVE_ACT_PROJECT_LOAD) && M.seq.proj_cur == 0 && M.seq.proj_pending < 0);
     /* 11: the open one clicked: saved now, "Saved", its pad blinks; nothing loads */
     rest(), ps_clear(), hit(ps_pad(0));
-    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_SAVE) == 1 && !ps_count(RFM_MOVE_ACT_PROJECT_LOAD) &&
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_SAVE) == 1 && ps_find(RFM_MOVE_ACT_PROJECT_SAVE, -1)->value == 1 &&
+          !ps_count(RFM_MOVE_ACT_PROJECT_LOAD) &&
           !ps_count(RFM_MOVE_ACT_PROJECT_FW) && M.pop == POP_HOST && !strcmp(M.pop_text, "Saved"));
     write_pbm("o14_proj_saved");
     leds(w);
@@ -4827,7 +4857,7 @@ static void test_o14_clear_clip(void)
     jog(1), rest();
     for (lv = 1; lv <= 2; lv++) {
         if (lv == 2)
-            jog_dbl(), rest();
+            jog_click(), rest();
         CHECK(rfm_move_fwp_level(&M) == lv);
         rfmv_seq_loop_set(&M, clip, 0, 32);
         rfmv_seq_note_put(&M, clip, 3, 60, 100, 24, 0), rfmv_seq_note_put(&M, clip, 20, 62, 100, 24, 0);
@@ -4868,7 +4898,7 @@ static void test_o14_clear_clip(void)
     /* Play alone in level 2: the firmware's PLAY, the Move's sequencer stays stopped (unchanged; the owner's call) */
     rest(), clear(), press(MR_CC_PLAY);
     CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY) == 2 && !M.seq.playing && !M.seq.start_pending);
-    jog_dbl(), rest(), jog(-1), rest();
+    jog_click(), rest(), jog(-1), rest();
 }
 
 int main(void)

@@ -434,8 +434,7 @@ int rfmv_proj_undo_lit(const rfm_move_t *m);           /* (0.14.0) the projects 
 #define RFMV_PJ_DEL_MS 250                              /* (0.14.0) a deleted project's pad: red so long, then dark */
 #define RFMV_PJ_ACK_MS 120                              /* (0.14.0) the open project saved: its pad off, on, off */
 int rfmv_fwj_on(const rfm_move_t *m);                   /* (0.14.0) the FM-1 page's jog turns the jog target now */
-int rfmv_fwj_lit(const rfm_move_t *m);                  /* .. or a click about to turn it on: the target's knob lit white */
-void rfmv_fwj_poll(rfm_move_t *m);                      /* .. its click, once its double click's time has passed */
+int rfmv_fwj_lit(const rfm_move_t *m);                  /* .. the jog is on it (taken over, or Shift + click): its knob white */
 int rfmv_fwp_page(const rfm_move_t *m);
 int rfmv_fwp_live(const rfm_move_t *m);
 int rfmv_fwp_full(const rfm_move_t *m);

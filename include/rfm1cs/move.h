@@ -118,7 +118,8 @@ enum {
     RFM_MOVE_ACT_MIDI = 6,                              /* n bytes: one whole message into the firmware's MIDI in */
     RFM_MOVE_ACT_SETTINGS = 7,                          /* the settings changed: save them when convenient */
     /* the sequencer's projects (32 slots the host stores; README.md, "Projects") */
-    RFM_MOVE_ACT_PROJECT_SAVE = 8,                      /* index slot 0..31: store data/len (a project blob) */
+    RFM_MOVE_ACT_PROJECT_SAVE = 8,                      /* index slot 0..31: store data/len (a project blob); value 1
+                                                         * (0.14.0): the player's own save: the firmwares as now too */
     RFM_MOVE_ACT_PROJECT_LOAD = 9,                      /* index slot: answer with rfm_move_project_load(m, slot, ..) */
     RFM_MOVE_ACT_PROJECT_DELETE = 10,                   /* index slot: forget it */
     RFM_MOVE_ACT_AUDIO_REC = 12,                        /* Sample's audio loop (frame-stamped, on a bar line): value 1
@@ -1091,11 +1092,10 @@ typedef struct {
     uint8_t tbtn_shift;                                 /* bits: that Track was pressed with Shift (its track settings
                                                          * opened at the press; its release: nothing) */
     /* the FM-1 knob page's jog on a knob (the owner's: "click the Jogwheel to make it control one of the knobs like it
-     * does in the FM-1 layout. Click to exit. Shift + Click to change the target knob, should be linked with the Fm-1
-     * layout"): fwj on; fwj_pend a click waiting for its double click's time (fwj_ms: its press, the sequencer
-     * clock's ms); jog_enc_s each slot's jog target (jog_enc is the active slot's, the FM-1 layout's and the page's) */
-    uint8_t fwj, fwj_pend;
-    uint32_t fwj_ms;
+     * does in the FM-1 layout", then: "No double click on the Jogwheel to toggle takeover. Single click and shift +
+     * jogwheel to change jogwheel mode"): fwj: Shift + click has put the jog on the target (Knobs+Keys: always on it);
+     * jog_enc_s each slot's jog target (jog_enc is the active slot's, the FM-1 layout's and the page's) */
+    uint8_t fwj;
     uint8_t jog_enc_s[RFM_MOVE_FW_SLOTS];
     /* the projects page (the owner's 2026-11-23): pj_press the project pad pressed (its info at once; a click, let go
      * within RFM_MOVE_TAP_MS with nothing done meanwhile, opens it, or saves the open one), pj_press_ms when, pj_used:

@@ -464,17 +464,25 @@ static void emit_slot(rfm_move_t *m, int kind, int slot, const uint8_t *data, ui
         m->fn(m->ctx, &a);
 }
 
-void rfmv_proj_save_now(rfm_move_t *m)
+/* value 1: the player's own save (the open project's pad clicked): the host stores the firmwares as they are at this
+ * moment too, not only what its autosave last saw (0: the autosave, a flush before a load, a copy) */
+static void proj_save(rfm_move_t *m, int value)
 {
     rfm_move_seq_t *q = &m->seq;
     const int n = rfm_move_project_save(m, q->blob, sizeof q->blob);
+    rfm_move_act_t a;
     if (n <= 0)
         return;
     q->dirty = 0;
     q->proj_used |= 1u << q->proj_cur;
     info_live(m, &q->info[q->proj_cur]);
-    emit_slot(m, RFM_MOVE_ACT_PROJECT_SAVE, q->proj_cur, q->blob, (uint32_t)n);
+    memset(&a, 0, sizeof a);
+    a.kind = RFM_MOVE_ACT_PROJECT_SAVE, a.index = (uint8_t)q->proj_cur, a.value = (int16_t)value, a.data = q->blob;
+    a.len = (uint32_t)n;
+    if (m->fn)
+        m->fn(m->ctx, &a);
 }
+void rfmv_proj_save_now(rfm_move_t *m) { proj_save(m, 0); }
 
 void rfm_move_project_flush(rfm_move_t *m)
 {
@@ -687,8 +695,8 @@ void rfmv_proj_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
             rfmv_pop_let(m, POP_PROJ, slot);
             if (click) {                                /* (0.14.0) the click: at its release */
                 if (slot == q->proj_cur && q->proj_pending < 0) {
-                    rfmv_proj_save_now(m);              /* (the open one: saved now, "Saved", its pad blinks; nothing
-                                                         * reloads) */
+                    proj_save(m, 1);                    /* (the open one: saved now, "Saved", its pad blinks; nothing
+                                                         * reloads; value 1: the firmwares as they are now too) */
                     m->pj_ack = (int8_t)slot, m->pj_ack_ms = rfmv_now_ms(m);
                     rfm_move_popup(m, "Saved");
                 } else

@@ -50,18 +50,21 @@ The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_se
   Shift + Track 4 unchanged: it is no firmware's track. Back closes the menu and changes nothing else.
 - (item 2, "On the sequencer with FM-1 knobs it would be nice to be able to click the Jogwheel to make it control one
   of the knobs like it does in the FM-1 layout. Click to exit. Shift + Click to change the target knob, should be
-  linked with the Fm-1 layout") on the FM-1 knob page the jog's click (gated: it acts once `RFM_MOVE_DOUBLE_MS` have
-  passed, `rfmv_fwj_poll` from `rfm_move_seq_advance`) puts the jog on the FM-1 layout's jog target: its turn is that
-  layout's jog (`jog_target_turn`, factored out of it: SELECT's turn, or PRESETS / ALGO as their knobs, a detent a
-  tick). The click again: the jog its pages. Shift + click (at the press): the next target, the jog on it. The target
-  is one per slot (`jog_enc_s[3]`, new; `jog_enc` stays the active slot's, swapped on a slot change), the same one the
-  FM-1 layout's jog turns and its click changes. Feedback: the new `POP_FWJ` ("Jog" over "Select" / "Preset" / "Algo",
-  or "Pages"; said "Jog: Select"), "Jog Select" at 2x on top of the track view while it lasts, and the target's knob
-  white (from the click's press on; the others purple as before). **Knobs / Knobs+Keys moved to the jog's double
-  click** (at its second press; it was the click, 0.12.x): no collision on that page, nothing else used the double
-  click there. A held step, Loop, Shift's tempo, a menu, a held Track, Track 4's layer still take the jog over it; a
-  slot change turns it off. New fields at the end of `rfm_move_t`: `fwj`, `fwj_pend`, `fwj_ms`, `jog_enc_s`.
-  `test_fwp_page` now double clicks.
+  linked with the Fm-1 layout"; then, after the first cut: "No double click on the Jogwheel to toggle takeover.
+  Single click and shift + jogwheel to change jogwheel mode. Single click for changing jogwheel mode is synced with
+  FM-1 layout and FM-1 layout keeps the single click behaviour") on the FM-1 knob page **the jog's click is the
+  takeover again** (Knobs <-> Knobs+Keys, at the press, as 0.12.x), and taken over the page is the FM-1 layout's
+  whole, its jog too: the turn is that layout's jog (`jog_target_turn`, factored out of it: SELECT's turn, or PRESETS
+  / ALGO as their knobs, a detent a tick), the target's knob white. **Shift + click changes what the jog turns**:
+  taken over, the next target as the FM-1 layout's click (SELECT -> PRESET -> ALGO); in Knobs, the pages -> SELECT ->
+  PRESET -> ALGO -> the pages (the jog on a knob while the steps and buttons stay the sequencer's; a click into and
+  out of the takeover puts it back on its pages too). The target is one per slot (`jog_enc_s[3]`, new; `jog_enc`
+  stays the active slot's, swapped on a slot change), the same one the FM-1 layout's jog turns and its click changes
+  (unchanged). Feedback: the new `POP_FWJ` ("Jog" over "Select" / "Preset" / "Algo", or "Pages"; said "Jog: Select"),
+  "Jog Select" at 2x on top of the track view while it lasts. Play follows the takeover (the owner's: "If I press the
+  Jogwheel for takeover then Play should be the firmware's, if not ... Play should be the Move's host"). A held step,
+  Loop, Shift's tempo, a menu, a held Track, Track 4's layer still take the jog over it; a slot change turns it off.
+  New fields at the end of `rfm_move_t`: `fwj`, `jog_enc_s`.
 - (item 7, "ChoralRoot sequencer using FM-1 knobs, holding shift and turning the knob is changing the engine, which is
   good, but there is no UI communicating what is happening or the new engine") what the core did: the knob's popup
   drew the knob's kept readout whenever there was one (`rd[sl].on`), so with Shift held it showed the unshifted
@@ -93,7 +96,8 @@ and their times.
 - (item 10, "Current selected project color blends in") the open project's pad is white: breathing as the active
   state (`rfmv_active_rgb`) when stopped, white on the beat while playing (was its own colour at full).
 - (item 11, "Clicking the open project again should show "Saved" and save it") its click saves it now
-  (`rfmv_proj_save_now`: `PROJECT_SAVE` only, no load, no `PROJECT_FW`), "Saved" (`POP_HOST`) a second, its pad off,
+  (`PROJECT_SAVE` only, with `value` 1: the player's own save, the host stores the firmwares as they are now too;
+  no load, no `PROJECT_FW`), "Saved" (`POP_HOST`) a second, its pad off,
   on, off (`RFMV_PJ_ACK_MS` 120 each).
 - (item 12, "The copied pad should not still show as dashed after a paste") a copy's paste unmarks its source
   (`pbuf_src` 0xFF); the copy stays in the buffer for further pastes.

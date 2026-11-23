@@ -587,7 +587,7 @@ void rfmv_slot_leaving(rfm_move_t *m)
 void rfmv_slot_changed(rfm_move_t *m)
 {
     m->jog_enc = (uint8_t)(m->jog_enc_s[act_slot(m)] % 3);
-    m->fwj = m->fwj_pend = 0;                           /* (0.14.0: another slot: the page's jog its pages again) */
+    m->fwj = 0;                                         /* (0.14.0: another slot: the page's jog its pages again) */
     if (m->s.mode != RFM_MOVE_MODE_SEQ)
         rfmv_slot_pull(m);
     slot_mode_fresh(m, 1);                              /* (0.9.0: another slot: its layout, its track) */
@@ -1562,44 +1562,36 @@ static int fwj_free(const rfm_move_t *m)
            !rfmv_lay_menu(m) && !rfmv_t4_menu(m) && !(m->s.layout == RFM_MOVE_LAYOUT_DRUM && m->edit_pad >= 0 &&
                                                        m->pad_down[m->edit_pad]);
 }
-int rfmv_fwj_on(const rfm_move_t *m) { return m->fwj && fwj_free(m); }
-int rfmv_fwj_lit(const rfm_move_t *m) { return rfmv_fwp_live(m) && (m->fwj || m->fwj_pend); }
+/* (the owner's 2026-11-23, second word: "No double click on the Jogwheel to toggle takeover. Single click and shift +
+ * jogwheel to change jogwheel mode") the jog turns the target while the page is taken over (Knobs+Keys: all of it the
+ * FM-1 layout's, its jog too) or once Shift + click has put it on a knob */
+static int fwj_set(const rfm_move_t *m) { return rfmv_fwp_live(m) && (m->fwj || m->seq.fwp_full); }
+int rfmv_fwj_on(const rfm_move_t *m) { return fwj_set(m) && fwj_free(m); }
+int rfmv_fwj_lit(const rfm_move_t *m) { return fwj_set(m); }
 static int shift_held(const rfm_move_t *m) { return (m->seq.mods & SEQ_M_SHIFT) || m->btn[MR_CC_SHIFT].kind != H_NONE; }
-static void fwj_say(rfm_move_t *m)
-{
-    rfmv_pop(m, POP_FWJ, m->fwj ? 1 + m->jog_enc % 3 : 0);
-}
-/* the jog's press on the page: Shift + it: the next target (SELECT -> PRESET -> ALGO), the jog on it, at once; else a
- * click (once RFM_MOVE_DOUBLE_MS have passed with no second press: rfmv_fwj_poll) the jog on the target / its pages
- * again, a double click (at its second press) Knobs <-> Knobs+Keys (0.12.x's click). The press itself lights the
- * target's knob white (R1) */
+/* the jog's press on the page. A click: Knobs <-> Knobs+Keys (the takeover; 0.12.x's click, as before 0.14.0's first
+ * cut). Shift + click: what the jog turns, the target shared with the FM-1 layout (whose own click changes it): taken
+ * over, the next of SELECT -> PRESET -> ALGO as that layout's click; else the pages -> SELECT -> PRESET -> ALGO -> the
+ * pages again. The target's knob is lit white while the jog is on it (R1) */
 static void fwj_press(rfm_move_t *m)
 {
-    const uint32_t now = rfmv_now_ms(m);
     if (shift_held(m)) {
-        m->jog_enc = (uint8_t)((m->jog_enc + 1) % 3);
-        m->fwj = 1, m->fwj_pend = 0;
+        if (m->seq.fwp_full)
+            m->jog_enc = (uint8_t)((m->jog_enc + 1) % 3);
+        else if (!m->fwj)
+            m->fwj = 1, m->jog_enc = 0;
+        else if (m->jog_enc % 3 == 2)
+            m->fwj = 0, m->jog_enc = 0;
+        else
+            m->jog_enc = (uint8_t)(m->jog_enc % 3 + 1);
         m->seq.mods_used |= SEQ_M_SHIFT;
-        fwj_say(m);
+        rfmv_pop(m, POP_FWJ, fwj_set(m) ? 1 + m->jog_enc % 3 : 0);
         return;
     }
-    if (m->fwj_pend && now - m->fwj_ms < RFM_MOVE_DOUBLE_MS) {
-        m->fwj_pend = 0;
-        m->seq.fwp_full = (uint8_t)!m->seq.fwp_full;   /* (the double click: knobs <-> knobs + keys) */
-        rfmv_pop(m, POP_FWLV, m->seq.fwp_full);
-        return;
-    }
-    m->fwj_pend = 1, m->fwj_ms = now;
-}
-void rfmv_fwj_poll(rfm_move_t *m)
-{
-    if (!m->fwj_pend || rfmv_now_ms(m) - m->fwj_ms < RFM_MOVE_DOUBLE_MS)
-        return;
-    m->fwj_pend = 0;
-    if (!rfmv_fwp_live(m))
-        return;
-    m->fwj = (uint8_t)!m->fwj;
-    fwj_say(m);
+    m->seq.fwp_full = (uint8_t)!m->seq.fwp_full;
+    if (!m->seq.fwp_full)
+        m->fwj = 0;                                     /* (out of the takeover: the jog its pages, always) */
+    rfmv_pop(m, POP_FWLV, m->seq.fwp_full);
 }
 
 static void on_jog(rfm_move_t *m, int d, uint32_t now)
@@ -1655,9 +1647,8 @@ static void on_jog_click(rfm_move_t *m, int down)
         return;
     }
     if (down && rfmv_fwp_live(m) && !rfmv_lay_menu(m) && !rfmv_t4_menu(m) && !m->seq.smenu) {
-        fwj_press(m);                                   /* (0.14.0) the FM-1 page: a click the jog on a knob / back,
-                                                         * Shift + click the target, a double click (0.12.x's click)
-                                                         * knobs <-> knobs + keys */
+        fwj_press(m);                                   /* (0.14.0) the FM-1 page: a click knobs <-> knobs + keys,
+                                                         * Shift + click what the jog turns */
         return;
     }
     if (!down || m->s.mode != RFM_MOVE_MODE_FM1 || rfmv_lay_menu(m) || rfmv_t4_menu(m) || fm1_seq_layer(m))
