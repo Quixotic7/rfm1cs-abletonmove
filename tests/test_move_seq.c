@@ -1287,7 +1287,7 @@ static void test_project_grid(void)
     button(m, MR_CC_SHIFT, 1), tap_step(m, 0), button(m, MR_CC_SHIFT, 0);
     CHECK(m->seq.projects == 1);
     pad(m, 24, 100), pad(m, 24, 0);                     /* top left = project 1 = current */
-    CHECK(m->seq.projects == 1 && nsave == 0);
+    CHECK(m->seq.projects == 1 && nsave == 1 && rfm_move_project_slot(m) == 0);   /* (0.14.0: its click saves it) */
     press(m, MR_CC_MENU);                               /* (Menu leaves it, as Back) */
     CHECK(m->seq.projects == 0 && m->seq.view == 0);
     /* some notes; then project 2 (empty): project 1 saved, project 2 new and saved */
@@ -1296,7 +1296,7 @@ static void test_project_grid(void)
     CHECK(m->seq.dirty);
     button(m, MR_CC_SHIFT, 1), tap_step(m, 0), button(m, MR_CC_SHIFT, 0);
     pad(m, 25, 100), pad(m, 25, 0);
-    CHECK(nsave == 2 && store_n[0] > 0 && store_n[1] == RFM_MOVE_PROJECT_FIXED && rfm_move_project_slot(m) == 1);
+    CHECK(nsave == 3 && store_n[0] > 0 && store_n[1] == RFM_MOVE_PROJECT_FIXED && rfm_move_project_slot(m) == 1);
     CHECK(m->seq.nnotes == 0 && m->seq.projects == 1 && m->seq.proj_used == 3 && !m->seq.dirty);
     press(m, MR_CC_BACK);
     /* project 1 again: saved, then a LOAD the host answers at once (inside the callback) */
@@ -1382,8 +1382,8 @@ static void test_project_grid(void)
         rfm_move_leds_invalidate(m);
         n = rfm_move_leds(m, out, RFM_MOVE_NLEDS);
         for (j = 0; j < n; j++) {
-            if (!out[j].cc && out[j].number == MR_NOTE_PAD0 + 25)   /* slot 2, the open one: its colour (2) full */
-                cur = out[j].r == 255 && out[j].g == 120 && out[j].b == 0;
+            if (!out[j].cc && out[j].number == MR_NOTE_PAD0 + 25)   /* slot 2, the open one: (0.14.0) white */
+                cur = out[j].r == out[j].g && out[j].g == out[j].b && out[j].r > 80;
             if (!out[j].cc && out[j].number == MR_NOTE_PAD0 + 7)   /* slot 32 (used, bottom right): its colour, dim */
                 used = out[j].r == 59 && out[j].g == 59 && out[j].b == 59;
         }
@@ -1577,7 +1577,7 @@ static void test_screens_leds(void)
         /* project 3's pad held (pad 26: top row, third): its popup while it loads (the host has not answered) */
         pad(m, 26, 100);
         rfm_move_screen(m, NULL, out);
-        CHECK(m->pop == POP_PROJ && m->pop_i == 2 && m->seq.proj_pending == 2 && lit(out) > 60);
+        CHECK(m->pop == POP_PROJ && m->pop_i == 2 && m->seq.proj_pending < 0 && lit(out) > 60);   /* (0.14.0: info, no load) */
         gold("project", out, GOLD_PROJECT);
         CHECK(rfm_move_project_load(m, 2, blob, (uint32_t)nb) == 0);
         adv(m, RATE * 2);
@@ -2740,7 +2740,7 @@ static void test_round4(void)
     n = rfm_move_leds(m, leds, RFM_MOVE_NLEDS);
     for (i = 0, k = 0; i < n; i++) {
         if (!leds[i].cc && leds[i].number == MR_NOTE_PAD0 + 16)
-            k += leds[i].r == 90 && leds[i].g == 60 && leds[i].b == 255;   /* (slot 9: its colour, 9, full: the open one) */
+            k += leds[i].r == leds[i].g && leds[i].g == leds[i].b && leds[i].r > 80;   /* (slot 9, the open one: 0.14.0 white) */
         if (!leds[i].cc && leds[i].number == MR_NOTE_PAD0 + 24)
             k += leds[i].r == 59 && leds[i].g == 8;     /* (slot 1: its colour, dim) */
         if (!leds[i].cc && leds[i].number == MR_NOTE_PAD0 + 5)

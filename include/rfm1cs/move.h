@@ -1097,6 +1097,15 @@ typedef struct {
     uint8_t fwj, fwj_pend;
     uint32_t fwj_ms;
     uint8_t jog_enc_s[RFM_MOVE_FW_SLOTS];
+    /* the projects page (the owner's 2026-11-23): pj_press the project pad pressed (its info at once; a click, let go
+     * within RFM_MOVE_TAP_MS with nothing done meanwhile, opens it, or saves the open one), pj_press_ms when, pj_used:
+     * something else done with it held (knob 1's colour); pj_undo: the project deleted last can come back with Undo
+     * (its slot pbuf_src; 0 none); pj_del / pj_del_ms: the pad deleted (a red flash) and when; pj_ack / pj_ack_ms: the
+     * open project saved by its click (its pad blinks) */
+    int8_t pj_press;
+    uint8_t pj_used, pj_undo;
+    int8_t pj_del, pj_ack;
+    uint32_t pj_press_ms, pj_del_ms, pj_ack_ms;
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit

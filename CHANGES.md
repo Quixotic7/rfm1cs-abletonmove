@@ -69,6 +69,29 @@ The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_se
   (Knobs+Keys) only; on level 1 Shift is the sequencer's and a turn reaches the firmware unshifted, so nothing says
   "Shift" there. Pictures `sessview_o14_shift_knob_*`.
 
+The owner's six requests for the projects page (Track 4's double click; `project.c`; `test_o14_projects`, pictures
+`sessview_o14_proj_*`). New fields at the end of `rfm_move_t`: `pj_press`, `pj_used`, `pj_undo`, `pj_del`, `pj_ack`
+and their times.
+
+- (item 8, "No undo for deleted project") Undo right after Delete + a project puts it back in its slot: the core sends
+  `PROJECT_PASTE` for that slot (the cut left it in the host's buffer, so the paste carries what a paste carries, the
+  firmware state files included) and, for the open project (emptied by its delete), `PROJECT_LOAD` again. Undo lit
+  (127) only while it can; "Undo / Project 07". One step: a paste, a copy, another delete or leaving the page ends it.
+- (item 9, "Holding a project tab should just show info not load the project") a project pad's press shows its info
+  (`POP_PROJ`) at once and loads nothing; the click (released within `RFM_MOVE_TAP_MS`, knob 1 not turned) opens it at
+  the release; held past it, info only, the release nothing. Delete / Copy + a pad still act at the press.
+- (item 10, "Current selected project color blends in") the open project's pad is white: breathing as the active
+  state (`rfmv_active_rgb`) when stopped, white on the beat while playing (was its own colour at full).
+- (item 11, "Clicking the open project again should show "Saved" and save it") its click saves it now
+  (`rfmv_proj_save_now`: `PROJECT_SAVE` only, no load, no `PROJECT_FW`), "Saved" (`POP_HOST`) a second, its pad off,
+  on, off (`RFMV_PJ_ACK_MS` 120 each).
+- (item 12, "The copied pad should not still show as dashed after a paste") a copy's paste unmarks its source
+  (`pbuf_src` 0xFF); the copy stays in the buffer for further pastes.
+- (item 13, "Deleting a project should show maybe a quick red flash and then the pad light should be off and the
+  screen should then show an empty slot") its pad red for `RFMV_PJ_DEL_MS` (250), then dark (was red, blinking, until
+  something else); the screen's X only while Delete is held, then the empty slot's dot; the pad's info popup closed so
+  the grid shows.
+
 ## 0.13.0 (2026-11-23)
 
 The first tag since 0.9.1: it carries 0.9.2, 0.10.0, 0.11.0 and 0.12.0 below, which were never tagged by themselves.

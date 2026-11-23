@@ -2805,8 +2805,11 @@ static void test_ps_loading(void)
     ps_two_projects();
     rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
     grid();
-    /* the press: the loading screen at once, its rows from the grid's knowledge (no answer yet), the Tracks dark */
+    /* the click (0.14.0: at its release; the press shows the project's info): the loading screen at once, its rows from
+     * the grid's knowledge (no answer yet), the Tracks dark */
     pad(ps_pad(6), 100);
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_LOAD) == 0 && M.seq.proj_pending < 0 && M.pop == POP_PROJ);
+    pad(ps_pad(6), 0);
     CHECK(ps_count(RFM_MOVE_ACT_PROJECT_LOAD) == 1 && rfm_move_proj_fw_loading(&M) && M.seq.proj_pending == 6);
     screen();
     CHECK(lit_rows(0, 21) > 60 && lit_rows(28, 36) > 20 && lit_rows(52, 60) > 20);
@@ -4674,8 +4677,89 @@ static void test_o14_shift_knob(void)
     rfm_move_set_labels(&M, NULL);
 }
 
+/* items 8..13: the projects page (the owner's 2026-11-23) */
+static void test_o14_projects(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int k, hi = 0, lo = 0;
+    ps_two_projects();
+    grid();
+    CHECK(M.seq.proj_cur == 0 && (M.seq.proj_used >> 6 & 1));
+    /* 10: the open project's pad white, breathing (stopped); a stored one its colour, dim */
+    for (k = 0; k < 20; k++) {
+        adv_ms(50), leds(w);
+        hi += full(w[L_PAD0 + ps_pad(0)]);
+        lo += white(w[L_PAD0 + ps_pad(0)]) && !full(w[L_PAD0 + ps_pad(0)]);
+    }
+    CHECKF(hi >= 10 && lo >= 3, "open project: %d bright, %d dim", hi, lo);
+    CHECK(lit(w[L_PAD0 + ps_pad(6)]) && !white(w[L_PAD0 + ps_pad(6)]));
+    write_pbm("o14_proj_grid");
+    /* 9: a project's pad pressed: its info at once, nothing loaded; held past the gate: info only, its release nothing */
+    ps_clear(), pad(ps_pad(6), 100);
+    CHECK(M.pop == POP_PROJ && M.pop_i == 6 && rfmv_pop_up(&M, POP_PROJ) && !ps_count(RFM_MOVE_ACT_PROJECT_LOAD));
+    write_pbm("o14_proj_info");
+    adv_ms(RFM_MOVE_TAP_MS + 50);
+    pad(ps_pad(6), 0);
+    CHECK(!ps_count(RFM_MOVE_ACT_PROJECT_LOAD) && M.seq.proj_cur == 0 && M.seq.proj_pending < 0);
+    /* 11: the open one clicked: saved now, "Saved", its pad blinks; nothing loads */
+    rest(), ps_clear(), hit(ps_pad(0));
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_SAVE) == 1 && !ps_count(RFM_MOVE_ACT_PROJECT_LOAD) &&
+          !ps_count(RFM_MOVE_ACT_PROJECT_FW) && M.pop == POP_HOST && !strcmp(M.pop_text, "Saved"));
+    write_pbm("o14_proj_saved");
+    leds(w);
+    CHECK(!lit(w[L_PAD0 + ps_pad(0)]));                 /* (off, on, off) */
+    adv_ms(RFMV_PJ_ACK_MS + 10), leds(w);
+    CHECK(full(w[L_PAD0 + ps_pad(0)]));
+    rest();
+    /* 12: Copy + project 7, then an empty pad: pasted; project 7 no longer dashed (the buffer kept: a second paste) */
+    button(MR_CC_COPY, 1), hit(ps_pad(6)), button(MR_CC_COPY, 0);
+    CHECK(M.seq.pbuf_kind == 1 && M.seq.pbuf_src == 6);
+    button(MR_CC_COPY, 1), hit(ps_pad(10)), button(MR_CC_COPY, 0), rest();
+    CHECK((M.seq.proj_used >> 10 & 1) && M.seq.pbuf_kind == 1 && M.seq.pbuf_src != 6);
+    screen();
+    CHECK(px(6 * 16 + 1, 1) && px(6 * 16 + 2, 1) && px(6 * 16 + 3, 1));   /* (project 7 outlined: no dashes) */
+    write_pbm("o14_proj_pasted");
+    ps_clear(), button(MR_CC_COPY, 1), hit(ps_pad(11)), button(MR_CC_COPY, 0);
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_PASTE) == 1 && (M.seq.proj_used >> 11 & 1));
+    rest();
+    /* 13: Delete + project 7: a red flash, then dark; the X only while Delete is held, then an empty slot */
+    ps_clear(), button(MR_CC_DELETE, 1), hit(ps_pad(6));
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_CUT) == 1 && !(M.seq.proj_used >> 6 & 1));
+    leds(w);
+    CHECK(w[L_PAD0 + ps_pad(6)][0] == 255 && !w[L_PAD0 + ps_pad(6)][1]);
+    screen();
+    CHECK(px(6 * 16 + 4, 4) || px(6 * 16 + 5, 5));      /* (the X while Delete is held) */
+    write_pbm("o14_proj_delete_held");
+    button(MR_CC_DELETE, 0), adv_ms(RFMV_PJ_DEL_MS + 20), leds(w), screen();
+    CHECK(!lit(w[L_PAD0 + ps_pad(6)]) && px(6 * 16 + 7, 7) && !px(6 * 16 + 1, 1) && !px(6 * 16 + 4, 4));
+    write_pbm("o14_proj_deleted");
+    /* 8: Undo, lit while it can: project 7 back where it was (the host's buffer pasted there) */
+    CHECK(w[L_WHITE0 + W_UNDO][0] == 127);
+    ps_clear(), press(MR_CC_UNDO);
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_PASTE) == 1 && ps_find(RFM_MOVE_ACT_PROJECT_PASTE, -1) &&
+          (M.seq.proj_used >> 6 & 1) && M.seq.info[6].ok && M.pop == POP_HOST && strstr(M.pop_text, "Undo"));
+    write_pbm("o14_proj_undo");
+    leds(w);
+    CHECK(!w[L_WHITE0 + W_UNDO][0] && lit(w[L_PAD0 + ps_pad(6)]));
+    ps_clear(), press(MR_CC_UNDO);                      /* (one step) */
+    CHECK(!npa);
+    /* .. the open project deleted: Undo pastes it back and opens it again */
+    ps_clear(), button(MR_CC_DELETE, 1), hit(ps_pad(0)), button(MR_CC_DELETE, 0);
+    CHECK(!(M.seq.proj_used & 1));
+    ps_clear(), press(MR_CC_UNDO);
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_PASTE) == 1 && ps_count(RFM_MOVE_ACT_PROJECT_LOAD) == 1 && M.seq.proj_pending == 0);
+    rfm_move_project_load(&M, 0, NULL, 0), rest();
+    /* .. leaving the page ends it */
+    button(MR_CC_DELETE, 1), hit(ps_pad(11)), button(MR_CC_DELETE, 0);
+    back(), rest(), grid();
+    ps_clear(), press(MR_CC_UNDO);
+    CHECK(!ps_count(RFM_MOVE_ACT_PROJECT_PASTE));
+    back(), rest();
+}
+
 int main(void)
 {
+    test_o14_projects();
     test_o14_shift_knob();
     test_o14_fwp_jog();
     test_o14_shift_track();

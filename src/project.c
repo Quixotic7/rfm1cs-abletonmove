@@ -28,6 +28,7 @@
  *      (version 9, 0.13.0) the firmwares (projfw.c): 3 slots x { id 32 NUL padded ("" empty), level, layout, scale,
  *      root, channel, octave, 8 CC numbers, the sequencer track }, the slot played, 32 drum notes, velocity mode, level
  *      FNV-1a (32 bit) of everything before it */
+#include <stdio.h>
 #include <string.h>
 
 #include "move_int.h"
@@ -563,6 +564,7 @@ const char *rfmv_proj_colour_name(int c)
 void rfmv_proj_enter(rfm_move_t *m)
 {
     rfm_move_seq_t *q = &m->seq;
+    m->pj_press = m->pj_del = m->pj_ack = -1, m->pj_undo = 0;
     rfmv_release_holds(m);                              /* (everything held let go: its releases come here now) */
     q->projects = 1, q->smenu = 0, q->proj_held = -1, q->play_after_load = 0;
     q->mods = q->mods_used = 0, q->shift_lock = 0;
@@ -591,6 +593,7 @@ static void proj_leave(rfm_move_t *m)
 /* Back (or, before the browser, Menu) in the projects view: out (a copy's mark goes; a cut stays in the buffer) */
 void rfmv_proj_back(rfm_move_t *m)
 {
+    m->pj_undo = 0, m->pj_press = -1;                   /* (0.14.0: leaving the page ends the delete's undo) */
     if (m->seq.pbuf_kind == 1)
         m->seq.pbuf_kind = 0;
     proj_leave(m);
@@ -608,7 +611,12 @@ static void proj_clip(rfm_move_t *m, int slot, int cut)
         rfmv_proj_info(m, slot, &q->pbuf_info);
         emit_slot(m, cut ? RFM_MOVE_ACT_PROJECT_CUT : RFM_MOVE_ACT_PROJECT_COPY, slot, NULL, 0);
         q->pbuf_kind = (uint8_t)(cut ? 2 : 1), q->pbuf_src = (uint8_t)slot;
+        m->pj_undo = (uint8_t)(cut ? 1 : 0);            /* (0.14.0: Undo brings a deleted one back; a copy ends it) */
         if (cut) {                                      /* (gone at once; the open one: an empty project there) */
+            m->pj_del = (int8_t)slot, m->pj_del_ms = rfmv_now_ms(m);   /* (0.14.0: a red flash, then dark; the grid
+                                                         * stays in view: its X while Delete is held, then a dot) */
+            if (m->pop == POP_PROJ)
+                m->pop = POP_NONE;
             q->proj_used &= ~(1u << slot);
             q->info[slot].ok = 0;
             if (slot == q->proj_cur) {
@@ -623,8 +631,41 @@ static void proj_clip(rfm_move_t *m, int slot, int cut)
     emit_slot(m, RFM_MOVE_ACT_PROJECT_PASTE, slot, NULL, 0);
     q->proj_used |= 1u << slot;
     q->info[slot] = q->pbuf_info;
+    m->pj_undo = 0;                                     /* (0.14.0: a paste ends the delete's undo) */
     if (q->pbuf_kind == 2)
         q->pbuf_kind = 0;                               /* (a cut is pasted once) */
+    else
+        q->pbuf_src = 0xFF;                             /* (0.14.0, the owner's: "The copied pad should not still show
+                                                         * as dashed after a paste": the copy stays in the buffer for
+                                                         * another paste, its source no longer marked) */
+}
+/* (0.14.0, the owner's: "No undo for deleted project") Undo, right after Delete + a project: it is back in its slot
+ * as it was (the host's buffer pasted there: what a paste carries, the firmwares' memories too); the open one is
+ * opened again. One step; a paste, a copy, another delete (its own undo then) or leaving the page ends it */
+static void proj_undo(rfm_move_t *m)
+{
+    rfm_move_seq_t *q = &m->seq;
+    const int slot = q->pbuf_src;
+    char w[24];
+    if (!m->pj_undo || q->pbuf_kind != 2 || slot >= RFM_MOVE_PROJECTS || slot_full(m, slot) || q->proj_pending >= 0)
+        return;
+    m->pj_undo = 0, m->pj_del = -1;
+    emit_slot(m, RFM_MOVE_ACT_PROJECT_PASTE, slot, NULL, 0);
+    q->proj_used |= 1u << slot;
+    q->info[slot] = q->pbuf_info;
+    q->pbuf_kind = 0;
+    if (slot == q->proj_cur) {                          /* (the open one was emptied: it loads again) */
+        q->dirty = 0;
+        q->proj_pending = (int8_t)slot;
+        rfmv_pfw_press(m, slot);
+        emit_slot(m, RFM_MOVE_ACT_PROJECT_LOAD, slot, NULL, 0);
+    }
+    snprintf(w, sizeof w, "Undo Project %02d", slot + 1);
+    rfm_move_popup(m, w);
+}
+int rfmv_proj_undo_lit(const rfm_move_t *m)
+{
+    return m->pj_undo && m->seq.pbuf_kind == 2 && m->seq.pbuf_src < RFM_MOVE_PROJECTS && !slot_full(m, m->seq.pbuf_src);
 }
 
 void rfmv_proj_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
@@ -637,10 +678,22 @@ void rfmv_proj_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
         if (p < 0 || p >= RFM_MOVE_NPADS)
             return;
         if (!ev->value) {
+            const int click = m->pj_press == slot && !m->pj_used && rfmv_now_ms(m) - m->pj_press_ms < RFM_MOVE_TAP_MS;
             m->pad_down[p] = 0;
             if (q->proj_held == slot)
                 q->proj_held = -1;
+            if (m->pj_press == slot)
+                m->pj_press = -1;
             rfmv_pop_let(m, POP_PROJ, slot);
+            if (click) {                                /* (0.14.0) the click: at its release */
+                if (slot == q->proj_cur && q->proj_pending < 0) {
+                    rfmv_proj_save_now(m);              /* (the open one: saved now, "Saved", its pad blinks; nothing
+                                                         * reloads) */
+                    m->pj_ack = (int8_t)slot, m->pj_ack_ms = rfmv_now_ms(m);
+                    rfm_move_popup(m, "Saved");
+                } else
+                    rfmv_proj_open(m, slot);
+            }
             return;
         }
         if (m->pad_down[p])
@@ -651,8 +704,10 @@ void rfmv_proj_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
             proj_clip(m, slot, (q->mods & SEQ_M_DELETE) != 0);
             return;
         }
+        /* (0.14.0, the owner's: "Holding a project tab should just show info not load the project") its info at the
+         * press; a click opens it at the release; held past RFM_MOVE_TAP_MS: info only, its release nothing */
         rfmv_pop(m, POP_PROJ, slot);
-        rfmv_proj_open(m, slot);
+        m->pj_press = (int8_t)slot, m->pj_press_ms = rfmv_now_ms(m), m->pj_used = 0;
         return;
     }
     case MR_EV_BUTTON: {
@@ -671,6 +726,8 @@ void rfmv_proj_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
             return;
         if (cc == MR_CC_BACK || cc == MR_CC_MENU)       /* out */
             rfmv_proj_back(m);
+        else if (cc == MR_CC_UNDO)
+            proj_undo(m);                               /* (0.14.0: a deleted project back) */
         else if (cc == MR_CC_PLAY) {                    /* the selected project plays (loading: once loaded) */
             if (rfmv_pfw_play(m))
                 ;                                       /* (0.13.0: its firmwares loading: once they are in) */
@@ -685,6 +742,7 @@ void rfmv_proj_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
     }
     case MR_EV_KNOB:                                    /* a pad held + knob 1: its colour (one a few ticks) */
         if (ev->index == 0 && q->proj_held >= 0 && slot_full(m, q->proj_held)) {
+            m->pj_used = 1;                             /* (0.14.0: its release opens nothing) */
             const int slot = q->proj_held, d = rfmv_list_ticks(m, 0, ev->value);
             int c;
             if (!d) {                                   /* (not a whole colour yet: its screen at once) */
@@ -725,18 +783,23 @@ void rfmv_proj_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0], uint8_t w[13])
 {
     const rfm_move_seq_t *q = &m->seq;
     const int bl = q->tl >= 0 && (q->tl / 48) & 1, beat = q->playing && q->T >= 0 ? 256 - (int)(q->T % 96) * 120 / 96 : 256;
+    const uint32_t now = rfmv_now_ms(m);
     int i;
     memset(c, 0, sizeof(rfmv_rgb_t) * L_WHITE0);
     memset(w, 0, 13);
     for (i = 0; i < RFM_MOVE_NPADS; i++) {
         const int slot = (3 - i / 8) * 8 + i % 8;
         rfmv_rgb_t v = RFMV_OFF;
-        if (q->pbuf_kind == 2 && q->pbuf_src == slot && !slot_full(m, slot))
-            v = rfmv_sc(RFMV_RED, bl ? 200 : 40);
-        else if (slot == q->proj_pending)
+        if (m->pj_del == slot && !slot_full(m, slot)) {   /* (0.14.0, the owner's) deleted: a red flash, then dark */
+            if (now - m->pj_del_ms < RFMV_PJ_DEL_MS)
+                v = RFMV_RED;
+        } else if (slot == q->proj_pending)
             v = rfmv_sc(rfmv_proj_rgb(m, slot), bl ? 256 : 30);
-        else if (slot == q->proj_cur)
-            v = rfmv_sc(rfmv_proj_rgb(m, slot), beat);
+        else if (slot == q->proj_cur && m->pj_ack == slot && now - m->pj_ack_ms < 3 * RFMV_PJ_ACK_MS)
+            v = (now - m->pj_ack_ms) / RFMV_PJ_ACK_MS == 1 ? RFMV_WHITE : RFMV_OFF;   /* (saved: off, on, off) */
+        else if (slot == q->proj_cur)                   /* (0.14.0, the owner's: "should be brighter") white: on the
+                                                         * beat while playing, breathing as the active state when not */
+            v = q->playing ? rfmv_sc(RFMV_WHITE, beat) : rfmv_active_rgb(now);
         else if (slot_full(m, slot))
             v = rfmv_sc(rfmv_proj_rgb(m, slot), q->pbuf_kind == 1 && q->pbuf_src == slot && bl ? 256 : 60);
         c[L_PAD0 + i] = v;
@@ -745,4 +808,5 @@ void rfmv_proj_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0], uint8_t w[13])
     w[W_BACK] = 100, w[W_MENU] = 60;
     w[W_COPY] = (q->mods & SEQ_M_COPY) ? 127 : 40;
     w[W_DELETE] = (q->mods & SEQ_M_DELETE) ? 127 : 40;
+    w[W_UNDO] = rfmv_proj_undo_lit(m) ? 127 : 0;      /* (0.14.0: only while a deleted project can come back) */
 }

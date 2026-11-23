@@ -477,6 +477,7 @@ static void release_holds(rfm_move_t *m)
     for (i = 0; i < 128; i++)
         let_go(m, &m->btn[i]);
     m->edit_pad = -1;
+    m->pj_press = m->pj_del = m->pj_ack = -1;          /* (0.14.0: the projects page) */
     rfmv_seq_ui_release(m);
 }
 
@@ -855,6 +856,7 @@ void rfm_move_init(rfm_move_t *m, const rfm_move_settings_t *settings, rfm_move_
     m->master = 768;
     m->battery = -1;
     m->edit_pad = -1;
+    m->pj_press = m->pj_del = m->pj_ack = -1;          /* (0.14.0: the projects page) */
     m->touched = -1;
     rfm_move_set_keymap(m, NULL);
     for (b = 0; b < RFM_MOVE_FW_SLOTS; b++)

@@ -3376,7 +3376,9 @@ static void projects_screen(const rfm_move_t *m, mr_canvas_t *cv)
         rfm_move_proj_info_t in;
         int used[RFM_MOVE_SEQ_TRACKS], nu = 0, g, t;
         if (q->pbuf_kind && q->pbuf_src == i && !cur) {  /* the buffer's source: cut crossed, copied dashed */
-            if (q->pbuf_kind == 2 && !(q->proj_used >> i & 1)) {
+            if (q->pbuf_kind == 2 && !(q->proj_used >> i & 1) && (q->mods & SEQ_M_DELETE)) {   /* (0.14.0, the
+                                                         * owner's: the X only while Delete is held; then an empty
+                                                         * slot) */
                 v2_O(cv, x, y, 14, 14, 1), v2_X(cv, x + 3, y + 3, 8, 8);
                 continue;
             }

@@ -640,15 +640,24 @@ always has 24 micro ticks, scaled to the rate.
 
 **Projects mode** (the owner's: a mode of its own, just for picking a project; Shift + step 1, Track 4 held +
 step 1, or Track 4's double click). The pads are the 32 projects (top-left = project 1), each in its own colour (dim; the open
-one full, pulsing on the beat while it plays; loading: blinking; empty: off). Everything else does nothing here:
+one (0.14.0) white: breathing slowly when stopped, as the active state in States; pulsing on the beat while it plays;
+loading: blinking; empty: off). Everything else does nothing here:
 steps, the jog, the knobs (but one), the Shift shortcuts, the Track buttons.
 
-- **A pad**: that project is selected: the open one saved, that one loaded (the host answers `PROJECT_LOAD`), or, for
-  an empty pad, a new empty project there (saved at once). Projects mode stays.
-- **Delete + a project**: cut, into the host's buffer and gone at once (`RFM_MOVE_ACT_PROJECT_CUT`; an X on the
-  screen, its pad red and blinking); **Copy + a project**: copied (`..._COPY`; dashed, blinking); **Delete or Copy +
-  an empty pad**: the buffer pasted there (`..._PASTE`; a cut once, a copy again and again). The open project cut:
-  saved first, an empty project in its slot.
+- **A pad** (0.14.0, gated as R2 says): its **press** shows the project's info at once (its number, tempo, clips and
+  firmwares) and loads nothing; **a click** (let go within 300 ms, nothing else done) opens it at the release: the
+  open one saved, that one loaded (the host answers `PROJECT_LOAD`), or, for an empty pad, a new empty project there
+  (saved at once); **held** past 300 ms it is the info only and its release does nothing. Projects mode stays.
+- **The open project's pad clicked** (0.14.0): saved now (`PROJECT_SAVE`), "Saved" across the screen a second, its
+  pad off, on, off (120 ms each); nothing reloads.
+- **Delete + a project**: cut, into the host's buffer and gone at once (`RFM_MOVE_ACT_PROJECT_CUT`; 0.14.0: its pad
+  red for 250 ms, then dark; an X on the screen only while Delete is held, then an empty slot's dot); **Undo**
+  (0.14.0; lit only while it can) puts it back in its slot as it was (the buffer pasted there, `PROJECT_PASTE`: the
+  firmwares' memories with it; the open one also loads again), "Undo / Project 07"; one step, ended by a paste, a
+  copy, another delete (which has its own undo then) or leaving the page. **Copy + a project**: copied (`..._COPY`;
+  dashed, blinking); **Delete or Copy + an empty pad**: the buffer pasted there (`..._PASTE`; a cut once, a copy again
+  and again; 0.14.0: after a copy's paste its source is no longer dashed, the copy stays in the buffer). The open
+  project cut: saved first, an empty project in its slot.
 - **Duplicating a project** (the owner's "a way to duplicate a project to make a new variation"): hold **Copy**,
   press the project's pad, then (Copy still held) an empty pad: the copy is pasted there (`PROJECT_COPY` then
   `PROJECT_PASTE`), clips, settings and (0.13.0) firmwares with it. A host with `RFM_MOVE_CAP_PROJFW` copies the

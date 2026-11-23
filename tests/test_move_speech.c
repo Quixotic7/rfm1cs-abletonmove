@@ -802,7 +802,7 @@ static void test_rows(void)
     button(&M, MR_CC_SHIFT, 1), tap_step(&M, 0), button(&M, MR_CC_SHIFT, 0);
     HAS("E:Projects|");
     pad(&M, 31, 100);
-    SAID("V:Project 8, 120 BPM, 0 clips|");
+    SAID("V:Project 8, empty|");                        /* (0.14.0: the press shows it; the click makes it) */
     pad(&M, 31, 0), rest_pop(&M), clear();
 }
 /* the browser's filters, banks, favourites, tags; FX setup's module pages */

@@ -429,6 +429,9 @@ void rfmv_seq_back_pop(const rfm_move_t *m, mr_canvas_t *cv);   /* POP_BACK's sc
  * held step). POP_FWLV: the level toggled (pop_i 0 / 1) */
 enum { POP_FWLV = 70, POP_FWJ = 71 };   /* (0.14.0) POP_FWJ: the page's jog: pop_i 0 its pages again, 1..3 on SELECT,
                                                          * PRESET, ALGO */
+int rfmv_proj_undo_lit(const rfm_move_t *m);           /* (0.14.0) the projects page: Undo brings a deleted one back */
+#define RFMV_PJ_DEL_MS 250                              /* (0.14.0) a deleted project's pad: red so long, then dark */
+#define RFMV_PJ_ACK_MS 120                              /* (0.14.0) the open project saved: its pad off, on, off */
 int rfmv_fwj_on(const rfm_move_t *m);                   /* (0.14.0) the FM-1 page's jog turns the jog target now */
 int rfmv_fwj_lit(const rfm_move_t *m);                  /* .. or a click about to turn it on: the target's knob lit white */
 void rfmv_fwj_poll(rfm_move_t *m);                      /* .. its click, once its double click's time has passed */
