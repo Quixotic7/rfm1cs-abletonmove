@@ -75,6 +75,7 @@ static void press(int cc) { button(cc, 1), button(cc, 0); }
 static void knob(int k, int d) { raw(0xB0, (uint8_t)(MR_CC_KNOB1 + k), (uint8_t)(d & 127)); }
 static void jog(int d) { raw(0xB0, MR_CC_JOG, (uint8_t)(d & 127)); }
 static void jog_click(void) { raw(0xB0, MR_CC_JOG_CLICK, 127), raw(0xB0, MR_CC_JOG_CLICK, 0); }
+static void jog_dbl(void) { jog_click(), raw(0xB0, MR_CC_JOG_CLICK, 127), raw(0xB0, MR_CC_JOG_CLICK, 0); }   /* (0.14.0) */
 static void track(int t, int down) { button(MR_CC_TRACK1 - t, down); }
 static void tap_track(int t) { track(t, 1), track(t, 0); }
 static void hold_track(int t) { track(t, 1), adv_ms(RFM_MOVE_TAP_MS + 20); }
@@ -3683,9 +3684,9 @@ static void test_fwp_page(void)
     knob(1, 1);
     CHECK(count(RFM_MOVE_ACT_TURN) == 0 && rfmv_seq_trig(&M, clip, 2, RFM_MOVE_TRIG_RATCHET) == 2);
     step(2, 0), rest();
-    /* the jog's click: level 2 at the press, named a second ("Knobs+Keys") */
+    /* the jog's double click (0.14.0; was its click): level 2 at the second press, named a second ("Knobs+Keys") */
     clear();
-    raw(0xB0, MR_CC_JOG_CLICK, 127);
+    jog_click(), raw(0xB0, MR_CC_JOG_CLICK, 127);   /* (0.14.0: a double click, at its second press) */
     CHECK(M.seq.fwp_full && rfmv_fwp_full(&M) && M.pop == POP_FWLV && M.pop_i == 1 && rfmv_pop_up(&M, POP_FWLV));
     CHECKF(strstr(said, "Knobs and keys") != NULL, "said \"%s\"", said);
     write_pbm("fwp_level2_pop");
@@ -3742,14 +3743,14 @@ static void test_fwp_page(void)
     rest(), jog(-1);
     CHECK(rfmv_fwp_full(&M));
     rest();
-    /* the click again: level 1 ("Knobs") */
-    clear(), jog_click();
+    /* the double click again: level 1 ("Knobs") */
+    clear(), jog_dbl();
     CHECK(!M.seq.fwp_full && M.pop == POP_FWLV && M.pop_i == 0 && rfm_move_fwp_level(&M) == 1);
     CHECKF(strstr(said, "Knobs") != NULL, "said \"%s\"", said);
     write_pbm("fwp_level1_pop");
     rest();
     /* a held Track: its menu over the page (the steps its tracks); Track 4 held: its layer */
-    jog_click(), rest();
+    jog_dbl(), rest();
     hold_track(1), clear(), step(3, 1);
     CHECK(M.s.lock[1] == 3 && count(RFM_MOVE_ACT_KEY) == 0);
     step(3, 0), track(1, 0), rest();
@@ -4514,8 +4515,109 @@ static void test_o14_shift_track(void)
     CHECK(!M.seq.smenu && M.fw.active == 1);
 }
 
+/* item 2: "On the sequencer with FM-1 knobs it would be nice to be able to click the Jogwheel to make it control one
+ * of the knobs like it does in the FM-1 layout. Click to exit. Shift + Click to change the target knob, should be
+ * linked with the Fm-1 layout" */
+static void test_o14_fwp_jog(void)
+{
+    const char *lb[RFM_MOVE_LBL_N];
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    const rfm_move_act_t *a;
+    int i;
+    track_view();
+    for (i = 0; i < RFM_MOVE_LBL_N; i++)
+        lb[i] = NULL;
+    lb[rfmv_enc_slot(RFM_MOVE_E_K1)] = "Cutoff";
+    rfm_move_set_labels(&M, lb);
+    jog(1), rest();
+    CHECK(rfmv_fwp_live(&M) && !M.fwj && M.jog_enc == 0);
+    /* the press: the target's knob (1, SELECT) white at once; nothing else until the double click's time is over */
+    clear(), raw(0xB0, MR_CC_JOG_CLICK, 127);
+    leds(w);
+    CHECK(full(w[L_RING0 + 0]) && !white(w[L_RING0 + 1]) && !M.fwj && !rfmv_pop_up(&M, POP_FWJ));
+    raw(0xB0, MR_CC_JOG_CLICK, 0), adv_ms(RFM_MOVE_DOUBLE_MS - 60);
+    CHECK(!M.fwj && !M.seq.fwp_full);
+    adv_ms(80);
+    CHECK(M.fwj && rfmv_fwj_on(&M) && rfmv_pop_up(&M, POP_FWJ) && M.pop_i == 1 && !M.seq.fwp_full);
+    CHECKF(strstr(said, "Jog: Select") != NULL, "said %s", said);
+    write_pbm("o14_fwp_jog_on");
+    /* its turn: SELECT, as the FM-1 layout's jog; the page stays */
+    clear(), jog(2);
+    a = find(RFM_MOVE_ACT_TURN);
+    CHECK(a && a->index == RFM_MOVE_E_SELECT && a->value == 2 && M.seq.fwp && rfmv_seq_kpage(&M) == 1);
+    rest();
+    leds(w);
+    CHECK(full(w[L_RING0 + 0]) && !white(w[L_RING0 + 4]) && lit(w[L_RING0 + 4]));
+    screen();
+    CHECK(lit_rows(1, 15) > 80);                        /* ("Jog Select" on top while it lasts) */
+    write_pbm("o14_fwp_jog_rest");
+    /* Shift + click: the next target at the press (PRESET, knob 2 white); its turn PRESETS */
+    clear(), button(MR_CC_SHIFT, 1), jog_click();
+    CHECK(M.jog_enc == 1 && M.fwj && rfmv_pop_up(&M, POP_FWJ) && M.pop_i == 2);
+    button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    CHECK(!M.seq.mods && !rfmv_pop_up(&M, POP_TEMPO));
+    leds(w);
+    CHECK(full(w[L_RING0 + 1]) && !white(w[L_RING0 + 0]));
+    write_pbm("o14_fwp_jog_preset");
+    clear(), jog(-1);
+    a = find(RFM_MOVE_ACT_TURN);
+    CHECK(a && a->index == RFM_MOVE_E_PRESETS && a->value == -1);
+    rest();
+    /* linked with the FM-1 layout: there the jog turns PRESETS too (Track 2's FM-1 layout) */
+    hold_track(1), hit(24), track(1, 0), rest();
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && M.jog_enc == 1);
+    clear(), jog(1);
+    a = find(RFM_MOVE_ACT_TURN);
+    CHECK(a && a->index == RFM_MOVE_E_PRESETS);
+    jog_click();                                        /* (the FM-1 layout's click: ALGO, for this slot) */
+    CHECK(M.jog_enc == 2);
+    rest();
+    hold_track(1), hit(26), track(1, 0), rest();        /* (its note layout again: the FM-1 page kept, the jog still on a knob: ALGO now) */
+    CHECKF(M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.fwp && M.jog_enc == 2 && M.fwj, "mode %d fwp %d enc %d fwj %d", M.s.mode, M.seq.fwp, M.jog_enc, M.fwj);
+    /* each slot its own target: Track 1 (ChoralRoot's FM-1 layout) has SELECT */
+    tap_track(0), rest();
+    CHECK(M.jog_enc == 0);
+    tap_track(1), rest();
+    CHECK(M.jog_enc == 2);
+    /* the click again: the jog its pages again ("Jog / Pages"), the knob's white gone */
+    jog_click(), rest();
+    CHECK(M.fwj);
+    clear(), jog_click(), adv_ms(RFM_MOVE_DOUBLE_MS + 20);
+    CHECK(!M.fwj && rfmv_pop_up(&M, POP_FWJ) && M.pop_i == 0);
+    write_pbm("o14_fwp_jog_off");
+    rest(), leds(w), screen();
+    for (i = 0; i < 3; i++)
+        CHECK(!white(w[L_RING0 + i]));
+    CHECK(lit_rows(1, 15) < 40);                        /* (the header gone) */
+    clear(), jog(1);
+    CHECK(!count(RFM_MOVE_ACT_TURN) && rfmv_seq_kpage(&M) == 2);
+    jog(-1), rest();
+    /* the double click: Knobs <-> Knobs+Keys (was the click), at its second press; the jog's knob not toggled */
+    clear(), jog_dbl();
+    CHECK(M.seq.fwp_full && rfmv_pop_up(&M, POP_FWLV) && !M.fwj);
+    adv_ms(RFM_MOVE_DOUBLE_MS + 50);
+    CHECK(!M.fwj && M.seq.fwp_full);
+    /* level 2: the click puts the jog on the knob there too */
+    jog_click(), adv_ms(RFM_MOVE_DOUBLE_MS + 20);
+    CHECK(M.fwj && rfmv_fwj_on(&M));
+    clear(), jog(1);
+    a = find(RFM_MOVE_ACT_TURN);
+    CHECK(a && a->index == RFM_MOVE_E_ALGO);
+    jog_click(), adv_ms(RFM_MOVE_DOUBLE_MS + 20), jog_dbl(), rest();
+    CHECK(!M.fwj && !M.seq.fwp_full);
+    /* a held step takes the jog (its length) over the knob */
+    jog_click(), adv_ms(RFM_MOVE_DOUBLE_MS + 20);
+    CHECK(M.fwj);
+    step(3, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), clear(), jog(1);
+    CHECK(!count(RFM_MOVE_ACT_TURN));
+    step(3, 0), rest();
+    jog_click(), rest();
+    rfm_move_set_labels(&M, NULL);
+}
+
 int main(void)
 {
+    test_o14_fwp_jog();
     test_o14_shift_track();
     test_o14_state_pad();
     test_o14_kpage();

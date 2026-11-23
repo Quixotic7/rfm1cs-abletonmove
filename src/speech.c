@@ -521,6 +521,12 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
         snprintf(o, (size_t)cap, "%s", i ? "Session" : m->seq.smenu ? "Sequencer" : "");
         return;
     case POP_ARPW: snprintf(o, (size_t)cap, "Arp %s", rfmv_seq_arp_mode_name(i)); return;   /* (0.12.0) */
+    case POP_FWJ:                                       /* (0.14.0) the FM-1 page's jog */
+        if (i)
+            rfmv_tcase(rfmv_jog_name(i - 1), l, sizeof l), snprintf(o, (size_t)cap, "Jog: %s", l);
+        else
+            snprintf(o, (size_t)cap, "Jog: pages");
+        return;
     case POP_FWLV: snprintf(o, (size_t)cap, "%s", i ? "Knobs and keys" : "Knobs"); return;   /* (0.12.x) the FM-1 page */
     case POP_OCT: {                                     /* (0.12.0) the octave, the pads' notes */
         char r[24], *d;

@@ -3622,6 +3622,13 @@ static void track_screen(const rfm_move_t *m, mr_canvas_t *cv)
         v2_ic(cv, V2I_REC, 0, 2, 1);
         v2_T(cv, 16, 1, "Recording", 2, 1);
         y0 = 18;
+    } else if (rfmv_fwj_on(m)) {                        /* (0.14.0) the FM-1 page's jog on a knob: which one, on top
+                                                         * for as long as it is (its knob lit white) */
+        char b[16], t[12];
+        rfmv_tcase(rfmv_jog_name(m->jog_enc), t, sizeof t);
+        snprintf(b, sizeof b, "Jog %s", t);
+        v2_T(cv, 0, 1, b, 2, 1);
+        y0 = 18;
     }
     /* the owner's: the steps always at the bottom (the roll above them), the held ones marked over them; Move's strip
      * under them (the pages, the playhead's tick) */

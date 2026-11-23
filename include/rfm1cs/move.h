@@ -1090,6 +1090,13 @@ typedef struct {
     /* (0.14.0, the owner's 2026-11-23) */
     uint8_t tbtn_shift;                                 /* bits: that Track was pressed with Shift (its track settings
                                                          * opened at the press; its release: nothing) */
+    /* the FM-1 knob page's jog on a knob (the owner's: "click the Jogwheel to make it control one of the knobs like it
+     * does in the FM-1 layout. Click to exit. Shift + Click to change the target knob, should be linked with the Fm-1
+     * layout"): fwj on; fwj_pend a click waiting for its double click's time (fwj_ms: its press, the sequencer
+     * clock's ms); jog_enc_s each slot's jog target (jog_enc is the active slot's, the FM-1 layout's and the page's) */
+    uint8_t fwj, fwj_pend;
+    uint32_t fwj_ms;
+    uint8_t jog_enc_s[RFM_MOVE_FW_SLOTS];
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit

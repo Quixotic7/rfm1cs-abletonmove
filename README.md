@@ -327,7 +327,7 @@ its 8 columns through the 16 tracks.
 | knobs | the knob page: TRIG (below), (0.12.x) FM-1 (below), then Control mode's CC banks 1..4, live on the track's channel; (0.14.0, the owner's) each track keeps the page it was left on, brought back whenever it is selected again (a Track tap, a held Track's step, session view's selection; RAM only, TRIG for a track never shown); a step held: its CC locks (the TRIG and FM-1 pages: its trig values) | nothing; a touch selects the track in that knob's column; (0.12.0) a select step held: knob 1 the clip's Launch, knob 2 its After |
 | volume knob | MASTER; a step held: its notes' velocity (a VELO popup) | MASTER; (0.12.0) a select step held: the level of the firmware its track plays |
 | jog | the knob page (TRIG, FM-1, banks 1..4); a step held: its notes' length (the LENGTH popup); Loop held or latched: the loop's length; a Shift menu: (0.13.0) selects a parameter, or changes the one being edited (the arp: its pages); a drum pad held: its note | the knob page |
-| jog pressed | nothing (FILL is Shift + Loop held); (0.12.x) the FM-1 page: its level, Knobs <-> Knobs+Keys; (0.13.0) a Shift menu: edit the selected parameter / select again (the arp: off / on) | the same |
+| jog pressed | nothing (FILL is Shift + Loop held); (0.12.x) the FM-1 page: its level, Knobs <-> Knobs+Keys (0.14.0: the double click; the click puts the jog on the FM-1 layout's jog target, Shift + click the next target); (0.13.0) a Shift menu: edit the selected parameter / select again (the arp: off / on) | the same |
 
 **The FM-1 page** (0.12.x, the owner's 2026-11-22: "a page to control the firmware's knobs like you get on the FM-1
 Layout .. Then when clicking the jogwheel it should switch the takeover between just knobs and then full shortcuts:
@@ -340,11 +340,22 @@ Buttons, steps, ect, but pads stay in the MIDI layout, and Jogwheel is not taken
   readout or detents, full screen (Popup Half: the left half, the FM-1's screen on the right), the release drops it.
   Everything else is the note layout's (pads, steps, buttons, the track view). A step held: the knobs are its TRIG
   values, as on the TRIG page.
-- **Level 2** (the jog's click, at the press; "FM-1 / Knobs+Keys" a second, the click again "Knobs"): the steps are
+- **The jog on a knob** (0.14.0, the owner's 2026-11-23: "click the Jogwheel to make it control one of the knobs like it
+  does in the FM-1 layout. Click to exit. Shift + Click to change the target knob, should be linked with the Fm-1
+  layout"): the jog's **click** (once the double click's 300 ms have passed, R2) makes its turn the FM-1 layout's jog:
+  the slot's target, SELECT, PRESET or ALGO (one setting a slot, shared with the FM-1 layout, whose click still
+  changes it there); "Jog / Select" the whole screen a second, then "Jog Select" at 2x on top of the track view for as
+  long as it lasts, and the target's knob (1, 2 or 3) white instead of purple (white from the press on). The click
+  again gives the jog back its pages ("Jog / Pages"). **Shift + click**: the next target, at the press (and the jog on
+  it). Whatever takes the jog over the page still does (a held step, Loop, Shift + turn's tempo, a menu, a held
+  Track); another slot starts with the jog on its pages. **The double click** (at its second press) is level 2 / level
+  1, which was the click before 0.14.0.
+- **Level 2** (the jog's double click, at its second press (0.14.0; was its click); "FM-1 / Knobs+Keys" a second, the
+  double click again "Knobs"): the steps are
   the FM-1's keys (its LEDs, icons dark) and the buttons the FM-1 layout maps are the FM-1's (Capture FX, Sample SEL,
   Mute ENV, Delete LFO, Copy EDIT, Shift GLO, Menu HOME, Undo SAVE, Loop ARP, Play PLAY, Rec REC, Left OCT-, Right
   OCT+; their lights the firmware's), the screen the FM-1's (as the FM-1 layout). Ours: the pads (the track's notes),
-  Up / Down (their octave), the jog (its turn the page, its click back to level 1), Back (as in the FM-1 layout: no
+  Up / Down (their octave), the jog (its turn the page or, 0.14.0, the target knob; its double click back to level 1, its click the jog on a knob), Back (as in the FM-1 layout: no
   held-Back shortcuts), the Track buttons, the volume knob. The sequencer's transport: Play in level 1 (or another
   page). Another page lets go of what level 2 held and gives the steps and buttons back; the FM-1 page again: the level
   it was left in (0.14.0: a Track tap brings the track's own page back, the FM-1 page too). An empty slot: the page is there ("Empty slot"), its knobs dark and

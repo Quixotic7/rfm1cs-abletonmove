@@ -1079,6 +1079,11 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             mr_gfx_clear(cv, 0);
             v2_modeName(cv, m->pop_i ? "Session" : "Sequencer", 2, m->pop_i != 0);
             g_full = 1;
+        } else if (m->pop == POP_FWJ) {                 /* (0.14.0) the FM-1 page's jog: "Jog" over its target, or
+                                                         * "Pages" (its own job again) */
+            rfmv_pop_screen(cv, "Jog", m->pop_i ? rfmv_jog_name(m->pop_i - 1) : "Pages", m->pop_i ? 3 : 0,
+                            m->pop_i ? (m->pop_i - 1) % 3 : 0, NULL);
+            g_full = 1;
         } else if (m->pop == POP_FWLV) {                /* (0.12.x) the FM-1 page's level: "Knobs" / "Knobs+Keys" */
             rfmv_pop_screen(cv, "FM-1", m->pop_i ? "Knobs+Keys" : "Knobs", 2, m->pop_i != 0, NULL);
             g_full = 1;
