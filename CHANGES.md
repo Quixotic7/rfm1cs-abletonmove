@@ -3,6 +3,20 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## 0.14.0 (not released)
+
+The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_sessview.c` `test_o14_*` (dumps
+`sessview_o14_*`). New fields at the end of `rfm_move_t`: rebuild everything.
+
+- (item 6, "Turning the sequencer's arp on is not functioning, No notes getting sent to the firmware") the core does
+  send them: `test_o14_arp_notes` turns the arp on every way the UI offers (Shift + step 11's click and the menu's jog
+  click; Shift + step 11 held; Track 4 held + step 11 held; the Hold mode), with the menu open and closed, stopped and
+  running, after a Track tap away and back, and finds the arp's note ons each time as `RFM_MOVE_ACT_MIDI` with
+  `track` the selected track (1..16), `dest` 0, stamped with their frame by `rfm_move_seq_advance`. Unlike the pads
+  played live (`track` 0: the active slot), they reach a firmware only through the host's routing of that track
+  (`ffilt`, the same as a clip's notes); the selected track is routed to the slot on entering a note layout. No core
+  change.
+
 ## 0.13.0 (2026-11-23)
 
 The first tag since 0.9.1: it carries 0.9.2, 0.10.0, 0.11.0 and 0.12.0 below, which were never tagged by themselves.

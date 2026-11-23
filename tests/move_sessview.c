@@ -4286,8 +4286,91 @@ static void test_empty_load_defaults(void)
     CHECK(M.seq.fx.ffilt[1] == 0xFFFF && M.seq.tr[6].ch == 6 && M.s.lock[1] == 1);
 }
 
+/* ================================================================ 0.14.0: the owner's run of 2026-11-23 === */
+/* note ons of the arp for track tr (1..16), as MIDI actions (the host routes a track's notes to the slots it is
+ * routed to) */
+static int arp_ons(int tr)
+{
+    int i, n = 0;
+    for (i = 0; i < nact; i++)
+        n += A[i].kind == RFM_MOVE_ACT_MIDI && A[i].track == tr && (A[i].bytes[0] & 0xF0) == 0x90 && A[i].bytes[2];
+    return n;
+}
+/* item 6: "Turning the sequencer's arp on is not functioning, No notes getting sent to the firmware". Every way the
+ * UI turns it on, the pads held, stopped and running: the arp's notes come out on the pads' track, which is routed to
+ * the slot the pads play */
+static void test_o14_arp_notes(void)
+{
+    rfm_move_arp_t *ap;
+    int tr, slot;
+    track_view();
+    tr = M.seq.sel_track, slot = M.fw.active;
+    ap = &M.seq.tr[tr].arp;
+    CHECK(ap->mode == RFM_MOVE_AM_OFF && (M.seq.fx.ffilt[slot] >> tr & 1));
+    /* off: a pad plays live (track 0), no arp */
+    clear(), pad(0, 100), adv_ms(600), pad(0, 0), adv_ms(50);
+    CHECK(arp_ons(tr + 1) == 0 && count(RFM_MOVE_ACT_MIDI) >= 2);
+    /* 1. Shift + step 11's click opens the menu, the jog's click turns it on; the menu open, a pad held */
+    button(MR_CC_SHIFT, 1), step(10, 1), step(10, 0), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    CHECK(M.seq.smenu == RFM_MOVE_SM_ARP);
+    jog_click();
+    CHECK(ap->mode == RFM_MOVE_AM_ON);
+    clear(), pad(0, 100), adv_ms(1000);
+    CHECKF(arp_ons(tr + 1) >= 3, "menu open, stopped: %d arp notes", arp_ons(tr + 1));
+    pad(0, 0), adv_ms(600), clear(), adv_ms(600);
+    CHECK(arp_ons(tr + 1) == 0);                        /* (let go: it stops) */
+    /* .. the menu closed (Back), two pads held */
+    back(), rest();
+    CHECK(!M.seq.smenu && ap->mode == RFM_MOVE_AM_ON);
+    clear(), pad(0, 100), pad(2, 100), adv_ms(1000);
+    CHECKF(arp_ons(tr + 1) >= 3, "menu closed, stopped: %d", arp_ons(tr + 1));
+    pad(0, 0), pad(2, 0), adv_ms(300);
+    /* .. running */
+    press(MR_CC_PLAY), adv_ms(200);
+    CHECK(M.seq.playing);
+    clear(), pad(1, 100), adv_ms(1200);
+    CHECKF(arp_ons(tr + 1) >= 3, "running: %d", arp_ons(tr + 1));
+    pad(1, 0), adv_ms(300);
+    press(MR_CC_PLAY), adv_ms(200);
+    CHECK(!M.seq.playing);
+    /* 2. Shift + step 11 held: off, held again: on (the menu not opened) */
+    button(MR_CC_SHIFT, 1), step(10, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(10, 0);
+    CHECK(ap->mode == RFM_MOVE_AM_OFF);
+    step(10, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(10, 0), button(MR_CC_SHIFT, 0), rest();
+    CHECK(ap->mode == RFM_MOVE_AM_ON && !M.seq.smenu);
+    clear(), pad(3, 100), adv_ms(1000);
+    CHECKF(arp_ons(tr + 1) >= 3, "toggled by the hold, stopped: %d", arp_ons(tr + 1));
+    pad(3, 0), adv_ms(300);
+    press(MR_CC_PLAY), adv_ms(200), clear(), pad(3, 100), adv_ms(1200);
+    CHECKF(arp_ons(tr + 1) >= 3, "toggled by the hold, running: %d", arp_ons(tr + 1));
+    pad(3, 0), press(MR_CC_PLAY), adv_ms(300);
+    /* 3. Track 4 held + step 11 (the Shift layer) held: off and on the same */
+    track(3, 1), adv_ms(RFM_MOVE_TAP_MS + 20), step(10, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(10, 0), track(3, 0), rest();
+    CHECKF(ap->mode == RFM_MOVE_AM_OFF, "mode %d", ap->mode);
+    track(3, 1), adv_ms(RFM_MOVE_TAP_MS + 20), step(10, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(10, 0), track(3, 0), rest();
+    CHECK(ap->mode == RFM_MOVE_AM_ON && M.s.mode == RFM_MOVE_MODE_SEQ && !M.seq.view);
+    clear(), pad(4, 100), adv_ms(1000);
+    CHECKF(arp_ons(tr + 1) >= 3, "Track 4's layer: %d", arp_ons(tr + 1));
+    pad(4, 0), adv_ms(300);
+    /* 4. another firmware's Track tapped and back: the arp is the track's, it still plays */
+    tap_track(0), rest(), tap_track(1), rest();
+    CHECK(M.seq.sel_track == tr && M.fw.active == slot && M.seq.tr[tr].arp.mode == RFM_MOVE_AM_ON);
+    clear(), pad(5, 100), adv_ms(1000);
+    CHECKF(arp_ons(tr + 1) >= 3, "after a Track tap: %d", arp_ons(tr + 1));
+    pad(5, 0), adv_ms(300);
+    /* 5. the Hold mode (knob 5): latched after the pads are let go */
+    button(MR_CC_SHIFT, 1), step(10, 1), step(10, 0), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    knob(4, RFM_MOVE_LIST_TICKS * 3);
+    CHECK(ap->mode == RFM_MOVE_AM_HOLD);
+    back(), rest();
+    hit(0), clear(), adv_ms(1000);
+    CHECKF(arp_ons(tr + 1) >= 3, "Hold, let go: %d", arp_ons(tr + 1));
+    rfmv_seq_arp_stop(&M), ap->mode = RFM_MOVE_AM_OFF;
+}
+
 int main(void)
 {
+    test_o14_arp_notes();
     test_scenes();
     test_selected();
     test_aligned();
