@@ -250,6 +250,17 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   its CHANCE knob reads 99 %, so about one arp step in a hundred is skipped there. `test_n24_arp_down` (the turns over
   0 and to the ends, the notes an octave below, the blob's round trip, the version unchanged), pictures
   `sessview_n24_arp_oct_down`, `_turn`.
+- (item 13, "Loading a new project is starting playback when the Move's playback is stopped"; the host side is
+  another agent's) the core, stopped: `rfm_move_project_load` (a stored project, an empty one), the grid's open (the
+  host answering at once or later, the firmwares settling) and a new empty project never start the transport, queue
+  no clip and send no note or Start (`test_n24_load_stopped`). Found and fixed: **a Play that waited for a load that
+  never came started a later one.** Play pressed while a project was pending set `play_after_load` (or `pfw_play`
+  while its firmwares loaded); when the load was refused, or the host never answered (the 20 s wait), the flag stayed
+  and the next load, any project by any way, started the transport; and the wait's end itself started the old
+  project. Now the flag is for the pending slot's load only and cleared by every load, a refused one and the wait's
+  end; a second Play while pending takes it back, as it does while the firmwares load. Play once while pending still
+  plays once it is loaded. A lead for the host side: with Clock on Auto the sequencer follows a firmware that sends
+  Start and 24 clocks; a firmware that starts its own transport when its state loads would start the Move's.
 
 ## 0.13.0 (2026-11-23)
 

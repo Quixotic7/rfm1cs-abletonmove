@@ -405,8 +405,10 @@ void rfmv_pfw_poll(rfm_move_t *m)
                     rfmv_fw_slot_set(m, s, "");
             }
         if (chg) {
-            if (m->seq.proj_pending >= 0)
-                m->seq.proj_pending = -1;               /* (the host never answered the project either) */
+            if (m->seq.proj_pending >= 0)               /* (the host never answered the project either: 0.14.0, nothing
+                                                         * loaded, so a Play that waited for it does not start the old
+                                                         * one) */
+                m->seq.proj_pending = -1, m->seq.play_after_load = 0, m->pfw_play = 0;
             settle(m);
         }
     }

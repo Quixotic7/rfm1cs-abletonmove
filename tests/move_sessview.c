@@ -5626,8 +5626,73 @@ static void test_n24_arp_down(void)
     CHECK(!ap->down && ap->odist == 12);
 }
 
+/* item 13: "Loading a new project is starting playback when the Move's playback is stopped": in the core, stopped, a
+ * project's load (the grid's open, the host's answer, a new empty one) never starts the transport, launches no clip
+ * and sends no note or Start; and a Play pressed for a load that never came does not start a later one */
+static int n24_quiet(void)                              /* stopped, nothing queued, no note on, no Start since clear() */
+{
+    int i, t, bad = M.seq.playing || M.seq.start_pending;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++)
+        bad |= M.seq.tr[t].queued != SEQ_NONE;
+    for (i = 0; i < nact; i++)
+        bad |= A[i].kind == RFM_MOVE_ACT_MIDI && (((A[i].bytes[0] & 0xF0) == 0x90 && A[i].bytes[2]) || A[i].bytes[0] == 0xFA);
+    return !bad;
+}
+static void test_n24_load_stopped(void)
+{
+    ps_two_projects();
+    grid();
+    /* project 7 opened, the host answering at once, its firmwares ready: stopped, silent */
+    ps_answer = 1;
+    ps_clear(), hit(ps_pad(6));
+    CHECK(M.seq.proj_cur == 6 && n24_quiet());
+    rfm_move_proj_fw(&M, 0, RFM_MOVE_PFW_READY), rfm_move_proj_fw(&M, 1, RFM_MOVE_PFW_READY);
+    rfm_move_proj_fw(&M, 2, RFM_MOVE_PFW_READY), adv_ms(2000);
+    CHECK(!rfm_move_proj_fw_loading(&M) && n24_quiet());
+    /* a new project (an empty pad), then project 1 by the host's call itself */
+    rest(), ps_clear(), hit(ps_pad(20)), adv_ms(2000);
+    CHECK(M.seq.proj_cur == 20 && n24_quiet());
+    ps_clear(), rfm_move_project_load(&M, 0, PS_BLOB[0], PS_N[0]), adv_ms(2000);
+    CHECK(M.seq.proj_cur == 0 && n24_quiet());
+    ps_clear(), rfm_move_project_load(&M, 21, NULL, 0), adv_ms(2000);
+    CHECK(n24_quiet());
+    /* Play pressed while a project loads, the host never answering: when its wait runs out nothing starts */
+    ps_answer = 0;
+    rest(), ps_clear(), hit(ps_pad(6));
+    CHECK(M.seq.proj_pending == 6 && rfm_move_proj_fw_loading(&M));
+    press(MR_CC_PLAY);
+    adv_ms(RFM_MOVE_PFW_WAIT_MS + 200);
+    CHECKF(M.seq.proj_pending < 0 && n24_quiet(), "the wait ran out: playing %d", M.seq.playing || M.seq.start_pending);
+    /* .. a host without the firmwares' part: Play while pending, the load refused; a later load must not start */
+    ps_fresh(0);
+    ps_store(3), ps_store(4);
+    grid();
+    ps_clear(), hit(ps_pad(3));
+    CHECK(M.seq.proj_pending == 3);
+    press(MR_CC_PLAY);
+    CHECK(M.seq.play_after_load && n24_quiet());
+    {
+        static uint8_t bad[RFM_MOVE_PROJECT_MAX];
+        memcpy(bad, PS_BLOB[3], PS_N[3]), bad[8] ^= 0x55;
+        CHECK(rfm_move_project_load(&M, 3, bad, PS_N[3]) != 0);
+    }
+    ps_clear(), rfm_move_project_load(&M, 4, PS_BLOB[4], PS_N[4]), adv_ms(500);
+    CHECKF(n24_quiet(), "a later load: playing %d", M.seq.playing || M.seq.start_pending);
+    /* .. and Play pressed twice while pending: not after all */
+    ps_clear(), hit(ps_pad(3));
+    press(MR_CC_PLAY), press(MR_CC_PLAY);
+    rfm_move_project_load(&M, 3, PS_BLOB[3], PS_N[3]), adv_ms(500);
+    CHECK(n24_quiet());
+    /* (Play once while pending: it plays once loaded, as before) */
+    ps_clear(), hit(ps_pad(4)), press(MR_CC_PLAY);
+    rfm_move_project_load(&M, 4, PS_BLOB[4], PS_N[4]), adv_ms(100);
+    CHECK(M.seq.playing || M.seq.start_pending);
+    press(MR_CC_PLAY), back(), rest();
+}
+
 int main(void)
 {
+    test_n24_load_stopped();
     test_n24_arp_down();
     test_n24_arp_lens();
     test_n24_arp_random();

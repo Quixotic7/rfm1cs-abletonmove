@@ -398,9 +398,10 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
     rfm_move_seq_t *q = &m->seq;
     if (slot < 0 || slot >= RFM_MOVE_PROJECTS)
         return -1;
+    const int pend = q->proj_pending == slot;          /* (0.14.0: Play waiting is for the load asked for) */
     if (b && n && parse(b, n, NULL) != 0) {
         if (q->proj_pending == slot)
-            q->proj_pending = -1;
+            q->proj_pending = -1, q->play_after_load = 0;   /* (0.14.0: refused: its Play waits no more) */
         rfmv_pfw_load_failed(m, slot);                  /* (0.13.0: its loading screen goes) */
         rfmv_seq_msg(m, SEQ_MSG_LOADFAIL);
         return -1;
@@ -429,14 +430,17 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
     q->proj_cur = (int8_t)slot, q->proj_pending = -1;   /* (projects mode stays: the owner's, left with Back / Menu) */
     rfmv_pfw_loaded(m, slot, b && n && b[4] >= 9 ? b + n - 4 - RFM_MOVE_PFW_BYTES : NULL);   /* (0.13.0: its
                                                          * firmwares asked for; the loading screen) */
-    if (q->play_after_load || was) {                    /* (Play pressed while it loaded, or it was playing; 0.13.0:
-                                                         * once its firmwares are in) */
-        q->play_after_load = 0;
+    if ((q->play_after_load && pend) || was) {          /* (Play pressed while it loaded, or it was playing; 0.13.0:
+                                                         * once its firmwares are in. 0.14.0: only the load that Play
+                                                         * waited for; a flag left from a load that never came started
+                                                         * the next one, the owner's "Loading a new project is starting
+                                                         * playback") */
         if (m->pfw_on)
             m->pfw_play = 1;
         else
             rfmv_seq_start(m);
     }
+    q->play_after_load = 0;
     if (!(b && n))                                      /* (0.13.0) an empty project made the current one (the host at
                                                          * start with nothing stored there, a cut of the open one, a
                                                          * new one): a new project's routing, channels and Track
@@ -744,7 +748,8 @@ void rfmv_proj_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
             else if (q->playing || q->start_pending)
                 rfmv_seq_stop(m);
             else if (q->proj_pending >= 0)
-                q->play_after_load = 1;
+                q->play_after_load = (uint8_t)!q->play_after_load;   /* (0.14.0: again: not after all, as with
+                                                         * the firmwares loading) */
             else
                 rfmv_seq_start(m);
         }
