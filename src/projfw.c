@@ -10,8 +10,9 @@
  *    (rfm_move_proj_fw, or RFM_MOVE_PFW_WAIT_MS with no news); a missing or failed one is said for a second after.
  *  - States as a layer (Track 1..3 held + the top row's pad 7, or the browser's Loop): the 32 states on the pads in the
  *    slot's colour, the clips' gestures (a stored state loads, an empty one saves, Copy / Delete + a state), step 14
- *    New and Undo after it. The layer takes the pads, the steps, the knobs and the jog; Back closes it (its marks
- *    first) and what it was opened over shows again. */
+ *    New and Undo after it; (0.14.0) pad 1 the open project's own sound, the others a library shared by all projects.
+ *    The layer takes the pads, the steps, the knobs and the jog; Back closes it (its marks first) and what it was
+ *    opened over shows again. */
 #include <stdio.h>
 #include <string.h>
 

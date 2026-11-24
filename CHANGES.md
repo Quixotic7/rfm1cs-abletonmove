@@ -308,6 +308,26 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   `test_n24_proj_random` (the actions and their order, three different installed ids, the key, stored with them, the
   firmwares answered, Undo, one installed, all slots used), pictures `sessview_n24_proj_random_loading`,
   `sessview_n24_proj_random`, `_full`.
+- (the owner's of 2026-11-24: "I don't think I want to have 1 project in which I change the firmware to be one way and
+  it's linked to slot 4, and then change to another project that was also linked to slot 4, and then have it now
+  changed. So I think a project should keep it's own unique firmware state which then shows up as slot 1, so slot 1
+  always means project state, a unique state per project"; "The state slot is not being saved/reloaded with the
+  project") **pad 1 of States is the open project's own sound**, pads 2..32 a library shared by all projects, and no
+  state is ever active (with `RFM_MOVE_CAP_PROJFW`; an older host keeps its States). Pad 1 is always the one you are
+  in: white, breathing; a filled "P" on the screen; "Project 3" at 2x on opening (said "States, ChoralRoot, Project
+  3"). Its click saves the project now (`PROJECT_SAVE` `value` 1, as the open project's click in Projects; "Project 3 /
+  saved", its pad off, on, off). A stored library pad loads its sound **into the project** (`STATE_LOAD`; the library
+  pad is never written by playing), an empty one stores the sound as it is (`STATE_SAVE`). Copy + pad 1 copies the
+  sound now (`STATE_COPY` index 0), a paste onto pad 1 goes into the project (`STATE_PASTE` index 0, `value` 1).
+  Delete + pad 1 is refused (nothing sent, the pad red while held, "Project 3 / kept"): New is step 14's, and Delete
+  elsewhere is a cut into the buffer, which the project's sound cannot be. Undo now undoes the last New, library load or
+  paste onto pad 1 (`STATE_UNDO` `value` -1, index 255), one step; saves, copies and library pastes or deletes leave
+  it. A pad's popup stays while the pad is held ("Project 3" / "State 5"). `rfm_move_fw_state_cur` and bit 0 of
+  `rfm_move_fw_states` are ignored with the capability; the host's contract (index 0 the project's copy, 1..31 the
+  state files, no autosave into a state, the undo, moving an old state file 0 to the first free index) is README
+  "States: the host's contract" and move.h's `RFM_MOVE_ACT_STATE_*` comments. `test_o14_states_project`,
+  `test_o14_states_old_host`, `test_o14_state_pad`, `test_ps_gestures`, `test_ps_new_undo` (pictures
+  `sessview_o14_states*`).
 
 ## 0.13.0 (2026-11-23)
 

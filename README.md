@@ -655,7 +655,7 @@ always has 24 micro ticks, scaled to the rate.
 
 **Projects mode** (the owner's: a mode of its own, just for picking a project; Shift + step 1, Track 4 held +
 step 1, or Track 4's double click). The pads are the 32 projects (top-left = project 1), each in its own colour (dim; the open
-one (0.14.0) white: breathing slowly when stopped, as the active state in States; pulsing on the beat while it plays;
+one (0.14.0) white: breathing slowly when stopped, as pad 1 (the project's own sound) in States; pulsing on the beat while it plays;
 loading: blinking; empty: off). Everything else does nothing here:
 steps, the jog, the knobs (but one), the Shift shortcuts, the Track buttons.
 
@@ -883,19 +883,27 @@ range, or a load is pending).
 **States** (P.6, P.7, P.9): **Track 1..3 held + the top row's pad 7** (a firmware loaded there), or **Loop** in the
 firmware browser. A layer over whatever is under it, which it returns to: **Back** (its click: the copy / delete marks
 first, then States) shows the layout or view it was opened over (the browser when opened by Loop there; Loop then
-closes it too). Opening: "States" at 2x over the firmware's name for a second (said "States, ChoralRoot") and the pads
-swept column by column in the slot's colour (50 ms a column, at most 8 LED writes a frame), settling into the states'
-lights; a press meanwhile acts at once.
+closes it too). Opening: the one you are in, "Project 3" at 2x, over the firmware's name for a second (said "States,
+ChoralRoot, Project 3") and the pads swept column by column in the slot's colour (50 ms a column, at most 8 LED writes
+a frame), settling into the states' lights; a press meanwhile acts at once.
+
+(0.14.0, the owner's 2026-11-24: "a project should keep it's own unique firmware state which then shows up as slot 1,
+so slot 1 always means project state, a unique state per project") **Pad 1 is the open project's own sound**: the
+project's copy of the firmware, which every project has, which you are in whenever a project is open and which the
+host saves as you play. **Pads 2..32 are a library** shared by all projects (the host's state files 1..31). No state is
+ever "active" and nothing saves itself into a library pad.
 
 | In States | Does |
 |---|---|
-| The screen | the firmware's name at 2x (cut to fit; Copy / Delete held: their icon at its right end), the 32 states in 4 rows of 8: framed a stored one, filled the active one, a dot an empty one; dashed the copied one and crossed the deleted one while the buffer is armed |
-| Pads | the slot's colour (not the firmware's): (0.14.0, the owner's "should be a different contrasting color") the active state **white, breathing** (700 ms full, 300 ms at a third), stored ones dim in the slot's colour, empty dark, a pressed one white and steady. **A stored state: loaded** (`STATE_LOAD`; it is the active one; "State 5 / loaded"); **an empty one: the firmware's memory saved there** (`STATE_SAVE`; the active one). There is no "save over": the host autosaves the active state |
-| Copy held + a state | a stored one: **copied** into the state buffer (`STATE_COPY`; armed, dashed); an empty one: **the buffer pasted** there (`STATE_PASTE`); a stored one while armed (the last state function a copy or a delete, not the very state just copied): **replaced** by the buffer. Pasting onto the active state also loads it (`value` 1). A paste disarms; Back's click clears the marks |
-| Delete held + a state | **deleted**, into the buffer (`STATE_DELETE`; armed, crossed until Delete is let go). Delete never pastes. The active one deleted: the firmware keeps what it holds, no state is active |
+| The screen | the firmware's name at 2x (cut to fit; Copy / Delete held: their icon at its right end), the 32 pads in 4 rows of 8: pad 1 filled with a "P" (the project's own sound), a library state framed with its number, a dot an empty one; dashed the copied one and crossed the deleted one while the buffer is armed. A pad's popup ("Project 3 / saved", "State 5 / loaded") stays while that pad is held |
+| Pads | the slot's colour (not the firmware's): (0.14.0, the owner's "should be a different contrasting color") **pad 1 white, breathing** (700 ms full, 300 ms at a third), stored library states dim in the slot's colour, empty dark, a pressed one white and steady |
+| Pad 1 | **the project saved now** (`PROJECT_SAVE` with `value` 1, as the open project's click in Projects: the firmwares as they are now); "Project 3 / saved", its pad off, on, off. Nothing while a project loads |
+| A library pad | **a stored one: loaded into the project** (`STATE_LOAD`): the firmware becomes that sound, pad 1 stays the one you are in, the library state is never changed by playing; Undo after it. "State 5 / loaded". **An empty one: the sound as it is now stored there** (`STATE_SAVE`); "State 5 / saved" |
+| Copy held + a pad | pad 1: **the sound now copied** into the state buffer (`STATE_COPY` index 0); a stored library state: **copied** (`STATE_COPY`; armed, dashed); an empty one: **the buffer pasted** there (`STATE_PASTE`); a stored one while armed (the last state function a copy or a delete, not the very state just copied): **replaced** by the buffer. So Copy + pad 1, then Copy + a library pad writes the current sound over a stored state or into an empty one. Pad 1 while armed: **the buffer into the project** (`STATE_PASTE` index 0, `value` 1), Undo after it. A paste disarms; Back's click clears the marks |
+| Delete held + a pad | a library state: **deleted**, into the buffer (`STATE_DELETE`; armed, crossed until Delete is let go). Delete never pastes. Pad 1: **refused**: nothing is sent, the pad red while held, "Project 3 / kept" (New is step 14's) |
 | Copy, Delete alone | nothing (their icon on the screen while held). Nothing loads while either is held. The buffer is one firmware's: another firmware's States do not offer it |
-| Step 14 (its icon lit; white at its press) | **New**: the firmware restarts as first installed (`STATE_NEW`); no state is active, none is touched. "New state / ChoralRoot". The other steps are dark and dead |
-| Undo (lit only while there) | right after New: the memory it held before is back and the state that was active is active again (`STATE_UNDO`). "Undo / New state". One step, no redo; any other state action, or leaving States, ends it |
+| Step 14 (its icon lit; white at its press) | **New**: the project's sound becomes the firmware as first installed (`STATE_NEW`); no library state is touched. "New state / ChoralRoot". The other steps are dark and dead |
+| Undo (lit only while there) | the sound from before the last New, library load or paste onto pad 1 is back (`STATE_UNDO`). "Undo / New state", "Undo / State 5", "Undo / paste". One step, no redo; the next of those three replaces it, leaving States ends it; a save, a copy, a library paste or delete leave it |
 | Track 1..3 tap | that slot's States (named again); an empty slot: "Track 3 / empty", States stay where they were |
 | Track 4 tap, Menu | States close, then the button does its own job |
 | Knobs, jog, Shift, Capture, the arrows, Mute, Sample, Record | dark and dead. Play and the volume knob are the layer's under it |
@@ -913,23 +921,52 @@ lights; a press meanwhile acts at once.
   unloaded. It reports with **`rfm_move_proj_fw(m, slot, status)`**: `0..99` while it works (each report restarts the
   20 s limit), `RFM_MOVE_PFW_READY`, `RFM_MOVE_PFW_MISSING` (the firmware is not on the device: the host leaves the
   slot empty, unloading what was there), or `RFM_MOVE_PFW_FAILED` (the same). Nothing is needed for "". As after
-  `FW_LOAD`, it also calls `rfm_move_fw_slots` (and `rfm_move_set_takeover` for the slot), `rfm_move_fw_states` and:
-- **`rfm_move_fw_state_cur(m, slot, k)`**: the state active now (k 0..31, -1 none). After loading a project's copy the
-  host compares it with the firmware's stored states and names the one it equals (none: -1).
-- **The active state's autosave** ("Whichever slot is active gets auto saved"): whenever a firmware's memory changes,
-  the host writes it into that firmware's active state (`st_cur`, as the core last said: `STATE_LOAD`, `STATE_SAVE`,
-  `STATE_PASTE` with value 1, `STATE_UNDO`, or `rfm_move_fw_state_cur`) and into the open project's copy. No state
-  active (after New, a delete of the active one): only the project's copy.
-- **`STATE_SAVE`** (slot, index, id): the memory stored as that state. **`STATE_LOAD`**: that state into the firmware.
-- **The state buffer** (one, with its firmware's id): **`STATE_COPY`** (slot, index): that state copied into it;
-  **`STATE_DELETE`** (slot, index): the state moved into it (then forgotten); **`STATE_PASTE`** (slot, index, value):
-  the buffer stored as that state (replacing one there); `value` 1: it is the active state, so it is also loaded into
-  the firmware. The core only pastes onto the same firmware's States.
-- **`STATE_NEW`** (slot): keep the firmware's memory now (the undo, one per slot), then restart it as first installed.
-  **`STATE_UNDO`** (slot, `value` the state active again, -1 none; `index` the same, 255 for none): the kept memory back
-  into the firmware.
+  `FW_LOAD`, it also calls `rfm_move_fw_slots` (and `rfm_move_set_takeover` for the slot) and `rfm_move_fw_states`.
 - Opening the last project at start goes the same way (`rfm_move_project_load` sends `PROJECT_FW`; the same firmwares
   already loaded: only the memory, or nothing when it is already this project's).
+
+#### States: the host's contract (0.14.0)
+
+The owner's model of 2026-11-24: pad 1 is the open project's own sound, pads 2..32 a library shared by all projects,
+and **no state is ever active**. With `RFM_MOVE_CAP_PROJFW`, every `STATE_*` action's `index` k (`slot` the firmware
+slot 0..2, `data` / `len` the firmware's id) means:
+
+- **k 0: the open project's own sound**: the project's copy of that firmware (`move-project-NN.fwK.bin` beside the
+  project), which the firmware holds while the project is open. There is no state file 0.
+- **k 1..31: the library**: the firmware's state file k (`states/<id>/state-KK.bin`), shared by all projects; shown
+  on pad k + 1 ("State k + 1").
+
+**The autosave**: the host writes a firmware's memory only into the open project's copy (and `flash.bin`), as today;
+**never into a state file**. There is no `st_cur` any more: every state file is written only by `STATE_SAVE`,
+`STATE_PASTE` and the host's own page.
+
+**The undo**: one per slot, the firmware's memory (and its working memory) from before the last `STATE_NEW`,
+`STATE_LOAD`, or `STATE_PASTE` with index 0. Each of those replaces it; a firmware change drops it.
+
+**The state buffer**: one, holding a firmware's memory with that firmware's id; the core pastes it only into the same
+firmware's States.
+
+| The core sends | The host does |
+|---|---|
+| `PROJECT_SAVE`, `index` the open project, `value` 1 (pad 1 clicked) | as today's `value` 1: the firmwares as they are now (synced) into the open project's copies, the blob stored |
+| `STATE_SAVE` k 1..31 | the memory now (synced, with its working memory) stored as state k; nothing becomes active. Never sent with k 0 |
+| `STATE_LOAD` k 1..31 | state k **into the project**: first the memory now (synced) into the project's copy and kept as the undo, then state k into the firmware (a new instance, as today); the project's copy then follows by the autosave (writing it at once is better). Never with k 0 |
+| `STATE_DELETE` k 1..31 | as today: the state into the state buffer, then forgotten. Never with k 0 |
+| `STATE_COPY` k 0 | the memory now (synced, with its working memory) into the state buffer, with the firmware's id |
+| `STATE_COPY` k 1..31 | as today: state k into the state buffer |
+| `STATE_PASTE` k 1..31, `value` 0 | as today: the buffer stored as state k (replacing one there); the firmware is not touched |
+| `STATE_PASTE` k 0, `value` 1 | the buffer **into the project**: the memory now kept as the undo, then the buffer loaded into the firmware (as a load); the project's copy follows |
+| `STATE_NEW` (`index` 255) | as today: the memory kept as the undo, the firmware restarted as first installed; it is the project's sound now |
+| `STATE_UNDO`, `value` -1, `index` 255 | the undo back into the firmware (its working memory too); the project's copy follows. Nothing kept (or another firmware's): nothing |
+
+**What the host reports**: `rfm_move_fw_states(m, slot, used)` as today (after a firmware loads, a scan, a save, a
+paste, a copy, a delete), bit k for library state k, k 1..31; bit 0 is ignored (send it clear).
+`rfm_move_fw_state_cur` is ignored with the capability (calling it is harmless; it need not be called).
+
+**A state file at index 0** (made before 0.14.0; the owner has one for ChoralRoot): once, when the host first scans a
+firmware's states, it moves `state-00.bin` (and the files beside it: its working memory, its JSON) to the first free
+index 1..31 and reports `rfm_move_fw_states` again. No free index: it is left where it is, never shown, never written,
+and the host logs it. The core takes any report at any time.
 
 ## FX parameter pages (0.5.0)
 
@@ -1208,7 +1245,7 @@ short, digits for numbers, note names as the screen has them):
 | kind | when | examples |
 |---|---|---|
 | EVENT | the base view changes (not when a popup over it closes) | "FM-1 mode", "MIDI mode, Notes", "Control mode", "Felucca, Drum layout, Track 2" (0.9.0), "Session", "Track 3", "Firmwares, Slot 1, Felucca", "Slot 2, empty", "Catalog", "States, Felucca" (0.13.0: the States layer from anywhere), "Projects", "FX setup, MIDI FX", "Routing", "Mixer", "Arp, Page 1" |
-| VALUE | a popup's words change, or the selection's | knobs "K1", "K1: +3", "Volume 75%", "CC 16: 65", readouts "Voicing: Wide"; held Track menus "Scale: Dorian", "Root: Db", "Layout: Drum", "Channel: 3", "Knob 1: CC 17", "Track 3, muted", "Rate: 1/16"; "Latch on"; a held label "SEL/KEYS"; host popups "FM-1 linked"; the sequencer "Playing", "Stopped", "Record on", "Step 5", "Chance: 50%", "Loop: 2 bars", "Tempo 120", "Bar 2", "Undo", "Metronome on", "Sync: EXT"; projects "Project 3, 120 BPM, 4 clips" (0.13.0: and its firmwares, "Project 7, 120 BPM, 12 clips, ChoralRoot, SLOOP, Felucca"), "Loading project 7", "Felucca not installed, Track 3 empty"; (0.13.0) States "State 5 loaded" (saved, copied, pasted, deleted), "New state, ChoralRoot", "Undo, new state", "Track 3, empty"; Down "Melodee, FM-1"; the browser "All firmwares", "Filter Synth", "Bank 2", the firmware selected ("Felucca"; in the catalog "Felucca, not installed"), its description (the jog's first detent, 250 characters at most), "Downloading Felucca 25%", "Felucca installed", "Felucca added to Favorites", "SLOOP, position 3 of 17", "Tagged Synth"; FX setup "MIDI FX 1: Arp", the module list "Arp", "Rate: 1/8", "Slot 1 Level: 100", "MIDI FX 1: track 3" |
+| VALUE | a popup's words change, or the selection's | knobs "K1", "K1: +3", "Volume 75%", "CC 16: 65", readouts "Voicing: Wide"; held Track menus "Scale: Dorian", "Root: Db", "Layout: Drum", "Channel: 3", "Knob 1: CC 17", "Track 3, muted", "Rate: 1/16"; "Latch on"; a held label "SEL/KEYS"; host popups "FM-1 linked"; the sequencer "Playing", "Stopped", "Record on", "Step 5", "Chance: 50%", "Loop: 2 bars", "Tempo 120", "Bar 2", "Undo", "Metronome on", "Sync: EXT"; projects "Project 3, 120 BPM, 4 clips" (0.13.0: and its firmwares, "Project 7, 120 BPM, 12 clips, ChoralRoot, SLOOP, Felucca"), "Loading project 7", "Felucca not installed, Track 3 empty"; (0.13.0) States "State 5 loaded" (saved, copied, pasted, deleted), "New state, ChoralRoot", "Undo, new state", "Track 3, empty"; (0.14.0) "States, ChoralRoot, Project 3", "Project 3 saved" (copied, pasted, kept), "Undo, State 5", "Undo, paste"; Down "Melodee, FM-1"; the browser "All firmwares", "Filter Synth", "Bank 2", the firmware selected ("Felucca"; in the catalog "Felucca, not installed"), its description (the jog's first detent, 250 characters at most), "Downloading Felucca 25%", "Felucca installed", "Felucca added to Favorites", "SLOOP, position 3 of 17", "Tagged Synth"; FX setup "MIDI FX 1: Arp", the module list "Arp", "Rate: 1/8", "Slot 1 Level: 100", "MIDI FX 1: track 3" |
 
 (0.6.1) Every FM-1 button press is said at once (its label, else its name, else the panel's word: "Play", "Octave
 down"). Values with no popup are said when they change: the track selected, mutes and solos, a step on or off, the

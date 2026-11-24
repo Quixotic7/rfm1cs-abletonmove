@@ -189,7 +189,25 @@ enum {
  *  - STATE_NEW: slot: the host keeps what the firmware holds now (the undo), then restarts it as first installed (its
  *    factory memory). No stored state is touched; none is active now (the core's st_cur -1).
  *  - STATE_UNDO: slot, value the state active before New (-1 none; index the same, 255 for none): the memory kept at
- *    New goes back into the firmware and that state is the active one again. Only right after a New (one step). */
+ *    New goes back into the firmware and that state is the active one again. Only right after a New (one step).
+ * (0.14.0, the owner's 2026-11-24; README "States: the host's contract") pad 1 is the open project's own sound, pads
+ * 2..32 a library shared by all projects, and no state is ever active. With RFM_MOVE_CAP_PROJFW every STATE_* index k
+ * means: 0 the open project's own sound (the project's copy of the firmware, which the firmware holds while the project
+ * is open), 1..31 the library's state file k. The host never autosaves into a state file (only into the project's copy
+ * and flash.bin, as before), and keeps one undo per slot (the memory before the last NEW, LOAD or PASTE onto 0).
+ *  - pad 1 clicked: PROJECT_SAVE, index the open project, value 1 (as the open project's click in Projects).
+ *  - STATE_SAVE (k 1..31 only): the memory now (synced) stored as state k. It is not made active.
+ *  - STATE_LOAD (k 1..31 only): state k INTO the project: the memory now kept as the undo (and written into the
+ *    project's copy), then state k into the firmware; the project's copy follows (its autosave). State k is never
+ *    written by playing afterwards.
+ *  - STATE_DELETE (k 1..31 only): as before.
+ *  - STATE_COPY: k 0: the memory now (synced) into the state buffer; k 1..31: that state, as before.
+ *  - STATE_PASTE: k 1..31, value 0: the buffer stored as state k (replacing one there); k 0, value 1: the buffer
+ *    loaded into the firmware as the project's sound, the memory before it kept as the undo.
+ *  - STATE_NEW: as above; it is the project's sound now (no state active, none touched).
+ *  - STATE_UNDO: value -1, index 255 always: the undo back into the firmware (nothing kept: nothing).
+ * The host reports rfm_move_fw_states as before (bit k: library state k; bit 0 is ignored); rfm_move_fw_state_cur is
+ * ignored. A state file at index 0 (made before 0.14.0): the host moves it once to the first free index 1..31. */
 #define RFM_MOVE_ACT_PROJECT_FW 33
 #define RFM_MOVE_ACT_STATE_COPY 34
 #define RFM_MOVE_ACT_STATE_PASTE 35
@@ -431,7 +449,8 @@ typedef struct {
     uint8_t level[RFM_MOVE_FW_SLOTS];                   /* (library) each slot's level, 0..127 */
     uint8_t active;                                     /* (library) the slot the controls play */
     uint32_t st_used[RFM_MOVE_FW_SLOTS];                /* each slot's firmware's stored states (bits) */
-    int8_t st_cur[RFM_MOVE_FW_SLOTS];                   /* .. the one loaded or saved last, -1 */
+    int8_t st_cur[RFM_MOVE_FW_SLOTS];                   /* .. the one loaded or saved last, -1 ((0.14.0) not with
+                                                         * RFM_MOVE_CAP_PROJFW: none is active) */
     /* the library */
     rfm_move_lib_rec_t rec[RFM_MOVE_FW_LIB_MAX];
     uint16_t nrec;
@@ -502,7 +521,8 @@ typedef struct {
                                                          * Copy + a stored state pastes over it) */
     char sb_id[RFM_MOVE_FW_ID_MAX];                     /* .. the firmware it belongs to */
     uint8_t undo;                                       /* New's undo is there: the slot + 1 */
-    int8_t undo_cur;                                    /* .. the state active before New, -1 */
+    int8_t undo_cur;                                    /* .. (0.14.0) what it undoes: -1 New, 0 a paste onto pad 1,
+                                                         * k the load of library state k */
 } rfm_move_fw_state_t;
 enum { RFM_MOVE_MIXP_LEVEL, RFM_MOVE_MIXP_PAN, RFM_MOVE_MIXP_SEND1, RFM_MOVE_MIXP_SEND2, RFM_MOVE_MIXP_SEND3,
        RFM_MOVE_MIXP_N };                               /* (0.5.0) the Mixer's choice (its right-hand pads) */
@@ -1334,7 +1354,8 @@ enum { RFM_MOVE_CAP_SLOTS = 1, RFM_MOVE_CAP_FX = 2, RFM_MOVE_CAPS_ALL = 3 };
  *  - a held project in the grid shows its firmwares;
  *  - States are a layer (Track 1..3 held + the top row's pad 7, or the browser's Loop) with the clips' gestures (a
  *    stored state loads, an empty one saves, Copy / Delete + a state: STATE_COPY / _PASTE / _DELETE), step 14 New
- *    (STATE_NEW) and Undo after it (STATE_UNDO). The host autosaves the firmware's memory into the active state.
+ *    (STATE_NEW) and Undo after it (STATE_UNDO). (0.14.0) Pad 1 is the open project's own sound, the others a
+ *    library; no state is active (the STATE_* actions' block above).
  * Without it (an older host) a project load never touches the firmwares (a version 9 project's firmware part is saved
  * back as it was), and States keep the 0.12.0 gestures. */
 enum { RFM_MOVE_CAP_PROJFW = 4 };
@@ -1353,7 +1374,8 @@ void rfm_move_proj_fw(rfm_move_t *m, int slot, int status);
 int rfm_move_proj_fw_loading(const rfm_move_t *m);       /* 1: a project's firmwares are loading (its screen is up) */
 /* (0.13.0) the state active on that slot's firmware now (k 0..31, -1 none): after the host loaded a project's copy of
  * the firmware's memory it compares it with the stored states and says which one it equals. Also any time the host
- * knows better (a web page's edit) */
+ * knows better (a web page's edit). (0.14.0) Ignored with RFM_MOVE_CAP_PROJFW: no state is active (pad 1 is the
+ * project's own sound); a host need not call it */
 void rfm_move_fw_state_cur(rfm_move_t *m, int slot, int k);
 int rfm_move_states_open(const rfm_move_t *m);           /* (0.13.0) the States layer's slot, -1 closed */
 
