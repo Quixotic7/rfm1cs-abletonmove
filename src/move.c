@@ -1604,6 +1604,21 @@ static int shift_held(const rfm_move_t *m) { return (m->seq.mods & SEQ_M_SHIFT) 
  * cut). Shift + click: what the jog turns, the target shared with the FM-1 layout (whose own click changes it): taken
  * over, the next of SELECT -> PRESET -> ALGO as that layout's click; else the pages -> SELECT -> PRESET -> ALGO -> the
  * pages again. The target's knob is lit white while the jog is on it (R1) */
+/* (0.14.0, the owner's 2026-11-24: "Back should exit out of the FM-1 knob lock. If I go to another track or mode and
+ * come back, the lock state should exit") the lock: the page taken over (Knobs+Keys) or the jog on a knob. Back's
+ * click with nothing else to close ends it ("Knobs"); another mode, slot, layout, track, view ends it too (the track's
+ * knob page itself stays remembered) */
+int rfmv_fwp_locked(const rfm_move_t *m) { return rfmv_fwp_live(m) && (m->seq.fwp_full || m->fwj); }
+void rfmv_fwp_unlock(rfm_move_t *m) { m->seq.fwp_full = 0, m->fwj = 0; }
+void rfmv_fwp_ctx(rfm_move_t *m)
+{
+    const int a = act_slot(m);
+    const uint32_t k = (uint32_t)(m->s.mode & 7) | (uint32_t)(a & 3) << 3 | (uint32_t)(m->seq.sel_track & 15) << 5 |
+                       (uint32_t)(m->seq.view != 0) << 9 | (uint32_t)(m->seq.projects != 0) << 10 |
+                       (uint32_t)(rfmv_slot_lay(m, a) & 15) << 11 | (uint32_t)(m->s.layout & 7) << 15 | 1u << 31;
+    if (k != m->fwp_key)
+        m->fwp_key = k, rfmv_fwp_unlock(m);
+}
 static void fwj_press(rfm_move_t *m)
 {
     if (shift_held(m)) {
@@ -1968,6 +1983,12 @@ static void back_click(rfm_move_t *m, uint32_t now)
     }
     if (rfmv_seq_layer_open(m))
         rfmv_seq_button(m, MR_CC_BACK, 1, now);
+    else if (rfmv_fwp_locked(m)) {                      /* (0.14.0, the owner's own exception to "Back never changes
+                                                         * the mode or the view") the FM-1 page's lock: Knobs, the jog
+                                                         * its pages */
+        rfmv_fwp_unlock(m);
+        rfmv_pop(m, POP_FWLV, 0);
+    }
     /* (0.9.0, the owner's: nothing open, nothing: no flip; 0.12.0: "Back never changes the mode or the view": session
      * view stays too, Menu leaves it) */
 }
@@ -2084,6 +2105,7 @@ void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
     m->say_back = m->speech && ev->type == MR_EV_BUTTON && ev->index == MR_CC_BACK && !ev->value &&
                   m->say_n == m->say_bdown;             /* .. where it left you is said */
     input(m, ev, now_ms);
+    rfmv_fwp_ctx(m);                                    /* (0.14.0: the FM-1 page's lock ends with its place) */
     fwp_sync(m);                                        /* (0.12.x: level 2's keys and buttons let go once it is off) */
     rfmv_slot_push(m);                                  /* (0.8.0: the active slot's record kept current) */
     rfmv_pfw_watch(m);                                  /* (0.13.0: a firmware setting changed: the project edited) */

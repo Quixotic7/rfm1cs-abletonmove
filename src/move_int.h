@@ -440,6 +440,9 @@ int rfmv_fwj_on(const rfm_move_t *m);                   /* (0.14.0) the FM-1 pag
 int rfmv_fwj_lit(const rfm_move_t *m);                  /* .. the jog is on it (taken over, or Shift + click): its knob white */
 int rfmv_fwp_page(const rfm_move_t *m);
 int rfmv_fwp_live(const rfm_move_t *m);
+int rfmv_fwp_locked(const rfm_move_t *m);              /* (0.14.0) Knobs+Keys or the jog on a knob: Back ends it */
+void rfmv_fwp_unlock(rfm_move_t *m);
+void rfmv_fwp_ctx(rfm_move_t *m);                       /* (0.14.0) another mode, slot, track, view, layout: unlocked */
 int rfmv_fwp_full(const rfm_move_t *m);
 int rfmv_fwp_knobs(const rfm_move_t *m);
 int rfmv_seq_trig_on(const rfm_move_t *m);              /* the knobs do the TRIG page's (TRIG, or a step held on FM-1) */

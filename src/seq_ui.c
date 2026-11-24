@@ -183,7 +183,8 @@ int rfmv_seq_mod_over(const rfm_move_t *m)              /* Copy, Delete or Mute 
  * the projects view, a sequencer layer (the grid, Loop's or Mute's latch, Shift's lock, the clipboard's marks) */
 int rfmv_back_has(const rfm_move_t *m)
 {
-    return m->seq.smenu || m->seq.projects || rfmv_seq_layer_open(m) || rfmv_st_on(m);   /* (0.13.0: States) */
+    return m->seq.smenu || m->seq.projects || rfmv_seq_layer_open(m) || rfmv_st_on(m) ||   /* (0.13.0: States) */
+           rfmv_fwp_locked(m);                          /* (0.14.0: the FM-1 page's lock) */
 }
 int rfmv_seq_layer_open(const rfm_move_t *m)
 {
@@ -2010,6 +2011,8 @@ static int close_all(rfm_move_t *m)                     /* every layer Back's cl
             n++;
         }
     q->nlayer = 0;
+    if (rfmv_fwp_locked(m))                             /* (0.14.0: the FM-1 page's lock, as Back's click) */
+        rfmv_fwp_unlock(m), n++;
     return n;
 }
 void rfmv_seq_back_key(rfm_move_t *m, int cc)

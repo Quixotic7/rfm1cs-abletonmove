@@ -1789,6 +1789,8 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
     int32_t cap;
     if (!rate)
         return;
+    rfmv_fwp_ctx(m);                                    /* (0.14.0: a host's load or slot change ends the FM-1 page's
+                                                         * lock too) */
     if (q->den_rate != rate) {                          /* a new rate: the progress kept in proportion */
         if (q->den_rate)
             q->ph = q->ph * rate / q->den_rate;

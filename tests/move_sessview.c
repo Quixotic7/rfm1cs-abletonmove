@@ -3737,9 +3737,12 @@ static void test_fwp_page(void)
     press(MR_CC_DOWN), clear(), knob(5, 2);
     CHECK(acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_K2) == 1);
     rest();
-    /* Back's click: as in the FM-1 layout (nothing open: nothing); Back held + Left: no shortcut */
+    /* Back's click (0.14.0, the owner's 2026-11-24: "Back should exit out of the FM-1 knob lock"): Knobs; the click
+     * again: level 2 */
     clear(), back();
-    CHECK(rfmv_fwp_full(&M) && count(RFM_MOVE_ACT_BTN) == 0);
+    CHECK(!rfmv_fwp_full(&M) && rfm_move_fwp_level(&M) == 1 && count(RFM_MOVE_ACT_BTN) == 0 && M.pop == POP_FWLV);
+    jog_click(), rest();
+    CHECK(rfmv_fwp_full(&M));
     /* (0.14.0, the owner's) level 2's jog is the FM-1 layout's: its turn the target (SELECT), the page stays; the
      * click ends the takeover of the steps and buttons; the click again: level 2 */
     step(7, 1);                                          /* (a key held: let go when level 2 ends) */
@@ -3765,10 +3768,10 @@ static void test_fwp_page(void)
     hold_track(1), clear(), step(3, 1);
     CHECK(M.s.lock[1] == 3 && count(RFM_MOVE_ACT_KEY) == 0);
     step(3, 0), track(1, 0), rest();
-    /* a Track tap: the slot's layout again, the TRIG page first (level 2 kept for the next visit) */
+    /* a Track tap: the slot's layout again, its track 4 (the lock just set) on its own page (TRIG); (0.14.0, the
+     * owner's 2026-11-24) another track: level 2 over */
     tap_track(1), rest();
-    CHECK(M.seq.trig && !M.seq.fwp && !rfmv_fwp_full(&M) && M.seq.fwp_full);
-    M.seq.fwp_full = 0;
+    CHECK(M.seq.trig && !M.seq.fwp && !rfmv_fwp_full(&M) && !M.seq.fwp_full);
     /* an empty slot (Track 3: nothing loaded): the page is there, its knobs dark and dead, its click nothing */
     hold_track(2), hit(26), track(2, 0), rest();
     tap_track(2), rest();
@@ -4660,8 +4663,11 @@ static void test_o14_fwp_jog(void)
     jog_click();                                        /* (the FM-1 layout's click: ALGO, for this slot) */
     CHECK(M.jog_enc == 2);
     rest();
-    hold_track(1), hit(26), track(1, 0), rest();        /* (its note layout again: the FM-1 page kept, the jog still on a knob: ALGO now) */
-    CHECKF(M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.fwp && M.jog_enc == 2 && M.fwj, "mode %d fwp %d enc %d fwj %d", M.s.mode, M.seq.fwp, M.jog_enc, M.fwj);
+    hold_track(1), hit(26), track(1, 0), rest();        /* (its note layout again: the FM-1 page kept, the target ALGO
+                                                         * now; 0.14.0, the owner's 2026-11-24: "If I go to another
+                                                         * track or mode and come back, the lock state should exit":
+                                                         * the jog its pages again) */
+    CHECKF(M.s.mode == RFM_MOVE_MODE_SEQ && M.seq.fwp && M.jog_enc == 2 && !M.fwj, "mode %d fwp %d enc %d fwj %d", M.s.mode, M.seq.fwp, M.jog_enc, M.fwj);
     /* each slot its own target: Track 1 (ChoralRoot's FM-1 layout) has SELECT */
     tap_track(0), rest();
     CHECK(M.jog_enc == 0);
@@ -5115,8 +5121,66 @@ static void test_n24_fw_play(void)
     CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY) == 2 && !M.seq.playing && !M.seq.start_pending);
 }
 
+/* item 4: "Back should exit out of the FM-1 knob lock. If I go to another track or mode and come back, the lock state
+ * should exit": Back (nothing else open) ends Knobs+Keys and the jog on a knob; another track, view, mode, slot too;
+ * the track's knob page stays */
+static void test_n24_knob_lock(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int tr;
+    track_view();
+    tr = M.seq.sel_track;
+    jog(1), rest(), jog_click(), rest();
+    CHECK(rfm_move_fwp_level(&M) == 2);
+    leds(w);
+    CHECK(w[L_WHITE0 + W_BACK][0] == 80);               /* (Back lit: its click has something to end) */
+    /* Back: Knobs ("Knobs"), the firmware hears nothing */
+    clear(), back();
+    CHECK(rfm_move_fwp_level(&M) == 1 && !M.fwj && M.pop == POP_FWLV && M.pop_i == 0 && !count(RFM_MOVE_ACT_BTN));
+    CHECKF(strstr(said, "Knobs") != NULL, "said %s", said);
+    write_pbm("n24_lock_back");
+    rest(), leds(w);
+    CHECK(w[L_WHITE0 + W_BACK][0] == 0 && !rfmv_back_has(&M));   /* (nothing left for Back) */
+    clear(), back();                                    /* (again: nothing, the page stays) */
+    CHECK(rfm_move_fwp_level(&M) == 1 && M.seq.fwp && M.s.mode == RFM_MOVE_MODE_SEQ && !M.seq.view);
+    /* the jog on a knob (Shift + click): Back ends it; a menu open: Back closes the menu first */
+    sh_jog_click(), rest();
+    CHECK(M.fwj);
+    button(MR_CC_SHIFT, 1), step(2, 1), step(2, 0), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
+    back();
+    CHECK(!M.seq.smenu && M.fwj);
+    rest(), back();
+    CHECK(!M.fwj && rfm_move_fwp_level(&M) == 1);
+    rest();
+    /* another track (Track 2 held + step 7) and back: Knobs, the FM-1 page kept */
+    jog_click(), rest();
+    hold_track(1), step(6, 1), step(6, 0), track(1, 0), rest();
+    CHECK(M.seq.sel_track == 6 && !M.seq.fwp_full);
+    hold_track(1), step(tr, 1), step(tr, 0), track(1, 0), rest();
+    CHECK(M.seq.sel_track == tr && rfm_move_fwp_level(&M) == 1 && rfmv_seq_kpage(&M) == 1);
+    write_pbm("n24_lock_track_back");
+    /* session view and back */
+    sh_jog_click(), jog_click(), rest();
+    CHECK(M.seq.fwp_full);
+    back_down(), press(MR_CC_MENU), back_up(), rest();   /* (Menu is the firmware's HOME in Knobs+Keys: Back + Menu) */
+    CHECK(M.seq.view);
+    press(MR_CC_MENU), rest();
+    CHECKF(rfm_move_fwp_level(&M) == 1 && !M.fwj && rfmv_seq_kpage(&M) == 1, "level %d fwj %d kpage %d full %d sel %d",
+           rfm_move_fwp_level(&M), M.fwj, rfmv_seq_kpage(&M), M.seq.fwp_full, M.seq.sel_track);
+    /* another slot and back */
+    jog_click(), rest();
+    tap_track(0), rest(), tap_track(1), rest();
+    CHECK(rfm_move_fwp_level(&M) == 1 && !M.fwj && rfmv_seq_kpage(&M) == 1);
+    /* another page and back (the same track, mode, view): the lock stays, as before */
+    jog_click(), rest(), jog(1), rest(), jog(-1), rest();
+    CHECK(rfm_move_fwp_level(&M) == 2);
+    back(), rest(), jog(-1), rest();
+}
+
 int main(void)
 {
+    test_n24_knob_lock();
     test_n24_fw_play();
     test_n24_back_play();
     test_n24_track_leds();

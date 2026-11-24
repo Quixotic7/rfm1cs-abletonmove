@@ -148,7 +148,8 @@ over the projects view too.
 
 **Back** closes layers only (a Shift menu, Loop's latch, the clipboard's marks, the projects view's levels); with
 nothing open it does nothing (0.9.0; in 0.8.0 it flipped to a Sequencer mode). (0.12.0, the owner's "Back never changes
-the mode or the view") it never leaves session view: Menu does.
+the mode or the view") it never leaves session view: Menu does. (0.14.0, the owner's own exception, 2026-11-24) On
+the FM-1 knob page with nothing else to close, Back ends its lock (Knobs+Keys, the jog on a knob): "Knobs".
 
 **Session view from anywhere** (0.12.0, the owner's): **Shift + Menu** in a note layout, **Back held + Menu** in every
 layout, and **Track 1..3 held + Menu** (in the FM-1 layout and a takeover the Move's Shift is the firmware's: a held
@@ -364,7 +365,12 @@ Buttons, steps, ect, but pads stay in the MIDI layout, and Jogwheel is not taken
   Up / Down (their octave), the jog (its turn the page or, 0.14.0, the target knob; its double click back to level 1, its click the jog on a knob), Back (as in the FM-1 layout: no
   held-Back shortcuts), the Track buttons, the volume knob. The sequencer's transport: Play in level 1 (or another
   page). Another page lets go of what level 2 held and gives the steps and buttons back; the FM-1 page again: the level
-  it was left in (0.14.0: a Track tap brings the track's own page back, the FM-1 page too). An empty slot: the page is there ("Empty slot"), its knobs dark and
+  it was left in (0.14.0: a Track tap brings the track's own page back, the FM-1 page too). (0.14.0, the owner's
+  2026-11-24: "Back should exit out of the FM-1 knob lock. If I go to another track or mode and come back, the lock
+  state should exit") **Back's click** ends level 2 and the jog on a knob ("Knobs"; Back is lit while it can; a menu
+  open closes first; Back held + Delete ends it too), and **another track, layout, mode, slot, session view or the
+  projects view** ends it as well: coming back shows the FM-1 page in Knobs with the jog on its pages (the track's
+  page itself is remembered; another page and back keeps the lock, as before). An empty slot: the page is there ("Empty slot"), its knobs dark and
   dead, its click nothing. `rfm_move_fwp_level()` says which level shows (the host needs no change: labels, readouts
   and frames reach the core as ever).
 

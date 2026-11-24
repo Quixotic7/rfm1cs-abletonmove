@@ -154,6 +154,18 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   `rfm_move_settings_t`: `fw_play`, saved in the Popup size byte's bit 1 (`rfm_move_save`; the settings' version and
   size unchanged; a core before 0.14.0 reads bit 0 only, so it keeps Popup size and ignores FW Play).
   `test_n24_fw_play`, picture `sessview_n24_fw_play`; `test_move_seq`'s and `test_move_speech`'s row counts.
+- (item 4, "Back should exit out of the FM-1 knob lock. If I go to another track or mode and come back, the lock state
+  should exit") the lock is the FM-1 knob page taken over (Knobs+Keys, `seq.fwp_full`) or the jog on a knob (`fwj`).
+  **Back's click** with nothing else to close (a menu, Loop's latch, the marks close first, as before) ends both: the
+  page in Knobs, the jog on its pages, "Knobs" (`POP_FWLV`; the firmware hears nothing); Back is lit (80) while it can
+  (`rfmv_back_has`), Back held + Delete ends it with the rest. The owner's own exception to "Back never changes mode
+  or view" (it changes neither: the page stays). **Its place gone** ends it too (`rfmv_fwp_ctx`, at the end of
+  `rfm_move_input` and in `rfm_move_seq_advance`: the mode, the active slot, the selected track, session view, the
+  projects view, the slot's layout; the new `fwp_key` at the end of `rfm_move_t`): coming back shows the FM-1 page
+  (the track's page is still remembered) in Knobs with the jog on its pages. Was: Back did nothing there, and the
+  level and the jog's knob were kept across a Track tap, a layout or another track. Another knob page and back (the
+  same track) still keeps it. `test_n24_knob_lock` (pictures `sessview_n24_lock_*`); `test_fwp_page` and
+  `test_o14_fwp_jog` follow the new rule.
 
 ## 0.13.0 (2026-11-23)
 
