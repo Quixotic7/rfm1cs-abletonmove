@@ -58,7 +58,8 @@ static int name_ok(const uint8_t *p, int w)
 }
 int rfm_move_ep_check(const uint8_t *d, uint32_t n)
 {
-    static uint8_t seen[8192];                          /* (the pids met: 8 KiB, not on a small stack) */
+    uint8_t seen[8192];                                 /* (the pids met, a bit each: 8 KiB of stack, so the check is
+                                                         * reentrant: a host may call it on its loader's thread) */
     lay_t L;
     uint64_t end;
     uint32_t i, j;
@@ -344,9 +345,10 @@ static void text_of(const rfm_move_ep_slot_t *s, const lay_t *L, const uint8_t *
         as_int(o, cap, P, v);                           /* (outside the table: as INT) */
         return;
     }
-    case FMT_NOTE: {
+    case FMT_NOTE: {                                    /* (SPEC.md's names: sharps, "C" .. "B") */
+        static const char *const NN[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         const int oct = (v >= 0 ? v / 12 : -((11 - v) / 12)) - (5 - P[21]);
-        snprintf(o, (size_t)cap, "%s%d", rfmv_note_names[((v % 12) + 12) % 12], oct);
+        snprintf(o, (size_t)cap, "%s%d", NN[((v % 12) + 12) % 12], oct);
         return;
     }
     case FMT_PERCENT:
@@ -624,7 +626,8 @@ void rfmv_ep_sync(rfm_move_t *m, int leave)
     shown = rfmv_ep_page(m) && c.slot >= 0;
     tv = m->s.mode == RFM_MOVE_MODE_SEQ && !q->view && !q->projects;
     if (shown) {
-        const int arrive = (!e->p_shown && e->p_tv) || e->p_track != t || e->p_slot != c.slot || e->p_layer != c.layer;
+        const int arrive = e->p_tv && (!e->p_shown || e->p_track != t || e->p_slot != c.slot || e->p_layer != c.layer);
+                                                        /* (in the track view: a view flipped to it names itself) */
         if (arrive && !(m->pop == POP_EPA && m->pop_i == 0 && rfmv_pop_up(m, POP_EPA)))
             rfmv_pop(m, POP_EPA, 0);
         else if (!arrive && e->p_shown && e->p_eng != c.eng)
@@ -632,7 +635,7 @@ void rfmv_ep_sync(rfm_move_t *m, int leave)
         remember(m, t, &c);
     }
     e->slot = (int8_t)c.slot, e->layer = (uint8_t)c.layer, e->eng = (uint8_t)c.eng, e->page = (uint16_t)c.page;
-    e->p_shown = (uint8_t)shown, e->p_tv = (uint8_t)tv, e->p_track = (int8_t)(shown ? t : -1);
+    e->p_shown = (uint8_t)shown, e->p_tv = (uint8_t)tv, e->p_track = (int8_t)t;
     e->p_slot = (int8_t)c.slot, e->p_layer = (uint8_t)c.layer, e->p_eng = (uint8_t)c.eng;
     ws = shown && c.page != NOPAGE ? c.slot : -1;
     wp = ws >= 0 ? c.page : -1;
