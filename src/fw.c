@@ -1251,33 +1251,31 @@ static void after_filter(rfm_move_t *m, int step)
  * 13: a firmware of the bank shown (the list as it is: Favorites / All, the filter, the catalog), never the one
  * selected; it only selects (loading or downloading stays the jog's / the double tap's), named and said as a pad's
  * selection; the pads roll from the old selection to it (RFMV_FWR_MS). One or none there: "Nothing to pick" */
-static int rnd_ok(const rfm_move_t *m)                 /* two or more in the bank shown */
-{
-    int ids[32], i, n = 0;
-    bank_ids(m, ids);
-    for (i = 0; i < 32; i++)
-        n += ids[i] >= 0;
-    return n >= 2;
-}
+static int rnd_ok(const rfm_move_t *m) { return list_len(m) >= 2; }   /* (two or more in the list) */
+/* (0.14.0, the coordinator's follow-up: the whole list, not the bank shown) a firmware of the whole list as it is
+ * (Favorites / All, the filter, the catalog: every bank), never the one selected; the bank it is in shown, the pads
+ * rolling to it there (from the old selection's pad when that was in the same bank, else from the first) */
 static void fw_random(rfm_move_t *m)
 {
     rfm_move_fw_state_t *f = F(m);
-    int ids[32], cand[32], i, nc = 0, from = -1, to;
-    bank_ids(m, ids);
-    for (i = 0; i < 32; i++) {
-        if (ids[i] >= 0 && ids[i] == f->sel)
-            from = i;
-        if (ids[i] >= 0 && ids[i] != f->sel)
-            cand[nc++] = i;
-    }
-    if (nc + (from >= 0) < 2) {                         /* (a list of one or none: nothing to choose) */
+    const int n = list_len(m), oldb = cur_bank(m);
+    int k, id, pos = -1, r;
+    for (k = 0; k < n && pos < 0 && f->sel >= 0; k++)
+        if (walk(m, k, 1, &id), id == f->sel)
+            pos = k;
+    if (n - (pos >= 0) < 1 || n < 2) {                  /* (a list of one or none: nothing to choose) */
         pop_msg(m, FP_MSG, -1, 0, "Nothing to pick");
         return;
     }
-    to = cand[rfmv_ui_rnd(m) % (uint32_t)nc];
-    f->sel = (int16_t)ids[to], f->jog = 0, pop_clear(m);
+    r = (int)(rfmv_ui_rnd(m) % (uint32_t)(n - (pos >= 0)));
+    if (pos >= 0 && r >= pos)
+        r++;
+    walk(m, r, 1, &id);
+    f->bank[bank_key(m)] = (uint8_t)(r / 32);           /* (the bank it is in shown) */
+    f->sel = (int16_t)id, f->jog = 0, pop_clear(m);
     m->fw_tap_cell = 0;
-    m->fwr_ms = rfmv_now_ms(m), m->fwr_from = (int8_t)(from >= 0 ? from : 0), m->fwr_to = (int8_t)to;
+    m->fwr_ms = rfmv_now_ms(m), m->fwr_to = (int8_t)(r % 32);
+    m->fwr_from = (int8_t)(pos >= 0 && pos / 32 == r / 32 && oldb == r / 32 ? pos % 32 : 0);
 }
 static void tag_toggle(rfm_move_t *m, int fw, int s)
 {

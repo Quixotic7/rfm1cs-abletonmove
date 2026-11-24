@@ -5972,6 +5972,33 @@ static void test_n24_fw_random(void)
     step(12, 1), step(12, 0);
     CHECK(M.fw.sel == prev && M.fw.pop != 0 && !strcmp(M.fw.pop_text, "Nothing to pick"));
     write_pbm("n24_fw_random_none");
+    /* (the coordinator's follow-up) a list of 70 (three banks): the pick from the whole list, its bank shown */
+    {
+        static rfm_move_fw_t E3[70];
+        static char nm[70][8];
+        int seen[3] = { 0, 0, 0 }, other = 0;
+        for (k = 0; k < 70; k++) {
+            snprintf(nm[k], sizeof nm[k], "fw%02d", k);
+            memset(&E3[k], 0, sizeof E3[k]);
+            E3[k].id = nm[k], E3[k].name = nm[k], E3[k].version = "1.0", E3[k].installed = "1.0";
+            E3[k].desc = "", E3[k].cat = 0;
+        }
+        rfm_move_fw_list(&M, E3, 70);
+        rest();
+        CHECK(rfmv_fw_list_len(&M) == 70);
+        for (k = 0; k < 40; k++) {
+            const int b0 = M.fw.bank[1];
+            prev = M.fw.sel;
+            step(12, 1), step(12, 0);
+            CHECKF(M.fw.sel >= 0 && M.fw.sel != prev && M.fw.bank[1] == M.fw.sel / 32, "sel %d bank %d", M.fw.sel,
+                   M.fw.bank[1]);
+            seen[M.fw.sel / 32]++, other += M.fw.bank[1] != b0;
+        }
+        CHECKF(seen[0] && seen[1] && seen[2] && other > 0, "banks %d %d %d, %d moves", seen[0], seen[1], seen[2], other);
+        adv_ms(50);
+        CHECKF(strstr(said, nm[M.fw.sel]) != NULL, "said %s", said);
+        write_pbm("n24_fw_random_bank");
+    }
     rfm_move_fw_list(&M, E, NFW);
     back(), rest();
 }
