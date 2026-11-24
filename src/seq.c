@@ -1293,7 +1293,7 @@ static int arp_in(rfm_move_t *m, int tr, int note, int vel, int src, int32_t cof
                                                          * playing) */
         const int32_t ref = q->playing ? q->tl - q->T : 0;
         s->run = 1, s->pos = s->oct = s->steps = s->mpos = s->tpos = 0, s->last = 0xFF;
-        s->lastn = 0;
+        s->lastn = 0, s->rate = a->rate;
         if (a->quant) {
             const int32_t Q = BAR / rfmv_seq_arp_rate_of(a->quant - 1), d = now - ref;
             s->t0 = ref + (d >= 0 ? (d + Q - 1) / Q * Q : -((-d) / Q) * Q);
@@ -1505,11 +1505,22 @@ static void arp_tick(rfm_move_t *m)
         }
         if (!s->run)
             continue;
+        if (s->rate != a->rate) {                       /* (0.14.0, the owner's "Changing Arp rate breaks the arp from
+                                                         * working right until you retrigger the notes") RATE turned
+                                                         * while it runs: the walk goes on from the run's start at the
+                                                         * new rate, the next note the first of that grid after now.
+                                                         * Was: its k notes counted at the new rate (k x BAR / rate):
+                                                         * slower, the next note bars away; faster, one every tick */
+            const int r = rfmv_seq_arp_rate_of(a->rate);
+            const int64_t k = q->tl >= s->t0 ? (int64_t)(q->tl - s->t0) * r / BAR + 1 : 0;
+            s->rate = a->rate, s->k = (int32_t)k;
+            s->next = s->t0 + (int32_t)(k * BAR / r);
+        }
         if (q->tl < s->next)
             continue;
         arp_step(m, t);
         s->k++;
-        s->next = s->t0 + (int32_t)((int64_t)s->k * BAR / rfmv_seq_arp_rate_of(a->rate));
+        s->next = s->t0 + (int32_t)((int64_t)s->k * BAR / rfmv_seq_arp_rate_of(s->rate));
     }
 }
 

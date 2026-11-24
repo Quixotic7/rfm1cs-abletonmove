@@ -5367,8 +5367,50 @@ static void test_n24_arp_clip(void)
     rfmv_seq_clip_clear(&M, clip);
 }
 
+/* item 8: "Changing Arp rate breaks the arp from working right until you retrigger the notes": RATE turned while a
+ * note is held (stopped, then running): the run goes on at the new rate at once, no gap, no burst */
+static void test_n24_arp_rate(void)
+{
+    rfm_move_arp_t *ap;
+    int tr, run, n;
+    track_view();
+    tr = M.seq.sel_track, ap = &M.seq.tr[tr].arp;
+    ap->mode = RFM_MOVE_AM_ON, ap->rate = 9, ap->range = 1, ap->quant = 0;   /* (16 a bar: a note each 125 ms) */
+    shift_step(10), rest();
+    CHECK(M.seq.smenu == RFM_MOVE_SM_ARP);
+    for (run = 0; run < 2; run++) {
+        if (run)
+            press(MR_CC_PLAY), adv_ms(100);
+        pad(0, 100), adv_ms(1000);
+        clear(), adv_ms(1000);
+        n = ons_of(tr + 1, -1);
+        CHECKF(n >= 7 && n <= 9, "%s, 1/16: %d a second", run ? "running" : "stopped", n);
+        knob(1, -3 * RFM_MOVE_LIST_TICKS);              /* (RATE 1/8: a note each 250 ms) */
+        CHECK(ap->rate == 6);
+        clear(), adv_ms(1000);
+        n = ons_of(tr + 1, -1);
+        CHECKF(n >= 3 && n <= 5, "%s, slower: %d a second", run ? "running" : "stopped", n);
+        knob(1, 6 * RFM_MOVE_LIST_TICKS);               /* (RATE 1/32: a note each 62.5 ms) */
+        CHECK(ap->rate == 12);
+        clear(), adv_ms(100);
+        n = ons_of(tr + 1, -1);
+        CHECKF(n <= 2, "%s, faster: %d in the first 100 ms (no burst)", run ? "running" : "stopped", n);
+        adv_ms(900);
+        n = ons_of(tr + 1, -1);
+        CHECKF(n >= 14 && n <= 17, "%s, faster: %d a second", run ? "running" : "stopped", n);
+        knob(1, -3 * RFM_MOVE_LIST_TICKS);
+        pad(0, 0), adv_ms(300);
+        if (run)
+            press(MR_CC_PLAY), adv_ms(100);
+    }
+    write_pbm("n24_arp_rate");
+    back(), rest();
+    ap->mode = RFM_MOVE_AM_OFF, ap->rate = 6, ap->range = 2, ap->quant = 10;
+}
+
 int main(void)
 {
+    test_n24_arp_rate();
     test_n24_arp_clip();
     test_n24_shift_knob();
     test_n24_settings_ticks();

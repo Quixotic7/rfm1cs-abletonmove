@@ -201,6 +201,15 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   phrase is arpeggiated once, not twice. `test_n24_arp_clip` (off: the chord, on: 16ths and never the chord, the stop,
   mute, solo, Once, Hold, a pad with it; picture `sessview_n24_arp_clip`); `test_move_seq`'s recording check now
   expects the two notes played with their lengths.
+- (item 8, "Changing Arp rate breaks the arp from working right until you retrigger the notes") the cause: a run's
+  notes were timed as `t0 + k x BAR / RATE` with k the notes played so far, and RATE read afresh each time; turned
+  while it ran, k notes at the new rate put the next note far behind (faster: a note every tick until it caught up, a
+  burst) or far ahead (slower: silence for as long as k slower notes take, bars, "until you retrigger"). Now each arp
+  keeps the RATE its walk is timed by (`rfm_move_arpst_t.rate`); at a change it goes on from the run's start at the
+  new rate, the next note the first of the new grid after now (`arp_tick`), so it stays in time (on QUANT's grid
+  while the transport runs) and keeps its place in the pattern and lanes. `test_n24_arp_rate` (held note, 1/16 ->
+  1/8 -> 1/32, stopped and running: the counts a second at each rate, no burst; it failed before the fix: 1 and 0
+  notes a second), picture `sessview_n24_arp_rate`.
 
 ## 0.13.0 (2026-11-23)
 

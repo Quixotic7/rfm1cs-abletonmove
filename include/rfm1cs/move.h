@@ -568,6 +568,7 @@ typedef struct {
     uint8_t src[8], cnt[8];                             /* src bit 0: a pad holds it; cnt: the clip's notes holding it */
     int32_t coff[8];                                    /* .. the last of them ends at this tick */
     uint8_t fromclip;                                   /* the clip has fed it since it last started */
+    uint8_t rate;                                       /* the RATE its walk is timed by (t0 + k notes at it) */
     uint16_t pos, oct, steps, mpos, tpos;
     uint8_t lastn, lastp[8];
     int32_t next, k, t0;
