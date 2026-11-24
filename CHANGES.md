@@ -230,6 +230,14 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   "Transpose random". One undo step (`OP_ARP`). `test_n24_arp_random` (30 clicks a lane: shares, validity, never
   silent, undo), pictures `sessview_n24_arp_random_mod`, `_transpose`; `test_arp_toggle` turns the arp on from the
   main page now.
+- (item 11, "Transpose pattern and mod patterns should have completely separate lengths. Using the step shortcut keys
+  is changing the lengths of both patterns") not reproduced in the core: every path that writes a lane's length takes
+  the page's own (`mlen` on the MOD page, `tlen` on TRANSPOSE: step 1 held + step n in `rfmv_seq_step`, knob 2 in the
+  arp's knob handler, the new reset and random), and the engine, the lights, the picture, the header, the speech and
+  the project blob read each lane's own. `test_n24_arp_lens` now pins it: on each lane, step 1 + step n released in
+  either order, knob 2, a held lane step (its pads) then step 1 + n, the random click and Delete + click: the other
+  lane's length never moves; and the engine plays a MOD lane of 3 against a TRANSPOSE lane of 2 as such. No core
+  change; if the owner still sees it on the Move, the host's build or a step-by-step note of the gesture is needed.
 
 ## 0.13.0 (2026-11-23)
 

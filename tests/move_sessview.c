@@ -5522,8 +5522,53 @@ static void test_n24_arp_random(void)
     rfmv_seq_arp_default(ap);
 }
 
+/* item 11: "Transpose pattern and mod patterns should have completely separate lengths. Using the step shortcut keys is
+ * changing the lengths of both patterns": every way of setting a lane's length leaves the other lane's alone */
+static void test_n24_arp_lens(void)
+{
+    rfm_move_arp_t *ap;
+    int tr, pg;
+    track_view();
+    tr = M.seq.sel_track, ap = &M.seq.tr[tr].arp;
+    shift_step(10), rest(), jog_click(), rest();
+    for (pg = 1; pg <= 2; pg++) {
+        uint8_t *mine = pg == 1 ? &ap->mlen : &ap->tlen, *other = pg == 1 ? &ap->tlen : &ap->mlen;
+        ap->mlen = 16, ap->tlen = 16;
+        jog(1), rest();
+        CHECK(M.seq.arp_page == pg);
+        /* step 1 held + step 5, let go in either order */
+        step(0, 1), step(4, 1), step(4, 0), step(0, 0), rest();
+        CHECKF(*mine == 5 && *other == 16, "page %d, step 1 + 5: %d / %d", pg, *mine, *other);
+        step(0, 1), step(6, 1), step(0, 0), step(6, 0), rest();
+        CHECKF(*mine == 7 && *other == 16, "page %d, step 1 + 7: %d / %d", pg, *mine, *other);
+        /* knob 2 */
+        knob(1, -2 * RFM_MOVE_LIST_TICKS), rest();
+        CHECKF(*mine == 5 && *other == 16, "page %d, knob 2: %d / %d", pg, *mine, *other);
+        /* a lane step held (its pads), then step 1 + n: still this lane's only */
+        step(2, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(2, 0), rest();
+        step(0, 1), step(2, 1), step(2, 0), step(0, 0), rest();
+        CHECKF(*mine == 3 && *other == 16, "page %d, after a held step: %d / %d", pg, *mine, *other);
+        /* the random pattern and the reset: this lane's only */
+        jog_click(), rest();
+        CHECK(*mine == 3 && *other == 16);
+        *other = 9;
+        button(MR_CC_DELETE, 1), jog_click(), button(MR_CC_DELETE, 0), rest();
+        CHECK(*mine == 16 && *other == 9);
+    }
+    /* the engine: each lane on its own length (MOD 3 of plays, TRANSPOSE 2: +0 / +12): the pattern of 6 */
+    jog(-2), rest(), back(), rest();
+    ap->mlen = 3, ap->tlen = 2, ap->lane[0][0] = ap->lane[0][1] = ap->lane[0][2] = RFM_MOVE_AL_PLAY;
+    ap->lane[0][2] = RFM_MOVE_AL_REST, ap->lane[1][0] = 0, ap->lane[1][1] = 12, ap->range = 1, ap->rate = 9;
+    ap->quant = 0;
+    clear(), pad(0, 100), adv_ms(125 * 6 - 40);
+    CHECKF(ons_of(tr + 1, -1) == 4, "%d notes in six steps", ons_of(tr + 1, -1));   /* (play play rest x2) */
+    pad(0, 0), adv_ms(300);
+    rfmv_seq_arp_default(ap);
+}
+
 int main(void)
 {
+    test_n24_arp_lens();
     test_n24_arp_random();
     test_n24_arp_reset();
     test_n24_arp_rate();
