@@ -524,6 +524,46 @@ void rfmv_proj_open(rfm_move_t *m, int slot)
     rfmv_proj_save_now(m);
 }
 
+/* (0.14.0) the first empty project slot, not the open one (an unsaved empty project there stays its own), -1 none */
+int rfmv_proj_first_empty(const rfm_move_t *m)
+{
+    int s;
+    for (s = 0; s < RFM_MOVE_PROJECTS; s++)
+        if (!(m->seq.proj_used >> s & 1) && s != m->seq.proj_cur)
+            return s;
+    return -1;
+}
+/* (0.14.0, the owner's 2026-11-24: "use this same button on the projects page to create a new project with 3 random
+ * firmwares (random from the ones installed) and then a random scale and root note. This should create the project in
+ * a empty slot so you're not overwriting your open project. If all project slots are full, then this feature won't
+ * work") the projects page's step 13: the open project stored first (as when another one opens), a new one in the
+ * first empty slot with up to three different installed firmwares at random (fewer installed: the rest empty), a
+ * random scale and root as its key, a new project's routing; stored at once. Undo: removed, the one before open */
+static void proj_random(rfm_move_t *m)
+{
+    rfm_move_seq_t *q = &m->seq;
+    char ids[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX], w[40];
+    const int slot = rfmv_proj_first_empty(m), prev = q->proj_cur, prev_used = q->proj_used >> q->proj_cur & 1;
+    if (q->proj_pending >= 0)
+        return;
+    if (slot < 0) {
+        rfm_move_popup(m, "No empty slot");
+        return;
+    }
+    if (q->dirty || prev_used)
+        rfmv_proj_save_now(m);
+    rfm_move_project_load(m, slot, NULL, 0);
+    rfmv_fw_pick_installed(m, ids);
+    if (rfmv_pfw_cap(m))
+        rfmv_pfw_new_ids(m, slot, ids);
+    q->root = (uint8_t)(rfmv_ui_rnd(m) % 12u), q->scale = (uint8_t)(rfmv_ui_rnd(m) % (uint32_t)RFM_MOVE_NSCALES);
+    rfmv_seq_load_track(m);                             /* (the selected track plays in that key at once) */
+    rfmv_proj_save_now(m);
+    m->pj_undo = 2, m->pjr_new = (int8_t)slot, m->pjr_prev = (int8_t)(prev_used ? prev : -1);
+    snprintf(w, sizeof w, "New project %d, random", slot + 1);
+    rfmv_say_text(m, w);
+}
+
 /* (0.14.0) a host's way to a new project (the Move's page has none of its own): an empty pad's click */
 int rfm_move_project_new(rfm_move_t *m, int slot)
 {
@@ -671,6 +711,20 @@ static void proj_undo(rfm_move_t *m)
     rfm_move_seq_t *q = &m->seq;
     const int slot = q->pbuf_src;
     char w[24];
+    if (m->pj_undo == 2) {                              /* (0.14.0) the random project: removed, the one before open */
+        if (q->proj_pending >= 0 || q->proj_cur != m->pjr_new)
+            return;
+        m->pj_undo = 0;
+        rfmv_proj_delete(m, m->pjr_new);
+        q->dirty = 0;
+        if (m->pjr_prev >= 0) {
+            q->proj_pending = m->pjr_prev;
+            rfmv_pfw_press(m, m->pjr_prev);
+            emit_slot(m, RFM_MOVE_ACT_PROJECT_LOAD, m->pjr_prev, NULL, 0);
+        }
+        rfm_move_popup(m, "Undo New project");
+        return;
+    }
     if (!m->pj_undo || q->pbuf_kind != 2 || slot >= RFM_MOVE_PROJECTS || slot_full(m, slot) || q->proj_pending >= 0)
         return;
     m->pj_undo = 0, m->pj_del = -1;
@@ -689,6 +743,8 @@ static void proj_undo(rfm_move_t *m)
 }
 int rfmv_proj_undo_lit(const rfm_move_t *m)
 {
+    if (m->pj_undo == 2)
+        return m->seq.proj_cur == m->pjr_new && m->seq.proj_pending < 0;
     return m->pj_undo && m->seq.pbuf_kind == 2 && m->seq.pbuf_src < RFM_MOVE_PROJECTS && !slot_full(m, m->seq.pbuf_src);
 }
 
@@ -798,7 +854,14 @@ void rfmv_proj_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now)
             m->pop_val = 1;
         }
         return;
-    default: return;                                    /* (steps, the jog, the other knobs: nothing) */
+    case MR_EV_STEP:                                    /* (0.14.0) step 13: a new random project, at the press */
+        if (ev->index == 12) {
+            m->pjr_down = (uint8_t)(ev->value != 0);
+            if (ev->value)
+                proj_random(m);
+        }
+        return;
+    default: return;                                    /* (the jog, the other knobs: nothing) */
     }
 }
 
@@ -834,4 +897,6 @@ void rfmv_proj_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0], uint8_t w[13])
     w[W_COPY] = (q->mods & SEQ_M_COPY) ? 127 : 40;
     w[W_DELETE] = (q->mods & SEQ_M_DELETE) ? 127 : 40;
     w[W_UNDO] = rfmv_proj_undo_lit(m) ? 127 : 0;      /* (0.14.0: only while a deleted project can come back) */
+    if (rfmv_proj_first_empty(m) >= 0)                  /* (0.14.0) step 13: a new random project (dark: no room) */
+        c[L_STEP0 + 12] = m->pjr_down ? RFMV_WHITE : rfmv_sc(RFMV_WHITE, 128);
 }

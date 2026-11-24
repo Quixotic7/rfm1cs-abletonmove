@@ -283,6 +283,31 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   `test_n24_fw_random` (twenty picks, never the same, installed only; the catalog's include not-installed ones; no
   FW_LOAD / FW_DOWNLOAD; the roll; the list of one), pictures `sessview_n24_fw_random`, `_catalog`, `_none`;
   `test_browser_icons` expects step 13's icon.
+- (item 16, "lets use this same button on the projects page to create a new project with 3 random firmwares (random
+  from the ones installed) and then a random scale and root note. This should create the project in a empty slot so
+  you're not overwriting your open project. If all project slots are full, then this feature won't work until you
+  delete some projects") the project grid's step 13 (`proj_random`, project.c): at the press the open project is
+  stored first exactly as when another one opens (`PROJECT_SAVE`), a new one is made current in the first empty slot
+  that is not the open one (`rfmv_proj_first_empty`; `rfm_move_project_load` with nothing, as item 14's path), with
+  up to three different installed firmwares chosen at random (`rfmv_fw_pick_installed`; fewer installed: as many as
+  there are, the rest empty) asked for as a stored project's load asks (`rfmv_pfw_new_ids`: `PROJECT_FW` with the id
+  for each slot, "" for an empty one, the loading screen until `rfm_move_proj_fw` answers), a random root and scale
+  as the project's key (`seq.root`, `seq.scale`, the selected track's at once), a new project's routing
+  (`rfmv_pfw_defaults`), and stored at once (`PROJECT_SAVE`; its part names the firmwares even before they are in).
+  The page stays the grid; the new pad is the open one. Feedback: the step white at the press, the loading screen,
+  said "New project 2, random". Step 13 (and its icon, R6) lit while there is an empty slot; none: dark, a press
+  says "No empty slot" and does nothing. **Undo** (lit while the new project is open): `PROJECT_DELETE` of it, then
+  `PROJECT_LOAD` of the project open before (an unsaved empty one before: none), "Undo New project"; one step
+  (`pj_undo` 2, `pjr_new`, `pjr_prev`, `pjr_down` new at the end of `rfm_move_t`). The dice: `rfmv_ui_rnd`. Without
+  `RFM_MOVE_CAP_PROJFW` the project is made with its random key and no firmware actions. **For the host**: the order of
+  actions is `PROJECT_SAVE` (the old slot), `PROJECT_FW` x 3 (index the NEW slot, ids non-empty), `PROJECT_SAVE` (the
+  new slot); no `PROJECT_LOAD` comes for the new slot, and no firmware state files exist for it. A host that handles
+  `PROJECT_FW` only after its own `PROJECT_LOAD`, or only with "" for a new project, or that looks for the project's
+  stored state files before loading a firmware, must load the named firmware into the slot with its default state and
+  answer `rfm_move_proj_fw(slot, READY / MISSING / FAILED)` (and `rfm_move_fw_slots`) as for a stored project.
+  `test_n24_proj_random` (the actions and their order, three different installed ids, the key, stored with them, the
+  firmwares answered, Undo, one installed, all slots used), pictures `sessview_n24_proj_random_loading`,
+  `sessview_n24_proj_random`, `_full`.
 
 ## 0.13.0 (2026-11-23)
 

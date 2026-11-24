@@ -3281,6 +3281,13 @@ int rfmv_fw_step_icons(const rfm_move_t *m, uint8_t icon[16])
     const rfm_move_fw_state_t *f = &m->fw;
     const int fw = f->sel;
     int i;
+    if (m->seq.projects && !f->fx && f->track == 3 && !f->states && !m->shift_down && !(m->seq.mods & SEQ_M_SHIFT)) {
+        for (i = 0; i < 16; i++)                        /* (0.14.0) the project grid: step 13, a new random project,
+                                                         * lit while there is an empty slot */
+            icon[i] = 0;
+        icon[12] = (uint8_t)(rfmv_proj_first_empty(m) >= 0 ? 127 : 0);
+        return 1;
+    }
     if (!m->seq.projects || f->fx || f->track >= 3 || f->states)
         return 0;
     for (i = 1; i <= 16; i++) {
@@ -3296,6 +3303,23 @@ int rfmv_fw_step_icons(const rfm_move_t *m, uint8_t icon[16])
         icon[i - 1] = (uint8_t)(on ? 127 : 0);
     }
     return 1;
+}
+/* (0.14.0) up to three different installed firmwares at random (the projects page's random project), "" past them */
+int rfmv_fw_pick_installed(rfm_move_t *m, char ids[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX])
+{
+    int pool[256], n = 0, i, k;
+    for (i = 0; i < m->fw.n && n < 256; i++)
+        if (installed(m, i) && ent(m, i)->id && ent(m, i)->id[0])
+            pool[n++] = i;
+    for (k = 0; k < RFM_MOVE_FW_SLOTS; k++) {
+        ids[k][0] = 0;
+        if (k < n) {
+            const int j = k + (int)(rfmv_ui_rnd(m) % (uint32_t)(n - k)), x = pool[j];
+            pool[j] = pool[k], pool[k] = x;
+            snprintf(ids[k], RFM_MOVE_FW_ID_MAX, "%s", ent(m, x)->id);
+        }
+    }
+    return n < RFM_MOVE_FW_SLOTS ? n : RFM_MOVE_FW_SLOTS;
 }
 int rfmv_t4_page(const rfm_move_t *m) { return m->s.fx_page == PG_MIX ? 0 : 1; }
 int rfmv_fw_activate(rfm_move_t *m, int t)

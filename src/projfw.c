@@ -352,6 +352,32 @@ void rfmv_pfw_new(rfm_move_t *m, int slot)
     }
     snapshot(m);
 }
+/* (0.14.0) a new project with these firmwares (the projects page's step 13): as a stored project's load asks for
+ * its firmwares (PROJECT_FW with the id, the loading screen until the host answers rfm_move_proj_fw), its empty slots
+ * emptied as a new project's (PROJECT_FW ""); a new project's routing */
+void rfmv_pfw_new_ids(rfm_move_t *m, int slot, const char ids[RFM_MOVE_FW_SLOTS][IDM])
+{
+    const int ns = nslots(m);
+    int s;
+    if (!rfmv_pfw_cap(m))
+        return;
+    rfmv_pfw_defaults(m);
+    memset(m->pfw_want, 0, sizeof m->pfw_want);
+    for (s = 0; s < ns; s++)
+        snprintf(m->pfw_want[s], IDM, "%s", ids[s]);
+    memcpy(m->pfw_id, m->pfw_want, sizeof m->pfw_id);
+    m->pfw_touched = 0, m->pfw_msg = 0, m->pfw_proj = (int8_t)slot, m->pfw_on = 1;
+    for (s = 0; s < RFM_MOVE_FW_SLOTS; s++)
+        m->pfw_st[s] = (int16_t)(s < ns && m->pfw_want[s][0] ? PFW_WAIT : PFW_EMPTY), m->pfw_ms[s] = now_ms(m);
+    for (s = 0; s < ns; s++)
+        if (!m->pfw_want[s][0])
+            rfmv_fw_slot_set(m, s, "");
+    snapshot(m);
+    for (s = 0; s < ns; s++)
+        act_pfw(m, s, slot, m->pfw_want[s]);
+    settle(m);
+    snapshot(m);
+}
 int rfmv_pfw_play(rfm_move_t *m)
 {
     if (!m->pfw_on || m->seq.playing || m->seq.start_pending)

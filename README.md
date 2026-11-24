@@ -868,6 +868,14 @@ tracks 1, 5 and 9; the MIDI FX filters "all" (a `ROUTE` and `SETTINGS`, as the u
 (levels, layouts, velocity). A fresh install's first project is a new one: the host calls `rfm_move_project_dir(m, 0)`
 (no project stored) after `rfm_move_fw_caps`. A loaded project, of any version, keeps what it stored. With one slot
 (no `RFM_MOVE_CAP_SLOTS`) a new project keeps 0.12.0's routing (all 16 tracks, track n on channel n). (0.14.0) A
+**Step 13 on the project grid** (0.14.0, the owner's 2026-11-24): a new project with random firmwares, lit (its
+icon and the step) while there is an empty slot: at its press the open project is stored first (as when another opens),
+a new one opens in the first empty slot (never the open one's) with up to three different installed firmwares at
+random (fewer installed: the rest empty; `PROJECT_FW` with each id, the loading screen until the host answers
+`rfm_move_proj_fw`, as a stored project's load), a random scale and root as its key and a new project's routing; it
+is stored at once (`PROJECT_SAVE`, the ids in its part even before the host has loaded them); said "New project 5,
+random". The page stays the grid. Undo (lit while it can): the new project deleted (`PROJECT_DELETE`) and the one open
+before loaded again (`PROJECT_LOAD`). No empty slot: dark, a press says "No empty slot". (0.14.0) A
 host starts one from outside with `rfm_move_project_new(m, slot)`: exactly an empty pad's click (the open project
 saved first, the new one current and saved, its slots emptied), 0; -1 refused (the slot holds a project or is out of
 range, or a load is pending).

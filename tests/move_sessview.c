@@ -5781,8 +5781,97 @@ static void test_n24_fw_random(void)
     back(), rest();
 }
 
+/* item 16: the projects page's step 13: a new project in the first empty slot, the open one stored first, three
+ * different installed firmwares at random, a random key; Undo: removed, the one before open again; no room: dark, a
+ * press says so */
+static int n24_installed(const char *id)
+{
+    int i;
+    for (i = 0; i < NFW; i++)
+        if (!strcmp(E[i].id, id))
+            return E[i].installed && E[i].installed[0];
+    return 0;
+}
+static void test_n24_proj_random(void)
+{
+    static rfm_move_fw_t E2[NFW];
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int i, first_fw = -1, save0 = -1, nfw = 0, root, scale;
+    ps_two_projects();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    grid();
+    M.ui_rng = 4242;
+    leds(w);
+    CHECK(w[L_ICON0 + 12][0] == 127 && lit(w[L_STEP0 + 12]));
+    ps_clear(), step(12, 1);
+    for (i = 0; i < npa; i++) {
+        if (PA[i].kind == RFM_MOVE_ACT_PROJECT_SAVE && PA[i].index == 0 && save0 < 0)
+            save0 = i;
+        if (PA[i].kind == RFM_MOVE_ACT_PROJECT_FW && PA[i].id[0]) {
+            if (first_fw < 0)
+                first_fw = i;
+            nfw++;
+            CHECKF(n24_installed(PA[i].id) && PA[i].index == 1, "%s installed, project %d", PA[i].id, PA[i].index + 1);
+        }
+    }
+    CHECKF(save0 >= 0 && first_fw > save0 && nfw == 3, "save %d, fw %d, %d firmwares", save0, first_fw, nfw);
+    CHECK(strcmp(ps_find(RFM_MOVE_ACT_PROJECT_FW, 0)->id, ps_find(RFM_MOVE_ACT_PROJECT_FW, 1)->id) &&
+          strcmp(ps_find(RFM_MOVE_ACT_PROJECT_FW, 0)->id, ps_find(RFM_MOVE_ACT_PROJECT_FW, 2)->id) &&
+          strcmp(ps_find(RFM_MOVE_ACT_PROJECT_FW, 1)->id, ps_find(RFM_MOVE_ACT_PROJECT_FW, 2)->id));
+    CHECK(M.seq.proj_cur == 1 && (M.seq.proj_used >> 1 & 1) && (M.seq.proj_used & 1) && M.seq.projects &&
+          M.fw.track == 3 && rfm_move_proj_fw_loading(&M) && ps_find(RFM_MOVE_ACT_PROJECT_SAVE, -1)->index == 1);
+    CHECK(M.seq.root < 12 && M.seq.scale < RFM_MOVE_NSCALES && !M.seq.nnotes && !M.seq.playing);
+    CHECK(!strcmp((const char *)ps_part(1), ps_find(RFM_MOVE_ACT_PROJECT_FW, 0)->id));   /* (stored with them) */
+    root = M.seq.root, scale = M.seq.scale;
+    CHECKF(strstr(said, "New project 2") != NULL, "said %s", said);
+    leds(w);
+    CHECK(white(w[L_STEP0 + 12]));
+    write_pbm("n24_proj_random_loading");
+    step(12, 0);
+    for (i = 0; i < 3; i++)
+        rfm_move_proj_fw(&M, i, RFM_MOVE_PFW_READY);
+    rest();
+    CHECK(!rfm_move_proj_fw_loading(&M) && M.seq.proj_cur == 1);
+    write_pbm("n24_proj_random");
+    /* Undo: the new one removed, project 1 open again */
+    leds(w);
+    CHECK(w[L_WHITE0 + W_UNDO][0] == 127);
+    ps_clear(), press(MR_CC_UNDO);
+    CHECK(ps_count(RFM_MOVE_ACT_PROJECT_DELETE) == 1 && ps_find(RFM_MOVE_ACT_PROJECT_DELETE, -1)->index == 1 &&
+          ps_count(RFM_MOVE_ACT_PROJECT_LOAD) == 1 && ps_find(RFM_MOVE_ACT_PROJECT_LOAD, -1)->index == 0 &&
+          !(M.seq.proj_used >> 1 & 1) && !ps_count(RFM_MOVE_ACT_PROJECT_SAVE));
+    rfm_move_project_load(&M, 0, PS_BLOB[0], PS_N[0]), rest();
+    CHECK(M.seq.proj_cur == 0);
+    /* again: another key (the dice go on) */
+    ps_clear(), step(12, 1), step(12, 0);
+    CHECK(M.seq.proj_cur == 1 && (M.seq.root != root || M.seq.scale != scale));
+    for (i = 0; i < 3; i++)
+        rfm_move_proj_fw(&M, i, RFM_MOVE_PFW_READY);
+    rest();
+    /* one firmware installed: one asked for, the other slots empty */
+    memcpy(E2, E, sizeof E2);
+    for (i = 0, nfw = 0; i < NFW; i++)
+        if (E2[i].installed && E2[i].installed[0] && nfw++)
+            E2[i].installed = NULL;
+    rfm_move_fw_list(&M, E2, NFW);
+    ps_clear(), step(12, 1), step(12, 0);
+    CHECK(M.seq.proj_cur == 2 && ps_count(RFM_MOVE_ACT_PROJECT_FW) == 3 && ps_find(RFM_MOVE_ACT_PROJECT_FW, 0)->id[0] &&
+          !ps_find(RFM_MOVE_ACT_PROJECT_FW, 1)->id[0] && !ps_find(RFM_MOVE_ACT_PROJECT_FW, 2)->id[0]);
+    rfm_move_proj_fw(&M, 0, RFM_MOVE_PFW_READY), rest();
+    rfm_move_fw_list(&M, E, NFW);
+    /* every slot used: dark, a press says so and does nothing */
+    rfm_move_project_dir(&M, 0xFFFFFFFFu), rest();
+    leds(w);
+    CHECK(w[L_ICON0 + 12][0] == 0 && !lit(w[L_STEP0 + 12]));
+    ps_clear(), step(12, 1), step(12, 0);
+    CHECK(!npa && M.pop == POP_HOST && !strcmp(M.pop_text, "No empty slot") && M.seq.proj_cur == 2);
+    write_pbm("n24_proj_random_full");
+    back(), rest();
+}
+
 int main(void)
 {
+    test_n24_proj_random();
     test_n24_fw_random();
     test_n24_project_new();
     test_n24_load_stopped();

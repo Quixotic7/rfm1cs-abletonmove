@@ -392,6 +392,11 @@ void rfmv_pfw_loaded(rfm_move_t *m, int slot, const uint8_t *part);   /* a proje
 void rfmv_pfw_load_failed(rfm_move_t *m, int slot);     /* .. its blob refused */
 void rfmv_pfw_press(rfm_move_t *m, int slot);           /* a stored project's pad: the loading screen at once */
 void rfmv_pfw_new(rfm_move_t *m, int slot);             /* a new project: its slots emptied */
+void rfmv_pfw_new_ids(rfm_move_t *m, int slot, const char ids[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX]);   /* (0.14.0)
+                                                         * .. its slots these firmwares ("" empty): asked for, loading */
+int rfmv_fw_pick_installed(rfm_move_t *m, char ids[RFM_MOVE_FW_SLOTS][RFM_MOVE_FW_ID_MAX]);   /* (0.14.0) up to three
+                                                         * different installed firmwares at random: how many */
+int rfmv_proj_first_empty(const rfm_move_t *m);         /* (0.14.0) the first empty project slot (not the open one), -1 */
 void rfmv_pfw_defaults(rfm_move_t *m);                  /* .. its routing (1-4, 5-8, 9-12), channels, Tracks' tracks */
 void rfmv_pfw_first(rfm_move_t *m, uint32_t used);      /* rfm_move_project_dir: none stored: the open one is new */
 int rfmv_pfw_play(rfm_move_t *m);                       /* the grid's Play while loading: 1 taken (waits) */
