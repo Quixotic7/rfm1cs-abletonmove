@@ -186,6 +186,7 @@ void rfm_move_settings_default(rfm_move_settings_t *s)
             ss->cc[k] = (uint8_t)(DEFAULT_CC[0] + k);
         s->lock[b] = (uint8_t)b;
     }
+    rfmv_smp_defaults(s->smp);                          /* (0.15.0) the sampler's */
 }
 
 uint32_t rfm_move_save(const rfm_move_settings_t *s, uint8_t o[RFM_MOVE_SETTINGS_BYTES])
@@ -212,6 +213,8 @@ uint32_t rfm_move_save(const rfm_move_settings_t *s, uint8_t o[RFM_MOVE_SETTINGS
         }
         for (i = 0; i < RFM_MOVE_FW_SLOTS; i++)
             *p++ = s->lock[i];
+        for (i = 0; i < RFM_MOVE_SMP_N; i++)            /* (version 8, 0.15.0) the sampler's */
+            *p++ = (uint8_t)s->smp[i];
     }
     return (uint32_t)(p - o);
 }
@@ -224,6 +227,7 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
     rfm_move_settings_default(s);
     if (!b || n < 6 || b[0] != 'R' || b[1] != 'M' || b[2] != 'V' ||
         !((b[3] == RFM_MOVE_SETTINGS_VERSION && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES && n >= RFM_MOVE_SETTINGS_BYTES) ||
+          (b[3] == 7 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V7 && n >= RFM_MOVE_SETTINGS_BYTES_V7) ||
           (b[3] == 6 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V6 && n >= RFM_MOVE_SETTINGS_BYTES_V6) ||
           (b[3] == 5 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V6 - 1 && n >= RFM_MOVE_SETTINGS_BYTES_V6 - 1) ||
           (b[3] == 4 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V6 - 2 && n >= RFM_MOVE_SETTINGS_BYTES_V6 - 2) ||
@@ -291,6 +295,8 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
         }
         for (i = 0; i < RFM_MOVE_FW_SLOTS; i++)
             s->lock[i] = q[i] < RFM_MOVE_SEQ_TRACKS ? q[i] : (uint8_t)i;
+        if (b[3] >= 8)                                  /* (0.15.0) the sampler's (each checked; older: the defaults) */
+            rfmv_smp_load(s->smp, q + RFM_MOVE_FW_SLOTS);
     } else                                              /* (older: every slot as the one mode was, its bank's CCs) */
         for (i = 0; i < RFM_MOVE_FW_SLOTS; i++) {
             rfm_move_slotset_t *ss = &s->slot[i];
@@ -2017,6 +2023,8 @@ static void back_click(rfm_move_t *m, uint32_t now)
         }
         return;
     }
+    if (rfmv_smp_back(m))                               /* (0.15.0) the sampler: its popup or tab choice, then the app */
+        return;
     if (rfmv_seq_layer_open(m))
         rfmv_seq_button(m, MR_CC_BACK, 1, now);
     else if (rfmv_fwp_locked(m)) {                      /* (0.14.0, the owner's own exception to "Back never changes
@@ -2097,6 +2105,9 @@ static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
     if (m->track_held && ev->value && ev->type != MR_EV_TOUCH && ev->type != MR_EV_PAD_PRESSURE &&
         m->menu_what == MENU_NONE)
         m->tbtn_used = m->track_held;                   /* (anything pressed with a Track held: its release no tap) */
+    if (rfmv_smp_input(m, ev))                          /* (0.15.0) the sampler app: Sample (Track held + Sample), the
+                                                         * jog while it shows */
+        return;
     if (m->seq.projects && (m->pop == POP_MODE || m->pop == POP_T4) && ev->value && ev->type != MR_EV_TOUCH &&
         ev->type != MR_EV_PAD_PRESSURE)
         m->pop = POP_NONE;                              /* (0.4.5: the flip's name goes with the first press there) */
@@ -2478,6 +2489,7 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         for (i = 0; i < 16; i++)
             w[L_ICON0 + i][0] = ic[i], w[L_ICON0 + i][1] = 0, w[L_ICON0 + i][2] = 0;
     }
+    rfmv_smp_leds(m, w);                                /* (0.15.0) the sampler: Sample's light */
     if (m->back_down)                                   /* (0.12.0, a13) Back: full at its press; else lit only with a
                                                          * layer for its click to close */
         w[L_WHITE0 + W_BACK][0] = 127;

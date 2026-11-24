@@ -464,7 +464,7 @@ static void test_settings(void)
     rfm_move_settings_default(&s);
     s.slot[1].lay = RFM_MOVE_LAY_DRUM, s.slot[1].channel = 9, s.slot[1].cc[3] = 99, s.slot[2].octave = -2;
     s.lock[2] = 13;
-    CHECK(rfm_move_save(&s, b) == RFM_MOVE_SETTINGS_BYTES && RFM_MOVE_SETTINGS_BYTES == 130);
+    CHECK(rfm_move_save(&s, b) == RFM_MOVE_SETTINGS_BYTES && RFM_MOVE_SETTINGS_BYTES_V7 == 130);   /* (0.15.0: 137) */
     CHECK(rfm_move_load(&t, b, sizeof b) == 0);
     CHECK(t.slot[1].lay == RFM_MOVE_LAY_DRUM && t.slot[1].channel == 9 && t.slot[1].cc[3] == 99 && t.slot[2].octave == -2 &&
           t.lock[2] == 13 && t.lock[0] == 0);

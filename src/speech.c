@@ -90,7 +90,7 @@ static void track_words(const rfm_move_t *m, int t, char *o, int cap)
 /* its subject and its words (lng: the long form a view entered from another has: "Firmwares, ..", "FX setup, ..",
  * "Sequencer mode") */
 enum { S_FW_TRACK0 = 0x11, S_FW_LAST = 0x23, S_FX0 = 0x100, S_FX_LAST = 0x3FF, S_SEQ_TRACK = 4, S_SEQ_SESSION = 5,
-       S_MENU0 = 0x400, S_MENU_LAST = 0x43F };
+       S_MENU0 = 0x400, S_MENU_LAST = 0x43F, S_SAMPLER = 0x480 };
 static int base_words(const rfm_move_t *m, char *o, int cap)
 {
     int s = rfmv_st_base_words(m, o, cap);              /* (0.13.0) the States layer: "States, ChoralRoot" */
@@ -99,6 +99,10 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
     s = rfmv_fw_say_base(m, o, cap);
     if (s)
         return s;
+    if (rfmv_smp_shown(m)) {                            /* (0.15.0) the sampler app */
+        snprintf(o, (size_t)cap, "Sampler");
+        return S_SAMPLER;
+    }
     if (m->seq.smenu && !m->seq.projects) {             /* (0.6.1) a Shift menu open: its name */
         if (m->seq.smenu == RFM_MOVE_SM_GLOBAL) {       /* (0.6.10: its header, the battery; the rows as they move) */
             char r[64];
@@ -611,6 +615,9 @@ static int pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint
     }
     if (m->seq.projects && (m->fw.fx || (m->fw.host && m->fw.track < 3)))
         return 0;                                       /* (the view's own screen: no other popup on it) */
+    if (rfmv_smp_shown(m) && !rfmv_smp_covered(m))     /* (0.15.0) the sampler app: its row, popup, tabs, take,
+                                                         * message (a newer popup under it: that, below) */
+        return rfmv_smp_pop_words(m, o, cap, subj, stamp);
     up = m->pop && (m->pop != POP_SELECT || rfmv_half(m)) && rfmv_pop_up(m, m->pop) &&
          !(m->pop == POP_MODE && m->pop_i < 4 && rfmv_hold_shown(m, m->pop_i));
     if (up && m->pop == POP_STEP && (q->view || q->projects || m->s.mode != RFM_MOVE_MODE_SEQ))
@@ -1020,6 +1027,8 @@ void rfmv_say_tick(rfm_move_t *m)
     }
     if (m->say_now[0])
         due = 1;                                        /* (0.12.0: words the clock's poll gave, a select step's hold) */
+    if (rfmv_smp_tick(m))
+        due = 1;                                        /* (0.15.0: the sampler's message gone: its list's words) */
     if (m->say_turn && rfmv_now_ms(m) - m->say_turn_ms >= RFM_MOVE_SAY_TURN_MS) {
         m->say_turn = 0;                                /* (0.6.7) a knob turned, no readout (its range's end): its
                                                          * "Name: value" again, once; no readout known: the detents */

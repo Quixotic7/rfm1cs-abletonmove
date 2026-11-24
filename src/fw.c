@@ -741,7 +741,10 @@ void rfm_move_fw_caps(rfm_move_t *m, int caps)
 {
     rfm_move_fw_state_t *f = F(m);
     int s;
-    f->caps = (uint8_t)(caps & (RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW));   /* (0.13.0: PROJFW) */
+    const int smp = rfmv_smp_cap(m);
+    f->caps = (uint8_t)(caps & (RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW | RFM_MOVE_CAP_SAMPLER));   /* (0.13.0: PROJFW;
+                                                         * 0.15.0: SAMPLER) */
+    rfmv_smp_caps(m, smp);
     if (!(f->caps & RFM_MOVE_CAP_PROJFW))
         rfmv_st_close(m), m->pfw_on = 0, m->pfw_msg = 0;
     if (!(f->caps & RFM_MOVE_CAP_SLOTS)) {             /* one slot: the others emptied, slot 0 played */

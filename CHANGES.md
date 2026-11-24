@@ -3,6 +3,27 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## Unreleased
+
+The sampler app (the owner's 2026-11-24: "pull up the sampler as an app"; README "The sampler"). New fields at the end
+of `rfm_move_t` and `rfm_move_settings_t`: rebuild everything.
+
+- `RFM_MOVE_CAP_SAMPLER` (8, not in `RFM_MOVE_CAPS_ALL`): Sample is the host recorder's app, the audio loop off.
+  Without it nothing changes. The app takes the screen, the jog and Back (and Sample, its record key); pads, steps,
+  knobs and arrows stay the layer's under it. Sample opens it (the FM-1 layout: SEL while it is closed and no take
+  runs); Track 1..3 held + Sample: that slot as the source, Track 4: the master. Back: a popup or the tab choice, then
+  the app (a take goes on; Sample brings it back). The settings a list on the jog: one row at rest, three a second
+  while it turns, the tabs above the first row (one tab, Record, built from the host's mask), a row's click its popup.
+  A take's own screen, a message a second for a save, nothing captured, an error. Sample's light: white open, red
+  blinking armed, red recording, green 250 ms at a save, dim white closed while Capture listens. Spoken.
+- The screens are the mock-up's (mock_recorder_v4.c one, three, tabs, popup, run; v1's captured) pixel for pixel but
+  the second tab's icon (not built) and the popup's threshold mark (3 px: the -60..0 dB scale).
+- API: `RFM_MOVE_ACT_SMP_SET` (48), `RFM_MOVE_ACT_SMP_PRESS` (49); `rfm_move_smp_offer`, `rfm_move_smp_status`
+  (`rfm_move_smp_status_t`), `rfm_move_smp_event`, `rfm_move_smp_sync`, `rfm_move_smp_shown`, `rfm_move_smp_value`.
+- Settings version 8 (137 bytes): the sampler's seven settings after the locks; version 7 (130) loads with their
+  defaults. `move.c`'s and `move_tracks`' tests of the version and size follow; the web player's `SETTINGS_BYTES` 137.
+- `src/sampler.c` (CMake, `web/build.sh`); tests `move_sampler` (`move_smp_ref.h`, dumps `sampler_*`).
+
 ## 0.14.0 (2026-11-24)
 
 The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_sessview.c` `test_o14_*` (dumps

@@ -1396,7 +1396,8 @@ int rfm_move_screen_timed(const rfm_move_t *m)
             return 1;
     return q->playing || q->start_pending || rfmv_seq_msg_text(m) != NULL || (m->pop && rfmv_pop_up(m, m->pop)) ||
            (m->menu_what && rfmv_now_ms(m) - m->menu_ms < RFM_MOVE_POPUP_MS) ||
-           (q->projects && q->proj_pending >= 0) || rfmv_fw_timed(m) || rfmv_pfw_timed(m) || rfmv_st_timed(m);
+           (q->projects && q->proj_pending >= 0) || rfmv_fw_timed(m) || rfmv_pfw_timed(m) || rfmv_st_timed(m) ||
+           rfmv_smp_timed(m);                           /* (0.15.0: the sampler's three rows, message, a take) */
 }
 
 void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREEN_BYTES])
@@ -1487,6 +1488,11 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
     }
     if (rfmv_fw_screen(m, &cv)) {                       /* (0.4.0) the projects view's firmware tracks, FX setup,
                                                          * its popups; a slot's level */
+        mr_gfx_pack(&cv, out);
+        return;
+    }
+    if (!rfmv_smp_covered(m) && rfmv_smp_screen(m, &cv)) {   /* (0.15.0) the sampler app (a held control, or a newer
+                                                         * popup of the layer under it: that, as over a menu) */
         mr_gfx_pack(&cv, out);
         return;
     }

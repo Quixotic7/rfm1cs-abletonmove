@@ -225,6 +225,17 @@ enum {
  *    selected track changes; -1 to the slot watched before when no Engine page shows any more */
 #define RFM_MOVE_ACT_EP 38
 #define RFM_MOVE_ACT_EP_WATCH 39
+/* (0.15.0, the owner's 2026-11-24) the sampler app (README "The sampler"; only with RFM_MOVE_CAP_SAMPLER):
+ *  - SMP_SET: index the setting (RFM_MOVE_SMP_*), value its value: Source RFM_MOVE_SMP_SRC_*, Mode RFM_MOVE_SMP_M_*,
+ *    Length the bars (0 Open; in Capture mode Open is "Auto": as much as the buffer holds), Threshold dB -60..0, Input
+ *    level dB -24..24, Monitor 0 / 1, To RFM_MOVE_SMP_TO_*. Sent at every change, and once for each setting when the
+ *    capability is set (rfm_move_fw_caps) or the host asks (rfm_move_smp_sync, after settings it loaded itself).
+ *  - SMP_PRESS: the record key (Sample, in the app) pressed: value the mode (as SMP_SET last said). Sent at the press,
+ *    no release. The host's recorder does what the mode means (Capture: keep the buffer; Bars: arm, start on the bar,
+ *    stop after the bars; Threshold: arm, start above the threshold; Manual: start / stop; a press while armed or
+ *    recording: the host's choice, as a stop). The core times nothing: it shows rfm_move_smp_status */
+#define RFM_MOVE_ACT_SMP_SET 48
+#define RFM_MOVE_ACT_SMP_PRESS 49
 enum { RFM_MOVE_EP_SET = 1, RFM_MOVE_EP_LOCK = 2, RFM_MOVE_EP_FREE = 3, RFM_MOVE_EP_FREE_ALL = 4 };   /* (EP's op; only
                                                          * SET is sent before the engine locks) */
 typedef struct {
@@ -268,6 +279,10 @@ typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
 static inline uint8_t rfm_move_lean(int p) { return (uint8_t)(((p < 0 ? 0 : p > 127 ? 127 : p) * 100 + 63) / 127); }
 
+/* (0.15.0) the sampler app's settings, the rows of its list in this order (README "The sampler"; the API below) */
+enum { RFM_MOVE_SMP_SOURCE, RFM_MOVE_SMP_MODE, RFM_MOVE_SMP_LENGTH, RFM_MOVE_SMP_THRESHOLD, RFM_MOVE_SMP_INPUT,
+       RFM_MOVE_SMP_MONITOR, RFM_MOVE_SMP_TO, RFM_MOVE_SMP_N };
+
 /* ---- the settings a host keeps (rfm_move_save / rfm_move_load: a versioned byte image) */
 typedef struct {
     uint8_t mode;                                       /* RFM_MOVE_MODE_* */
@@ -307,6 +322,10 @@ typedef struct {
                                                          * that goes to the firmware is its own only), 1 Both (it also
                                                          * starts / stops the Move's transport). Saved in pop_half's
                                                          * byte, bit 1 (no new version: older cores read bit 0 only) */
+    /* (version 8, 0.15.0) the sampler app's settings, by RFM_MOVE_SMP_*: the source (RFM_MOVE_SMP_SRC_*), the mode
+     * (RFM_MOVE_SMP_M_*), the length (an index: Open, 1, 2, 4, 8, 16, 32 bars), the threshold -60..0 dB, the input
+     * level -24..24 dB, the monitor 0 / 1, where a take goes (RFM_MOVE_SMP_TO_*). Older images load the defaults */
+    int8_t smp[RFM_MOVE_SMP_N];
 } rfm_move_settings_t;
 enum { RFM_MOVE_VEL_DYNAMIC, RFM_MOVE_VEL_FIXED, RFM_MOVE_VEL_SOFT, RFM_MOVE_VEL_HARD, RFM_MOVE_VEL_LINEAR, RFM_MOVE_VEL_N };
 /* (the jog's order: Dynamic, Fixed, Soft, Linear, Hard; LINEAR came last, so older settings keep their values) */
@@ -314,13 +333,15 @@ const char *rfm_move_vel_name(int v);                   /* "DYNAMIC", "FIXED", "
 int rfm_move_vel(const rfm_move_settings_t *s, int v);  /* a pad's velocity 1..127 through the setting */
 #define RFM_MOVE_LIST_TICKS 5                           /* a list-type menu knob (scale, root, layout ..): ticks an item */
 #define RFM_MOVE_KNOB_TICKS 2                           /* the Move's knob ticks an FM-1 encoder detent (the jog: 1) */
-#define RFM_MOVE_SETTINGS_VERSION 7                     /* (versions 1..6, 77, 78, 80, 86, 87 and 88 bytes, load too:
-                                                         * no MIDI screen, no velocity setting, no projects view state,
-                                                         * no popup width (full), no speech mode (the host's default),
-                                                         * no slots (each slot gets the one mode, layout and bank)) */
+#define RFM_MOVE_SETTINGS_VERSION 8                     /* (versions 1..7, 77, 78, 80, 86, 87, 88 and 130 bytes, load
+                                                         * too: no MIDI screen, no velocity setting, no projects view
+                                                         * state, no popup width (full), no speech mode (the host's
+                                                         * default), no slots (each slot gets the one mode, layout and
+                                                         * bank), (0.15.0) the sampler's defaults) */
 #define RFM_MOVE_SETTINGS_BYTES_V3 (6 + 7 + RFM_MOVE_NBANKS * RFM_MOVE_NKNOBS + RFM_MOVE_NPADS + 3)
 #define RFM_MOVE_SETTINGS_BYTES_V6 (RFM_MOVE_SETTINGS_BYTES_V3 + 8)
-#define RFM_MOVE_SETTINGS_BYTES (RFM_MOVE_SETTINGS_BYTES_V6 + RFM_MOVE_FW_SLOTS * 14)   /* (130) */
+#define RFM_MOVE_SETTINGS_BYTES_V7 (RFM_MOVE_SETTINGS_BYTES_V6 + RFM_MOVE_FW_SLOTS * 14)   /* (130) */
+#define RFM_MOVE_SETTINGS_BYTES (RFM_MOVE_SETTINGS_BYTES_V7 + RFM_MOVE_SMP_N)   /* (137, version 8) */
 enum { RFM_MOVE_MV_PADS, RFM_MOVE_MV_NOTES, RFM_MOVE_MV_N };   /* MIDI mode's screens (a tap on Track 2 turns them) */
 void rfm_move_settings_default(rfm_move_settings_t *s);
 /* "RMV" version8 len16, then the fields; returns RFM_MOVE_SETTINGS_BYTES */
@@ -998,6 +1019,64 @@ typedef struct {
     int16_t w_page;
 } rfm_move_ep_t;
 
+/* ---- (0.15.0, the owner's 2026-11-24) the sampler app: its values and the host's status (the API is further down,
+ * "the sampler app"; README "The sampler") */
+enum { RFM_MOVE_SMP_SRC_MASTER, RFM_MOVE_SMP_SRC_SLOT1, RFM_MOVE_SMP_SRC_SLOT2, RFM_MOVE_SMP_SRC_SLOT3,
+       RFM_MOVE_SMP_SRC_INPUT, RFM_MOVE_SMP_SRC_STEMS, RFM_MOVE_SMP_SRC_LOOPER, RFM_MOVE_SMP_SRC_KIT,
+       RFM_MOVE_SMP_SRC_N };                            /* Source's values (rfm_move_smp_offer's sources: bit each) */
+enum { RFM_MOVE_SMP_M_CAPTURE, RFM_MOVE_SMP_M_BARS, RFM_MOVE_SMP_M_THRESHOLD, RFM_MOVE_SMP_M_MANUAL,
+       RFM_MOVE_SMP_M_N };                              /* Mode's */
+enum { RFM_MOVE_SMP_TO_FILES, RFM_MOVE_SMP_TO_LOOPER, RFM_MOVE_SMP_TO_KIT, RFM_MOVE_SMP_TO_N };   /* To's */
+enum { RFM_MOVE_SMP_TAB_RECORD, RFM_MOVE_SMP_TAB_TAKES, RFM_MOVE_SMP_TAB_TOOLS, RFM_MOVE_SMP_TAB_LOOPS,
+       RFM_MOVE_SMP_TAB_N };                            /* the tabs (rfm_move_smp_offer's tabs: bit each) */
+#define RFM_MOVE_SMP_TABS_BUILT 0x1                     /* the tabs this core has (an offered tab it has not: not shown) */
+#define RFM_MOVE_SMP_LENGTHS 7                          /* Length's: Open, 1, 2, 4, 8, 16, 32 bars */
+#define RFM_MOVE_SMP_THR_MIN (-60)                      /* Threshold, dB (1 a detent) */
+#define RFM_MOVE_SMP_IN_MIN (-24)                       /* Input level, dB (1 a detent) */
+#define RFM_MOVE_SMP_IN_MAX 24
+#define RFM_MOVE_SMP_PEAKS 128                          /* the status's peaks, at most */
+#define RFM_MOVE_SMP_COLS 58                            /* the wave's columns on the screen (2 px apart) */
+#define RFM_MOVE_SMP_FLASH_MS 250                       /* a saved take: Sample's light green this long */
+enum { RFM_MOVE_SMP_ST_IDLE, RFM_MOVE_SMP_ST_ARMED, RFM_MOVE_SMP_ST_RECORDING, RFM_MOVE_SMP_ST_SAVING };
+typedef struct {                                        /* the host's recorder now (rfm_move_smp_status) */
+    uint8_t state;                                      /* RFM_MOVE_SMP_ST_* */
+    uint8_t listening;                                  /* 1: Capture mode's buffer is filling (Capture can keep it) */
+    uint8_t bar, bars;                                  /* the bar being recorded (1..bars; 0 armed), the bars wanted
+                                                         * (0: no bars: Open, Manual, Threshold with Open) */
+    uint16_t takes;                                     /* the takes stored (for the Takes tab) */
+    uint16_t level;                                     /* the source's level now, 0..32767 (peak, linear) */
+    uint32_t frames, rate;                              /* the take's frames so far and the sample rate (its time) */
+    uint8_t npeaks;                                     /* peaks given, 0..RFM_MOVE_SMP_PEAKS, oldest first, 0..255 */
+    uint8_t span;                                       /* 0: peaks is a rolling history (the newest last, drawn at the
+                                                         * right); n: a take with bars runs and its whole length is n
+                                                         * peaks, peaks[0] its start (the screen shows npeaks / n done) */
+    uint8_t peaks[RFM_MOVE_SMP_PEAKS];
+} rfm_move_smp_status_t;
+enum { RFM_MOVE_SMP_EV_SAVED = 1, RFM_MOVE_SMP_EV_NOTHING = 2, RFM_MOVE_SMP_EV_ERROR = 3 };   /* rfm_move_smp_event */
+typedef struct {                                        /* (RAM, sampler.c) */
+    uint8_t open;                                       /* the app is open (shown when nothing above it hides it) */
+    uint8_t tab;                                        /* the tab shown (remembered) */
+    uint8_t row;                                        /* the setting the jog is on (RFM_MOVE_SMP_*; remembered) */
+    uint8_t on_tabs;                                    /* the jog is on the tabs (turned up past the first row) */
+    uint8_t picking;                                    /* .. their click: the jog chooses a tab until a click / Back */
+    uint8_t edit;                                       /* the row's click: its popup (the jog changes its value) */
+    uint8_t sdown, jdown;                               /* Sample's / the jog click's press was the app's (its release) */
+    uint8_t turned;                                     /* a detent turned the rows: three rows until turn_ms + 1 s */
+    uint32_t turn_ms;
+    uint32_t chg_ms;                                    /* the app's last change (a newer popup of the layer under it
+                                                         * shows over it, R3) */
+    uint8_t srcs, sets, tabs, dests;                    /* the host's offer (bits), rfm_move_smp_offer */
+    rfm_move_smp_status_t st;                           /* the host's status, as last given */
+    uint32_t st_ms;                                     /* .. its state's last change */
+    uint8_t msg;                                        /* a message up (RFM_MOVE_SMP_EV_*, 0 none) */
+    uint32_t msg_ms;
+    char msg_a[16], msg_b[16];                          /* .. its two rows */
+    uint8_t flash;                                      /* a take saved: green from flash_ms */
+    uint32_t flash_ms;
+    int16_t ev_bars, ev_bpm10;                          /* the last take saved: its bars, tempo, length */
+    int32_t ev_ms;
+} rfm_move_smp_t;
+
 /* ---- the state */
 typedef struct {
     uint8_t kind;                                       /* what a pressed control did, for its release */
@@ -1244,6 +1323,8 @@ typedef struct {
     /* (0.14.0, the owner's 2026-11-24) engine parameters: each slot's ep1 (about 290 KiB for the three slots), the
      * ENGINE page's state (engine.c) */
     rfm_move_ep_t ep;
+    /* (0.15.0, the owner's 2026-11-24) the sampler app (sampler.c; RFM_MOVE_CAP_SAMPLER) */
+    rfm_move_smp_t smp;
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
@@ -1590,6 +1671,31 @@ void rfm_move_ep_cells(rfm_move_t *m, int slot, int layer, int page, const rfm_m
                                                          * watched page's cells (EP_WATCH) */
 int rfm_move_ep_has(const rfm_move_t *m, int slot);     /* 1: an Engine page can show for this slot (a description and
                                                          * its layers taken) */
+
+/* ---- (0.15.0, the owner's 2026-11-24) the sampler app: the host's recorder (RemoteFM14Move) as an app on the Move
+ * (README "The sampler"). RFM_MOVE_CAP_SAMPLER (not in RFM_MOVE_CAPS_ALL: rfm_move_fw_caps(m, ... |
+ * RFM_MOVE_CAP_SAMPLER)): Sample is the app (Sample's audio loop, RFM_MOVE_ACT_AUDIO_REC, is off); without it nothing
+ * changes. The app takes the screen, the jog and Back (and Sample, its record key); the pads, steps, knobs and arrows
+ * stay the layer's under it. Sample opens it (the FM-1 layout: Sample stays the FM-1's SEL unless the app is open or a
+ * take runs; Track 1..4 held + Sample opens it there too); Track 1..3 held + Sample: that slot as the source, Track 4:
+ * the master (nothing records); Back: a popup or the tab choice ends, else the app closes (a take goes on: Sample
+ * brings it back). The projects view keeps Sample (the favourite key); a takeover that claims the buttons keeps it; a
+ * takeover is not shown while the app is open (as under a Shift menu). Call these on the core's thread. */
+enum { RFM_MOVE_CAP_SAMPLER = 8 };
+/* what the host offers (bits; any time): sources by RFM_MOVE_SMP_SRC_* (default Master .. Stems, 0x3F), settings by
+ * RFM_MOVE_SMP_* (the rows; default all, 0x7F), tabs by RFM_MOVE_SMP_TAB_* (default Record; only the ones in
+ * RFM_MOVE_SMP_TABS_BUILT show), To's values by RFM_MOVE_SMP_TO_* (default Files). A value no longer offered moves to
+ * the first one offered (SMP_SET). 0 for a mask: no change */
+void rfm_move_smp_offer(rfm_move_t *m, unsigned sources, unsigned settings, unsigned tabs, unsigned dests);
+/* the recorder now (as often as the host likes, about 30 a second). Returns 1 when the app shows it (draw again) */
+int rfm_move_smp_status(rfm_move_t *m, const rfm_move_smp_status_t *st);
+/* an event: RFM_MOVE_SMP_EV_SAVED (a take stored: bars 0 for none, bpm10 its tempo x 10, ms its length; in Capture
+ * mode "Captured", else "Saved"; Sample's light green RFM_MOVE_SMP_FLASH_MS), _NOTHING (Capture had nothing),
+ * _ERROR (reason: a few printable words, "Disk low"). A message a second on the app; said. Returns 1 when shown */
+int rfm_move_smp_event(rfm_move_t *m, int kind, int bars, int bpm10, int ms, const char *reason);
+void rfm_move_smp_sync(rfm_move_t *m);                 /* every setting's SMP_SET again (with the capability) */
+int rfm_move_smp_shown(const rfm_move_t *m);           /* 1: the app is on the screen now */
+int rfm_move_smp_value(const rfm_move_t *m, int setting);   /* a setting's value as SMP_SET sends it */
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */

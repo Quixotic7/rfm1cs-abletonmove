@@ -186,7 +186,7 @@ int rfmv_seq_mod_over(const rfm_move_t *m)              /* Copy, Delete or Mute 
 int rfmv_back_has(const rfm_move_t *m)
 {
     return m->seq.smenu || m->seq.projects || rfmv_seq_layer_open(m) || rfmv_st_on(m) ||   /* (0.13.0: States) */
-           rfmv_fwp_locked(m);                          /* (0.14.0: the FM-1 page's lock) */
+           rfmv_fwp_locked(m) || rfmv_smp_shown(m);     /* (0.14.0: the FM-1 page's lock; 0.15.0: the sampler) */
 }
 int rfmv_seq_layer_open(const rfm_move_t *m)
 {
@@ -218,6 +218,12 @@ static void layer_close(rfm_move_t *m, int id)
     case LY_EPL: q->ep_list = 0; break;               /* (0.14.0: on the page highlighted) */
     default: break;
     }
+}
+void rfmv_seq_menu_close(rfm_move_t *m)                 /* (0.15.0) a Shift menu (not Global settings) closed: the
+                                                         * sampler app opened over it */
+{
+    if (m->seq.smenu && m->seq.smenu != RFM_MOVE_SM_GLOBAL)
+        layer_close(m, LY_MENU);
 }
 static void grow_to(rfm_move_t *m, int clip, int abs);
 

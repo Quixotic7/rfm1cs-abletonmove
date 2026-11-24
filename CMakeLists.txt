@@ -46,7 +46,7 @@ set_target_properties(moveremote_gfx moveremote PROPERTIES C_STANDARD 99 C_STAND
 
 # ---- the core
 add_library(rfm1cs_move STATIC
-    src/move.c src/screen.c src/v2.c src/seq.c src/seq_ui.c src/project.c src/fw.c src/speech.c src/takeover.c src/projfw.c src/engine.c)
+    src/move.c src/screen.c src/v2.c src/seq.c src/seq_ui.c src/project.c src/fw.c src/speech.c src/takeover.c src/projfw.c src/engine.c src/sampler.c)
 target_include_directories(rfm1cs_move PUBLIC ${RFM1CS_DIR}/include ${MR_DIR}/include)
 target_link_libraries(rfm1cs_move PUBLIC moveremote_gfx)
 target_compile_options(rfm1cs_move PRIVATE -Wall -Wextra -Wshadow -Wstrict-prototypes)
@@ -146,6 +146,14 @@ if(RFM1CS_TESTS)
     target_compile_options(move_engine PRIVATE -Wall -Wextra)
     add_test(NAME move_engine COMMAND move_engine)
     set_tests_properties(move_engine PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    # 0.15.0: the sampler app (RFM_MOVE_CAP_SAMPLER): its gestures, the layer rules, the actions, the host's status and
+    # events, the screens against the mock-up (move_smp_ref.h), the lights, the speech, the settings blob
+    add_executable(move_sampler tests/move_sampler.c)
+    target_include_directories(move_sampler PRIVATE src tests)
+    target_link_libraries(move_sampler PRIVATE rfm1cs_move moveremote)
+    target_compile_options(move_sampler PRIVATE -Wall -Wextra)
+    add_test(NAME move_sampler COMMAND move_sampler)
+    set_tests_properties(move_sampler PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
     # end to end against Move Remote's simulator (tests/move_e2e.sh; skipped, code 77, without the simulator)
     add_executable(move_e2e tests/move_e2e.c)
     target_link_libraries(move_e2e PRIVATE rfm1cs_move moveremote)

@@ -559,7 +559,8 @@ whole bars, 70..180 BPM) and set. Playing: aligned to the song's bars. Shift + C
 (stopped: from the first bar once Play starts the transport); a press while recording ends it
 at the next bar line, so the take is exactly N bars (`RFM_MOVE_ACT_AUDIO_REC`, frame-stamped; the web player's
 worklet cuts at those frames). The take goes to the recorder's Takes, named with its tempo and bars. A waveform in
-the screen's corner while it records. (Tap tempo: Shift + step 5.)
+the screen's corner while it records. (Tap tempo: Shift + step 5.) (0.15.0) With `RFM_MOVE_CAP_SAMPLER` Sample is
+the sampler app instead ([The sampler](#the-sampler-0150)).
 
 **Buttons.**
 
@@ -568,7 +569,7 @@ the screen's corner while it records. (Tap tempo: Shift + step 5.)
 | Play | start / stop (following an external clock: at its next bar). Shift + Play: every clip from its start (0.10.0: in session view too; every clip stops: step 16 there) |
 | Record | the record mode's (above). Shift + Record: the record settings |
 | Capture | Capture (above) |
-| Sample | the audio loop (above) |
+| Sample | the audio loop (above). (0.15.0) With `RFM_MOVE_CAP_SAMPLER`: the sampler app, in every layout (the FM-1 layout: SEL while it is closed and no take runs); Track 1..3 held + Sample: the app with that slot as the source, Track 4 held: the master ([The sampler](#the-sampler-0150)) |
 | Loop | held or latched: pages and the loop (above). Shift + Loop held: FILL |
 | Copy, Delete | copy, cut, paste (above). Delete held + Play: the clip cleared (below) |
 | Undo | undo (multi-level); Shift + Undo: redo. (0.12.0, a13) Nothing to undo or redo: "None" a second |
@@ -1044,6 +1045,82 @@ unloaded or replaced: `rfm_move_ep_describe(m, slot, NULL, 0)` first. These call
 `rfm_move_t` grows by `rfm_move_ep_t` (296 840 bytes: each slot's 64 KiB description and 32 KiB of values), `rfm_move_act_t` by 8 bytes (64 -> 72: `pid`, `layer`, `op`). Tests:
 `move_engine`.
 
+## The sampler (0.15.0)
+
+The owner's words (2026-11-24): "I'd like to be able to think of and pull up the sampler as an app. So you pull up
+the sampler, it stays on screen, so takeover of screen, jogwheel, and back button." The host's recorder
+(RemoteFM14Move: sources, modes, files) with the Move as its face; the mock-up is remoteFM14Move-recorder
+docs/design/mock_recorder_v4.c (boards one, three, tabs, popup, run; v1's captured), and the screens here are its
+pixels. Only for a host that sets `RFM_MOVE_CAP_SAMPLER` (`rfm_move_fw_caps`; not in `RFM_MOVE_CAPS_ALL`). Without it
+nothing changes: Sample is the audio loop (the web player's). With it the audio loop is off and Sample is the app.
+
+**A layer.** The app takes the screen, the jog (turn, click, touch) and Back, and Sample (its record key); the pads,
+steps, knobs, arrows, Play and the rest stay the layer's under it (they work and light as before). A held control
+(a Track, a step, Shift / Loop / Copy / Delete / Mute, FILL) takes it over while held, its screen and the jog; a popup
+of the layer under it newer than the app's last change (a knob touched or turned: R5) shows over it, a jog turn brings
+the app back. A Shift menu opened over it hides it until Back; Sample with a Shift menu open closes the menu (the app
+takes its place). Global settings, States and the projects view are above it (the browser keeps Sample: the
+favourite key). A takeover that claims the buttons keeps Sample; a takeover is not shown while the app is open (as
+under a Shift menu: its unclaimed parts are the FM-1 layout's). Tabs and the row are remembered (RAM), open or closed.
+
+| Gesture | What |
+|---|---|
+| Sample (a note layout, MIDI) | the app opens at the press (white); in the app: the record key, `RFM_MOVE_ACT_SMP_PRESS` at the press (value the mode), nothing at the release |
+| Sample (the FM-1 layout) | the FM-1's SEL, as before, while the app is closed and no take runs; open (or a take running): the app's |
+| Track 1..3 held + Sample | the app with that slot as the source (`SMP_SET` Source; the jog on the Source row); Track 4: the master. Nothing records. The Track's hold is used up (as Track + Menu): no menu, no tap. In every layout |
+| Back | a popup or the tab choice ends; else the app closes. A take goes on (Sample red); Sample brings the app back (no press sent) |
+| the jog | a row a detent (no wrap); three rows for 1 s after the last detent (the chosen in the middle where it can be), then one. Up past the first row: the tabs (board "tabs"), down again: the first row. A take running: nothing |
+| the jog's click, a row | its popup (board "popup"): the name (2x), the value (4x, 2x when wider), under Threshold and Input level the level now as a line and the threshold's mark. The jog changes the value: `SMP_SET` at once, the settings saved (`SETTINGS`). A click or Back ends it |
+| the jog's click, the tabs | the jog picks a tab (offered and built: Record only now), a click or Back ends it |
+
+**The screens** (128 x 64). At rest (board one): the tabs as icons (the shown one underlined; the jog on them: a white
+block), the source's sign top right (M, 1, 2, 3, the input's icon, S; L, K), the source's live wave (58 columns 2 px
+apart, the newest at the right), the level meter (-60..0 dB, 28 px) with the threshold's mark, a mark a row (the
+chosen long), the chosen row: its icon and value at 2x, inverted. Turning (board three): the tabs line, the level as a
+line on top with the threshold's mark, three rows. Armed (Bars, Threshold): the record dot blinking, "0/4" (no bars: the
+time), the sign, the bar lines, the strip, the level (Threshold: its mark), no wave. Recording (board run): the dot,
+the bar of the bars ("2/4") or the time ("1:13"), the take's wave, the bar lines (up to 16 bars), the level, the strip
+(the bar thick, where it is). A message a second (v1's captured): "Captured" / "4 Bars" (Capture mode; else "Saved"),
+a take with no bars its seconds ("7.25 s"), "Nothing" / "to capture", an error's words (two rows of 10). A message while
+the app is closed is said, not shown. No other animation.
+
+| Row (`RFM_MOVE_SMP_*`) | Values (`SMP_SET`'s value) | Default |
+|---|---|---|
+| Source (0) | Master 0, Slot 1..3 1..3, Input 4, Stems 5, Looper 6, Kit 7 (only those offered) | Master |
+| Mode (1) | Capture 0, Bars 1, Threshold 2, Manual 3 | Bars |
+| Length (2) | Open, 1, 2, 4, 8, 16, 32 bars (the bars; 0 Open, "Auto" in Capture mode) | Open |
+| Threshold (3) | -60..0 dB, 1 a detent | -24 |
+| Input level (4) | -24..+24 dB ("In Level" in its popup: the full name is wider than the screen) | 0 |
+| Monitor (5) | Off 0, On 1 | Off |
+| To (6) | Files 0, Looper 1, Kit 2 (only those offered) | Files |
+
+Saved with the settings (`settings.smp[7]`, version 8: 137 bytes; a version 7 image, 130 bytes, loads with these
+defaults; each byte checked, a bad one its default).
+
+**Sample's light.** White while the app is open and idle; red blinking while armed; red recording or saving (open or
+closed); green 250 ms when a take is saved (`RFM_MOVE_SMP_FLASH_MS`); closed and idle: dim white (40) while Capture
+listens, else faint (12) (it opens the app: R1). The FM-1 layout, closed and idle: SEL's light. The projects view, a
+takeover with the buttons, Global settings: theirs. Back's light is on while the app shows.
+
+**The host's part.** `rfm_move_fw_caps(m, ... | RFM_MOVE_CAP_SAMPLER)`: every setting's `SMP_SET` once (also
+`rfm_move_smp_sync` after settings the host loaded itself). `rfm_move_smp_offer(m, sources, settings, tabs, dests)`:
+bits by `RFM_MOVE_SMP_SRC_*`, `RFM_MOVE_SMP_*` (the rows), `RFM_MOVE_SMP_TAB_*` (Record 0, Takes 1, Tools 2, Loops 3;
+only `RFM_MOVE_SMP_TABS_BUILT` show), `RFM_MOVE_SMP_TO_*`; 0 leaves one; defaults 0x3F, 0x7F, 1, 1. A value no longer
+offered moves to the first offered (`SMP_SET`). `rfm_move_smp_status(m, &st)` as often as it likes (about 30 a
+second; 1: redraw): `state` (`RFM_MOVE_SMP_ST_IDLE`, `_ARMED`, `_RECORDING`, `_SAVING`), `listening` (Capture's buffer
+fills), `bar` (1..`bars`, 0 armed) and `bars` (0: none, the time from `frames` / `rate`), `level` 0..32767, `npeaks`
+peaks 0..255 oldest first (at most 128) and `span` (0: a rolling history, the newest at the right; n: a take with bars,
+its whole length n peaks: column c shows peak c * n / 58, done = npeaks / n), `takes`. `rfm_move_smp_event(m, kind,
+bars, bpm10, ms, reason)`: `RFM_MOVE_SMP_EV_SAVED`, `_NOTHING`, `_ERROR`. The core times nothing of a take.
+
+| Action | Fields | When |
+|---|---|---|
+| `RFM_MOVE_ACT_SMP_SET` (48) | `index` the setting, `value` its value (Length: the bars, 0 Open) | each change (one turn: one, its last value), each setting once at the capability or `rfm_move_smp_sync`, an offer that moves one |
+| `RFM_MOVE_ACT_SMP_PRESS` (49) | `down` 1, `value` the mode | Sample pressed in the app (not when it opens or comes back) |
+
+`rfm_move_t` grows by `rfm_move_smp_t`, `rfm_move_settings_t` by 7 bytes. Tests: `move_sampler` (dumps
+`sampler_*.pbm` / `.leds`; the boards against the mock-up's, `tests/move_smp_ref.h`).
+
 ## FX parameter pages (0.5.0)
 
 A module's own parameter pages, as Schwung's `ui_hierarchy` lays them out: each level's 8 knobs a page, its overflow
@@ -1377,6 +1454,7 @@ play notes (0.6.5: heard, never said).
 | Track 1..3 held + Delete; + a step | Sequencer | "Track 1 cleared"; "Track 3 cleared" |
 | Undo, Shift + Undo | Sequencer | "Undo", "Redo", and the steps that changed |
 | Play, Record, Sample, Capture | Sequencer | "Playing", "Stopped", "Record on", "Audio loop armed", "Recording audio loop", "Captured", "No empty clip" |
+| (0.15.0) Sample, the jog, its click, Back; the host's status and events | the sampler app | opening "Sampler" (the view) then the row "Source: Master"; a row "Mode: Bars", "Length: 4 bars"; a value in its popup "Threshold: -23 dB"; "Tabs, Record", "Tab: Record"; "Armed", "Recording" (closed too); "Saved, 4 bars", "Captured, 2 bars", "Saved, 7.2 seconds", "Nothing to capture", an error's words (closed too); the message gone: the row again; closing: the view under it named |
 | Loop held, tapped | Sequencer | "Loop: 2 bars"; "Loop edit on" / "off" |
 | Left / Right; Up / Down | track view; Session | "Bar 2"; "Tracks 9 to 16", "Scenes 2 to 5" |
 | Menu | Sequencer | "Session" / "Track 1" |
@@ -1441,6 +1519,16 @@ flips with the FNV fixed half the time, 3000 random blobs, each checked from a b
 page's presence and the target slot, the jog's order, arriving, the knobs (every value format, lights, touch, turn,
 Shift, a LIST, a DYN), the SETs merged per block, the watch, the page list, an engine changed, a layer off, the
 description replaced and gone, the layer by channel (`engine_*.pbm` and `.leds` in the build directory).
+
+`move_sampler` (0.15.0): the sampler app: the capability off (the audio loop as before), the SETs, opening, the record
+key, the rows, three rows' second, the tabs, a popup, Track held + Sample, what passes to the layer under it (the same
+actions and lights with the app open or closed), a held step and a knob's popup over it, a take, the events, the
+FM-1 layout, the browser, a takeover, a Shift menu, the offer, the settings blob (versions 8 and 7), the lights, the
+speech; the mock-up's six boards compared pixel for pixel (`move_smp_ref.h`, made from mock_recorder_v4.c and _v1.c
+built per their header comments): equal but for the second tab's icon (Takes: not built here, so not shown) and the
+popup's threshold mark (3 px right: -24 dB on the -60..0 scale is at 60 %, the mock drew it at 57 %)
+(`sampler_*.pbm` and `.leds` in the build directory; the `.leds` have a last row: Sample, Record, Play, Loop, Mute,
+Delete, Copy, Undo, as the mock-up's).
 
 ## Later phases
 

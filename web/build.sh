@@ -19,6 +19,6 @@ emcc -O2 -std=c99 -Wall -Wextra -Wno-unused-parameter -I"$ROOT/include" -I"$ROOT
     -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,worker,node -sSINGLE_FILE=1 -sFILESYSTEM=0 \
     -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=1MB -sSTACK_SIZE=128KB -sEXPORT_NAME=createRfmMove \
     -sEXPORTED_FUNCTIONS=_malloc,_free -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,stringToUTF8,lengthBytesUTF8 \
-    src/move.c src/screen.c src/v2.c src/seq.c src/seq_ui.c src/project.c src/fw.c src/speech.c src/takeover.c src/projfw.c src/engine.c src/session.c src/store.c "$MR/host/mr_client.c" "$MR/host/mr_gfx.c" "$MR/common/font5x7.c" web/move_web.c \
+    src/move.c src/screen.c src/v2.c src/seq.c src/seq_ui.c src/project.c src/fw.c src/speech.c src/takeover.c src/projfw.c src/engine.c src/sampler.c src/session.c src/store.c "$MR/host/mr_client.c" "$MR/host/mr_gfx.c" "$MR/common/font5x7.c" web/move_web.c \
     -o "$OUT/rfm_move.mjs"
 ls -l "$OUT/rfm_move.mjs"

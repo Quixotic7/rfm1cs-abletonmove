@@ -180,6 +180,7 @@ void rfmv_seq_audio_rec(rfm_move_t *m);                /* Sample: the audio loop
 void rfmv_seq_ui_poll(rfm_move_t *m);
 void rfmv_seq_select(rfm_move_t *m, int track);        /* a track selected: its layout and CC numbers in */
 void rfmv_seq_menu_open(rfm_move_t *m, int sm);         /* (0.14.0) a Shift menu opened (Shift + a Track) */
+void rfmv_seq_menu_close(rfm_move_t *m);                /* (0.15.0) .. closed (not Global settings) */
 int rfmv_seq_kpage(const rfm_move_t *m);               /* (0.14.0) the knob page: 0 TRIG, 1 FM-1, 2..5 banks 1..4 */
 void rfmv_seq_kpage_restore(rfm_move_t *m);            /* .. the selected track's, as it was left */
 void rfmv_seq_enter(rfm_move_t *m);                    /* Sequencer mode entered / left: the settings swapped */
@@ -415,6 +416,21 @@ void rfmv_pfw_rows(const rfm_move_t *m, mr_canvas_t *cv, const char ids[RFM_MOVE
                    const int16_t *st, int y0);          /* a row a slot: its number, the name; st: the bars */
 int rfmv_pfw_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);   /* 1 up */
 void rfmv_pfw_proj_words(const rfm_move_t *m, const rfm_move_proj_info_t *in, char *o, int cap);   /* ", ChoralRoot .." */
+/* ---- sampler.c: (0.15.0) the sampler app (RFM_MOVE_CAP_SAMPLER) */
+void rfmv_smp_defaults(int8_t v[RFM_MOVE_SMP_N]);       /* the settings' defaults */
+void rfmv_smp_load(int8_t v[RFM_MOVE_SMP_N], const uint8_t *p);   /* a version 8 image's bytes, each checked */
+int rfmv_smp_cap(const rfm_move_t *m);                  /* the host has RFM_MOVE_CAP_SAMPLER */
+void rfmv_smp_caps(rfm_move_t *m, int was);             /* the caps set (was: the sampler's before): SETs, or off */
+int rfmv_smp_shown(const rfm_move_t *m);                /* the app is on the screen (open, nothing above it) */
+int rfmv_smp_covered(const rfm_move_t *m);              /* .. but a held control or a newer popup under it shows */
+int rfmv_smp_input(rfm_move_t *m, const mr_event_t *ev);   /* 1 taken (Sample; the jog while it shows) */
+int rfmv_smp_back(rfm_move_t *m);                       /* Back's click: 1 taken (a popup, the tab choice, the app) */
+void rfmv_smp_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3]);   /* Sample's light */
+int rfmv_smp_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* 1 drawn */
+int rfmv_smp_timed(const rfm_move_t *m);
+int rfmv_smp_tick(rfm_move_t *m);                       /* (speech) a message's second over: 1 once (words due) */
+int rfmv_smp_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);   /* 1 up */
+int rfmv_smp_lvpx(int level, int w);                    /* (tests) a level 0..32767 as pixels of a -60..0 dB scale */
 int rfmv_st_on(const rfm_move_t *m);                    /* the States layer open: its slot + 1, 0 */
 int rfmv_st_pad7(const rfm_move_t *m, int t);           /* Track t held: its pad 7 (States) has a job */
 void rfmv_st_open(rfm_move_t *m, int t, int from);      /* from 0 a held Track's pad 7, 1 the browser's Loop */
