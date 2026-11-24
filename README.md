@@ -1111,7 +1111,10 @@ second; 1: redraw): `state` (`RFM_MOVE_SMP_ST_IDLE`, `_ARMED`, `_RECORDING`, `_S
 fills), `bar` (1..`bars`, 0 armed) and `bars` (0: none, the time from `frames` / `rate`), `level` 0..32767, `npeaks`
 peaks 0..255 oldest first (at most 128) and `span` (0: a rolling history, the newest at the right; n: a take with bars,
 its whole length n peaks: column c shows peak c * n / 58, done = npeaks / n), `takes`. `rfm_move_smp_event(m, kind,
-bars, bpm10, ms, reason)`: `RFM_MOVE_SMP_EV_SAVED`, `_NOTHING`, `_ERROR`. The core times nothing of a take.
+bars, bpm10, ms, reason)`: `RFM_MOVE_SMP_EV_SAVED`, `_NOTHING`, `_ERROR`. The core times nothing of a take. The song's
+position for the host's bar lines: `rfm_move_seq_pos(m, &per_frame)`, in ticks (96 a beat) at the next
+`rfm_move_seq_advance` call's first frame, to a fraction of a tick (-1 stopped); less `frames * per_frame`: the call's
+own first frame.
 
 | Action | Fields | When |
 |---|---|---|

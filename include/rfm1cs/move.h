@@ -767,6 +767,7 @@ typedef struct {
     uint64_t now_us, us_rem;                            /* time advanced so far */
     uint64_t ph;                                        /* progress to the next tick, of den */
     uint32_t den_rate;                                  /* the rate den was made for */
+    uint32_t num_last;                                  /* (0.15.0) the last advance's tick rate, of den a frame */
     int32_t tl;                                         /* timeline tick (counts every tick; the clock's position) */
     int32_t T;                                          /* song tick while playing */
     uint8_t playing, start_pending, following, ext_run;   /* start_pending 1 now, 2 at the timeline's next bar, 3 count-in */
@@ -1422,6 +1423,11 @@ void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n);
 void rfm_move_seq_play(rfm_move_t *m, int on);         /* as Play in Sequencer mode (1 start, 0 stop) */
 void rfm_move_seq_set_bpm(rfm_move_t *m, int bpm10);   /* the internal clock, BPM x 10 (200..3000) */
 int rfm_move_seq_bpm10(const rfm_move_t *m);           /* the tempo in use (measured when following) */
+/* (0.15.0, for a host's recorder) the song's position in ticks (RFM_MOVE_SEQ_TPS a step, 96 a beat) at the first frame
+ * of the next rfm_move_seq_advance call, to a fraction of a tick; -1 while not playing. per_frame (NULL: not wanted):
+ * the ticks a frame (the last call's units) at the last call's tempo, so the position at that call's first frame is
+ * the result less frames * per_frame (a jump inside it, to bar 1, shows there as a jump) */
+double rfm_move_seq_pos(const rfm_move_t *m, double *per_frame);
 void rfm_move_seq_set_clock(rfm_move_t *m, int mode);  /* RFM_MOVE_CLOCK_* */
 /* how far ahead of what sounds the host advances the clock (the web player: its 30 ms lead): recordings and
  * Capture place what is played this much earlier, where it was heard */

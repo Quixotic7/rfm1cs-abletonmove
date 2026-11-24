@@ -1800,6 +1800,17 @@ void rfmv_seq_mute(rfm_move_t *m, int track, int on)
     rfmv_seq_dirty(m);
 }
 
+double rfm_move_seq_pos(const rfm_move_t *m, double *per_frame)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const double den = (double)q->den_rate * 600.0;
+    if (per_frame)
+        *per_frame = den > 0 ? q->num_last / den : 0.0;
+    if (!q->playing || den <= 0)
+        return -1.0;
+    return q->T + (double)q->ph / den;
+}
+
 int rfmv_seq_now_tick(const rfm_move_t *m)
 {
     const rfm_move_seq_t *q = &m->seq;
@@ -2012,6 +2023,7 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
     }
     den = (uint64_t)rate * 600u;
     num = (uint64_t)(q->following ? clampi(ext_bpm10(q), 10, 30000) : q->bpm10) * 96u;
+    q->num_last = (uint32_t)num;
     cap = q->following ? q->ext_clocks * 4 + 3 : INT32_MAX;
     if (q->start_pending == 1 || (q->start_pending == 3 && q->count_in > BAR))
         q->ph = den;                                    /* Play (or a count-in): the first tick is due at once */

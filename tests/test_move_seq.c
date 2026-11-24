@@ -5,6 +5,7 @@
  * of sounding notes, recording, Capture, copy / cut / paste, undo / redo, CC locks, scale and root on the Move, the
  * project grid and its actions, the project blob (round trip, and a fuzzed loader), the autosave and three golden
  * screens. Input goes in as the Move's raw USB-MIDI packets through mr_decode, as in test_move.c. */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -3487,8 +3488,46 @@ static void test_triplet_layout(void)
     rfm_move_seq_play(m2, 0);
 }
 
+/* (0.15.0) rfm_move_seq_pos: the song's position at the next call's first frame, to a fraction of a tick; each
+ * call's first frame (the position less frames * per_frame) is where the call before left it; Play again: tick 0 */
+static void test_seq_pos(void)
+{
+    rfm_move_t *m = &M;
+    double pf = 0, p, prev = -1, worst = 0;
+    int i;
+    fresh(m);
+    CHECK(rfm_move_seq_pos(m, &pf) == -1.0);
+    press(m, MR_CC_PLAY);
+    rfm_move_seq_advance(m, 128, RATE);
+    p = rfm_move_seq_pos(m, &pf);
+    CHECKF(fabs(pf - 1.0 / FPT) < 1e-12 && fabs(p - 128.0 / FPT) < 1e-9, "the first block: %f ticks, %f a frame", p, pf);
+    CHECKF(fabs(p - 128 * pf) < 1e-9, "the first block's first frame: tick 0 (%f)", p - 128 * pf);
+    for (i = 0; i < 2000; i++) {                        /* (odd block sizes: the fraction carried) */
+        const uint32_t n = 61 + (uint32_t)(i * 37 % 200);
+        prev = rfm_move_seq_pos(m, NULL);
+        rfm_move_seq_advance(m, n, RATE);
+        p = rfm_move_seq_pos(m, &pf);
+        if (fabs(p - n * pf - prev) > worst)
+            worst = fabs(p - n * pf - prev);
+    }
+    CHECKF(worst < 1e-6 && p > 2000 * 61 / (double)FPT, "continuous to a frame over 2000 blocks (worst %g ticks)", worst);
+    rfm_move_seq_set_bpm(m, 900);
+    prev = rfm_move_seq_pos(m, NULL);
+    rfm_move_seq_advance(m, 128, RATE);
+    p = rfm_move_seq_pos(m, &pf);
+    CHECKF(fabs(pf - 0.75 / FPT) < 1e-12 && fabs(p - 128 * pf - prev) < 1e-6, "a new tempo: per_frame %f", pf);
+    press(m, MR_CC_PLAY);                               /* stop */
+    rfm_move_seq_advance(m, 128, RATE);
+    CHECK(rfm_move_seq_pos(m, NULL) == -1.0);
+    press(m, MR_CC_PLAY);                               /* from the start again */
+    rfm_move_seq_advance(m, 128, RATE);
+    p = rfm_move_seq_pos(m, &pf);
+    CHECKF(fabs(p - 128 * pf) < 1e-9, "Play again: the block's first frame is tick 0 (%f)", p - 128 * pf);
+}
+
 int main(void)
 {
+    test_seq_pos();
     test_rates_feel();
     test_triplet_layout();
     test_record_8_bars();

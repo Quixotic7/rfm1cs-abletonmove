@@ -23,6 +23,9 @@ of `rfm_move_t` and `rfm_move_settings_t`: rebuild everything.
 - Settings version 8 (137 bytes): the sampler's seven settings after the locks; version 7 (130) loads with their
   defaults. `move.c`'s and `move_tracks`' tests of the version and size follow; the web player's `SETTINGS_BYTES` 137.
 - `src/sampler.c` (CMake, `web/build.sh`); tests `move_sampler` (`move_smp_ref.h`, dumps `sampler_*`).
+- `rfm_move_seq_pos(m, &per_frame)`: the song's position in ticks at the next `rfm_move_seq_advance` call's first
+  frame, to a fraction of a tick (-1 stopped), and the ticks a frame of the last call: a host's recorder cuts bars on
+  it. `rfm_move_seq_t.num_last` (new). Test `test_seq_pos` (move_seq).
 
 ## 0.14.0 (2026-11-24)
 
