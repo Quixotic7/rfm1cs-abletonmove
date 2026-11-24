@@ -3,7 +3,7 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
-## 0.14.0 (not released)
+## 0.14.0 (2026-11-24)
 
 The owner's run on the Move of 2026-11-23, seven requests. Tests: `tests/move_sessview.c` `test_o14_*` (dumps
 `sessview_o14_*`). New fields at the end of `rfm_move_t`: rebuild everything.
