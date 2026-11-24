@@ -3725,10 +3725,11 @@ static void fit2(mr_canvas_t *cv, int x, int y, const char *s, int w)   /* 2x wh
  * its value (the value inverted, the jog changes it), a click again (or Back) leaves the edit; Back closes the menu.
  * While it is open it takes the Move's controls (nothing reaches the FM-1, the firmware or the sequencer); releases
  * pass, so nothing pressed before stays held; Track buttons and Shift + step 2 (its own toggle) pass too */
-enum { GL_SPEECH, GL_CLOCK, GL_VEL, GL_LEVEL, GL_POPUP, GL_LAUNCH, GL_N };   /* (0.12.0: Launch, the project's launch
+enum { GL_SPEECH, GL_CLOCK, GL_VEL, GL_LEVEL, GL_POPUP, GL_LAUNCH, GL_FWPLAY, GL_N };   /* (0.14.0: FW Play) */   /* (0.12.0: Launch, the project's launch
                                                          * quantization) */   /* (0.6.10: the battery a header, no longer a row;
                                                          * 0.6.12: Speech first, the rest scroll) */
-static const char *const GL_NAME[GL_N] = { "Speech", "Clock", "Velocity", "Fixed level", "Popup size", "Launch" };
+static const char *const GL_NAME[GL_N] = { "Speech", "Clock", "Velocity", "Fixed level", "Popup size", "Launch",
+                                            "FW Play" };
 /* (0.12.0) the launch quantizations as a list (the menus' order) and their names */
 const char *rfmv_lq_name(int lq)
 {
@@ -3757,6 +3758,7 @@ static void gl_value(const rfm_move_t *m, int r, char *o, int cap, int spoken)
     case GL_VEL: rfmv_tcase(rfm_move_vel_name(m->s.vel_mode), o, cap); break;
     case GL_LEVEL: snprintf(o, (size_t)cap, "%d", m->s.vel_level); break;
     case GL_LAUNCH: snprintf(o, (size_t)cap, "%s", rfmv_lq_name(m->seq.launch_q)); break;
+    case GL_FWPLAY: snprintf(o, (size_t)cap, "%s", m->s.fw_play ? "Both" : "Firmware"); break;
     default: snprintf(o, (size_t)cap, "%s", m->s.pop_half ? "Half" : "Full"); break;
     }
 }
@@ -3794,6 +3796,12 @@ static void gl_change(rfm_move_t *m, int r, int d)
         break;
     }
     case GL_LAUNCH: m->seq.launch_q = (uint8_t)rfmv_lq_step(m->seq.launch_q, d); break;   /* (0.12.0: the project's) */
+    case GL_FWPLAY: {                                   /* (0.14.0) a firmware's Play: its own, or the Move's too */
+        const int v = clampi(m->s.fw_play + d, 0, 1);
+        if (v != m->s.fw_play)
+            m->s.fw_play = (uint8_t)v, rfmv_changed(m);
+        break;
+    }
     default: break;
     }
     rfmv_seq_dirty(m);

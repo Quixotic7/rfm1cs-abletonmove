@@ -328,6 +328,9 @@ static int route(rfm_move_t *m, const mr_event_t *ev)
         r = held(m, ev, (cl & (unsigned)btn_claim(i)) != 0, bit(m->tk_btn, i), &now);
         if (r)
             bit_set(m->tk_btn, i, now);
+        if (r && now && i == MR_CC_PLAY && !bit(m->tk_btn, MR_CC_SHIFT))
+            rfmv_play_both(m);                          /* (0.14.0: FW Play on Both: the takeover's Play drives the
+                                                         * Move's transport too) */
         return r;
     default: return 0;                                  /* (jacks, MIDI, SysEx: the host's) */
     }

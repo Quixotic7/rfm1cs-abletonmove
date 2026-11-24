@@ -267,6 +267,11 @@ typedef struct {
      * to each slot (Track n's tap in the Sequencer selects it) */
     rfm_move_slotset_t slot[RFM_MOVE_FW_SLOTS];
     uint8_t lock[RFM_MOVE_FW_SLOTS];                    /* 0..15 (slot n: track n + 1 at first) */
+    /* (0.14.0) */
+    uint8_t fw_play;                                    /* Global settings' FW Play: 0 Firmware (the default: a Play
+                                                         * that goes to the firmware is its own only), 1 Both (it also
+                                                         * starts / stops the Move's transport). Saved in pop_half's
+                                                         * byte, bit 1 (no new version: older cores read bit 0 only) */
 } rfm_move_settings_t;
 enum { RFM_MOVE_VEL_DYNAMIC, RFM_MOVE_VEL_FIXED, RFM_MOVE_VEL_SOFT, RFM_MOVE_VEL_HARD, RFM_MOVE_VEL_LINEAR, RFM_MOVE_VEL_N };
 /* (the jog's order: Dynamic, Fixed, Soft, Linear, Hard; LINEAR came last, so older settings keep their values) */

@@ -570,7 +570,8 @@ static void test_external(void)
         jog(m, 9);                                      /* (the last row; (0.6.10) the battery the header: "--" until
                                                          * its first STATUS) */
         rfm_move_screen(m, NULL, out);
-        CHECK(m->battery == -1 && m->gl_row == rfmv_global_rows() - 1 && rfmv_global_rows() == 6);   /* (0.12.0: Launch) */
+        CHECK(m->battery == -1 && m->gl_row == rfmv_global_rows() - 1 && rfmv_global_rows() == 7);   /* (0.12.0: Launch;
+                                                         * 0.14.0: FW Play) */
         CHECK(rfm_move_set_battery(m, 63, 0) == 1 && rfm_move_set_battery(m, 63, 0) == 0);
         CHECK(rfm_move_set_battery(m, 120, 0) == 1 && m->battery == 100);   /* (clamped) */
         rfm_move_set_battery(m, 63, 0);

@@ -422,6 +422,7 @@ enum { POP_BACK = 60 };                                 /* (a popup: pop_i BK_*)
 enum { BK_BAR1, BK_TRACK1, BK_SCENE1, BK_CLOSED, BK_NONE, BK_PLAY, BK_STOP };   /* (0.14.0: BK_PLAY,
                                                          * BK_STOP: Back + Play where Play is the firmware's) */
 int rfmv_play_fw(const rfm_move_t *m);                  /* (0.14.0) Play alone is the firmware's here */
+void rfmv_play_both(rfm_move_t *m);                     /* (0.14.0) FW Play on Both: the Move's transport too */
 int rfmv_back_keys(const rfm_move_t *m);                /* Back held where its shortcuts work */
 void rfmv_seq_back_key(rfm_move_t *m, int cc);          /* a button pressed with Back held there (its own job not done) */
 int rfmv_seq_back_lit(const rfm_move_t *m, int cc);     /* .. a shortcut there now (lit while Back is held) */

@@ -146,6 +146,14 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   is the Move's (the track and session views, Knobs) Back + Play stays the 0.12.x shortcut, "to bar 1": playing,
   every clip from its start (Shift + Play's restart); stopped, nothing; it never starts or stops. No conflict, kept.
   `test_n24_back_play`, pictures `sessview_n24_back_play_*`.
+- (item 3, the owner's test note: "Would be nice if there was a global setting to enable so that a firmware's play
+  button also drives the Move's playback") Global settings' new last row **FW Play**: "Firmware" (the default) or
+  "Both" (said "FW Play: Both"). On Both, a Play press that goes to the firmware (the FM-1 layout, Knobs+Keys, a
+  takeover that claims Play) also starts / stops the Move's transport (`rfmv_play_both`); Shift + Play (the firmware's
+  shifted Play) does not; Back + Play stays the Move's only (item 2), once. New field at the end of
+  `rfm_move_settings_t`: `fw_play`, saved in the Popup size byte's bit 1 (`rfm_move_save`; the settings' version and
+  size unchanged; a core before 0.14.0 reads bit 0 only, so it keeps Popup size and ignores FW Play).
+  `test_n24_fw_play`, picture `sessview_n24_fw_play`; `test_move_seq`'s and `test_move_speech`'s row counts.
 
 ## 0.13.0 (2026-11-23)
 

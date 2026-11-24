@@ -201,7 +201,7 @@ uint32_t rfm_move_save(const rfm_move_settings_t *s, uint8_t o[RFM_MOVE_SETTINGS
     *p++ = s->fw_track, *p++ = s->fw_scope, *p++ = (uint8_t)(s->fw_filter & 0xFF), *p++ = (uint8_t)(s->fw_filter >> 8);
     *p++ = s->fw_cat_scope, *p++ = (uint8_t)(s->fx_page | (s->fw_fx ? 0x80 : 0));   /* (version 4; 0.4.5: FX setup's
                                                          * memory in bit 7) */
-    *p++ = s->pop_half;                                 /* (version 5) */
+    *p++ = (uint8_t)(s->pop_half | (s->fw_play ? 2 : 0));   /* (version 5; 0.14.0: FW Play in bit 1) */
     *p++ = s->speech;                                   /* (version 6) */
     {                                                   /* (version 7, 0.8.0) the slots, then the locks */
         int i;
@@ -269,7 +269,7 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
         s->fw_fx = p[8] >> 7;
     }
     if (b[3] >= 5)                                      /* (0.5.9; older: the whole screen, the default) */
-        s->pop_half = p[9] & 1;
+        s->pop_half = p[9] & 1, s->fw_play = p[9] >> 1 & 1;   /* (0.14.0: FW Play, bit 1) */
     if (b[3] >= 6)                                      /* (0.6.12; older: not chosen, the host's default) */
         s->speech = p[10] <= 3 ? p[10] : 0;
     if (s->mode == RFM_MOVE_MODE_CONTROL)
@@ -1271,6 +1271,14 @@ int rfmv_play_fw(const rfm_move_t *m)
         return 0;
     return m->s.mode == RFM_MOVE_MODE_FM1 || (m->s.mode == RFM_MOVE_MODE_SEQ && rfmv_fwp_full(m) && !m->fwg);
 }
+/* (0.14.0, the owner's test note: "a global setting to enable so that a firmware's play button also drives the Move's
+ * playback") Global settings' FW Play on Both: a Play press that goes to the firmware also starts / stops the Move's
+ * transport (Shift + Play, the firmware's shifted Play, does not) */
+void rfmv_play_both(rfm_move_t *m)
+{
+    if (m->s.fw_play)
+        play_toggle(m);
+}
 static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
 {
     rfm_move_hold_t *h;
@@ -1383,8 +1391,11 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
                                                          * (Play the firmware's PLAY too) */
         if (!down)
             let_go(m, h);
-        else
+        else {
             h->kind = H_BTN, h->a = (uint8_t)rfm_move_button_of(cc), btn_hold(m, h->a);
+            if (cc == MR_CC_PLAY && !m->shift_down && m->btn[MR_CC_SHIFT].kind != H_BTN)
+                rfmv_play_both(m);                      /* (0.14.0: FW Play on Both) */
+        }
         return;
     }
     if (m->s.mode == RFM_MOVE_MODE_SEQ && cc >= 0 && cc < 128 && (m->btn[cc].kind == H_NONE || m->btn[cc].kind == H_MENU)) {
@@ -1432,6 +1443,8 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
         return;
     h->kind = H_BTN, h->a = (uint8_t)b;
     btn_hold(m, b);
+    if (cc == MR_CC_PLAY && !m->shift_down && rfmv_play_fw(m))
+        rfmv_play_both(m);                              /* (0.14.0: FW Play on Both: the FM-1 layout's Play) */
 }
 
 /* (0.8.0) a note layout's knob k's CC number (Track n held + the knob, or Shift + the knob there), for slot t */

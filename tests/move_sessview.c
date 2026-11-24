@@ -5043,8 +5043,81 @@ static void test_n24_back_play(void)
     rfm_move_set_takeover(&M, 0, 0, "");
 }
 
+/* item 3: "a global setting to enable so that a firmware's play button also drives the Move's playback": Global
+ * settings' FW Play (Firmware / Both), saved with the settings */
+static void n24_play_both(int tk)
+{
+    clear(), button(MR_CC_PLAY, 1);
+    CHECK((tk ? count(RFM_MOVE_ACT_TK_INPUT) == 1 : acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY) == 1) &&
+          (M.seq.playing || M.seq.start_pending));
+    button(MR_CC_PLAY, 0), adv_ms(300);
+    clear(), press(MR_CC_PLAY);
+    CHECK((tk ? count(RFM_MOVE_ACT_TK_INPUT) == 2 : acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY) == 2) &&
+          !M.seq.playing && !M.seq.start_pending);
+    rest();
+}
+static void test_n24_fw_play(void)
+{
+    uint8_t blob[RFM_MOVE_SETTINGS_BYTES];
+    rfm_move_settings_t s2;
+    int i;
+    track_view();
+    CHECK(M.s.fw_play == 0);
+    button(MR_CC_SHIFT, 1), step(1, 1), step(1, 0), button(MR_CC_SHIFT, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_GLOBAL);
+    for (i = 0; i < 10; i++)
+        jog(1);
+    clear(), jog_click(), jog(1);
+    CHECK(M.s.fw_play == 1 && count(RFM_MOVE_ACT_SETTINGS) >= 1);
+    CHECKF(strstr(said, "FW Play: Both") != NULL, "said %s", said);
+    write_pbm("n24_fw_play");
+    jog_click(), back(), rest();
+    CHECK(!M.seq.smenu);
+    /* saved: in pop_half's byte, bit 1; Popup size kept apart */
+    M.s.pop_half = 0;
+    rfm_move_save(&M.s, blob);
+    CHECK(rfm_move_load(&s2, blob, sizeof blob) == 0 && s2.fw_play == 1 && s2.pop_half == 0);
+    M.s.pop_half = 1, M.s.fw_play = 0;
+    rfm_move_save(&M.s, blob);
+    CHECK(rfm_move_load(&s2, blob, sizeof blob) == 0 && s2.fw_play == 0 && s2.pop_half == 1);
+    M.s.pop_half = 0, M.s.fw_play = 1;
+    /* the track view: Play is the Move's (once, not twice) */
+    clear(), button(MR_CC_PLAY, 1);
+    CHECK(M.seq.playing || M.seq.start_pending);
+    button(MR_CC_PLAY, 0), press(MR_CC_PLAY), rest();
+    CHECK(!M.seq.playing && !M.seq.start_pending && !count(RFM_MOVE_ACT_BTN));
+    /* Knobs+Keys: the firmware's PLAY and the Move's transport */
+    jog(1), rest(), jog_click(), rest();
+    n24_play_both(0);
+    /* .. Shift (the firmware's GLO there) + Play: the firmware's only */
+    clear(), button(MR_CC_SHIFT, 1), press(MR_CC_PLAY), button(MR_CC_SHIFT, 0);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY) == 2 && !M.seq.playing && !M.seq.start_pending);
+    jog_click(), rest(), jog(-1), rest();
+    /* the FM-1 layout */
+    hold_track(1), hit(24), track(1, 0), rest();
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1);
+    n24_play_both(0);
+    /* .. Back + Play: the Move's only, once */
+    clear(), back_down(), press(MR_CC_PLAY), back_up();
+    CHECK((M.seq.playing || M.seq.start_pending) && !count(RFM_MOVE_ACT_BTN));
+    back_down(), press(MR_CC_PLAY), back_up(), rest();
+    CHECK(!M.seq.playing && !M.seq.start_pending);
+    /* a takeover claiming the buttons */
+    rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_SCREEN | RFM_MOVE_TK_PADS | RFM_MOVE_TK_BUTTONS, "ChoralRoot");
+    hold_track(0), hit(25), track(0, 0), rest(), tap_track(0), rest();
+    CHECK(m_tk_shown() == 0);
+    n24_play_both(1);
+    rfm_move_set_takeover(&M, 0, 0, "");
+    /* Firmware (the default): the firmware's Play only */
+    M.s.fw_play = 0;
+    hold_track(1), hit(24), track(1, 0), rest(), tap_track(1), rest();
+    clear(), press(MR_CC_PLAY);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY) == 2 && !M.seq.playing && !M.seq.start_pending);
+}
+
 int main(void)
 {
+    test_n24_fw_play();
     test_n24_back_play();
     test_n24_track_leds();
     test_o14_clear_clip();
