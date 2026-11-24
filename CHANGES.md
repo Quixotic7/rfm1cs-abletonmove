@@ -173,6 +173,16 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   selection is in the top line, over a picture, and the tick is R5's "mark for the knob's place", not a second mark
   of the selection. `test_n24_settings_ticks` (pictures `sessview_n24_settings_rest`, `_sel`, `_edit`);
   `menu_heads`, `menu_over`, `test_mj_menus` expect no ticks in Workflow.
+- (item 6, the owner's test note: "While not in takeover mode, the Move's shift button plus a FM-1 knob turn should
+  also do the shift and show the engine change") on the FM-1 knob page's Knobs (level 1) the Move's Shift held + a
+  turn of one of the eight FM-1 knobs is the firmware's shifted turn, as in the FM-1 layout: the firmware's GLO
+  (what the Move's Shift is there, `RFM_MOVE_B_GLO`) goes down just before the first such turn and up at Shift's
+  release (`fwp_glo`, new at the end of `rfm_move_t`; let go with every hold too), and the knob's popup is the 0.14.0
+  item 7 one: "Shift" + the knob's label, the firmware's readout (its engine) at once. A Shift press with no knob turn
+  sends nothing; Shift + a step, + the jog's turn (the tempo), + the jog's click (the jog on a knob) are unchanged and
+  send nothing; Shift's release after such a turn latches nothing. Was: the turn reached the firmware unshifted.
+  Knobs+Keys unchanged (Shift is GLO at its own press there). `test_n24_shift_knob` (pictures
+  `sessview_n24_shift_knob`, `_engine`); `test_o14_shift_knob`'s level 1 check follows.
 
 ## 0.13.0 (2026-11-23)
 

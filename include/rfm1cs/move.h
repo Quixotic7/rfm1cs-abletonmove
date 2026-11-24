@@ -1123,6 +1123,9 @@ typedef struct {
      * where the FM-1 knob page's lock (Knobs+Keys, the jog on a knob) was set: the mode, slot, track, view and layout
      * (rfmv_fwp_ctx); another one ends it */
     uint32_t fwp_key;
+    /* (0.14.0, the owner's 2026-11-24) the FM-1 page's Knobs: the Move's Shift held + an FM-1 knob turned put the
+     * firmware's GLO down (let go with Shift) */
+    uint8_t fwp_glo;
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit

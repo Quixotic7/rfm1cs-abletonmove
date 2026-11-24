@@ -476,6 +476,8 @@ static void release_holds(rfm_move_t *m)
         let_go(m, &m->step[i]);
     for (i = 0; i < 128; i++)
         let_go(m, &m->btn[i]);
+    if (m->fwp_glo)                                     /* (0.14.0: the FM-1 page's Shift + knob's GLO) */
+        m->fwp_glo = 0, btn_let(m, RFM_MOVE_B_GLO);
     m->edit_pad = -1;
     m->pj_press = m->pj_del = m->pj_ack = -1;          /* (0.14.0: the projects page) */
     rfmv_seq_ui_release(m);
@@ -1283,6 +1285,9 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
 {
     rfm_move_hold_t *h;
     int b, t;
+    if (cc == MR_CC_SHIFT && !down && m->fwp_glo)      /* (0.14.0) the FM-1 page's Shift + knob: GLO up with Shift
+                                                         * (Shift's own release goes on below) */
+        m->fwp_glo = 0, btn_let(m, RFM_MOVE_B_GLO);
     if ((b = back_bit(cc)) >= 0) {                      /* (0.12.x) Back held + a button: at its press, Back's
                                                          * shortcut (or nothing: dead); its release: nothing */
         if (!down && (m->back_cut >> b & 1)) {
@@ -1525,9 +1530,18 @@ static void on_knob(rfm_move_t *m, int k, int d, uint32_t now)
         return;
     }
     if (rfmv_fwp_page(m) && !m->seq.smenu && !m->seq.step_held) {
-        if (rfmv_fwp_live(m) && KNOB_ENC[k] >= 0)       /* (0.12.x) the FM-1 page: the FM-1 layout's knobs (an empty
+        if (rfmv_fwp_live(m) && KNOB_ENC[k] >= 0) {     /* (0.12.x) the FM-1 page: the FM-1 layout's knobs (an empty
                                                          * slot: dead) */
+            if (!m->seq.fwp_full && !m->fwp_glo && m->btn[MR_CC_SHIFT].kind != H_NONE) {
+                /* (0.14.0, the owner's 2026-11-24: "While not in takeover mode, the Move's shift button plus a FM-1
+                 * knob turn should also do the shift and show the engine change") Knobs: Shift held + a turn is the
+                 * firmware's shifted turn, as the FM-1 layout's: its GLO down before the first one, up with Shift */
+                m->fwp_glo = 1;
+                btn_hold(m, RFM_MOVE_B_GLO);
+                m->seq.mods_used |= SEQ_M_SHIFT;        /* (Shift's release: no latch) */
+            }
             enc_turn(m, k, d, 0);
+        }
         return;
     }
     if (m->s.mode == RFM_MOVE_MODE_SEQ) {               /* (the lock menu: the track's CC numbers, seq_ui.c) */

@@ -4788,11 +4788,14 @@ static void test_o14_shift_knob(void)
     }
     jog_click(), rest();
     CHECK(rfm_move_fwp_level(&M) == 1);
-    /* level 1 (Knobs): Shift is the sequencer's, the firmware gets a plain turn (no GLO): nothing says "Shift" */
+    /* level 1 (Knobs): Shift is the sequencer's; (0.14.0, the owner's 2026-11-24, item 6) a knob turned with it is the
+     * firmware's shifted turn too: GLO down before it, up with Shift (test_n24_shift_knob) */
     clear(), button(MR_CC_SHIFT, 1), knob(1, 2);
-    CHECK(!count(RFM_MOVE_ACT_BTN) && acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_PRESETS) == 1 && !M.btn_count[RFM_MOVE_B_GLO]);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_GLO) == 1 && acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_PRESETS) == 1 &&
+          M.btn_count[RFM_MOVE_B_GLO]);
     write_pbm("o14_shift_knob_level1");
     button(MR_CC_SHIFT, 0), rest();
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_GLO) == 2 && !M.btn_count[RFM_MOVE_B_GLO]);
     rfm_move_set_labels(&M, NULL);
 }
 
@@ -5211,8 +5214,71 @@ static void test_n24_settings_ticks(void)
     back(), rest();
 }
 
+/* item 6: "While not in takeover mode, the Move's shift button plus a FM-1 knob turn should also do the shift and show
+ * the engine change": the FM-1 page's Knobs: Shift held + a knob: GLO down before the first turn, up with Shift; the
+ * popup "Shift" + the knob's name; Shift's own jobs unchanged; Shift alone sends nothing */
+static void test_n24_shift_knob(void)
+{
+    const char *lb[RFM_MOVE_LBL_N];
+    const int sl = rfmv_enc_slot(RFM_MOVE_E_K1);
+    int i, plain, shifted, bpm;
+    track_view();
+    for (i = 0; i < RFM_MOVE_LBL_N; i++)
+        lb[i] = NULL;
+    lb[sl] = "Cutoff";
+    rfm_move_set_labels(&M, lb);
+    jog(1), rest();
+    CHECK(rfm_move_fwp_level(&M) == 1);
+    knob(4, 2), adv_ms(RFM_MOVE_RD_PAIR_MS + 20), screen(), plain = lit_rows(0, 20);
+    rest();
+    /* Shift pressed and let go alone: nothing to the firmware */
+    clear(), button(MR_CC_SHIFT, 1), adv_ms(100), button(MR_CC_SHIFT, 0);
+    CHECK(!count(RFM_MOVE_ACT_BTN) && !count(RFM_MOVE_ACT_TURN));
+    rest();
+    /* Shift held + knob 5 (K1): GLO down first, then the turn; "Shift Cutoff" */
+    clear(), button(MR_CC_SHIFT, 1);
+    CHECK(!count(RFM_MOVE_ACT_BTN));
+    knob(4, 2);
+    CHECK(nact >= 2 && A[0].kind == RFM_MOVE_ACT_BTN && A[0].index == RFM_MOVE_B_GLO && A[0].down &&
+          acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_K1) == 1 && M.btn_count[RFM_MOVE_B_GLO]);
+    adv_ms(RFM_MOVE_RD_PAIR_MS + 20), screen(), shifted = lit_rows(0, 20);
+    CHECKF(rfmv_pop_up(&M, POP_ENC) && shifted > plain + 20, "the title: %d lit, plain %d", shifted, plain);
+    write_pbm("n24_shift_knob");
+    /* the firmware's readout (its engine), coming with a turn: shown at once */
+    knob(4, 1);
+    rfm_move_readout(&M, -1, RFM_MOVE_RD_PARAM, "Engine", "FM2", -1, 0, 0);
+    CHECK(rfmv_rd_valid(&M, sl) && !strcmp(M.rd[sl].title, "Engine"));
+    write_pbm("n24_shift_knob_engine");
+    clear(), knob(5, 2);                                /* (another knob: GLO stays down, not sent again) */
+    CHECK(!count(RFM_MOVE_ACT_BTN) && acts_of(RFM_MOVE_ACT_TURN, RFM_MOVE_E_K2) == 1);
+    clear(), button(MR_CC_SHIFT, 0);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_GLO) == 1 && !find(RFM_MOVE_ACT_BTN)->down && !M.btn_count[RFM_MOVE_B_GLO]);
+    CHECK(!(M.seq.mods & SEQ_M_SHIFT) && !M.seq.shift_lock);   /* (no latch from it) */
+    rest();
+    /* Shift's own jobs: + step 3 (the track settings), + the jog's turn (the tempo), + the jog's click (the jog on a
+     * knob): nothing to the firmware */
+    clear(), shift_step(2);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW && !count(RFM_MOVE_ACT_BTN));
+    back(), rest();
+    bpm = rfm_move_seq_bpm10(&M);
+    clear(), button(MR_CC_SHIFT, 1), jog(1), button(MR_CC_SHIFT, 0);
+    CHECK(rfm_move_seq_bpm10(&M) != bpm && !count(RFM_MOVE_ACT_BTN) && rfmv_seq_kpage(&M) == 1);
+    rest(), button(MR_CC_SHIFT, 1), jog(-1), button(MR_CC_SHIFT, 0), rest();
+    clear(), sh_jog_click();
+    CHECK(M.fwj && !count(RFM_MOVE_ACT_BTN));
+    rest(), back(), rest();
+    /* Knobs+Keys: Shift is the firmware's GLO at its own press, as before */
+    jog_click(), rest(), clear(), button(MR_CC_SHIFT, 1);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_GLO) == 1);
+    knob(4, 2), button(MR_CC_SHIFT, 0);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_GLO) == 2 && !M.btn_count[RFM_MOVE_B_GLO] && !M.fwp_glo);
+    rest(), back(), rest(), jog(-1), rest();
+    rfm_move_set_labels(&M, NULL);
+}
+
 int main(void)
 {
+    test_n24_shift_knob();
     test_n24_settings_ticks();
     test_n24_knob_lock();
     test_n24_fw_play();
