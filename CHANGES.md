@@ -267,6 +267,22 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   slots emptied with `PROJECT_FW` "", saved at once); the transport as it was. Returns 0; -1 refused for a slot that
   holds a project, one out of range, or while a project's load is pending (nothing sent). `test_n24_project_new`
   (the same actions in the same order as the pad's click; the refusals), picture `sessview_n24_project_new`.
+- (item 15, "a feature on step 13 with the icon on when in the firmware browser to randomly select a firmware. This
+  should work with your current filter, and also work if you are in the full catalog in which you can download
+  catalogs") the browser's step 13 is **Random** (`fw_random`, fw.c): at the press a firmware of the bank shown (the
+  pads: the list as it is shown, Favorites or All, the filter, and in the catalog view the firmwares not installed
+  too), never the one already selected, becomes the selection exactly as a pad's tap makes it (`f->sel`, its popups
+  cleared: the screen and speech name it as for a tap); nothing loads or downloads. Feedback: the step white at the
+  press, the pads roll a white light from the old selection to the new one (`RFMV_FWR_MS` 240; `fwr_ms`, `fwr_from`,
+  `fwr_to` new at the end of `rfm_move_t`). Its icon is lit while the browser is open (`rfmv_fw_step_icons`; R6: a
+  function); the step dim white with two or more to pick from, dark with one or none, where a press says "Nothing to
+  pick" (`FP_MSG`). The dice: `rfmv_ui_rnd` (seedable, `ui_rng`). Step 13 was the sixth user tag's step: no tag
+  there any more (`tag_defined`, Capture + step 13 toggles nothing), and a library with a tag on step 13 moves it, with
+  every firmware's mark, to a free step 8..15 at load (else it goes), as 0.5.4 did for step 16. My choice where the
+  note left room: the pick is from the bank shown (the 32 pads), not the whole list across banks.
+  `test_n24_fw_random` (twenty picks, never the same, installed only; the catalog's include not-installed ones; no
+  FW_LOAD / FW_DOWNLOAD; the roll; the list of one), pictures `sessview_n24_fw_random`, `_catalog`, `_none`;
+  `test_browser_icons` expects step 13's icon.
 
 ## 0.13.0 (2026-11-23)
 

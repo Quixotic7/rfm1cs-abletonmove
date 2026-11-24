@@ -332,10 +332,13 @@ static int color(const rfm_move_t *m, int fw)           /* palette index 0..15 *
 static int has_tag_r(const rfm_move_t *m, int fw, int r, int step);
 static int has_tag(const rfm_move_t *m, int fw, int step) { return has_tag_r(m, fw, rec_of(m, fw), step); }
 #define VIRT_STEP 16                                    /* (0.5.4) Fantasy CFWs (rfm_move_fw_t.virt): built in */
+#define RND_STEP 13                                     /* (0.14.0) Random: a firmware of the bank shown (no tag) */
+#define RFMV_FWR_MS 240                                 /* .. the selection rolling to it */
 static const rgb_t VIRTCOL = { 255, 50, 210 };          /* (its step: magenta) */
 static int tag_defined(const rfm_move_t *m, int step)
 {
-    return (step >= CAT0 && step < CAT0 + 5) || step == VIRT_STEP || (step >= 8 && step < VIRT_STEP && m->fw.tag[step - 8][0]);
+    return (step >= CAT0 && step < CAT0 + 5) || step == VIRT_STEP ||
+           (step >= 8 && step < VIRT_STEP && step != RND_STEP && m->fw.tag[step - 8][0]);
 }
 static void tag_name(const rfm_move_t *m, int step, char *o, int cap)
 {
@@ -966,11 +969,31 @@ int rfm_move_fw_library(rfm_move_t *m, const uint8_t *b, uint32_t n)
         c->tag_on = (uint16_t)r16(p + RFM_MOVE_FW_ID_MAX + 1), c->tag_set = (uint16_t)r16(p + RFM_MOVE_FW_ID_MAX + 3);
     }
     f->nrec = (uint16_t)nr;
+    if (f->tag[RND_STEP - 8][0]) {                      /* (0.14.0) step 13 is Random now: its tag moves to a free step
+                                                         * 8..15, else it goes (as step 16's below) */
+        int to = -1, jj;
+        for (jj = 0; jj < 8 && to < 0; jj++)
+            if (!f->tag[jj][0] && jj != RND_STEP - 8)
+                to = jj;
+        if (to >= 0)
+            memcpy(f->tag[to], f->tag[RND_STEP - 8], RFM_MOVE_FW_TAG_NAME);
+        for (jj = 0; jj < (int)nr; jj++) {
+            rfm_move_lib_rec_t *rc = &f->rec[jj];
+            const uint16_t bf = (uint16_t)(1u << (RND_STEP - 1));
+            if (to >= 0) {
+                const uint16_t bt = (uint16_t)(1u << (to + 7));
+                rc->tag_on = (uint16_t)((rc->tag_on & ~bt) | (rc->tag_on & bf ? bt : 0));
+                rc->tag_set = (uint16_t)((rc->tag_set & ~bt) | (rc->tag_set & bf ? bt : 0));
+            }
+            rc->tag_on &= (uint16_t)~bf, rc->tag_set &= (uint16_t)~bf;
+        }
+        memset(f->tag[RND_STEP - 8], 0, RFM_MOVE_FW_TAG_NAME);
+    }
     if (f->tag[8][0]) {                                 /* (0.5.4) step 16 is Fantasy now: a ninth user tag moves to a
                                                          * free step 8..15, else it goes */
         int to = -1, jj;
         for (jj = 0; jj < 8 && to < 0; jj++)
-            if (!f->tag[jj][0])
+            if (!f->tag[jj][0] && jj != RND_STEP - 8)  /* (0.14.0: not step 13) */
                 to = jj;
         if (to >= 0)
             memcpy(f->tag[to], f->tag[8], RFM_MOVE_FW_TAG_NAME);
@@ -1223,6 +1246,39 @@ static void after_filter(rfm_move_t *m, int step)
     rfmv_changed(m);                                    /* (the filter is a setting) */
     pop(m, FP_FILTER, step, 0);
 }
+/* (0.14.0, the owner's 2026-11-24: "a feature on step 13 with the icon on when in the firmware browser to randomly
+ * select a firmware. This should work with your current filter, and also work if you are in the full catalog") step
+ * 13: a firmware of the bank shown (the list as it is: Favorites / All, the filter, the catalog), never the one
+ * selected; it only selects (loading or downloading stays the jog's / the double tap's), named and said as a pad's
+ * selection; the pads roll from the old selection to it (RFMV_FWR_MS). One or none there: "Nothing to pick" */
+static int rnd_ok(const rfm_move_t *m)                 /* two or more in the bank shown */
+{
+    int ids[32], i, n = 0;
+    bank_ids(m, ids);
+    for (i = 0; i < 32; i++)
+        n += ids[i] >= 0;
+    return n >= 2;
+}
+static void fw_random(rfm_move_t *m)
+{
+    rfm_move_fw_state_t *f = F(m);
+    int ids[32], cand[32], i, nc = 0, from = -1, to;
+    bank_ids(m, ids);
+    for (i = 0; i < 32; i++) {
+        if (ids[i] >= 0 && ids[i] == f->sel)
+            from = i;
+        if (ids[i] >= 0 && ids[i] != f->sel)
+            cand[nc++] = i;
+    }
+    if (nc + (from >= 0) < 2) {                         /* (a list of one or none: nothing to choose) */
+        pop_msg(m, FP_MSG, -1, 0, "Nothing to pick");
+        return;
+    }
+    to = cand[rfmv_ui_rnd(m) % (uint32_t)nc];
+    f->sel = (int16_t)ids[to], f->jog = 0, pop_clear(m);
+    m->fw_tap_cell = 0;
+    m->fwr_ms = rfmv_now_ms(m), m->fwr_from = (int8_t)(from >= 0 ? from : 0), m->fwr_to = (int8_t)to;
+}
 static void tag_toggle(rfm_move_t *m, int fw, int s)
 {
     rfm_move_fw_state_t *f = F(m);
@@ -1458,9 +1514,12 @@ static void fw_input(rfm_move_t *m, const mr_event_t *ev)
             return;
         }
         if (f->capture && fw >= 0) {
-            if (s >= CAT0 && s != VIRT_STEP)            /* (Fantasy is no tag: it shows, nothing toggles) */
+            if (s >= CAT0 && s != VIRT_STEP && s != RND_STEP)   /* (Fantasy is no tag: it shows, nothing toggles;
+                                                         * 0.14.0: step 13 is Random, no tag) */
                 tag_toggle(m, fw, s);
-        } else if (s <= 2 || tag_defined(m, s))
+        } else if (s == RND_STEP)
+            fw_random(m);                               /* (0.14.0: at the press) */
+        else if (s <= 2 || tag_defined(m, s))
             f->hold_step = (uint8_t)s, f->hold_ms = rfmv_now_ms(m);
         return;
     }
@@ -2290,6 +2349,11 @@ void rfmv_fw_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             v = lit(v, blink(m));
         c[L_PAD0 + pad_of(i)] = v;
     }
+    {                                                   /* (0.14.0) Random: the selection rolling to its pad, white */
+        const uint32_t el = rfmv_now_ms(m) - m->fwr_ms;
+        if (m->fwr_ms && el < RFMV_FWR_MS)
+            c[L_PAD0 + pad_of(clampi(m->fwr_from + (m->fwr_to - m->fwr_from) * (int)el / RFMV_FWR_MS, 0, 31))] = WHITE;
+    }
     for (i = 1; i <= 16; i++) {
         rgb_t v = OFF;
         if (f->capture && fw >= 0) {
@@ -2301,7 +2365,9 @@ void rfmv_fw_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 v = lit(i == 1 ? AMBER : WHITE, m->s.fw_cat_scope & i ? 256 : A(0.2));
             else
                 v = lit(i == 1 ? FAVCOL : WHITE, scope(m) == i - 1 ? 256 : A(0.2));
-        } else if (tag_defined(m, i))
+        } else if (i == RND_STEP)
+            v = rnd_ok(m) ? lit(WHITE, A(0.5)) : OFF;    /* (0.14.0: Random, with two or more to pick from) */
+        else if (tag_defined(m, i))
             v = lit(i < CAT0 + 5 ? PAL[CATCOL[i - CAT0]] : i == VIRT_STEP ? VIRTCOL : WHITE,
                     m->s.fw_filter >> (i - 1) & 1 ? 256 : A(0.18));
         if ((f->steps_down >> (i - 1) & 1) && (v.r || v.g || v.b))
@@ -3223,6 +3289,8 @@ int rfmv_fw_step_icons(const rfm_move_t *m, uint8_t icon[16])
             on = i >= CAT0 && has_tag(m, fw, i);
         else if (i <= 2)
             on = f->catalog ? (m->s.fw_cat_scope & i) != 0 : scope(m) == i - 1;
+        else if (i == RND_STEP)
+            on = 1;                                     /* (0.14.0: Random, a function: lit while the browser is) */
         else
             on = tag_defined(m, i) && (m->s.fw_filter >> (i - 1) & 1);
         icon[i - 1] = (uint8_t)(on ? 127 : 0);

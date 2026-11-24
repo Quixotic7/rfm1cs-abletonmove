@@ -2605,7 +2605,8 @@ static void test_browser_icons(void)
     CHECK(tagstep >= 2);
     for (i = 0, on = 0; i < 16; i++)
         on += w[L_ICON0 + i][0] > 0;
-    CHECK(on == 1 && (w[L_ICON0 + 0][0] == 127 || w[L_ICON0 + 1][0] == 127));   /* (the scope only: no filter on) */
+    CHECK(on == 2 && (w[L_ICON0 + 0][0] == 127 || w[L_ICON0 + 1][0] == 127) && w[L_ICON0 + 12][0] == 127);   /* (the
+                                                         * scope only: no filter on; 0.14.0: step 13 Random, a function) */
     write_pbm("browser_icons");
     step(tagstep, 1);
     leds(w);
@@ -5722,8 +5723,67 @@ static void test_n24_project_new(void)
     back(), rest();
 }
 
+/* item 15: the firmware browser's step 13: Random: a firmware of the list shown (the filter, the catalog), never the
+ * one selected; it only selects (no load), named and said as a pad's selection; the pads roll to it; its icon lit
+ * while the browser is open; one or none: "Nothing to pick" */
+static void test_n24_fw_random(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int k, prev, uninst = 0, rolled = 0;
+    track_view();
+    dbl_track(0), rest();
+    CHECK(M.seq.projects && M.fw.track == 0 && !M.fw.catalog);
+    M.ui_rng = 777;
+    leds(w);
+    CHECK(w[L_ICON0 + 12][0] == 127 && lit(w[L_STEP0 + 12]));
+    prev = M.fw.sel;
+    clear(), step(12, 1);
+    CHECKF(M.fw.sel >= 0 && M.fw.sel != prev && E[M.fw.sel].installed && !count(RFM_MOVE_ACT_FW_LOAD), "sel %d", M.fw.sel);
+    leds(w);
+    CHECK(white(w[L_STEP0 + 12]));                      /* (pressed: white) */
+    for (k = 0; k < 6; k++) {                           /* (the roll: a white pad on its way) */
+        int i;
+        adv_ms(30), leds(w);
+        for (i = 0; i < 32; i++)
+            rolled += white(w[L_PAD0 + i]);
+    }
+    CHECK(rolled > 0);
+    step(12, 0), adv_ms(50);
+    CHECKF(strstr(said, E[M.fw.sel].name) != NULL, "said %s, sel %s", said, E[M.fw.sel].name);
+    write_pbm("n24_fw_random");
+    for (k = 0; k < 20; k++) {
+        prev = M.fw.sel;
+        step(12, 1), step(12, 0);
+        CHECK(M.fw.sel >= 0 && M.fw.sel != prev && E[M.fw.sel].installed);
+    }
+    CHECK(!count(RFM_MOVE_ACT_FW_LOAD));
+    /* the full catalog: the ones not installed too */
+    press(MR_CC_MUTE), rest();
+    CHECK(M.fw.catalog);
+    for (k = 0; k < 30; k++) {
+        prev = M.fw.sel;
+        step(12, 1), step(12, 0);
+        CHECK(M.fw.sel >= 0 && M.fw.sel != prev);
+        uninst += !E[M.fw.sel].installed;
+    }
+    CHECKF(uninst > 0 && !count(RFM_MOVE_ACT_FW_DOWNLOAD), "%d not installed", uninst);
+    write_pbm("n24_fw_random_catalog");
+    press(MR_CC_MUTE), rest();
+    /* a list of one: nothing; the step dark */
+    rfm_move_fw_list(&M, E, 1);
+    rest(), leds(w);
+    CHECK(!lit(w[L_STEP0 + 12]) && w[L_ICON0 + 12][0] == 127);
+    prev = M.fw.sel;
+    step(12, 1), step(12, 0);
+    CHECK(M.fw.sel == prev && M.fw.pop != 0 && !strcmp(M.fw.pop_text, "Nothing to pick"));
+    write_pbm("n24_fw_random_none");
+    rfm_move_fw_list(&M, E, NFW);
+    back(), rest();
+}
+
 int main(void)
 {
+    test_n24_fw_random();
     test_n24_project_new();
     test_n24_load_stopped();
     test_n24_arp_down();
