@@ -261,6 +261,12 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   end; a second Play while pending takes it back, as it does while the firmwares load. Play once while pending still
   plays once it is loaded. A lead for the host side: with Clock on Auto the sequencer follows a firmware that sends
   Start and 24 clocks; a firmware that starts its own transport when its state loads would start the Move's.
+- (item 14) **`rfm_move_project_new(m, slot)`** (new, `move.h`): a host's way to start a new project in an empty slot
+  from outside (the Move's page has none of its own): it does exactly what a click on an empty project pad does
+  (`rfmv_proj_open`: the open project saved first, `rfm_move_project_load` with nothing, `rfmv_pfw_new`: its three
+  slots emptied with `PROJECT_FW` "", saved at once); the transport as it was. Returns 0; -1 refused for a slot that
+  holds a project, one out of range, or while a project's load is pending (nothing sent). `test_n24_project_new`
+  (the same actions in the same order as the pad's click; the refusals), picture `sessview_n24_project_new`.
 
 ## 0.13.0 (2026-11-23)
 

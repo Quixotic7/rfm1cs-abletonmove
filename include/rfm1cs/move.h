@@ -1256,6 +1256,11 @@ int rfm_move_project_check(const uint8_t *b, uint32_t n);                /* 0 a 
  * May be called from inside the action callback. */
 int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n);
 void rfm_move_project_dir(rfm_move_t *m, uint32_t used);   /* bit n: slot n holds a project */
+/* (0.14.0) a new project in the empty slot 0..31, as a click on an empty project pad does: the open project stored
+ * first (PROJECT_SAVE), then the new one current at once (empty, a new project's routing; with RFM_MOVE_CAP_PROJFW
+ * its three firmware slots emptied: PROJECT_FW "" each) and stored (PROJECT_SAVE). The transport as it was. 0 done;
+ * -1 refused: the slot out of range or holding a project, or a project's load still pending */
+int rfm_move_project_new(rfm_move_t *m, int slot);
 /* what the project grid and its popup draw of a stored project (its tempo, clips, notes a track): the host passes
  * each stored blob once (at start, after an import); saves, loads and deletes keep it up to date. 0 ok; < 0 an
  * invalid blob (the slot is drawn without its content) */

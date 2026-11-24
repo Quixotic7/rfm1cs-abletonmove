@@ -5690,8 +5690,41 @@ static void test_n24_load_stopped(void)
     press(MR_CC_PLAY), back(), rest();
 }
 
+/* item 14: a host's entry point for a new project in an empty slot: rfm_move_project_new does what an empty pad's
+ * click does (the same actions, in order); refused for a slot that holds a project, out of range, a load pending */
+static void test_n24_project_new(void)
+{
+    static ps_act_t click[64];
+    int nc, i, same;
+    ps_two_projects();
+    grid();
+    ps_clear(), hit(ps_pad(20));
+    nc = npa < 64 ? npa : 64;
+    memcpy(click, PA, sizeof click[0] * (size_t)nc);
+    CHECK(M.seq.proj_cur == 20 && (M.seq.proj_used >> 20 & 1) && ps_count(RFM_MOVE_ACT_PROJECT_SAVE) == 2);
+    ps_two_projects();
+    grid();
+    ps_clear();
+    CHECK(rfm_move_project_new(&M, 20) == 0 && M.seq.proj_cur == 20 && (M.seq.proj_used >> 20 & 1));
+    for (i = 0, same = npa == nc; same && i < nc; i++)
+        same = PA[i].kind == click[i].kind && PA[i].slot == click[i].slot && PA[i].index == click[i].index &&
+               !strcmp(PA[i].id, click[i].id);
+    CHECKF(same, "%d actions, the click %d", npa, nc);
+    CHECK(ps_find(RFM_MOVE_ACT_PROJECT_SAVE, -1) && ps_count(RFM_MOVE_ACT_PROJECT_FW) == 3 && n24_quiet());
+    write_pbm("n24_project_new");
+    /* refused: a stored one, out of range, a load pending */
+    ps_clear();
+    CHECK(rfm_move_project_new(&M, 6) == -1 && rfm_move_project_new(&M, 32) == -1 && rfm_move_project_new(&M, -1) == -1);
+    CHECK(!npa && M.seq.proj_cur == 20);
+    hit(ps_pad(6));
+    CHECK(M.seq.proj_pending == 6 && rfm_move_project_new(&M, 25) == -1 && !(M.seq.proj_used >> 25 & 1));
+    rfm_move_project_load(&M, 6, PS_BLOB[6], PS_N[6]);
+    back(), rest();
+}
+
 int main(void)
 {
+    test_n24_project_new();
     test_n24_load_stopped();
     test_n24_arp_down();
     test_n24_arp_lens();

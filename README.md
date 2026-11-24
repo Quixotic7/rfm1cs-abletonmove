@@ -866,7 +866,10 @@ the MIDI channels 1..4 (tracks 1, 5, 9, 13 on channel 1 .. 4, 8, 12, 16 on chann
 tracks 1, 5 and 9; the MIDI FX filters "all" (a `ROUTE` and `SETTINGS`, as the user's edits). Everything else stays
 (levels, layouts, velocity). A fresh install's first project is a new one: the host calls `rfm_move_project_dir(m, 0)`
 (no project stored) after `rfm_move_fw_caps`. A loaded project, of any version, keeps what it stored. With one slot
-(no `RFM_MOVE_CAP_SLOTS`) a new project keeps 0.12.0's routing (all 16 tracks, track n on channel n).
+(no `RFM_MOVE_CAP_SLOTS`) a new project keeps 0.12.0's routing (all 16 tracks, track n on channel n). (0.14.0) A
+host starts one from outside with `rfm_move_project_new(m, slot)`: exactly an empty pad's click (the open project
+saved first, the new one current and saved, its slots emptied), 0; -1 refused (the slot holds a project or is out of
+range, or a load is pending).
 
 **States** (P.6, P.7, P.9): **Track 1..3 held + the top row's pad 7** (a firmware loaded there), or **Loop** in the
 firmware browser. A layer over whatever is under it, which it returns to: **Back** (its click: the copy / delete marks
@@ -1078,6 +1081,7 @@ rfm_move_project_check(blob, n);                  /* import: 0 valid */
 rfm_move_project_load(&m, slot, blob, n);         /* PROJECT_LOAD's answer (also at start); NULL/0 = empty; < 0 invalid */
 rfm_move_project_dir(&m, used_bits); rfm_move_project_flush(&m); rfm_move_project_slot(&m);
 rfm_move_project_info(&m, slot, blob, n);         /* a stored project's content, for the grid's bars and its popup */
+rfm_move_project_new(&m, slot);                   /* (0.14.0) a new project in an empty slot, as its pad's click: 0, or -1 refused */
 ```
 
 Every action has `frame`: for actions from `rfm_move_seq_advance`, the offset (in that call's units, from the

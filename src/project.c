@@ -524,6 +524,16 @@ void rfmv_proj_open(rfm_move_t *m, int slot)
     rfmv_proj_save_now(m);
 }
 
+/* (0.14.0) a host's way to a new project (the Move's page has none of its own): an empty pad's click */
+int rfm_move_project_new(rfm_move_t *m, int slot)
+{
+    rfm_move_seq_t *q = &m->seq;
+    if (slot < 0 || slot >= RFM_MOVE_PROJECTS || (q->proj_used >> slot & 1) || q->proj_pending >= 0)
+        return -1;
+    rfmv_proj_open(m, slot);
+    return q->proj_cur == slot ? 0 : -1;
+}
+
 void rfmv_proj_delete(rfm_move_t *m, int slot)
 {
     rfm_move_seq_t *q = &m->seq;
