@@ -6115,6 +6115,80 @@ static void test_o14_rates_menu(void)
     t->feel = RFM_MOVE_FEEL_STRAIGHT, t->rate = RFM_MOVE_SEQ_RATE_16, M.seq.qstrength = 100;
 }
 
+/* (2026-11-24, the owner's: "add a layout for triplets which disables to 4th step in each group of 4 steps, So each
+ * group is the 3 notes of a triplet") the Triplet feel's step keys: each fourth one dark and dead (no note, no hold,
+ * no copy or paste, never the playhead), what is stored there kept and shown again with another feel; a held step's
+ * span counts live steps; Step record's cursor skips them; the steps row and the piano roll leave them out */
+static void test_o14_triplet_steps(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    rfm_move_track_t *t;
+    int clip, lo, k, ok, saw;
+    track_view();
+    t = &M.seq.tr[M.seq.sel_track];
+    clip = SEQ_CLIP(M.seq.sel_track, t->sel);
+    rfmv_seq_note_put(&M, clip, 0, 60, 100, 24, 0);
+    rfmv_seq_note_put(&M, clip, 3, 62, 100, 24, 0);    /* (on a fourth step, before the feel) */
+    rfmv_seq_note_put(&M, clip, 5, 64, 100, 24, 0);
+    shift_step(2), touch(2, 1), knob(2, 2 * RFM_MOVE_LIST_TICKS), touch(2, 0), back(), rest();
+    CHECK(t->feel == RFM_MOVE_FEEL_TRIPLET && !M.seq.smenu);
+    leds(w);
+    for (k = 0, ok = 1; k < 16; k++)
+        ok &= (k & 3) == 3 ? !lit(w[L_STEP0 + k]) : lit(w[L_STEP0 + k]);
+    CHECK(ok && white(w[L_STEP0 + 0]) && white(w[L_STEP0 + 5]));
+    write_pbm("o14_triplet_steps");
+    /* a dead step: nothing at its press or release; Copy + it, Delete + it: nothing */
+    clear();
+    step(7, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(7, 0);
+    CHECK(rfmv_seq_range(&M, clip, 7, &lo) == lo && !M.seq.step_held && M.pop != POP_STEP);
+    step(3, 1), step(3, 0);
+    CHECK(rfmv_seq_find(&M, clip, 3, 62) >= 0);         /* (its note kept, not cleared by a tap) */
+    button(MR_CC_COPY, 1), step(0, 1), step(0, 0), step(11, 1), step(11, 0), button(MR_CC_COPY, 0);
+    CHECK(rfmv_seq_range(&M, clip, 11, &lo) == lo);
+    button(MR_CC_DELETE, 1), step(3, 1), step(3, 0), button(MR_CC_DELETE, 0);
+    CHECK(rfmv_seq_find(&M, clip, 3, 62) >= 0);
+    button(MR_CC_COPY, 1), step(0, 1), step(0, 0), step(12, 1), step(12, 0), button(MR_CC_COPY, 0), rest();
+    CHECK(rfmv_seq_find(&M, clip, 12, 60) >= 0);        /* (a live step: pasted as before) */
+    /* step 1 held + step 6: 5 live steps long (steps 1 2 3 5 6); the steps row without the fourth ones */
+    step(0, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(5, 1), step(5, 0);
+    CHECK(rfmv_seq_range(&M, clip, 0, &lo) > lo && M.seq.notes[lo].len == 5 * 24);
+    screen();
+    CHECK(lit_rows(52, 63) > 0 && !px(3 * 8 + 3, 57) && !px(3 * 8, 52));   /* (step 4's cell: none) */
+    write_pbm("o14_triplet_held");
+    step(0, 0), rest();
+    screen();
+    write_pbm("o14_triplet_roll");
+    /* Step record: the cursor 1 2 3 5 */
+    M.seq.rec_mode = RFM_MOVE_RM_STEP;
+    press(MR_CC_REC);
+    CHECK(M.seq.steprec && M.seq.step_cur == 0);
+    for (k = 0; k < 3; k++)
+        hit(10);
+    CHECK(M.seq.step_cur == 4);
+    leds(w);
+    CHECK(!lit(w[L_STEP0 + 3]) && w[L_STEP0 + 4][0] > 0 && !w[L_STEP0 + 4][1]);
+    press(MR_CC_REC);
+    CHECK(!M.seq.steprec);
+    M.seq.rec_mode = RFM_MOVE_RM_CAPTURE;
+    /* playing: the playhead (green) on every live step of the bar, never on a fourth one */
+    press(MR_CC_PLAY);
+    for (k = 0, ok = 1, saw = 0; k < 120; k++) {
+        adv_ms(20);
+        leds(w);
+        ok &= !lit(w[L_STEP0 + 3]) && !lit(w[L_STEP0 + 7]) && !lit(w[L_STEP0 + 11]) && !lit(w[L_STEP0 + 15]);
+        saw |= green(w[L_STEP0 + 14]);
+    }
+    CHECK(ok && saw);
+    press(MR_CC_PLAY), rest();
+    /* the feel back to Straight: the fourth steps alive again, step 4's note there */
+    shift_step(2), touch(2, 1), knob(2, -2 * RFM_MOVE_LIST_TICKS), touch(2, 0), back(), rest();
+    CHECK(t->feel == RFM_MOVE_FEEL_STRAIGHT);
+    leds(w);
+    CHECK(white(w[L_STEP0 + 3]) && lit(w[L_STEP0 + 7]));
+    write_pbm("o14_triplet_back_straight");
+    rfmv_seq_clip_clear(&M, clip);
+}
+
 int main(void)
 {
     test_n24_proj_random();
@@ -6134,6 +6208,7 @@ int main(void)
     test_n24_back_play();
     test_n24_track_leds();
     test_o14_rates_menu();
+    test_o14_triplet_steps();
     test_o14_clear_clip();
     test_o14_projects();
     test_o14_shift_knob();

@@ -373,7 +373,12 @@ static void step_cursor_on(rfm_move_t *m)
 {
     rfm_move_seq_t *q = Q(m);
     const int clip = edit_clip(m), lo = rfmv_seq_loop_lo(m, clip), hi = rfmv_seq_loop_hi(m, clip);
-    q->step_cur = (int16_t)(q->step_cur + 1 >= hi || q->step_cur + 1 < lo ? lo : q->step_cur + 1);
+    int k;
+    for (k = 0; k < 4; k++) {                           /* (0.14.0: past a triplet layout's dead fourth step) */
+        q->step_cur = (int16_t)(q->step_cur + 1 >= hi || q->step_cur + 1 < lo ? lo : q->step_cur + 1);
+        if (!rfmv_seq_dead(m, q->sel_track, q->step_cur))
+            break;
+    }
     q->page = (uint8_t)(q->step_cur / RFM_MOVE_SEQ_PAGE);
 }
 
@@ -1163,6 +1168,9 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         q->mods_used |= (uint8_t)(SEQ_M_LOOP | (q->mods & (SEQ_M_DELETE | SEQ_M_COPY)));
         return;
     }
+    if (!q->view && !(q->mods & (SEQ_M_SHIFT | SEQ_M_MUTE | SEQ_M_LOOP)) && rfmv_seq_dead(m, q->sel_track, abs))
+        return;                                         /* (0.14.0) a triplet layout's fourth step: dark and dead (no
+                                                         * note, copy, paste or hold) */
     if ((q->mods & SEQ_M_COPY) && !q->view) {           /* Copy + step (the owner's, as Delete): a step with notes
                                                          * or locks is copied (dashed); an empty one gets the
                                                          * clipboard (a copy, or a Delete's cut) pasted */
@@ -1338,7 +1346,9 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
                                                          * held step already reaches the pressed one (more than span - 1
                                                          * steps, at most span): back to 1 step. Pressed again: toggles */
             int lo, hi = rfmv_seq_range(m, clip, first, &lo), i;
-            const int span = abs - first + 1, cur = hi > lo ? m->seq.notes[lo].len : RFM_MOVE_SEQ_TPS;
+            const int tri = q->tr[q->sel_track].feel == RFM_MOVE_FEEL_TRIPLET;   /* (0.14.0: the live steps it spans) */
+            const int span = rfmv_seq_live_below(tri, abs + 1) - rfmv_seq_live_below(tri, first);
+            const int cur = hi > lo ? m->seq.notes[lo].len : RFM_MOVE_SEQ_TPS;
             const int L = cur > (span - 1) * RFM_MOVE_SEQ_TPS && cur <= span * RFM_MOVE_SEQ_TPS ? RFM_MOVE_SEQ_TPS
                                                                                             : span * RFM_MOVE_SEQ_TPS;
             for (i = lo; i < hi; i++) {
@@ -1868,6 +1878,8 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
                 const int clip = edit_clip(m), lo = rfmv_seq_loop_lo(m, clip), hi = rfmv_seq_loop_hi(m, clip);
                 const int a = q->page * RFM_MOVE_SEQ_PAGE;
                 q->step_cur = (int16_t)(a >= lo && a < hi ? a : lo);
+                if (rfmv_seq_dead(m, q->sel_track, q->step_cur) && q->step_cur + 1 < hi)
+                    q->step_cur++;                      /* (0.14.0: a live step) */
                 q->steps_chord = 0;
             }
             return 1;
@@ -3238,6 +3250,8 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             int nlo;
             const int has = rfmv_seq_range(m, clip, abs, &nlo) > nlo;
             v = abs < hi ? (has ? RFMV_WHITE : sc(tc, 120)) : has ? sc(RFMV_WHITE, 14) : RFMV_OFF;
+            if (rfmv_seq_dead(m, q->sel_track, abs))
+                v = RFMV_OFF;                           /* (0.14.0: a triplet layout's fourth step: dark) */
         } else if (q->mods & SEQ_M_LOOP) {              /* the pages: the loop's in the track's colour, the one
                                                          * shown white, the playing one pulsing; the clip's others
                                                          * (outside the loop) dim; past the clip off */
@@ -3299,7 +3313,9 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
         } else {                                        /* Move's step colours */
             const int abs = q->page * RFM_MOVE_SEQ_PAGE + i, src = rfmv_seq_src_step(m, clip, abs);
             int lo, hi = rfmv_seq_range(m, clip, abs, &lo);
-            if (q->steprec && abs == q->step_cur)
+            if (rfmv_seq_dead(m, q->sel_track, abs))
+                v = RFMV_OFF;                           /* (0.14.0) a triplet layout's fourth step: dark */
+            else if (q->steprec && abs == q->step_cur)
                 v = RFMV_RED;                           /* Step record's cursor */
             else if (src)
                 v = src == 2 ? sc(RFMV_RED, bl ? 220 : 60) : sc(RFMV_WHITE, bl ? 256 : 30);   /* cut, copied */
@@ -3464,6 +3480,8 @@ void rfmv_seq_steps_at(const rfm_move_t *m, mr_canvas_t *cv, uint32_t marks, int
         const int abs = q->page * RFM_MOVE_SEQ_PAGE + i, src = rfmv_seq_src_step(m, clip, abs), x = i * 8;
         int lo;
         const int notes = rfmv_seq_range(m, clip, abs, &lo) > lo;
+        if (rfmv_seq_dead(m, q->sel_track, abs))
+            continue;                                   /* (0.14.0: a triplet layout's fourth step: nothing) */
         if (src == 2)
             v2_O(cv, x, y, 7, 11, 1), v2_X(cv, x + 1, y + 2, 5, 7);
         else if ((abs < lo0 || abs >= hi) && !notes && !src)
@@ -3689,10 +3707,13 @@ static void roll(const rfm_move_t *m, mr_canvas_t *cv, int y0, int h)
     for (i = lo; i < hi; i++) {
         const rfm_move_note_t *n = &q->notes[i];
         int x, w, r;
-        if (n->step < p0 || n->step >= p0 + RFM_MOVE_SEQ_PAGE)
-            continue;
+        if (n->step < p0 || n->step >= p0 + RFM_MOVE_SEQ_PAGE || rfmv_seq_dead(m, q->sel_track, n->step))
+            continue;                                   /* (0.14.0: a triplet layout's fourth step: not shown) */
         x = (n->step - p0) * 8 + 1 + n->micro / 3;
         w = n->len * 8 / RFM_MOVE_SEQ_TPS - 2;
+        if (q->tr[q->sel_track].feel == RFM_MOVE_FEEL_TRIPLET)   /* (over the dead steps it spans) */
+            w = (rfmv_seq_live_key(1, rfmv_seq_live_below(1, n->step) + n->len / RFM_MOVE_SEQ_TPS) - n->step) * 8 +
+                n->len % RFM_MOVE_SEQ_TPS * 8 / RFM_MOVE_SEQ_TPS - 2;
         r = nhi - nlo <= 12 ? nhi - n->note + (12 - (nhi - nlo)) / 2 : (nhi - n->note) * 12 / (nhi - nlo);   /* (centred) */
         v2_R(cv, x, y0 + 2 + r * row, w < 1 ? 1 : w, 3, 1);
     }
