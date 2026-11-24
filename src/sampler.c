@@ -355,9 +355,15 @@ int rfmv_smp_input(rfm_move_t *m, const mr_event_t *ev)
                         m->tbtn_up[k] = 0;
                 rfmv_menu(m, MENU_NONE, 0);
                 app_open(m, t);
-            } else if (!was)
-                app_open(m, -1);                        /* (opened, or back over a Shift menu: shown, no take) */
-            else {
+            } else if (!was) {                          /* (opened, or back over a Shift menu: shown) */
+                /* (the owner, 2026-11-24: "once you press back, sampler is closed, then recording stops when you press
+                 * sampler button again ... rather then having to press the sample button twice") closed with a take
+                 * recording: the same press is the record key too. Armed and waiting: only shown */
+                const int rec = !p->open && p->st.state == RFM_MOVE_SMP_ST_RECORDING;
+                app_open(m, -1);
+                if (rec)
+                    rfmv_emit(m, RFM_MOVE_ACT_SMP_PRESS, 0, 1, 0, m->s.smp[RFM_MOVE_SMP_MODE]);
+            } else {
                 p->msg = 0;
                 touched(m);
                 rfmv_emit(m, RFM_MOVE_ACT_SMP_PRESS, 0, 1, 0, m->s.smp[RFM_MOVE_SMP_MODE]);
@@ -397,7 +403,7 @@ int rfmv_smp_back(rfm_move_t *m)
     else if (p->picking)
         p->picking = 0;
     else
-        app_close(m);                                   /* (a take goes on; Sample brings the app back) */
+        app_close(m);                                   /* (a take goes on; Sample brings the app back and ends it) */
     return 1;
 }
 

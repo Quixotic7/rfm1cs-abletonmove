@@ -610,8 +610,8 @@ static void t_take(void)
     CHECK(is_rgb(c, 255, 0, 0));
     dump("closed_recording");
     clear();
-    sample();                                           /* back: no press sent */
-    CHECK(M.smp.open && !count(RFM_MOVE_ACT_SMP_PRESS));
+    sample();                                           /* back, and the same press ends the take */
+    CHECK(M.smp.open && count(RFM_MOVE_ACT_SMP_PRESS) == 1);
     ST.bar = 4;
     status(RFM_MOVE_SMP_ST_SAVING);
     sample_led(c);
@@ -694,7 +694,11 @@ static void t_fm1(void)
     back();
     clear();
     memset(&ST, 0, sizeof ST);
-    status(RFM_MOVE_SMP_ST_RECORDING);                  /* a take runs: Sample brings the app back */
+    status(RFM_MOVE_SMP_ST_RECORDING);                  /* a take runs: Sample brings the app back and ends it */
+    sample();
+    CHECK(M.smp.open && !count(RFM_MOVE_ACT_BTN) && count(RFM_MOVE_ACT_SMP_PRESS) == 1);
+    back(), clear();
+    status(RFM_MOVE_SMP_ST_ARMED);                      /* armed and waiting: Sample only shows the app */
     sample();
     CHECK(M.smp.open && !count(RFM_MOVE_ACT_BTN) && !count(RFM_MOVE_ACT_SMP_PRESS));
     status(RFM_MOVE_SMP_ST_IDLE);

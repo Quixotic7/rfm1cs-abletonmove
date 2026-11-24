@@ -1068,7 +1068,7 @@ under a Shift menu: its unclaimed parts are the FM-1 layout's). Tabs and the row
 | Sample (a note layout, MIDI) | the app opens at the press (white); in the app: the record key, `RFM_MOVE_ACT_SMP_PRESS` at the press (value the mode), nothing at the release |
 | Sample (the FM-1 layout) | the FM-1's SEL, as before, while the app is closed and no take runs; open (or a take running): the app's |
 | Track 1..3 held + Sample | the app with that slot as the source (`SMP_SET` Source; the jog on the Source row); Track 4: the master. Nothing records. The Track's hold is used up (as Track + Menu): no menu, no tap. In every layout |
-| Back | a popup or the tab choice ends; else the app closes. A take goes on (Sample red); Sample brings the app back (no press sent) |
+| Back | a popup or the tab choice ends; else the app closes. A take goes on (Sample red); Sample brings the app back and, when the take is recording, is the record key at that same press (the owner's 2026-11-24: one press ends it; armed and waiting: only shown) |
 | the jog | a row a detent (no wrap); three rows for 1 s after the last detent (the chosen in the middle where it can be), then one. Up past the first row: the tabs (board "tabs"), down again: the first row. A take running: nothing |
 | the jog's click, a row | its popup (board "popup"): the name (2x), the value (4x, 2x when wider), under Threshold and Input level the level now as a line and the threshold's mark. The jog changes the value: `SMP_SET` at once, the settings saved (`SETTINGS`). A click or Back ends it |
 | the jog's click, the tabs | the jog picks a tab (offered and built: Record only now), a click or Back ends it |
