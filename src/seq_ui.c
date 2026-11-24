@@ -4155,7 +4155,10 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
     case RFM_MOVE_SM_WORKFLOW: {                        /* the track's channel, rate and quantize: a row a knob.
                                                          * (0.14.0) the selected row (the jog's, or a knob touched or
                                                          * turned) drawn in its place as Global settings' row; the top
-                                                         * line stays "Workflow" */
+                                                         * line stays "Workflow". (0.14.0, the owner's 2026-11-24: "No
+                                                         * need to draw the little lines to show which parameter is
+                                                         * selected, the highlighted parameter is enough") no knob
+                                                         * ticks: the rows are the knobs in order */
         const int sel = smenu_sel(m), cur = hk >= 0 ? hk : q->sm_sel >= 0 ? sel : -1;
         snprintf(c, sizeof c, "Track %d", q->sel_track + 1);   /* (0.14.0: the track's settings, named by it) */
         v2_TC(cv, 64, 0, c, 2, 1);
@@ -4171,7 +4174,6 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
             else
                 v2_T(cv, 3, 19 + i * 15 + 1, b, 2, 1);
         }
-        smenu_ticks(m, cv, cur >= 0 ? cur : sel);
         break;
     }
     case RFM_MOVE_SM_TEMPO: {                           /* the tap icon (following: a padlock), the BPM at 4x; the

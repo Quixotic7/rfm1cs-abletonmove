@@ -2101,17 +2101,21 @@ static void menu_heads(const char *name, int bits)
 {
     char nm[48];
     int k, ok;
+    const int wf = M.seq.smenu == RFM_MOVE_SM_WORKFLOW;
     rest(), scr_save();
     snprintf(nm, sizeof nm, "menu_%s_rest", name);
     write_pbm(nm);
-    for (k = 0, ok = 1; k < 8; k++)                     /* (0.13.0: the first one long: the jog's cursor) */
-        ok &= (bits >> k & 1) ? tick(k, !(bits & ((1 << k) - 1))) : !px(6 + k * 16, 17);
+    for (k = 0, ok = 1; k < 8; k++)                     /* (0.13.0: the first one long: the jog's cursor; 0.14.0,
+                                                         * the owner's 2026-11-24: Workflow none, its rows are the
+                                                         * knobs) */
+        ok &= wf ? !lit_rows(17, 19) : (bits >> k & 1) ? tick(k, !(bits & ((1 << k) - 1))) : !px(6 + k * 16, 17);
     CHECKF(ok && rings_menu(bits), "%s: ticks at rest", name);
     for (k = 0; k < 8; k++) {
         touch(k, 1);
         if (bits >> k & 1) {
             screen();
-            CHECKF(tick(k, 1) && !scr_same(), "%s: knob %d touched", name, k + 1);
+            CHECKF((wf ? !lit_rows(17, 19) && px(1, 19 + k * 15 + 1) && px(126, 19 + k * 15 + 1) : tick(k, 1)) && !scr_same(),
+                   "%s: knob %d touched", name, k + 1);
             snprintf(nm, sizeof nm, "menu_%s_k%d", name, k + 1);
             write_pbm(nm);
         } else
@@ -2155,8 +2159,8 @@ static void menu_over(const char *where, int sh_step, int bits)
     CHECKF(rings_menu(bits), "%s: the menu's knob lights", where);
     touch(0, 1);
     screen();
-    CHECKF(tick(0, 1) && M.pop != POP_ENC && M.pop != POP_TRKINFO && M.pop != POP_CC && M.pop != POP_TRIG, "%s: touch: header, pop %d",
-           where, M.pop);
+    CHECKF((M.seq.smenu == RFM_MOVE_SM_WORKFLOW ? px(1, 20) && !lit_rows(17, 19) : tick(0, 1)) && M.pop != POP_ENC &&
+           M.pop != POP_TRKINFO && M.pop != POP_CC && M.pop != POP_TRIG, "%s: touch: header, pop %d", where, M.pop);
     snprintf(nm, sizeof nm, "menu_over_%s_k1", where);
     write_pbm(nm);
     knob(0, 1);
@@ -4030,11 +4034,12 @@ static void test_mj_menus(void)
     track_view();
     for (i = 0; i < (int)(sizeof MN / sizeof MN[0]); i++) {
         const int f = mj_first(MN[i].bits), n = mj_next(MN[i].bits, f), last = 7 - __builtin_clz(MN[i].bits) + 24;
+        const int wf = MN[i].sm == RFM_MOVE_SM_WORKFLOW;   /* (0.14.0, the owner's 2026-11-24: no ticks there) */
         mj_open(MN[i].sm), rest(), clear();
         CHECKF(M.seq.smenu == MN[i].sm && rfmv_seq_menu_sel(&M) == f && !rfmv_seq_menu_editing(&M), "%s: opened: the first",
                MN[i].name);
         screen();
-        CHECKF(tick(f, 1) && !mj_head_arrows() && !mj_sel_row(MN[i].sm, f) && !mj_edit_row(MN[i].sm, f),
+        CHECKF((wf ? !lit_rows(17, 19) : tick(f, 1)) && !mj_head_arrows() && !mj_sel_row(MN[i].sm, f) && !mj_edit_row(MN[i].sm, f),
                "%s: the first's tick long, no selection drawn yet", MN[i].name);
         scr_save(), mj_vals(v0, sizeof v0);
         /* the turn selects: nothing changes; the header names it at once, its tick long */
@@ -4042,7 +4047,8 @@ static void test_mj_menus(void)
         mj_vals(v1, sizeof v1);
         CHECKF(!strcmp(v0, v1) && rfmv_seq_menu_sel(&M) == n, "%s: the turn selects (%d), changes nothing", MN[i].name, n);
         screen();
-        CHECKF(tick(n, 1) && (n == f || !tick(f, 1)) && !scr_same(), "%s: the selection shown", MN[i].name);
+        CHECKF((wf ? !lit_rows(17, 19) : tick(n, 1) && (n == f || !tick(f, 1))) && !scr_same(), "%s: the selection shown",
+               MN[i].name);
         CHECKF(mj_sel_row(MN[i].sm, n) && (MN[i].sm != RFM_MOVE_SM_WORKFLOW || !mj_sel_row(MN[i].sm, 0)),
                "%s: the selection inverted in its row (0.14.0)", MN[i].name);
         if (MN[i].sm == RFM_MOVE_SM_WORKFLOW)
@@ -4060,7 +4066,7 @@ static void test_mj_menus(void)
         clear(), jog_click();
         CHECKF(rfmv_seq_menu_editing(&M) && strstr(said, "Editing "), "%s: editing, said %s", MN[i].name, said);
         rest();
-        CHECKF(mj_edit_row(MN[i].sm, n) && tick(n, 1), "%s: editing shown (after the second too)", MN[i].name);
+        CHECKF(mj_edit_row(MN[i].sm, n) && (wf || tick(n, 1)), "%s: editing shown (after the second too)", MN[i].name);
         snprintf(nm, sizeof nm, "mj_%s_edit", MN[i].name);
         write_pbm(nm);
         MC = M;
@@ -5178,8 +5184,36 @@ static void test_n24_knob_lock(void)
     back(), rest(), jog(-1), rest();
 }
 
+/* item 5: "No need to draw the little lines to show which parameter is selected, the highlighted parameter is enough":
+ * the track settings (Shift + Track 2, Shift + step 3) draw no knob ticks under the title, at rest, selecting, editing
+ * or with a knob touched; the selected row is the only mark. (The picture menus keep their ticks: R5's mark for the
+ * knob's place; the arp's too) */
+static void test_n24_settings_ticks(void)
+{
+    track_view();
+    button(MR_CC_SHIFT, 1), track(1, 1), track(1, 0), button(MR_CC_SHIFT, 0), rest();
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
+    screen();
+    CHECK(!lit_rows(15, 19));
+    write_pbm("n24_settings_rest");
+    jog(1), screen();
+    CHECK(!lit_rows(15, 19) && px(1, 35) && px(126, 35));   /* (row 2 inverted, nothing over the rows) */
+    write_pbm("n24_settings_sel");
+    jog_click(), screen();
+    CHECK(!lit_rows(15, 19) && px(0, 41) && px(127, 41));
+    write_pbm("n24_settings_edit");
+    jog_click(), touch(2, 1), screen();
+    CHECK(!lit_rows(15, 19));
+    touch(2, 0), back(), rest();
+    /* Tempo (a picture menu) keeps its ticks */
+    shift_step(4), rest(), screen();
+    CHECK(tick(0, 1) && tick(1, 0));
+    back(), rest();
+}
+
 int main(void)
 {
+    test_n24_settings_ticks();
     test_n24_knob_lock();
     test_n24_fw_play();
     test_n24_back_play();

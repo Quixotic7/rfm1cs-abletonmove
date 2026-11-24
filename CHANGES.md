@@ -166,6 +166,13 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   level and the jog's knob were kept across a Track tap, a layout or another track. Another knob page and back (the
   same track) still keeps it. `test_n24_knob_lock` (pictures `sessview_n24_lock_*`); `test_fwp_page` and
   `test_o14_fwp_jog` follow the new rule.
+- (item 5, "No need to draw the little lines to show which parameter is selected, the highlighted parameter is enough")
+  the track settings (Shift + step 3, Shift + Track 1..3) no longer draw the knobs' ticks under the title (a short one
+  a knob, the selected one long); the highlighted row is the only mark, at rest, selecting, editing, a knob touched.
+  The other Shift menus (Tempo, Groove, Layout, Keys, Velocity, Record) and the arp keep their ticks: there the
+  selection is in the top line, over a picture, and the tick is R5's "mark for the knob's place", not a second mark
+  of the selection. `test_n24_settings_ticks` (pictures `sessview_n24_settings_rest`, `_sel`, `_edit`);
+  `menu_heads`, `menu_over`, `test_mj_menus` expect no ticks in Workflow.
 
 ## 0.13.0 (2026-11-23)
 
