@@ -3104,12 +3104,13 @@ static void test_ps_layer(void)
     screen();
     write_pbm("ps_states_empty");
     rest();
-    /* a press during the sweep acts at once, white */
+    /* a press during the sweep: white at once; (0.14.0) its click loads it at the release */
     tap_track(0), adv_ms(60);
     pad(ps_pad(4), 100);
     leds(w);
-    CHECK(white(w[L_PAD0 + ps_pad(4)]) && M.fw.undo == 1);   /* (0.14.0: loaded into the project) */
+    CHECK(white(w[L_PAD0 + ps_pad(4)]) && M.fw.undo == 0);
     pad(ps_pad(4), 0);
+    CHECK(M.fw.undo == 1);                              /* (loaded into the project) */
     /* Track 4: the layer closes, Track 4 does its job */
     rest();
     tap_track(3), rest();
@@ -4544,7 +4545,7 @@ static void test_o14_state_pad(void)
 /* (0.14.0, the owner's 2026-11-24: "a project should keep it's own unique firmware state which then shows up as slot 1,
  * so slot 1 always means project state, a unique state per project") pad 1 is the open project's own sound: named
  * "Project 3" on opening and while held, white and breathing, a click saves the project now (PROJECT_SAVE value 1,
- * its pad off, on, off); Delete + pad 1 refused (red, "kept", nothing sent); Copy + pad 1 copies the sound now, a
+ * its pad off, on, off; a press shows its info only, a click acts); Copy + pad 1 copies the sound now, a
  * paste onto it goes into the project (value 1, Undo after it); a held library pad says "State 5" */
 static void test_o14_states_project(void)
 {
@@ -4566,18 +4567,22 @@ static void test_o14_states_project(void)
     screen();
     CHECK(px(1 + 1, 16 + 1) && !px(1 + 4, 16 + 4));     /* (pad 1's tile filled, its "P" dark in it) */
     write_pbm("o14_states");
-    /* pad 1 pressed: the project saved now; held: "Project 3 / saved" stays */
+    /* pad 1 pressed: its info at once ("Project 3 / ChoralRoot"), nothing sent; held: it stays; let go late: nothing */
     pad(ps_pad(0), 100);
-    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_PROJECT_SAVE, -1)) && a->index == 2 && a->value == 1);
-    CHECK(!ps_count(RFM_MOVE_ACT_STATE_SAVE) && M.fw.undo == 0 && (M.seq.proj_used >> 2 & 1));
-    CHECKF(strstr(said, "Project 3 saved") != NULL, "said %s", said);
+    CHECK(npa == 0);
+    CHECKF(strstr(said, "Project 3, ChoralRoot") != NULL, "said %s", said);
     adv_ms(RFM_MOVE_POPUP_MS + 200);
     screen();
     CHECK(lit_rows(10, 24) > 30 && !px(1 + 1, 16 + 1));
     write_pbm("o14_states_held_project");
     pad(ps_pad(0), 0), adv_ms(20);
     screen();
-    CHECK(px(1 + 1, 16 + 1));                           /* (let go: the grid again) */
+    CHECK(px(1 + 1, 16 + 1) && npa == 0);               /* (let go: the grid again) */
+    /* its click: the project saved now, "Project 3 / saved" */
+    clear(), hit(ps_pad(0));
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_PROJECT_SAVE, -1)) && a->index == 2 && a->value == 1);
+    CHECK(!ps_count(RFM_MOVE_ACT_STATE_SAVE) && M.fw.undo == 0 && (M.seq.proj_used >> 2 & 1));
+    CHECKF(strstr(said, "Project 3 saved") != NULL, "said %s", said);
     /* a quick click: its pad off, on, off, then breathing again */
     rest(), ps_clear();
     hit(ps_pad(0));
@@ -4590,25 +4595,21 @@ static void test_o14_states_project(void)
     CHECKF(seen[0] == 1 && seen[1] == 2 && (seen[2] & 1), "ack %d %d %d", seen[0], seen[1], seen[2]);
     leds(w);
     CHECK(white(w[L_PAD0 + 24]) && ps_count(RFM_MOVE_ACT_PROJECT_SAVE) == 1);
-    /* a library pad held: "State 5", not the project; loaded into it */
+    /* a library pad held: "State 5 / stored", not the project; nothing loads; its click loads it into the project */
     rest(), ps_clear(), clear();
     pad(ps_pad(4), 100), adv_ms(RFM_MOVE_POPUP_MS + 200);
-    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_LOAD, 0)) && a->index == 4);
+    CHECK(npa == 0);
+    CHECKF(strstr(said, "State 5 stored") != NULL, "said %s", said);
     screen();
     CHECK(lit_rows(10, 24) > 30);
     write_pbm("o14_states_held_library");
     pad(ps_pad(4), 0), rest();
+    CHECK(npa == 0);
+    hit(ps_pad(4));
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_LOAD, 0)) && a->index == 4);
+    rest();
     leds(w);
     CHECK(white(w[L_PAD0 + 24]) && w[L_PAD0 + 28][0] == 107);   /* (pad 1 stays the one you are in) */
-    /* Delete + pad 1: refused, red while held, "Project 3 / kept" */
-    ps_clear(), clear();
-    button(MR_CC_DELETE, 1), pad(ps_pad(0), 100);
-    leds(w);
-    CHECK(npa == 0 && w[L_PAD0 + 24][0] > 100 && w[L_PAD0 + 24][1] < 40 && w[L_PAD0 + 24][2] < 40);
-    CHECKF(strstr(said, "Project 3 kept") != NULL, "said %s", said);
-    write_pbm("o14_states_delete_project");
-    pad(ps_pad(0), 0), button(MR_CC_DELETE, 0), rest();
-    CHECK(npa == 0 && !M.fw.sb_kind);
     /* Copy + pad 1: the sound now into the buffer; + a stored library pad: written over; again + an empty one: in it */
     ps_clear();
     button(MR_CC_COPY, 1), hit(ps_pad(0));
@@ -4640,6 +4641,70 @@ static void test_o14_states_project(void)
     leds(w);
     CHECK(white(w[L_PAD0 + 24]));
     back(), rest();
+}
+
+/* (0.14.0, the owner's "You should be able to reset a state by holding the state and pressing delete") a pad acts at
+ * its click's release (its info at the press); held + Delete resets it: a library pad (stored or empty) gets a fresh
+ * state (STATE_NEW with its index), the sound you are in untouched; pad 1 as step 14's New, Undo after it; Delete
+ * held first + pad 1 the same, + a library pad still the cut. Delete lit while a pad is held; the pad red a moment */
+static void test_o14_states_reset(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    const ps_act_t *a;
+    ps_states();
+    M.seq.proj_cur = 2;
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    ps_open0();
+    clear();
+    leds(w);
+    CHECK(w[L_WHITE0 + W_DELETE][0] == 40);
+    /* a stored library pad held past the tap time: Delete lit; Delete: reset, red, "State 5 / reset" */
+    pad(ps_pad(4), 100), adv_ms(RFM_MOVE_TAP_MS + 50);
+    leds(w);
+    CHECK(npa == 0 && w[L_WHITE0 + W_DELETE][0] == 127);
+    button(MR_CC_DELETE, 1);
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_NEW, 0)) && a->index == 4 && !strcmp(a->id, "choralroot"));
+    CHECK((M.fw.st_used[0] >> 4 & 1) && M.fw.undo == 0 && !M.fw.sb_kind);
+    CHECKF(strstr(said, "State 5 reset") != NULL, "said %s", said);
+    leds(w);
+    CHECK(w[L_PAD0 + ps_pad(4)][0] > 100 && w[L_PAD0 + ps_pad(4)][1] < 40);   /* (red a moment) */
+    write_pbm("o14_states_reset_library");
+    adv_ms(RFMV_PJ_DEL_MS + 20);
+    leds(w);
+    CHECK(white(w[L_PAD0 + ps_pad(4)]));                /* (then white while held) */
+    button(MR_CC_DELETE, 0), pad(ps_pad(4), 0), rest();
+    CHECK(npa == 1);                                    /* (its release: nothing) */
+    /* a quick press + Delete on an empty one: a fresh state stored there, no click after */
+    ps_clear(), clear();
+    pad(ps_pad(6), 100), button(MR_CC_DELETE, 1), button(MR_CC_DELETE, 0), pad(ps_pad(6), 0);
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_NEW, 0)) && a->index == 6 && (M.fw.st_used[0] >> 6 & 1));
+    rest();
+    leds(w);
+    CHECK(w[L_PAD0 + ps_pad(6)][0] == 107);             /* (stored now: dim) */
+    /* pad 1 held + Delete: as New (index 255), Undo after it */
+    ps_clear(), clear();
+    pad(ps_pad(0), 100), button(MR_CC_DELETE, 1);
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_NEW, 0)) && a->index == 255 && M.fw.undo == 1);
+    CHECKF(strstr(said, "Project 3 reset") != NULL, "said %s", said);
+    leds(w);
+    CHECK(w[L_PAD0 + 24][0] > 100 && w[L_PAD0 + 24][1] < 40 && w[L_WHITE0 + W_UNDO][0] == 127);
+    write_pbm("o14_states_reset_project");
+    button(MR_CC_DELETE, 0), pad(ps_pad(0), 0), rest();
+    CHECK(npa == 1 && !ps_count(RFM_MOVE_ACT_PROJECT_SAVE));
+    press(MR_CC_UNDO);
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_UNDO, 0)) && a->value == -1);
+    /* Delete held first + pad 1: the same reset; + a library pad: still the cut */
+    rest(), ps_clear(), clear();
+    button(MR_CC_DELETE, 1), hit(ps_pad(0));
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_NEW, 0)) && a->index == 255 && M.fw.undo == 1);
+    hit(ps_pad(1));
+    CHECK(npa == 2 && (a = ps_find(RFM_MOVE_ACT_STATE_DELETE, 0)) && a->index == 1 && M.fw.sb_kind == 2);
+    button(MR_CC_DELETE, 0), rest();
+    /* a pad held while another button is pressed: no click at its release */
+    ps_clear();
+    pad(ps_pad(4), 100), press(MR_CC_COPY), pad(ps_pad(4), 0);
+    CHECK(npa == 0);
+    back(), back(), rest();
 }
 
 /* (0.14.0) a host without RFM_MOVE_CAP_PROJFW: its States as before (the browser's Loop): pad 1 a state like any,
@@ -6025,6 +6090,7 @@ int main(void)
     test_o14_state_pad();
     test_o14_states_project();
     test_o14_states_old_host();
+    test_o14_states_reset();
     test_o14_kpage();
     test_o14_arp_notes();
     test_scenes();

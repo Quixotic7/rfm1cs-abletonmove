@@ -552,9 +552,9 @@ void rfmv_pfw_proj_words(const rfm_move_t *m, const rfm_move_proj_info_t *in, ch
  * project's copy of the firmware: always there, always the one you are in, saved by the host as you play. Pads 2..32
  * (k 1..31) are a library shared by all projects: a stored one loads INTO the project (Undo after it), an empty one
  * stores the sound as it is now; none is ever active, none changes by playing. st_cur is not read here */
-static const char *const WORDS[6] = { "saved", "loaded", "copied", "pasted", "deleted", "kept" };
+static const char *const WORDS[8] = { "saved", "loaded", "copied", "pasted", "deleted", "reset", "stored", "empty" };
 enum { SP_NONE, SP_NAME, SP_STATE, SP_NEW, SP_UNDO, SP_EMPTY };
-enum { SW_SAVED, SW_LOADED, SW_COPIED, SW_PASTED, SW_DELETED, SW_KEPT };
+enum { SW_SAVED, SW_LOADED, SW_COPIED, SW_PASTED, SW_DELETED, SW_RESET, SW_STORED, SW_EMPTY };
 static int st_used(const rfm_move_fw_state_t *f, int t, int k) { return !k || (f->st_used[t] >> k & 1); }
 static int pad_of(int k) { return (3 - k / 8) * 8 + k % 8; }
 static void st_name(const rfm_move_t *m, int k, char *o, int cap)   /* "Project 3" (pad 1), "State 5" */
@@ -579,6 +579,7 @@ static void st_pop(rfm_move_t *m, int kind, int k, int w, int slot)
     rfm_move_fw_state_t *f = &m->fw;
     f->sl_pop = (uint8_t)kind, f->sl_pk = (int8_t)k, f->sl_pw = (int8_t)w, f->sl_pslot = (int8_t)slot;
     f->sl_pop_ms = now_ms(m);
+    f->sl_tap = 0;                                      /* (anything else shown: a pad held is no click now) */
 }
 /* (0.14.0) a pad's popup stays while that pad is held: what it is, project or library */
 static int pop_up(const rfm_move_t *m)
@@ -601,7 +602,7 @@ void rfmv_st_open(rfm_move_t *m, int t, int from)
 void rfmv_st_close(rfm_move_t *m)
 {
     rfm_move_fw_state_t *f = &m->fw;
-    f->sl = 0, f->sl_mods = 0, f->sb_armed = 0, f->undo = 0, f->sl_pop = 0;
+    f->sl = 0, f->sl_mods = 0, f->sb_armed = 0, f->undo = 0, f->sl_pop = 0, f->sl_tap = 0;
 }
 static int buf_ok(const rfm_move_t *m, int t)            /* the buffer is this firmware's */
 {
@@ -630,18 +631,54 @@ static void st_changed(rfm_move_t *m, int t, int what)
 {
     m->fw.undo = (uint8_t)(t + 1), m->fw.undo_cur = (int8_t)what;
 }
-/* a state's pad, as a clip's in session view (the owner's choice). Pad 1, the project's own sound: saved now (as the
- * open project's click in Projects: PROJECT_SAVE value 1). A library pad: a stored one loads into the project, an empty
- * one stores the sound as it is. Copy + a pad copies it (pad 1: the sound now), or pastes when armed or empty (onto
- * pad 1: into the project); Delete + a library pad deletes it into the buffer, + pad 1 is refused ("kept"). Nothing
- * loads while Copy or Delete is held. Only Undo's own changes (New, a load, a paste onto pad 1) replace its undo */
+/* (0.14.0, the owner's "You should be able to reset a state by holding the state and pressing delete") a state reset
+ * to the firmware as first installed: pad 1 as step 14's New (Undo after it); a library pad: a fresh state stored
+ * there (STATE_NEW with its index), the sound you are in untouched. "State 5 / reset", the pad red a moment */
+static void st_reset(rfm_move_t *m, int k)
+{
+    const int t = m->fw.sl - 1;
+    st_act(m, RFM_MOVE_ACT_STATE_NEW, t, k ? k : -1, 0);
+    if (k)
+        m->fw.st_used[t] |= 1u << k;
+    else
+        st_changed(m, t, -1);
+    st_pop(m, SP_STATE, k, SW_RESET, t);
+}
+/* a state's pad clicked (let go within RFM_MOVE_TAP_MS, nothing else meanwhile): pad 1, the project's own sound:
+ * saved now (as the open project's click in Projects: PROJECT_SAVE value 1); a stored library pad: loaded into the
+ * project; an empty one: the sound as it is stored there. Only Undo's own changes (New, a load, a paste onto pad 1,
+ * a reset of pad 1) replace its undo */
+static void st_click(rfm_move_t *m, int k)
+{
+    rfm_move_fw_state_t *f = &m->fw;
+    const int t = f->sl - 1, used = st_used(f, t, k);
+    if (!k) {                                           /* pad 1: the project saved now, "Project 3 / saved" */
+        if (m->seq.proj_pending >= 0 || m->pfw_on)
+            return;
+        rfmv_proj_save_own(m);
+        st_pop(m, SP_STATE, 0, SW_SAVED, t);
+    } else if (used) {                                  /* a library state: into the project (Undo) */
+        st_act(m, RFM_MOVE_ACT_STATE_LOAD, t, k, 0);
+        st_changed(m, t, k);
+        st_pop(m, SP_STATE, k, SW_LOADED, t);
+    } else {                                            /* an empty one: the sound as it is stored there */
+        st_act(m, RFM_MOVE_ACT_STATE_SAVE, t, k, 0);
+        f->st_used[t] |= 1u << k;
+        st_pop(m, SP_STATE, k, SW_SAVED, t);
+    }
+}
+/* a state's pad pressed (0.14.0, gated as the Projects page's pads): alone, its info at once ("Project 3 /
+ * ChoralRoot", "State 5 / stored", "State 6 / empty") and nothing else: a click acts at the release (st_click), held
+ * + Delete resets it (st_reset). Copy held first + a pad copies it (pad 1: the sound now), or pastes when armed or
+ * empty (onto pad 1: into the project); Delete held first + a library pad deletes it into the buffer, + pad 1 resets
+ * it. Both at the press, as clips in session view */
 static void st_pad(rfm_move_t *m, int k)
 {
     rfm_move_fw_state_t *f = &m->fw;
     const int t = f->sl - 1, used = st_used(f, t, k);
     if (f->sl_mods & 2) {                               /* Delete + a stored state: gone, into the buffer (armed) */
-        if (!k) {                                       /* (the project's own sound is never deleted: "kept", red) */
-            st_pop(m, SP_STATE, 0, SW_KEPT, t);
+        if (!k) {                                       /* (pad 1: reset, as step 14's New) */
+            st_reset(m, 0);
             return;
         }
         if (!used)
@@ -673,20 +710,8 @@ static void st_pad(rfm_move_t *m, int k)
         st_pop(m, SP_STATE, k, SW_PASTED, t);
         return;
     }
-    if (!k) {                                           /* pad 1: the project saved now, "Project 3 / saved" */
-        if (m->seq.proj_pending >= 0 || m->pfw_on)
-            return;
-        rfmv_proj_save_own(m);
-        st_pop(m, SP_STATE, 0, SW_SAVED, t);
-    } else if (used) {                                  /* a library state: into the project (Undo) */
-        st_act(m, RFM_MOVE_ACT_STATE_LOAD, t, k, 0);
-        st_changed(m, t, k);
-        st_pop(m, SP_STATE, k, SW_LOADED, t);
-    } else {                                            /* an empty one: the sound as it is stored there */
-        st_act(m, RFM_MOVE_ACT_STATE_SAVE, t, k, 0);
-        f->st_used[t] |= 1u << k;
-        st_pop(m, SP_STATE, k, SW_SAVED, t);
-    }
+    st_pop(m, SP_STATE, k, used ? SW_STORED : SW_EMPTY, t);   /* (alone: its info; a click at the release) */
+    f->sl_tap = (uint8_t)(k + 1);
 }
 static void st_new(rfm_move_t *m)                       /* step 14: the project's sound as first installed; Undo after */
 {
@@ -720,9 +745,15 @@ int rfmv_st_input(rfm_move_t *m, const mr_event_t *ev)
         if (i < 0 || i >= RFM_MOVE_NPADS)
             return 0;
         if (!ev->value) {                               /* (a release: the layer's when it took the press) */
+            const int k = (3 - i / 8) * 8 + i % 8;
             if (!(f->sl_pads >> i & 1))
                 return 0;
             f->sl_pads &= ~(1u << i);
+            if (open && f->sl_tap == k + 1) {           /* (pressed alone: a click acts now, a hold did nothing) */
+                f->sl_tap = 0;
+                if (now_ms(m) - f->sl_pop_ms < RFM_MOVE_TAP_MS)
+                    st_click(m, k);
+            }
             return 1;
         }
         if (!open)
@@ -773,6 +804,9 @@ int rfmv_st_input(rfm_move_t *m, const mr_event_t *ev)
             return 0;
         }
         bt_set(f, cc, 1);
+        if (cc == MR_CC_DELETE && f->sl_tap && (f->sl_pads >> pad_of(f->sl_tap - 1) & 1))
+            st_reset(m, f->sl_tap - 1);                 /* (a pad held + Delete: that state reset) */
+        f->sl_tap = 0;                                  /* (any button: a held pad is no click) */
         if (cc == MR_CC_COPY)
             f->sl_mods |= 1;
         else if (cc == MR_CC_DELETE)
@@ -833,8 +867,10 @@ void rfmv_st_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
     sw = (now_ms(m) - f->sl_ms) / RFMV_ST_SWEEP_MS;
     for (p = 0; p < RFM_MOVE_NPADS; p++) {
         const int k = (3 - p / 8) * 8 + p % 8, c = p % 8;
-        if (f->sl_pads >> p & 1)                        /* (pad 1 under Delete: red, refused) */
-            v = !k && (f->sl_mods & 2) ? RFMV_RED : RFMV_WHITE;
+        if (f->sl_pop == SP_STATE && f->sl_pk == k && f->sl_pw == SW_RESET && now_ms(m) - f->sl_pop_ms < RFMV_PJ_DEL_MS)
+            v = RFMV_RED;                               /* (reset: red a moment) */
+        else if (f->sl_pads >> p & 1)
+            v = RFMV_WHITE;
         else if (!k && f->sl_pop == SP_STATE && !f->sl_pk && f->sl_pw == SW_SAVED &&
                  now_ms(m) - f->sl_pop_ms < 3 * RFMV_PJ_ACK_MS)
             v = (now_ms(m) - f->sl_pop_ms) / RFMV_PJ_ACK_MS == 1 ? RFMV_WHITE : RFMV_OFF;   /* (saved: off, on, off) */
@@ -868,7 +904,8 @@ void rfmv_st_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
     w[L_WHITE0 + W_BACK][0] = (uint8_t)(m->back_down ? 127 : 80);
     w[L_WHITE0 + W_MENU][0] = 40;
     w[L_WHITE0 + W_COPY][0] = (uint8_t)(f->sl_mods & 1 ? 127 : 40);
-    w[L_WHITE0 + W_DELETE][0] = (uint8_t)(f->sl_mods & 2 ? 127 : 40);
+    w[L_WHITE0 + W_DELETE][0] = (uint8_t)(f->sl_mods & 2 || (f->sl_tap && (f->sl_pads >> pad_of(f->sl_tap - 1) & 1)) ? 127
+                                                                                                         : 40);   /* (a pad held: Delete resets it) */
     w[L_WHITE0 + W_UNDO][0] = (uint8_t)(f->undo == f->sl ? 127 : 0);   /* (only while New's undo is there) */
     w[L_WHITE0 + W_LOOP][0] = (uint8_t)(f->sl_from == 1 ? 127 : 0);
 }
@@ -889,7 +926,7 @@ int rfmv_st_screen(const rfm_move_t *m, mr_canvas_t *cv)
         case SP_NAME: st_name(m, 0, b, sizeof b); break;   /* (0.14.0: opening, the one you are in: "Project 3") */
         case SP_STATE:
             st_name(m, f->sl_pk, b, sizeof b);
-            sub = WORDS[f->sl_pw % 6];
+            sub = !f->sl_pk && f->sl_pw == SW_STORED ? nm : WORDS[f->sl_pw % 8];   /* (pad 1's info: its firmware) */
             break;
         case SP_NEW: top = "New state"; break;
         case SP_UNDO:
@@ -968,7 +1005,12 @@ int rfmv_st_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uin
     st_name(m, f->sl_pk > 0 ? f->sl_pk : 0, b, sizeof b);
     switch (f->sl_pop) {
     case SP_NAME: snprintf(o, (size_t)cap, "States, %s, %s", nm, b); break;
-    case SP_STATE: snprintf(o, (size_t)cap, "%s %s", b, WORDS[f->sl_pw % 6]); break;
+    case SP_STATE:
+        if (!f->sl_pk && f->sl_pw == SW_STORED)
+            snprintf(o, (size_t)cap, "%s, %s", b, nm);
+        else
+            snprintf(o, (size_t)cap, "%s %s", b, WORDS[f->sl_pw % 8]);
+        break;
     case SP_NEW: snprintf(o, (size_t)cap, "New state, %s", nm); break;
     case SP_UNDO: snprintf(o, (size_t)cap, "Undo, %s", f->sl_pk < 0 ? "new state" : f->sl_pk ? b : "paste"); break;
     default: snprintf(o, (size_t)cap, "Track %d, empty", f->sl_pslot + 1); break;

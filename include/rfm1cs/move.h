@@ -523,6 +523,8 @@ typedef struct {
     uint8_t undo;                                       /* New's undo is there: the slot + 1 */
     int8_t undo_cur;                                    /* .. (0.14.0) what it undoes: -1 New, 0 a paste onto pad 1,
                                                          * k the load of library state k */
+    uint8_t sl_tap;                                     /* (0.14.0) the pad pressed alone, its state + 1 (0 none): a
+                                                         * click acts at its release, held + Delete resets it */
 } rfm_move_fw_state_t;
 enum { RFM_MOVE_MIXP_LEVEL, RFM_MOVE_MIXP_PAN, RFM_MOVE_MIXP_SEND1, RFM_MOVE_MIXP_SEND2, RFM_MOVE_MIXP_SEND3,
        RFM_MOVE_MIXP_N };                               /* (0.5.0) the Mixer's choice (its right-hand pads) */
