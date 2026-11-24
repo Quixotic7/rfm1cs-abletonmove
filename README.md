@@ -325,10 +325,10 @@ its 8 columns through the 16 tracks.
 | steps | the 16 steps of the page | the 2 under each column: the first stops that track's clips (at the bar; lit while it plays something, blinking while it stops), the second mutes it (the track's colour; muted: red, dim) |
 | Left / Right | the bar shown; Right past the last bar: a ghost bar (below); a step held: micro timing (the MICRO popup) | the tracks, one at a time (1..16); (0.12.0) Shift: 7 at a time |
 | Up / Down | octave (MIDI mode's); (0.12.0) at the press "Octave +2" a second, the pads' lowest and highest note under it ("C4 - E6"; at the range's end the same, unchanged), and a white row sweeps the pads the way it went (bottom up for Up, top down for Down; a row each 50 ms, 200 ms in all; pads play meanwhile). A step held: transpose, its notes by name a second ("E3 G3 B3", the TRANSPOSE popup) | the clip slots, one at a time; (0.12.0) Shift: 4 at a time |
-| knobs | the knob page: TRIG (below), (0.12.x) FM-1 (below), then Control mode's CC banks 1..4, live on the track's channel; (0.14.0, the owner's) each track keeps the page it was left on, brought back whenever it is selected again (a Track tap, a held Track's step, session view's selection; RAM only, TRIG for a track never shown); a step held: its CC locks (the TRIG and FM-1 pages: its trig values) | nothing; a touch selects the track in that knob's column; (0.12.0) a select step held: knob 1 the clip's Launch, knob 2 its After |
+| knobs | the knob page: TRIG (below), (0.12.x) FM-1 (below), (0.14.0) ENGINE when the track's firmware offers it ("Engine parameters", below), then Control mode's CC banks 1..4, live on the track's channel; (0.14.0, the owner's) each track keeps the page it was left on, brought back whenever it is selected again (a Track tap, a held Track's step, session view's selection; RAM only, TRIG for a track never shown; one left on ENGINE whose firmware no longer offers it: FM-1); a step held: its CC locks (the TRIG, FM-1 and ENGINE pages: its trig values) | nothing; a touch selects the track in that knob's column; (0.12.0) a select step held: knob 1 the clip's Launch, knob 2 its After |
 | volume knob | MASTER; a step held: its notes' velocity (a VELO popup) | MASTER; (0.12.0) a select step held: the level of the firmware its track plays |
-| jog | the knob page (TRIG, FM-1, banks 1..4); a step held: its notes' length (the LENGTH popup); Loop held or latched: the loop's length; a Shift menu: (0.13.0) selects a parameter, or changes the one being edited (the arp: its pages); a drum pad held: its note | the knob page |
-| jog pressed | nothing (FILL is Shift + Loop held); (0.12.x) the FM-1 page: its level, Knobs <-> Knobs+Keys (0.14.0: taken over the jog turns the FM-1 layout's jog target; Shift + click changes what the jog turns: the next target, or in Knobs the pages -> SELECT -> PRESET -> ALGO -> the pages); (0.13.0) a Shift menu: edit the selected parameter / select again (the arp: off / on) | the same |
+| jog | the knob page (TRIG, FM-1, (0.14.0) ENGINE, banks 1..4); the ENGINE page's list open: its highlight; a step held: its notes' length (the LENGTH popup); Loop held or latched: the loop's length; a Shift menu: (0.13.0) selects a parameter, or changes the one being edited (the arp: its pages); a drum pad held: its note | the knob page |
+| jog pressed | nothing (FILL is Shift + Loop held); (0.14.0) the ENGINE page: its page list, at the release (open / closed on the page highlighted); (0.12.x) the FM-1 page: its level, Knobs <-> Knobs+Keys (0.14.0: taken over the jog turns the FM-1 layout's jog target; Shift + click changes what the jog turns: the next target, or in Knobs the pages -> SELECT -> PRESET -> ALGO -> the pages); (0.13.0) a Shift menu: edit the selected parameter / select again (the arp: off / on) | the same |
 
 **The FM-1 page** (0.12.x, the owner's 2026-11-22: "a page to control the firmware's knobs like you get on the FM-1
 Layout .. Then when clicking the jogwheel it should switch the takeover between just knobs and then full shortcuts:
@@ -993,6 +993,57 @@ firmware's states, it moves `state-00.bin` (and the files beside it: its working
 index 1..31 and reports `rfm_move_fw_states` again. No free index: it is left where it is, never shown, never written,
 and the host logs it. The core takes any report at any time.
 
+## Engine parameters (0.14.0)
+
+The owner's words (2026-11-24): "add a page after the FM-1 knobs for Engine parameters ... you reach that page, then
+click the jogwheel, now you can scroll and select from different pages for the synth engine ... Each page then
+supports up to 8 parameters on the knobs." The protocol is a firmware's **ep1** (engine-params SPEC.md: the EP1D
+description, the record, `rfm1_ep_set` / `rfm1_ep_watch`); the design is engine-params DESIGN.md. Stages 1 and 2 of
+its build plan are here: the page, its list, the knobs, an engine changed under the page, a layer off. Not yet:
+engine locks (stage 3), the Layer setting (stage 4: every track is "Auto", `ep.lset` the seam), the project blob.
+
+**The page.** ENGINE is the track view's third knob page: TRIG 0, FM-1 1, ENGINE 2, banks 1..4 at 3..6
+(`rfmv_seq_kpage`; `seq.eng`). It is there only when the selected track's **target** firmware has ep1: the slot
+played if the track reaches it (its routing) and that slot has ep1, else the lowest slot it reaches that has
+(`rfmv_ep_target`); absent, the jog goes FM-1 -> bank 1 and the strip has six cells, present seven. Its **layer**:
+Auto, the layer whose MIDI channel (the record's 0..15) is the track's channel (the core's 0..15: track 2 plays
+channel 2, 1 here, ChoralRoot's "MIDI Bass 2"), several the lowest, none layer 0 (`rfmv_ep_layer_of`).
+
+| Gesture | What |
+|---|---|
+| arriving (the jog onto it, a track selected that was left on it, another slot or layer for the track) | a second: the layer and its engine small at the top left ("Chord  VA"), the page's name big ("FILTER"), the strip; a layer off: "Bass" / "Off". Said "Engine, Filter" |
+| the knobs | knob k the page's k-th parameter, lit in the colour of the slot it controls (orange, blue, yellow), dim to full by its value; white while touched; nothing on it or a layer off: dark, dead |
+| a touch | the name (2x), the value (4x, 2x when wider), a bar from the range (BIPOLAR from the middle), the strip; full screen. Said "Cutoff, 1.2k" |
+| a turn | the value by the parameter's step a tick (0: the range over ~128 ticks); Shift held: one stored step (fine); a LIST one item every `RFM_MOVE_LIST_TICKS`. Sent absolutely, `RFM_MOVE_ACT_EP` SET, merged to one per (slot, layer, pid) per `rfm_move_seq_advance` (the latest value, at frame 0); the value sent is shown until the firmware's values agree (or `RFMV_EP_OVR_MS`, 500 ms) |
+| the jog's click (at its release: no double click there) | the **page list** over the whole screen: "Chord  VA" on a title line, the engine's pages three rows at 2x, the page shown inverted, a scroll mark. Said "Pages, Filter", then each page highlighted |
+| the jog, the list open | the highlight a page a detent, no wrap; the knobs follow it at once (a knob turned edits that page, its popup over the list a second) |
+| the click again, or Back | the list closes on the page highlighted |
+| a held step, Delete, Copy, Loop, Mute (and Shift's own jog) over the list | theirs while held, as over any menu; the list back at their release. Pads, steps and buttons keep working |
+| Shift + click; Delete held + click | nothing (stage 3: Delete + click clears the clip's engine locks); the list does not open |
+| a step held | the knobs are its TRIG values, as on the FM-1 page (stage 3: its engine locks) |
+| the layer's engine changes under the page | a second: the layer small, the new engine big ("Chord" / "FM6"); then the new engine's page with the same name, else the one last shown on that engine (RAM), else its first; the list (open) follows |
+| the description replaced | the page found again by (engine id, page id) |
+| the slot emptied (`describe(NULL)`), a refused description, the routing away | the page goes at the core's next input or block: the track on FM-1; a description given again in the same go keeps it |
+
+A DYN parameter takes its name and words from the watched cells when the cell is that pid and the value shown is the
+firmware's own; else its format. Every value's words are the core's own from the description (INT, FIXED(d), TABLE,
+NOTE(o) with sharps, PERCENT, ONOFF; BIPOLAR signs; a unit after one space, "%" after none).
+
+**The host's part.** Per slot, after each of its frames: desc_seq moved: `rfm_move_ep_describe(m, slot, blob, len)`
+(checked: `rfm_move_ep_check`; refused: no Engine page, `< 0`), then `rfm_move_ep_layers` and `rfm_move_ep_values`
+for every layer (a description taken resets them; the page shows only once the layers are given); lay_seq:
+`rfm_move_ep_layers`; val_seq: `rfm_move_ep_values` for each layer; cell_seq: `rfm_move_ep_cells`. A slot loaded,
+unloaded or replaced: `rfm_move_ep_describe(m, slot, NULL, 0)` first. These calls may themselves send
+`RFM_MOVE_ACT_EP_WATCH` (the page watched follows). The actions:
+
+| Action | Fields | When |
+|---|---|---|
+| `RFM_MOVE_ACT_EP` (38) | `slot`, `op` (`RFM_MOVE_EP_SET` 1), `layer`, `pid`, `value`, `frame` 0 | from `rfm_move_seq_advance` (first thing in it): the knobs' turns since the last call, one a parameter. The host queues `rfm1_ep_set(op, layer, pid, value)` for the slot at the block's first frame |
+| `RFM_MOVE_ACT_EP_WATCH` (39) | `slot`, `layer`, `value` the page (an index into the description's pages; -1 none) | the page shown, the list's highlight, the selected track, the layer or its engine changed; -1 (to the slot watched before) when no Engine page shows (another knob page, session view, another mode, a layer off). The host calls `rfm1_ep_watch(layer, page)` |
+
+`rfm_move_t` grows by `rfm_move_ep_t` (296 840 bytes: each slot's 64 KiB description and 32 KiB of values), `rfm_move_act_t` by 8 bytes (64 -> 72: `pid`, `layer`, `op`). Tests:
+`move_engine`.
+
 ## FX parameter pages (0.5.0)
 
 A module's own parameter pages, as Schwung's `ui_hierarchy` lays them out: each level's 8 knobs a page, its overflow
@@ -1140,7 +1191,7 @@ rfm_move_readout(&m, ctl, RFM_MOVE_RD_PARAM, "Cutoff", "1.2k", frac, flags, ms);
 rfm_move_save(&m.s, bytes); rfm_move_load(&s, bytes, n);   /* "RMV" + version 5, 87 bytes (versions 4..1, 86, 80, 78, 77 bytes, load) */
 ```
 
-`rfm_move_t` is about 150 KB with the sequencer: keep it static or on the heap. The sequencer:
+`rfm_move_t` is about 530 KB with the sequencer and (0.14.0) the engine parameters' 290 KB: keep it static or on the heap. The sequencer:
 
 ```c
 rfm_move_seq_advance(&m, frames, rate);           /* every audio block, at its start, playing or not (rate 1000000: us) */
@@ -1153,6 +1204,9 @@ rfm_move_project_load(&m, slot, blob, n);         /* PROJECT_LOAD's answer (also
 rfm_move_project_dir(&m, used_bits); rfm_move_project_flush(&m); rfm_move_project_slot(&m);
 rfm_move_project_info(&m, slot, blob, n);         /* a stored project's content, for the grid's bars and its popup */
 rfm_move_project_new(&m, slot);                   /* (0.14.0) a new project in an empty slot, as its pad's click: 0, or -1 refused */
+rfm_move_ep_describe(&m, slot, blob, n);          /* (0.14.0) a firmware's ep1 description (NULL: none); < 0 refused */
+rfm_move_ep_layers(&m, slot, n, engine, midi_ch); rfm_move_ep_values(&m, slot, layer, val, n);
+rfm_move_ep_cells(&m, slot, layer, page, cells8); rfm_move_ep_has(&m, slot); rfm_move_ep_check(blob, n);
 ```
 
 Every action has `frame`: for actions from `rfm_move_seq_advance`, the offset (in that call's units, from the
@@ -1381,6 +1435,12 @@ byte refused), the catalog's marks and downloads, FX setup's pages and actions, 
 version 4 still loading), states, the sequencer's MIDI track; then the mockup's 34 gallery screens set up on a live
 core and compared with the mockup's pixels (`move_fwb_ref.h`; `fw_*.pbm` in the build directory). Regenerate the
 reference with `node tests/move_v2_ref.mjs move-firmware-browser-mockup.html [pbm-dir]`.
+
+`move_engine` (0.14.0): the ENGINE knob page: `rfm_move_ep_check` (every truncation, fields out of range, 4000 bit
+flips with the FNV fixed half the time, 3000 random blobs, each checked from a buffer of exactly its length), the
+page's presence and the target slot, the jog's order, arriving, the knobs (every value format, lights, touch, turn,
+Shift, a LIST, a DYN), the SETs merged per block, the watch, the page list, an engine changed, a layer off, the
+description replaced and gone, the layer by channel (`engine_*.pbm` and `.leds` in the build directory).
 
 ## Later phases
 

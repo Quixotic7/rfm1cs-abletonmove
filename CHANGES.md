@@ -385,6 +385,43 @@ place notes move: a project from before 0.14.0 whose track had a triplet rate, s
   own project stays, the grid's info of that slot is not read, and a project file holding one is refused as damaged
   (`rfm1cs_file_unpack`). The stored blob is not changed; it loads again in 0.14.0.
 
+The owner's words of 2026-11-24: "add a page after the FM-1 knobs for Engine parameters ... you reach that page, then
+click the jogwheel, now you can scroll and select from different pages for the synth engine ... Each page then
+supports up to 8 parameters on the knobs." Stages 1 and 2 of engine-params' BUILD-PLAN.md (the protocol, a firmware's
+**ep1**: engine-params SPEC.md; the design: its DESIGN.md); README "Engine parameters". New: `src/engine.c`; at the
+end of `rfm_move_act_t` the fields `pid`, `layer`, `op`; at the end of `rfm_move_seq_t` `eng`, `ep_list`; at the end
+of `rfm_move_t` `ep` (296 840 bytes): rebuild everything. No change to the project blob. Tests:
+`tests/move_engine.c` (ctest `move_engine`, pictures `engine_*`).
+
+- **The API** (SPEC.md 9): `rfm_move_ep_check` (an EP1D blob: every field in range, every index inside, every string
+  printable and NUL-terminated in its field, the length, the FNV-1a; fuzzed, never a read past its length),
+  `rfm_move_ep_describe` (copied; NULL: none; refused: the slot has no Engine page), `rfm_move_ep_layers`,
+  `rfm_move_ep_values`, `rfm_move_ep_cells`, `rfm_move_ep_has`. The actions `RFM_MOVE_ACT_EP` (38: SET, a knob's
+  turns merged to one per (slot, layer, pid) per `rfm_move_seq_advance`, the latest value at frame 0) and
+  `RFM_MOVE_ACT_EP_WATCH` (39: the page whose cells the core wants; -1 when none shows).
+- ("a page after the FM-1 knobs") **ENGINE, the third knob page**: TRIG 0, FM-1 1, ENGINE 2, banks 1..4 now 3..6
+  (`rfmv_seq_kpage`; `s.bank` as before; the tracks' `kpage` memory renumbered, RAM only). There only when the
+  selected track's firmware has ep1 (the slot played if the track reaches it, else the lowest it reaches that has
+  one): the jog skips it otherwise and the strip keeps six cells; with it, seven. A track left on it whose firmware no
+  longer offers it comes back on FM-1. Leaving the FM-1 page ends its takeover and its jog on a knob, as any change of
+  place. The layer: Auto by the track's MIDI channel (the seam for stage 4's Layer setting: `ep.lset`, `rfmv_ep_layer_of`).
+- **Arriving**: "Chord  VA" small at the top left, the page's name big, the strip, a second (said "Engine, Filter").
+  **The knobs**: the page's parameters, lit in the slot's colour by value, white touched, dark and dead where the page
+  has none (R3, R4); a touch the name and value full screen with a bar (R5; said "Cutoff, 1.2k"); a turn by the
+  parameter's step, Shift one stored step, a LIST one item every `RFM_MOVE_LIST_TICKS`; the value sent is shown until
+  the firmware's agree. Every value's words drawn by the core from the description (INT, FIXED, TABLE, NOTE, PERCENT,
+  ONOFF, BIPOLAR signs, units); a DYN parameter's from the watched cells. A held step: its TRIG values, as on FM-1.
+- ("then click the jogwheel, now you can scroll and select from different pages") **the page list**: the jog's click
+  (at its release; no double click there) opens it over the whole screen: the layer and engine on a title line, three
+  pages at 2x, the one shown inverted as Global settings' rows, a scroll mark; the jog moves the highlight (no wrap)
+  and the knobs follow at once; the click again or Back closes it on that page (said "Pages, Filter", then each
+  page). A layer Back closes (`LY_EPL`); held controls take over and give it back; Shift + click and Delete + click do
+  nothing yet (Delete + click: stage 3's engine locks cleared).
+- **Things changing under it** (stage 2): the layer's engine changed: "Chord" / "FM6" a second, then the page with the
+  same name, else the one last shown on that engine, else its first; the list follows. A layer off: "Bass" / "Off",
+  the knobs dark and dead, the page still there. The description replaced: the page found by (engine id, page id).
+  The slot emptied: the page goes at the core's next call.
+
 ## 0.13.0 (2026-11-23)
 
 The first tag since 0.9.1: it carries 0.9.2, 0.10.0, 0.11.0 and 0.12.0 below, which were never tagged by themselves.
