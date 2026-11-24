@@ -2003,6 +2003,8 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
         return;
     rfmv_fwp_ctx(m);                                    /* (0.14.0: a host's load or slot change ends the FM-1 page's
                                                          * lock too) */
+    rfmv_ep_flush(m);                                   /* (0.14.0: the ENGINE knobs' turns since the last call, one SET
+                                                         * per parameter, at frame 0) */
     if (q->den_rate != rate) {                          /* a new rate: the progress kept in proportion */
         if (q->den_rate)
             q->ph = q->ph * rate / q->den_rate;
@@ -2050,6 +2052,7 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
     rfmv_pfw_poll(m);                                   /* (0.13.0: a project's firmwares: the time limit, its edits) */
     rfmv_proj_poll(m);
     rfmv_fw_poll(m);                                    /* (0.4.0: the library's FW_LIBRARY, debounced) */
+    rfmv_ep_sync(m, 1);                                 /* (0.14.0: the ENGINE page after the host's ep1 calls) */
     rfmv_say_tick(m);                                   /* (0.6.0: speech: the transport, popups the clock brings up) */
 }
 

@@ -65,6 +65,7 @@ static int pop_held(const rfm_move_t *m)
     case POP_LABEL: return rfmv_label_held(m, i);
     case POP_CC:
     case POP_TRKINFO:
+    case POP_EPK:                                       /* (0.14.0: the ENGINE page's knob) */
     case POP_TRIG: return m->touched == i;
     case POP_SELECT: return 0;                          /* (turning only: a moment after the last detent) */
     case POP_DRUM: return i < RFM_MOVE_NPADS && m->pad_down[i];
@@ -311,12 +312,14 @@ void rfmv_tcase(const char *s, char *o, int cap)
     o[i] = 0;
 }
 
-/* the knob pages' strip: Sequencer mode TRIG and the 4 banks, else the 4 banks */
+/* the knob pages' strip: Sequencer mode TRIG, FM-1, (0.14.0) ENGINE when there, and the 4 banks, else the 4 banks */
 static void bank_strip(const rfm_move_t *m, mr_canvas_t *cv)
 {
-    if (m->s.mode == RFM_MOVE_MODE_SEQ)
-        v2_strip(cv, RFM_MOVE_NBANKS + 2, 1u << (m->seq.trig ? 0 : m->seq.fwp ? 1 : m->s.bank + 2), -1, 0, 128);
-    else
+    int n, cur;
+    if (m->s.mode == RFM_MOVE_MODE_SEQ) {
+        rfmv_kpage_cells(m, &n, &cur);
+        v2_strip(cv, n, 1u << cur, -1, 0, 128);
+    } else
         v2_strip(cv, 4, 1u << m->s.bank, -1, 0, 128);
 }
 
@@ -789,8 +792,12 @@ static void trig_popup(const rfm_move_t *m, mr_canvas_t *cv)
     default: snprintf(l, sizeof l, "--"); break;
     }
     v2_titleBox(cv, l, b, 88, 80);
-    v2_strip(cv, RFM_MOVE_NBANKS + 2, q->trig ? 1 : 2, -1, 0, 128);   /* (0.12.x: the FM-1 page second; a step held on it:
-                                                         * its TRIG knobs) */
+    {                                                   /* (0.12.x: the FM-1 page second; a step held on it: its
+                                                         * TRIG knobs; 0.14.0: on ENGINE too) */
+        int n, cur;
+        rfmv_kpage_cells(m, &n, &cur);
+        v2_strip(cv, n, 1u << cur, -1, 0, 128);
+    }
 }
 
 /* Loop held or latched (page edit): the loop icon, the range in words, the 16 pages as cells; the jog: Move's
@@ -1099,6 +1106,8 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
             rfmv_pop_screen(cv, "Jog", m->pop_i ? rfmv_jog_name(m->pop_i - 1) : "Pages", m->pop_i ? 3 : 0,
                             m->pop_i ? (m->pop_i - 1) % 3 : 0, NULL);
             g_full = 1;
+        } else if (m->pop == POP_EPK || m->pop == POP_EPA) {   /* (0.14.0) the ENGINE page: a knob; arriving */
+            g_full = rfmv_ep_pop_screen(m, cv);
         } else if (m->pop == POP_FWLV) {                /* (0.12.x) the FM-1 page's level: "Knobs" / "Knobs+Keys" */
             rfmv_pop_screen(cv, "FM-1", m->pop_i ? "Knobs+Keys" : "Knobs", 2, m->pop_i != 0, NULL);
             g_full = 1;

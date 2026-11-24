@@ -4480,13 +4480,13 @@ static void test_o14_kpage(void)
     write_pbm("o14_kpage_fm1_back");
     /* bank 3; another track selected (Track 2 held + a step): that one's page (never shown: TRIG); back: bank 3 */
     jog(3), rest();
-    CHECK(rfmv_seq_kpage(&M) == 4 && M.s.bank == 2);
+    CHECK(rfmv_seq_kpage(&M) == 5 && M.s.bank == 2);
     hold_track(1), step(6, 1), step(6, 0), track(1, 0), rest();
     CHECK(M.seq.sel_track == 6 && M.seq.trig && rfmv_seq_kpage(&M) == 0);
     jog(2), rest();                                     /* (track 7: bank 1) */
-    CHECK(rfmv_seq_kpage(&M) == 2 && M.s.bank == 0);
+    CHECK(rfmv_seq_kpage(&M) == 3 && M.s.bank == 0);
     hold_track(1), step(tr, 1), step(tr, 0), track(1, 0), rest();
-    CHECK(M.seq.sel_track == tr && rfmv_seq_kpage(&M) == 4 && M.s.bank == 2);
+    CHECK(M.seq.sel_track == tr && rfmv_seq_kpage(&M) == 5 && M.s.bank == 2);
     write_pbm("o14_kpage_bank3_back");
     /* session view: a knob's touch selects its column's track; Menu back: that track's page */
     press(MR_CC_MENU), rest();
@@ -4494,10 +4494,10 @@ static void test_o14_kpage(void)
     raw(0x90, 6, 127), raw(0x80, 6, 0), rest();
     CHECK(M.seq.sel_track == 6);
     press(MR_CC_MENU), rest();
-    CHECK(!M.seq.view && rfmv_seq_kpage(&M) == 2 && M.s.bank == 0);
+    CHECK(!M.seq.view && rfmv_seq_kpage(&M) == 3 && M.s.bank == 0);
     /* Track 2's tap: the slot's own track again (it was selected for it), its page kept */
     tap_track(1), rest();
-    CHECK(M.seq.sel_track == tr && rfmv_seq_kpage(&M) == 4);
+    CHECK(M.seq.sel_track == tr && rfmv_seq_kpage(&M) == 5);
     jog(-4), rest();
     CHECK(M.seq.trig);
 }
@@ -4818,7 +4818,7 @@ static void test_o14_fwp_jog(void)
     for (i = 0; i < 3; i++)
         CHECK(!white(w[L_RING0 + i]));
     clear(), jog(1);
-    CHECK(!count(RFM_MOVE_ACT_TURN) && rfmv_seq_kpage(&M) == 2);
+    CHECK(!count(RFM_MOVE_ACT_TURN) && rfmv_seq_kpage(&M) == 3);
     jog(-1), rest();
     /* Shift + click, not taken over: the jog on a knob while the steps and buttons stay the sequencer's: SELECT first */
     clear(), sh_jog_click();
@@ -4896,7 +4896,7 @@ static void test_o14_fwp_jog(void)
         CHECK(!white(w[L_RING0 + i]));
     CHECK(lit_rows(1, 15) < 40);                        /* (the header gone) */
     clear(), jog(1);
-    CHECK(!count(RFM_MOVE_ACT_TURN) && rfmv_seq_kpage(&M) == 2);
+    CHECK(!count(RFM_MOVE_ACT_TURN) && rfmv_seq_kpage(&M) == 3);
     jog(-1), rest();
     /* a held step takes the jog (its length) over the knob */
     sh_jog_click(), rest();

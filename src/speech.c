@@ -534,6 +534,8 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
             snprintf(o, (size_t)cap, "Jog: pages");
         return;
     case POP_FWLV: snprintf(o, (size_t)cap, "%s", i ? "Knobs and keys" : "Knobs"); return;   /* (0.12.x) the FM-1 page */
+    case POP_EPK:
+    case POP_EPA: rfmv_ep_pop_words(m, o, cap); return;   /* (0.14.0) the ENGINE page */
     case POP_OCT: {                                     /* (0.12.0) the octave, the pads' notes */
         char r[24], *d;
         rfmv_seq_oct_range(m, r, sizeof r);

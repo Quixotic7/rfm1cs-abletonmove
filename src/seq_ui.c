@@ -96,7 +96,8 @@ static int root_note(const rfm_move_t *m) { return clampi(48 + m->s.root + 12 * 
 static void al_pad(rfm_move_t *m, int p);
 
 /* the layers Back closes, the latest first */
-enum { LY_MENU = 1, LY_PROJ, LY_LOOP, LY_SHIFT, LY_CLIP, LY_PAGE, LY_MUTE, LY_LAST = LY_MUTE };   /* (0.12.0: Mute's latch) */
+enum { LY_MENU = 1, LY_PROJ, LY_LOOP, LY_SHIFT, LY_CLIP, LY_PAGE, LY_MUTE, LY_EPL, LY_LAST = LY_EPL };   /* (0.12.0: Mute's
+                                                         * latch; 0.14.0: the ENGINE page's list) */
 static void layer(rfm_move_seq_t *q, int id)
 {
     int i, k = 0;
@@ -117,6 +118,7 @@ static int layer_on(const rfm_move_seq_t *q, int id)
     case LY_CLIP: return (q->clip_kind && (q->cut || q->paste)) || (q->clip_kind == 2 && q->sv_armed) || q->sc_armed;
     case LY_PAGE: return q->pg_kind != 0;
     case LY_MUTE: return q->mute_latch != 0;
+    case LY_EPL: return q->ep_list != 0;
     default: return 0;
     }
 }
@@ -213,6 +215,7 @@ static void layer_close(rfm_move_t *m, int id)
         break;
     case LY_PAGE: q->pg_kind = 0; break;
     case LY_MUTE: q->mute_latch = 0, q->mods &= (uint8_t)~SEQ_M_MUTE; break;
+    case LY_EPL: q->ep_list = 0; break;               /* (0.14.0: on the page highlighted) */
     default: break;
     }
 }
@@ -432,17 +435,35 @@ void rfmv_seq_leave(rfm_move_t *m)
     m->s.layout = q->stash_layout, m->s.root = q->stash_root, m->s.scale = q->stash_scale;
     memcpy(m->s.cc, q->stash_cc, sizeof m->s.cc);
 }
-/* the knob page shown: 0 TRIG, 1 FM-1, 2..5 the CC banks 1..4 (the bank stored as before: s.bank 0..3) */
-int rfmv_seq_kpage(const rfm_move_t *m) { return m->seq.trig ? 0 : m->seq.fwp ? 1 : m->s.bank + 2; }
+/* the knob page shown: 0 TRIG, 1 FM-1, (0.14.0) 2 ENGINE, 3..6 the CC banks 1..4 (the bank stored as before: s.bank
+ * 0..3) */
+int rfmv_seq_kpage(const rfm_move_t *m) { return m->seq.trig ? 0 : m->seq.fwp ? 1 : m->seq.eng ? 2 : m->s.bank + 3; }
 static void kpage_set(rfm_move_t *m, int pg)
 {
     rfm_move_seq_t *q = Q(m);
-    pg = clampi(pg, 0, RFM_MOVE_NBANKS + 1);
-    q->trig = (uint8_t)(pg == 0), q->fwp = (uint8_t)(pg == 1);
-    if (pg >= 2 && pg - 2 != m->s.bank) {
-        m->s.bank = (uint8_t)(pg - 2);
+    pg = clampi(pg, 0, RFM_MOVE_NBANKS + 2);
+    if (pg == 2 && !rfmv_ep_avail(m))
+        pg = 1;                                         /* (0.14.0, DESIGN.md 2: a track left on ENGINE whose firmware
+                                                         * no longer offers it comes back on FM-1) */
+    if (q->fwp && pg != 1)
+        rfmv_fwp_unlock(m);                             /* (leaving the FM-1 page ends its takeover and its jog on a
+                                                         * knob, as any change of place) */
+    q->trig = (uint8_t)(pg == 0), q->fwp = (uint8_t)(pg == 1), q->eng = (uint8_t)(pg == 2);
+    if (pg != 2)
+        q->ep_list = 0;
+    if (pg >= 3 && pg - 3 != m->s.bank) {
+        m->s.bank = (uint8_t)(pg - 3);
         rfmv_changed(m);
     }
+}
+void rfmv_seq_kpage_set(rfm_move_t *m, int pg) { kpage_set(m, pg); }
+/* (0.14.0) the ENGINE page's list: open (a layer Back closes, the latest), or closed */
+void rfmv_seq_ep_list(rfm_move_t *m, int open)
+{
+    rfm_move_seq_t *q = Q(m);
+    q->ep_list = (uint8_t)(open != 0);
+    if (open)
+        layer(q, LY_EPL);
 }
 /* (0.14.0, the owner's 2026-11-23: "if I have page set to a CC bank or FM-1 knobs, switching to another track and back
  * the knobs reset to the trig page, the page I am on should be remembered") the selected track's page as it was left
@@ -2763,7 +2784,7 @@ int rfmv_seq_menu_click(rfm_move_t *m)
 
 /* (0.12.x) the knobs do the TRIG page's: on it, or a step held on the FM-1 page (its knobs are the firmware's only
  * while no step is held) */
-int rfmv_seq_trig_on(const rfm_move_t *m) { return m->seq.trig || (m->seq.fwp && m->seq.step_held); }
+int rfmv_seq_trig_on(const rfm_move_t *m) { return m->seq.trig || ((m->seq.fwp || m->seq.eng) && m->seq.step_held); }
 
 void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now)
 {
@@ -2968,11 +2989,25 @@ void rfmv_seq_jog(rfm_move_t *m, int d, uint32_t now)
         rfmv_pop(m, POP_DRUM, p);
         return;
     }
-    {                                                   /* the knob pages: TRIG, (0.12.x) FM-1, then banks 1..4 (the
-                                                         * bank stored as before: 0..3) */
-        kpage_set(m, rfmv_seq_kpage(m) + d);
+    if (q->eng && q->ep_list && rfmv_ep_page(m)) {     /* (0.14.0, the owner's) the ENGINE page's list: its highlight,
+                                                         * a page a detent (the knobs follow it) */
+        rfmv_ep_list_turn(m, d);
+        return;
+    }
+    {                                                   /* the knob pages: TRIG, (0.12.x) FM-1, (0.14.0) ENGINE when the
+                                                         * track's firmware offers it, then banks 1..4 (the bank stored
+                                                         * as before: 0..3); a detent a page */
+        const int dir = d > 0 ? 1 : -1;
+        int pg = rfmv_seq_kpage(m), i;
+        for (i = 0; i < (d > 0 ? d : -d); i++) {
+            pg = clampi(pg + dir, 0, RFM_MOVE_NBANKS + 2);
+            if (pg == 2 && !rfmv_ep_avail(m))
+                pg = clampi(pg + dir, 0, RFM_MOVE_NBANKS + 2);
+        }
+        kpage_set(m, pg);
         q->kpage[q->sel_track] = (uint8_t)rfmv_seq_kpage(m);   /* (0.14.0: the track's, kept) */
-        rfmv_pop(m, POP_BANK, 0);
+        if (!q->eng)
+            rfmv_pop(m, POP_BANK, 0);                   /* (ENGINE: its own arrival, rfmv_ep_sync) */
     }
 }
 
@@ -4539,7 +4574,7 @@ void rfmv_seq_screen(const rfm_move_t *m, mr_canvas_t *cv)
                                                          * cuts or copies its row) */
             for (r = 0; r < 4; r++)
                 held_icon(cv, hi == 1 ? IC_CUT : IC_COPY, RFM_MOVE_SV_COLS * 16 + 3, 4 + r * 15 + 1);
-    } else {
+    } else if (!(rfmv_ep_list_shown(m) && rfmv_ep_list_screen(m, cv))) {   /* (0.14.0: the ENGINE page's list) */
         track_screen(m, cv);
         if (hi)                                         /* (the roll's top right) */
             held_icon(cv, hi == 1 ? IC_CUT : IC_COPY, 116, 1);

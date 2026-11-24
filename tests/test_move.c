@@ -625,7 +625,7 @@ static void test_control(void)
     CHECK(m.s.cc[0][1] == 22 && m.seq.tr[0].cc[0][1] == 22);   /* (kept in the track) */
     /* the channel is the track's; the volume knob is still MASTER; the pads still play notes */
     m.seq.tr[0].ch = 3;
-    CHECK(!m.seq.trig && m.s.bank == 0 && rfmv_seq_kpage(&m) == 2);   /* (0.14.0: the track's page as it was left) */
+    CHECK(!m.seq.trig && m.s.bank == 0 && rfmv_seq_kpage(&m) == 3);   /* (0.14.0: the track's page as it was left) */
     clear();
     knob(&m, 1, 1);
     knob(&m, 8, 1);
@@ -657,7 +657,7 @@ static void test_control(void)
            nact ? acts[0].bytes[1] : 0);               /* (fixed in 0.9.0: track 2's own CC number) */
     tap(&m, 0);
     CHECK(rfm_move_fw_active(&m) == 0 && m.s.layout == RFM_MOVE_LAYOUT_SCALE && m.seq.sel_track == 0);
-    CHECK(rfmv_seq_kpage(&m) == 2 && m.s.bank == 0);   /* (0.14.0: track 1's page as it was left, bank 1) */
+    CHECK(rfmv_seq_kpage(&m) == 3 && m.s.bank == 0);   /* (0.14.0: track 1's page as it was left, bank 1) */
     clear();
     knob(&m, 0, 1);
     CHECKF(nact == 1 && acts[0].bytes[0] == 0xB3 && acts[0].bytes[1] == 16, "%02x %d %d", nact ? acts[0].bytes[0] : 0,

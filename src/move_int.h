@@ -463,6 +463,33 @@ void rfmv_fwp_ctx(rfm_move_t *m);                       /* (0.14.0) another mode
 int rfmv_fwp_full(const rfm_move_t *m);
 int rfmv_fwp_knobs(const rfm_move_t *m);
 int rfmv_seq_trig_on(const rfm_move_t *m);              /* the knobs do the TRIG page's (TRIG, or a step held on FM-1) */
+/* ---- (0.14.0, the owner's 2026-11-24) engine.c: the ENGINE knob page (a firmware's ep1). POP_EPK: a knob of the page
+ * touched or turned (pop_i the knob); POP_EPA: the page arrived (pop_i 0) or its layer's engine changed (1) */
+enum { POP_EPK = 72, POP_EPA = 73 };
+#define RFMV_EP_OVR_MS 500                              /* a value sent is shown until the firmware's agree, or this long */
+void rfmv_ep_init(rfm_move_t *m);
+int rfmv_ep_target(const rfm_move_t *m, int track);    /* the slot a track's page edits (SPEC.md 9), -1 none */
+int rfmv_ep_layer_of(const rfm_move_t *m, int track, int slot);   /* .. its layer (the Layer setting's seam: Auto) */
+int rfmv_ep_avail(const rfm_move_t *m);                 /* the selected track has an ENGINE page */
+int rfmv_ep_page(const rfm_move_t *m);                  /* .. it is the knob page shown (track view) */
+int rfmv_ep_list_shown(const rfm_move_t *m);            /* .. its page list on the screen */
+void rfmv_ep_sync(rfm_move_t *m, int leave);            /* after input / advance (leave 1) and the host's ep1 calls */
+void rfmv_ep_flush(rfm_move_t *m);                      /* (rfm_move_seq_advance, first) the knobs' merged SETs */
+void rfmv_ep_knob(rfm_move_t *m, int k, int d);
+int rfmv_ep_touch(rfm_move_t *m, int k);
+void rfmv_ep_click(rfm_move_t *m, int down);            /* the jog's click on the page (the list: at the release) */
+void rfmv_ep_list_turn(rfm_move_t *m, int d);
+void rfmv_ep_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0]);
+int rfmv_ep_list_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* 1 drawn */
+int rfmv_ep_pop_screen(const rfm_move_t *m, mr_canvas_t *cv);    /* POP_EPK, POP_EPA: 1 drawn */
+void rfmv_ep_pop_words(const rfm_move_t *m, char *o, int cap);
+void rfmv_kpage_cells(const rfm_move_t *m, int *n, int *cur);   /* the knob pages' strip: 6 or 7 cells, the one shown */
+int rfmv_ep_value(const rfm_move_t *m, int slot, int layer, int idx);   /* the value shown (a sent one first) */
+int rfmv_ep_knob_param(const rfm_move_t *m, int k);     /* knob k's parameter on the page now (an index), -1 */
+int rfmv_ep_knob_words(const rfm_move_t *m, int k, char *name, int ncap, char *val, int vcap, double *frac, int *bip);
+void rfmv_ep_text(const rfm_move_t *m, int slot, int idx, int v, char *o, int cap);   /* (tests) a value's words */
+void rfmv_seq_kpage_set(rfm_move_t *m, int pg);         /* (seq_ui.c) the knob page shown (ENGINE absent: FM-1) */
+void rfmv_seq_ep_list(rfm_move_t *m, int open);         /* (seq_ui.c) the page list open (a layer Back closes) / closed */
 /* (0.12.x) a Track tap's flash: the steps show the 16 tracks (seq_ui.c); RFM_MOVE_TFLASH_MS in all */
 #define RFM_MOVE_TFLASH_MS 600
 int rfmv_seq_tflash_on(const rfm_move_t *m);

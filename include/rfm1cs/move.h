@@ -215,6 +215,18 @@ enum {
 #define RFM_MOVE_ACT_STATE_PASTE 35
 #define RFM_MOVE_ACT_STATE_NEW 36
 #define RFM_MOVE_ACT_STATE_UNDO 37
+/* (0.14.0, the owner's 2026-11-24: "add a page after the FM-1 knobs for Engine parameters") engine parameters, the
+ * firmware's ep1 (engine-params SPEC.md; README "Engine parameters"). The host turns them into the slot's queued
+ * rfm1_ep_set / rfm1_ep_watch calls, due at the block's first frame + frame:
+ *  - EP: slot, op (RFM_MOVE_EP_SET: a knob on the ENGINE page), layer, pid, value, frame. A knob's turns are merged to
+ *    one per (slot, layer, pid) per rfm_move_seq_advance call: the latest value, sent at frame 0 of that call.
+ *  - EP_WATCH: slot, layer, value the page (an index into the description's pages section; -1: none): the page whose
+ *    cells the core wants (rfm_move_ep_cells). Sent when the ENGINE page shown, the page list's highlight or the
+ *    selected track changes; -1 to the slot watched before when no Engine page shows any more */
+#define RFM_MOVE_ACT_EP 38
+#define RFM_MOVE_ACT_EP_WATCH 39
+enum { RFM_MOVE_EP_SET = 1, RFM_MOVE_EP_LOCK = 2, RFM_MOVE_EP_FREE = 3, RFM_MOVE_EP_FREE_ALL = 4 };   /* (EP's op; only
+                                                         * SET is sent before the engine locks) */
 typedef struct {
     uint8_t kind;                                       /* RFM_MOVE_ACT_* */
     uint8_t index, down, vel;
@@ -248,6 +260,9 @@ typedef struct {
                                                          * for rfm1_tk_input as a u32 little-endian; data / len too */
     uint16_t tk_claims;                                 /* TK_STATE: the claims granted (RFM_MOVE_TK_*), 0 when off */
     uint8_t tk_flags;                                   /* TK_STATE: RFM_MOVE_TKF_SPEECH */
+    /* (0.14.0) engine parameters (EP, EP_WATCH; slot: the firmware slot) */
+    uint16_t pid;                                       /* EP: the parameter's id (1..0xFFFE) */
+    uint8_t layer, op;                                  /* EP, EP_WATCH: the layer 0..7; EP: RFM_MOVE_EP_* */
 } rfm_move_act_t;
 typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
@@ -932,10 +947,56 @@ typedef struct {
      * its ghost key does not confirm it; loop_tap_grp: the tap waiting for its double tap confirmed ghost bars (the
      * double tap joins its undo step) */
     uint8_t loop_shown, loop_tap_grp;
-    /* (0.14.0, the owner's 2026-11-23) each track's knob page, as it was left (0 TRIG, 1 FM-1, 2..5 banks 1..4; not
-     * saved): selecting the track again, by any way, brings it back */
+    /* (0.14.0, the owner's 2026-11-23) each track's knob page, as it was left (0 TRIG, 1 FM-1, 2 ENGINE, 3..6 banks
+     * 1..4; not saved): selecting the track again, by any way, brings it back */
     uint8_t kpage[RFM_MOVE_SEQ_TRACKS];
+    /* (0.14.0, the owner's 2026-11-24) the ENGINE knob page shown (with trig 0, fwp 0; s.bank keeps the CC bank), and
+     * its page list open (the jog's click) */
+    uint8_t eng, ep_list;
 } rfm_move_seq_t;
+
+/* ---- (0.14.0) engine parameters: what the firmware's ep1 gives (engine-params SPEC.md, sections 3, 4 and 9) */
+#define RFM_MOVE_EP_DESC_MAX 65536                      /* an EP1D description's bytes, at most */
+#define RFM_MOVE_EP_LAYERS 8
+#define RFM_MOVE_EP_PARAMS 2048
+#define RFM_MOVE_EP_NONE (-32768)                       /* a value: 0x8000, not on that layer's engine now */
+typedef struct { uint16_t pid; char name[11], text[11]; } rfm_move_ep_cell_t;   /* a watched page's knob: pid 0 none */
+typedef struct {                                        /* a firmware slot's (the core's copy) */
+    uint8_t desc[RFM_MOVE_EP_DESC_MAX];                 /* the description, checked */
+    uint32_t n, fnv;                                    /* its length (0: none), its FNV-1a (header byte 20) */
+    uint8_t nlay;                                       /* rfm_move_ep_layers given (0: not yet: no page) */
+    uint8_t eng[RFM_MOVE_EP_LAYERS], ch[RFM_MOVE_EP_LAYERS];   /* each layer's engine (an index, 0xFF none), channel */
+    int16_t val[RFM_MOVE_EP_LAYERS][RFM_MOVE_EP_PARAMS];   /* the values, the description's order */
+    rfm_move_ep_cell_t cell[8];                         /* the watched page's cells, */
+    int16_t cell_page;                                  /* .. for this page (-1 none) */
+    uint8_t cell_layer;                                 /* .. and this layer */
+    struct { uint16_t eid; uint8_t page_id, used; } mem[64];   /* (RAM) each engine's page last shown, by engine id */
+} rfm_move_ep_slot_t;
+typedef struct {
+    rfm_move_ep_slot_t s[RFM_MOVE_FW_SLOTS];
+    /* the selected track's page now (engine.c ep_resolve): its slot (-1 none), layer, engine (an index, 0xFF the layer
+     * is off) and page (an index into the pages section, 0xFFFF none) */
+    int8_t slot;
+    uint8_t layer, eng;
+    uint16_t page;
+    /* .. as it was at the last sync (an arrival, an engine changed under the page) */
+    int8_t p_slot, p_track;
+    uint8_t p_layer, p_eng, p_shown, p_tv;
+    /* each track's Layer setting (0 Auto: by its MIDI channel; 1..8 a layer; DESIGN.md section 7: stage 4, RAM and
+     * always 0 until then) and its Engine page last shown: the slot, engine id and page id (RAM; saved from stage 3) */
+    uint8_t lset[RFM_MOVE_SEQ_TRACKS];
+    struct { uint16_t eid; uint8_t page_id, slot; } tmem[RFM_MOVE_SEQ_TRACKS];
+    uint8_t click;                                      /* the jog's click pressed on the page (it acts at the release) */
+    /* knob turns waiting for the next rfm_move_seq_advance (one per slot, layer and pid: the latest value) */
+    struct { uint8_t slot, layer; uint16_t pid; int16_t v; } set[32];
+    uint8_t nset;
+    /* values sent and shown until the firmware's values agree (or RFMV_EP_OVR_MS passed) */
+    struct { uint8_t slot, layer, on; uint16_t idx; int16_t v; uint32_t ms; } ovr[16];
+    /* the watch sent last: slot (-1 none), layer, page (-1 none), the track */
+    int8_t w_slot;
+    uint8_t w_layer, w_track;
+    int16_t w_page;
+} rfm_move_ep_t;
 
 /* ---- the state */
 typedef struct {
@@ -1180,6 +1241,9 @@ typedef struct {
      * (Undo: pj_undo 2), pjr_down step 13 held (white) */
     int8_t pjr_new, pjr_prev;
     uint8_t pjr_down;
+    /* (0.14.0, the owner's 2026-11-24) engine parameters: each slot's ep1 (about 290 KiB for the three slots), the
+     * ENGINE page's state (engine.c) */
+    rfm_move_ep_t ep;
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
@@ -1506,6 +1570,26 @@ int rfm_move_tk_shown(const rfm_move_t *m);             /* the slot whose takeov
 /* (0.12.x) a note layout's FM-1 knob page shown now: 0 no, 1 its knobs reach the firmware, 2 its buttons and steps too
  * (the screen then the FM-1's). For a host's information only: it passes labels, readouts and frames as ever */
 int rfm_move_fwp_level(const rfm_move_t *m);
+
+/* ---- (0.14.0, the owner's 2026-11-24) engine parameters: a firmware's ep1 (engine-params SPEC.md section 9; README
+ * "Engine parameters"). Call them on the core's thread (where rfm_move_input runs); slot 0..2 (others ignored).
+ * The host, for each slot after each of its frames: desc_seq moved: _describe (refused: no Engine page for the slot),
+ * then _layers and _values for every layer (a description taken resets them); lay_seq: _layers; val_seq: _values for
+ * each layer; cell_seq: _cells. A slot loaded, unloaded or replaced: _describe(m, slot, NULL, 0) first, then the new
+ * firmware's once it has booted */
+int rfm_move_ep_check(const uint8_t *desc, uint32_t n);   /* 0: a valid EP1D blob (every field in range, every index
+                                                         * inside, every string printable); else < 0. Never reads past n */
+int rfm_move_ep_describe(rfm_move_t *m, int slot, const uint8_t *desc, uint32_t n);   /* copied; NULL / 0: none. 0 ok,
+                                                         * < 0 refused (the slot then has none) */
+void rfm_move_ep_layers(rfm_move_t *m, int slot, int n, const uint8_t engine[], const uint8_t midi_ch[]);   /* each
+                                                         * layer's engine (an index into the engines, 0xFF off) and MIDI
+                                                         * channel 0..15 (0xFF none), the record's */
+void rfm_move_ep_values(rfm_move_t *m, int slot, int layer, const int16_t *val, int n);   /* the description's order;
+                                                         * RFM_MOVE_EP_NONE: not on that layer's engine now */
+void rfm_move_ep_cells(rfm_move_t *m, int slot, int layer, int page, const rfm_move_ep_cell_t cells[8]);   /* the
+                                                         * watched page's cells (EP_WATCH) */
+int rfm_move_ep_has(const rfm_move_t *m, int slot);     /* 1: an Engine page can show for this slot (a description and
+                                                         * its layers taken) */
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */

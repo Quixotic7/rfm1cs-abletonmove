@@ -868,6 +868,7 @@ void rfm_move_init(rfm_move_t *m, const rfm_move_settings_t *settings, rfm_move_
     m->fx_route = RFM_MOVE_FX_PAGE_ROUTE;
     rfmv_fw_init(m);
     rfmv_seq_init(m);
+    rfmv_ep_init(m);                                    /* (0.14.0: no firmware's ep1 yet) */
     if (m->s.slot[0].lay >= RFM_MOVE_LAY_SCALE) {       /* (0.8.0, 0.9.0) the active slot's layout (slot 0 until the
                                                          * library names another): a note layout is the sequencer */
         m->s.mode = RFM_MOVE_MODE_SEQ;
@@ -1550,6 +1551,11 @@ static void on_knob(rfm_move_t *m, int k, int d, uint32_t now)
         }
         return;
     }
+    if (rfmv_ep_page(m) && !m->seq.smenu && !m->seq.step_held) {
+        rfmv_ep_knob(m, k, d);                          /* (0.14.0) the ENGINE page: the page's parameters, absolute
+                                                         * (a held step: the TRIG knobs, as on the FM-1 page) */
+        return;
+    }
     if (m->s.mode == RFM_MOVE_MODE_SEQ) {               /* (the lock menu: the track's CC numbers, seq_ui.c) */
         rfmv_seq_knob(m, k, d, now);
         return;
@@ -1713,6 +1719,11 @@ static void on_jog_click(rfm_move_t *m, int down)
                                                          * (0.14.0: Delete held: reset; a lane: random) */
         return;
     }
+    if (rfmv_ep_page(m) && !rfmv_lay_menu(m) && !rfmv_t4_menu(m) && !m->seq.smenu) {
+        rfmv_ep_click(m, down);                         /* (0.14.0, the owner's) the ENGINE page: the page list, at the
+                                                         * click's release (no double click there) */
+        return;
+    }
     if (down && rfmv_fwp_live(m) && !rfmv_lay_menu(m) && !rfmv_t4_menu(m) && !m->seq.smenu) {
         fwj_press(m);                                   /* (0.14.0) the FM-1 page: a click knobs <-> knobs + keys,
                                                          * Shift + click what the jog turns */
@@ -1750,7 +1761,8 @@ static void on_touch(rfm_move_t *m, int k, int on)
         }
         if (m->pop == POP_TRKINFO && m->pop_i == k)
             m->pop = POP_NONE;                          /* (0.10.0: session's track popup goes with the touch) */
-        if (m->pop == POP_ENC || m->pop == POP_MASTER || m->pop == POP_CC || m->pop == POP_TRIG || m->pop == POP_CCNUM)
+        if (m->pop == POP_ENC || m->pop == POP_MASTER || m->pop == POP_CC || m->pop == POP_TRIG || m->pop == POP_CCNUM ||
+            m->pop == POP_EPK)
             rfmv_pop_let(m, m->pop, k);
         return;
     }
@@ -1785,6 +1797,9 @@ static void on_touch(rfm_move_t *m, int k, int on)
             rfmv_pop(m, POP_ENC, k), m->pop_blank = 1;
         return;
     }
+    if (k < RFM_MOVE_NKNOBS && rfmv_ep_page(m) && !m->seq.step_held && rfmv_ep_touch(m, k))
+        return;                                         /* (0.14.0) the ENGINE page: the name and the value (R5); a
+                                                         * knob with nothing on it: nothing */
     if (rfmv_half(m)) {                                 /* (0.5.6, the owner's: FM-1 mode, MIDI's NOTES: a touch alone
                                                          * shows the knob's name (and MASTER its level); a turn its
                                                          * detents) */
@@ -2128,6 +2143,7 @@ void rfm_move_input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
     input(m, ev, now_ms);
     rfmv_fwp_ctx(m);                                    /* (0.14.0: the FM-1 page's lock ends with its place) */
     fwp_sync(m);                                        /* (0.12.x: level 2's keys and buttons let go once it is off) */
+    rfmv_ep_sync(m, 1);                                 /* (0.14.0: the ENGINE page: there or not, its popups, the watch) */
     rfmv_slot_push(m);                                  /* (0.8.0: the active slot's record kept current) */
     rfmv_pfw_watch(m);                                  /* (0.13.0: a firmware setting changed: the project edited) */
     rfmv_tk_sync(m);                                    /* (0.7.0: the takeover shown or gone) */
@@ -2428,6 +2444,7 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
     else if (m->s.mode == RFM_MOVE_MODE_SEQ) {          /* Sequencer mode takes over all but the Track LEDs */
         rfmv_seq_leds(m, c, wv);
         fwp_leds(m, c, wv);                             /* (0.12.x) the FM-1 page's */
+        rfmv_ep_leds(m, c);                             /* (0.14.0) the ENGINE page's */
         if (rfmv_seq_tflash_on(m))
             rfmv_seq_tflash_leds(m, c);                 /* (0.12.x) a Track's tap: the tracks a moment */
     }
