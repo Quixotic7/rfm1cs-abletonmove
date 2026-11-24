@@ -2107,14 +2107,14 @@ static void menu_heads(const char *name, int bits)
     write_pbm(nm);
     for (k = 0, ok = 1; k < 8; k++)                     /* (0.13.0: the first one long: the jog's cursor; 0.14.0,
                                                          * the owner's 2026-11-24: Workflow none, its rows are the
-                                                         * knobs) */
+                                                         * knobs: four, three shown, scrolled to the fourth) */
         ok &= wf ? !lit_rows(17, 19) : (bits >> k & 1) ? tick(k, !(bits & ((1 << k) - 1))) : !px(6 + k * 16, 17);
     CHECKF(ok && rings_menu(bits), "%s: ticks at rest", name);
     for (k = 0; k < 8; k++) {
         touch(k, 1);
         if (bits >> k & 1) {
             screen();
-            CHECKF((wf ? !lit_rows(17, 19) && px(1, 19 + k * 15 + 1) && px(126, 19 + k * 15 + 1) : tick(k, 1)) && !scr_same(),
+            CHECKF((wf ? !lit_rows(17, 19) && px(1, 19 + (k > 2 ? 2 : k) * 15 + 1) && px(126, 19 + (k > 2 ? 2 : k) * 15 + 1) : tick(k, 1)) && !scr_same(),
                    "%s: knob %d touched", name, k + 1);
             snprintf(nm, sizeof nm, "menu_%s_k%d", name, k + 1);
             write_pbm(nm);
@@ -6062,6 +6062,8 @@ static void test_n24_proj_random(void)
     CHECK(!npa && M.pop == POP_HOST && !strcmp(M.pop_text, "No empty slot") && M.seq.proj_cur == 2);
     write_pbm("n24_proj_random_full");
     back(), rest();
+}
+
 /* (2026-11-24, the owner's: "Track settings needs more rates ... I'd add a separate parameter for doing straight,
  * dotted, or triplet rates") the track settings (Shift + step 3): Ch, Rate, Feel, Quant on knobs 1..4, three rows
  * shown, the list scrolled to the selected one; a knob touched names it on top (its row inverted) */
