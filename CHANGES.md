@@ -238,6 +238,18 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   either order, knob 2, a held lane step (its pads) then step 1 + n, the random click and Delete + click: the other
   lane's length never moves; and the engine plays a MOD lane of 3 against a TRANSPOSE lane of 2 as such. No core
   change; if the owner still sees it on the Move, the host's build or a step-by-step note of the gesture is needed.
+- (item 12, "Arp octaves should be able to go up or down") the Octaves knob (knob 3) runs -8..-1 and 1..8 (no 0: the
+  turn steps over it), all the old upward values kept; shown "Octaves -2" in the header and "Oct -2" over the walk
+  (the walk's own picture unchanged), said "Range: 2 octaves down". Down, each pass of the pattern is OCT DIST
+  (Spread) lower instead of higher, and the power chord and chord steps go down an octave a pass too. New field at
+  the end of `rfm_move_arp_t`: `down` (RAM). **Stored with no new blob size or version**: in the arp's CHANCE byte
+  (unused since CHANCE went: 100 up as before, 99 down) with the OCT DIST byte stored negated when down; read back
+  as down with the Spread as set. **What the released core 0.13.0 does with such a project**: it loads it (99 and a
+  negated OCT DIST pass its checks), shows "Octaves 2" and "Spread -12", and plays the pattern walking down by that
+  negative spread exactly as 0.14.0 does for played notes; only the power chord / chord lane steps still go up, and
+  its CHANCE knob reads 99 %, so about one arp step in a hundred is skipped there. `test_n24_arp_down` (the turns over
+  0 and to the ends, the notes an octave below, the blob's round trip, the version unchanged), pictures
+  `sessview_n24_arp_oct_down`, `_turn`.
 
 ## 0.13.0 (2026-11-23)
 

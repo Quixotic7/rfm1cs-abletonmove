@@ -1451,7 +1451,8 @@ static void arp_step(rfm_move_t *m, int atr)
     s->last = (uint8_t)idx;
     {
         const int lo = s->pitch[s->ord[0]], hi = s->pitch[s->ord[n - 1]], hp = n == 1 ? hi + 12 : hi;
-        const int e = idx < 0 ? s->pitch[-1 - idx] : s->pitch[s->ord[idx]], on = s->oct * a->odist;
+        const int dir = a->down ? -1 : 1;               /* (0.14.0: Octaves down) */
+        const int e = idx < 0 ? s->pitch[-1 - idx] : s->pitch[s->ord[idx]], on = s->oct * a->odist * dir;
         switch (mod) {
         case RFM_MOVE_AL_PLAY: pitch[np++] = e + on + tr; break;
         case RFM_MOVE_AL_REST: case RFM_MOVE_AL_TIE: break;
@@ -1461,10 +1462,10 @@ static void arp_step(rfm_move_t *m, int atr)
             break;
         case RFM_MOVE_AL_LO: pitch[np++] = lo - 12 + tr; break;
         case RFM_MOVE_AL_HI: pitch[np++] = hp + 12 + tr; break;
-        case RFM_MOVE_AL_PWR: pitch[np++] = lo + 12 * s->oct + tr, pitch[np++] = hp + 12 * s->oct + tr; break;
+        case RFM_MOVE_AL_PWR: pitch[np++] = lo + 12 * s->oct * dir + tr, pitch[np++] = hp + 12 * s->oct * dir + tr; break;
         case RFM_MOVE_AL_CHORD:
             for (i = 0; i < n; i++)
-                pitch[np++] = s->pitch[s->ord[i]] + 12 * s->oct + tr;
+                pitch[np++] = s->pitch[s->ord[i]] + 12 * s->oct * dir + tr;
             break;
         default:                                        /* the n-th note played */
             if (mod - RFM_MOVE_AL_N1 < n)

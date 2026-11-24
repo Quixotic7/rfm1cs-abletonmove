@@ -2604,7 +2604,18 @@ static void smenu_turn(rfm_move_t *m, int k, int d, int jog)   /* (jog: the jog 
         switch (k) {
         case 0: a->pat = (uint8_t)clampi(a->pat + d, 0, RFM_MOVE_AP_N - 1); break;
         case 1: a->rate = (uint8_t)clampi(a->rate + d, 0, RFM_MOVE_ARP_RATES - 1); break;
-        case 2: a->range = (uint8_t)clampi(a->range + d, 1, 8); break;
+        case 2: {                                       /* (0.14.0, the owner's "Arp octaves should be able to go up or
+                                                         * down") -8..-1, 1..8: no 0 */
+            const int o = a->down ? -a->range : a->range;
+            int v = o + d;
+            if (o > 0 && v <= 0)
+                v--;                                    /* (over the 0 that is not there) */
+            else if (o < 0 && v >= 0)
+                v++;
+            v = clampi(v, -8, 8);
+            a->down = (uint8_t)(v < 0), a->range = (uint8_t)(v < 0 ? -v : v);
+            break;
+        }
         case 3: break;                                  /* (0.14.0, the owner's: CHANCE gone, always 100 %: knob 4 dark
                                                          * and dead until the arp's knobs are laid out anew) */
         case 4:
@@ -4027,7 +4038,7 @@ static void arp_head(const rfm_move_t *m, int k, char *o, int cap)
     switch (k) {
     case 0: snprintf(o, (size_t)cap, "Pattern"); break;  /* (its name and picture are below) */
     case 1: arp_rate_name(rfmv_seq_arp_rate_of(a->rate), b, sizeof b), snprintf(o, (size_t)cap, "Rate %s", b); break;
-    case 2: snprintf(o, (size_t)cap, "Octaves %d", a->range); break;
+    case 2: snprintf(o, (size_t)cap, "Octaves %d", a->down ? -a->range : a->range); break;
     case 5: snprintf(o, (size_t)cap, "Gate %d%%", a->gate); break;
     case 6: snprintf(o, (size_t)cap, "Spread %+d", a->odist); break;
     case 7:
@@ -4374,7 +4385,7 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
             if (a->mode == RFM_MOVE_AM_OFF || rfmv_seq_arp_silent(m, q->sel_track))   /* (0.12.0, the owner's) off: the
                                                          * walk dimmed (a checker; 0.14.0: silent too) */
                 dither(cv, 0, 30, 64, 30);
-            snprintf(b, sizeof b, "Oct %d", a->range), v2_T(cv, 2, 22, b, 1, 1);   /* (its range: over the walk) */
+            snprintf(b, sizeof b, "Oct %d", a->down ? -a->range : a->range), v2_T(cv, 2, 22, b, 1, 1);   /* (its range: over the walk) */
             fit2(cv, 66, 23, AP_NAMES[a->pat % RFM_MOVE_AP_N], 62);
             arp_rate_name(rfmv_seq_arp_rate_of(a->rate), b, sizeof b), fit2(cv, 66, 42, b, 62);
             v2_strip(cv, 3, 1, -1, 0, 128);
@@ -4582,7 +4593,8 @@ void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap)
             switch (k) {
             case 0: snprintf(o, (size_t)cap, "Pattern: %s", AP_NAMES[a->pat % RFM_MOVE_AP_N]); break;
             case 1: arp_rate_name(rfmv_seq_arp_rate_of(a->rate), b, sizeof b), snprintf(o, (size_t)cap, "Rate: %s", b); break;
-            case 2: snprintf(o, (size_t)cap, "Range: %d %s", a->range, a->range == 1 ? "octave" : "octaves"); break;
+            case 2: snprintf(o, (size_t)cap, "Range: %d %s%s", a->range, a->range == 1 ? "octave" : "octaves",
+                             a->down ? " down" : ""); break;
             case 4: snprintf(o, (size_t)cap, "Arp: %s", AM[a->mode % RFM_MOVE_AM_N]); break;
             case 5: snprintf(o, (size_t)cap, "Gate: %d%%", a->gate); break;
             case 6: snprintf(o, (size_t)cap, "Octave step: %+d", a->odist); break;

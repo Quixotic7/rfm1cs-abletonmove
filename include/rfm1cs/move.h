@@ -559,6 +559,9 @@ typedef struct {
     uint8_t reset;                                      /* RFM_MOVE_AR_* */
     uint8_t mlen, tlen;                                 /* the lanes' lengths 1..16 */
     int8_t lane[2][RFM_MOVE_ARP_LANE];                  /* 0 MOD (RFM_MOVE_AL_*), 1 TRANSPOSE (-48..48) */
+    uint8_t down;                                       /* (0.14.0) the octaves go down (Octaves -1..-8): 1. Saved in
+                                                         * the blob's CHANCE byte (99 down, 100 up) with OCT DIST
+                                                         * stored negated, no new version */
 } rfm_move_arp_t;
 /* (0.14.0) a track's running arp (RAM): what it holds and where its walk is. Fed by the track's pads (while it is the
  * selected one) and its clip's notes; each held note's holders: pad (bit 0 of src) and the clip's (cnt, until coff) */

@@ -5566,8 +5566,69 @@ static void test_n24_arp_lens(void)
     rfmv_seq_arp_default(ap);
 }
 
+/* item 12: "Arp octaves should be able to go up or down": Octaves -8..-1, 1..8 (no 0), "Oct -2"; the walk goes down;
+ * saved in the CHANCE byte (99) with OCT DIST negated, no new version; read back */
+static void test_n24_arp_down(void)
+{
+    static uint8_t blob[RFM_MOVE_PROJECT_MAX];
+    rfm_move_arp_t *ap;
+    int tr, n, i, lo = 0, hi = 0, ver;
+    track_view();
+    tr = M.seq.sel_track, ap = &M.seq.tr[tr].arp;
+    shift_step(10), rest(), jog_click(), rest();
+    CHECK(ap->range == 2 && !ap->down);
+    knob(2, -RFM_MOVE_LIST_TICKS);
+    CHECK(ap->range == 1 && !ap->down);
+    clear(), knob(2, -RFM_MOVE_LIST_TICKS);             /* (over 0: -1) */
+    CHECKF(ap->range == 1 && ap->down, "range %d down %d", ap->range, ap->down);
+    CHECKF(strstr(said, "down") != NULL, "said %s", said);
+    knob(2, -RFM_MOVE_LIST_TICKS);
+    CHECK(ap->range == 2 && ap->down);
+    write_pbm("n24_arp_oct_down_turn");
+    rest();
+    write_pbm("n24_arp_oct_down");                      /* ("Oct -2" over the walk) */
+    knob(2, 2 * RFM_MOVE_LIST_TICKS);                   /* (-2 -> -1 -> 1) */
+    CHECK(ap->range == 1 && !ap->down);
+    knob(2, -2 * RFM_MOVE_LIST_TICKS);
+    CHECK(ap->range == 2 && ap->down);
+    for (i = 0; i < 20; i++)
+        knob(2, -RFM_MOVE_LIST_TICKS);
+    CHECK(ap->range == 8 && ap->down);
+    for (i = 0; i < 6; i++)
+        knob(2, RFM_MOVE_LIST_TICKS);
+    CHECK(ap->range == 2 && ap->down);
+    back(), rest();
+    /* the walk: a note, two octaves down: n, n - 12, n, n - 12 .. */
+    ap->rate = 9, ap->quant = 0;
+    clear(), pad(0, 100), adv_ms(125 * 4 - 40), pad(0, 0), adv_ms(200);
+    {
+        int k, first = -1;
+        for (k = 0; k < nact; k++)
+            if (A[k].kind == RFM_MOVE_ACT_MIDI && A[k].track == tr + 1 && (A[k].bytes[0] & 0xF0) == 0x90 && A[k].bytes[2]) {
+                if (first < 0)
+                    first = A[k].bytes[1];
+                lo += A[k].bytes[1] == first - 12, hi += A[k].bytes[1] > first;
+            }
+        CHECKF(lo == 2 && hi == 0, "down: %d an octave below, %d above", lo, hi);
+    }
+    /* saved: CHANCE 99, OCT DIST -12 (a 0.13.0 core walks them down by it); read back: Oct -2, spread +12 */
+    n = rfm_move_project_save(&M, blob, sizeof blob);
+    CHECK(n > 0);
+    ver = blob[4];
+    ap->down = 0, ap->odist = 3;
+    CHECK(rfm_move_project_load(&M, 0, blob, (uint32_t)n) == 0);
+    CHECKF(ap->down && ap->range == 2 && ap->odist == 12 && blob[4] == ver, "down %d range %d odist %d", ap->down, ap->range,
+           ap->odist);
+    rfmv_seq_arp_default(ap);
+    n = rfm_move_project_save(&M, blob, sizeof blob);
+    ap->down = 1;
+    rfm_move_project_load(&M, 0, blob, (uint32_t)n);
+    CHECK(!ap->down && ap->odist == 12);
+}
+
 int main(void)
 {
+    test_n24_arp_down();
     test_n24_arp_lens();
     test_n24_arp_random();
     test_n24_arp_reset();
