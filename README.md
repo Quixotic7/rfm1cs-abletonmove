@@ -614,7 +614,7 @@ over the menu (a step, Loop, Track 4's layer) keeps the jog and its click while 
 the knobs it uses are lit, in the menu colour (deep orange, 255 72 0, which no mode or bank uses; full while touched),
 the others off; the knobs' own colours come back when it ends. Each menu declares its knobs (`rfmv_menu_knobs`,
 `rfmv_seq_menu_knobs`): Track 2 knobs 1-2, Track 3 and Track 4 all 8, Track 1's Shift layer none, projects knob 1,
-Workflow 1-3, Tempo 1-2 (none while following), Groove 1-2, Layout 1, Keys & Scales 1-4, the arp all 8 (its lanes
+Workflow 1-4 (0.14.0: the feel on 3, Quantize on 4), Tempo 1-2 (none while following), Groove 1-2, Layout 1, Keys & Scales 1-4, the arp all 8 (its lanes
 1-4), Record 1-2, Velocity 1-2 (0.13.0: knob 2 the option, the jog's before), Global Settings none (0.6.2: the jog's list; 0.12.0: its knobs' old jobs from before
 0.6.2 removed: dark and dead everywhere). (0.12.0, a12) The project grid's knob 1 only while a project's pad is held
 (its touch: "Colour" and the colour's name); the TRIG page's knob 8 dark with no popup; a held step's CC knobs with no
@@ -629,7 +629,7 @@ track plays; saved with the project, version 8; a clip's own Launch wins), (0.14
 a Play that goes to the firmware (the FM-1 layout, the FM-1 page's Knobs+Keys, a takeover that claims Play) is its own
 only; Both: that Play press also starts / stops the Move's transport; Shift + Play, the firmware's shifted Play, never;
 saved with the settings, `fw_play`, in the Popup size byte's bit 1). Turn the jog: the selected row (inverted) moves; click: edit its value (the row framed, the value inverted between small arrows), the jog changes it; click again or Back: done. While it is open it owns the controls: no knob, pad, step or button reaches the FM-1, the firmware or the sequencer (the knobs do nothing; their touches show nothing); releases pass, so a pad held before it opened lets go; the Track buttons and Shift + step 2 pass |
-| 3 Workflow Settings | (0.14.0: also Shift + Track 1..3, for that firmware's track; titled "Track n") menu: knob 1 (0.13.0: the jog's selection, as every menu's) the track's MIDI channel, knob 2 its rate, knob 3 Quantize's amount (5 % a detent). (0.14.0, the owner's) the selected row (the jog's, a knob touched or turned) is drawn in its place as Global settings' row: inverted while selecting, framed with its words inverted between two arrows while editing; nothing is copied to the top. (0.14.0, the owner's 2026-11-24) no knob ticks under the title: the highlighted row is the only mark (the rows are knobs 1..3 in order); the picture menus keep theirs (R5's mark for the knob's place) |
+| 3 Workflow Settings | (0.14.0: also Shift + Track 1..3, for that firmware's track; titled "Track n") menu: knob 1 (0.13.0: the jog's selection, as every menu's) the track's MIDI channel, knob 2 its rate, (0.14.0) knob 3 its feel (Straight, Dotted, Triplet: the triplet layout below), knob 4 Quantize's amount (5 % a detent; was knob 3); three of the four rows shown, the list scrolled to show the selected one, a row too wide for 2x its value alone ("Straight"). (0.14.0, the owner's) the selected row (the jog's, a knob touched or turned) is drawn in its place as Global settings' row: inverted while selecting, framed with its words inverted between two arrows while editing; nothing is copied to the top. (0.14.0, the owner's 2026-11-24) no knob ticks under the title: the highlighted row is the only mark (the rows are knobs 1..4 in order); the picture menus keep theirs (R5's mark for the knob's place) |
 | 5 Tempo | each press is a tap (tap tempo: the average of up to 4 taps) and opens the menu: the tempo at 4x; knob 1 1 BPM (Shift, or knob 2: 0.1; 0.13.0: the jog selects one, its click edits it); following the firmware's clock: locked (a padlock, EXT; taps ignored) |
 | 6 Metronome | on / off (off at first): a click a beat, the bar's first higher (`RFM_MOVE_ACT_CLICK`, frame-stamped; the web player plays it after the volume, never into a recording); also in the count-in |
 | 7 Groove | menu: knob 1 the groove (0.13.0: the jog selects, its click edits), 5 % a detent (Shift: 1 %), 0..150 %: the off 16ths late, 100 % a triplet swing (Move's). Knob 2: GLOBAL (the project's groove, the default) or TRACK (the track's own, starting from the global one) |
@@ -650,8 +650,27 @@ parameter's name and value for as long as the menu is open: inverted while selec
 between two arrows while editing (was: the words copied to the top for a second, then the title again). A knob only
 touched still names itself there plainly (R5). The arp's menu keeps its own design.
 
-**Track rates**: 1/32T 1/32 1/16T 1/16 1/8T 1/8 1/4T 1/4 1/2T 1/2 (a step 8 .. 192 ticks at 96 PPQN); a step
-always has 24 micro ticks, scaled to the rate.
+**Track rates** (0.14.0, the owner's: "Track settings needs more rates. Look at the rates we have available in
+Elasticat. I'd add a separate parameter for doing straight, dotted, or triplet rates"): a base rate, Elasticat's
+tempo-synced list, 1/32 1/16 1/8 1/4 1/2 1 Bar 2 Bars 4 Bars (a step 12 .. 1536 ticks at 96 PPQN), and a feel:
+Straight, Dotted (x 3/2), Triplet (x 2/3), so a step is 8 (1/32T) .. 2304 (4 Bars dotted) ticks. Named "1/16", "1/8D",
+"1/16T", "1 Bar T" where one word holds both. Before 0.14.0:
+1/32T 1/32 1/16T 1/16 1/8T 1/8 1/4T 1/4 1/2T 1/2, read as their base rate and feel. A step always has 24 micro ticks,
+scaled to the rate.
+
+**The triplet layout** (0.14.0, the owner's: "add a layout for triplets which disables to 4th step in each group of 4
+steps, So each group is the 3 notes of a triplet"): a track whose feel is Triplet shows triplets on its step keys: in
+each group of four (steps 1-4, 5-8 .. of every page) the fourth is dark and dead (no note goes in, no hold, copy,
+paste or cut; never played, never the playhead), the three others the group's triplet. A page holds 12 steps and
+spans what 4 groups span: at 1/8 Triplet a bar, in phase with straight tracks bar after bar; at 1/16 Triplet half a
+bar. The clip is unchanged (16 steps a page, 256 at most): the engine counts time in live steps, so loop lengths,
+the launch quantization CLIP, LEAP, RANDOM, JUMP, REPEAT, a recording clip's pages and Capture all follow; a recorded
+note lands on the nearest live step; a held step's span (step held + another) counts live steps; Step record's
+cursor skips the fourth steps; ratchets and micro timing are those of the live step; a triplet track has no groove.
+What is on a fourth step stays: skipped while the feel is Triplet, back (lit, played) with another feel. The steps
+row and the piano roll leave the fourth steps out. A project from before 0.14.0 with a triplet rate gets its steps
+moved onto the live steps (step n onto n + n / 3, its loops and JUMP targets too), so it plays as it did; the rare
+clip longer than 192 of the old steps is cut at 256.
 
 **Projects mode** (the owner's: a mode of its own, just for picking a project; Shift + step 1, Track 4 held +
 step 1, or Track 4's double click). The pads are the 32 projects (top-left = project 1), each in its own colour (dim; the open
@@ -687,7 +706,10 @@ steps, the jog, the knobs (but one), the Shift shortcuts, the Track buttons.
   clips and its three firmwares (a dotted line: an empty slot, or a project from before 0.13.0), and an empty pad's
   new project has its three slots empty. See [Projects that hold their firmwares](#projects-that-hold-their-firmwares-states-0130).
 
-Changes are autosaved 2 s after the last edit (`RFM_MOVE_AUTOSAVE_MS`), and on every switch. Blob version 3 (current) adds
+Changes are autosaved 2 s after the last edit (`RFM_MOVE_AUTOSAVE_MS`), and on every switch. (0.14.0) Blob version 10:
+no new bytes, a track's rate byte holds its base rate (bits 0..3) and feel (bits 4..5); versions 1..9 load (their ten
+rates as the same timing, a triplet track's steps moved into the triplet layout). A core before 0.14.0 refuses a
+version 10 blob ("Load failed"; the project it has stays). Blob version 3 adds
 to version 2 the project's groove, key and scale, each track's GLOBAL / TRACK choices, own key and scale and solo,
 and the arp's QUANT, RESET and lanes. Version 2 (loop starts, made clips, rates, grooves, arps, layouts, CC numbers,
 the record settings) and version 1 blobs still load (a version 2 groove becomes the track's own). The project's
@@ -1213,7 +1235,7 @@ midi.knob), so the FM-1's screen stays in view.
 
 **The Shift menus** (V2Menus, V2Arp, V2Global): (0.12.0, a5) every one the arp's header: the top line its title or
 main value at rest, the touched knob's name and value while touched or just turned; a tick at y 17 a knob in use, the
-active one long; the content from y 20. Workflow: "Workflow", then "Ch 3", "Rate 1/16", "Quant 50%". Tempo: the tap icon
+active one long; the content from y 20. Workflow: "Track 1", then "Ch 3", "Rate 1/16", (0.14.0) "Triplet" (the feel), "Quant 50%" (three shown). Tempo: the tap icon
 (following: a padlock), "Tempo", the BPM at 4x, the taps on the strip. Groove: two 16ths (the second late by the
 amount, the straight place dashed), "Groove" on top and the amount at 3x, Global / Track as icons (the chosen one
 underlined). Layout: Move's four layout icons on top, the chosen one underlined and named. Keys & Scales (0.12.0):

@@ -3432,6 +3432,20 @@ static void test_triplet_layout(void)
     press(m, MR_CC_REC);
     rfm_move_seq_play(m, 0);
     CHECK(stuck() == 0);
+    /* recording into an empty clip (Capture mode, playing): it grows a page (a bar at 1/8T: 12 live steps) at a time;
+     * Record at the start of bar 3: two pages, the notes of bar 2 on page 2's live steps */
+    fresh(m);
+    m->seq.tr[0].rate = 2, m->seq.tr[0].feel = RFM_MOVE_FEEL_TRIPLET;
+    press(m, MR_CC_PLAY), adv(m, 128);
+    press(m, MR_CC_REC);
+    CHECK(m->seq.srec == 2);
+    adv(m, 480 * FPT - 128);                            /* (bar 2, live step 4 (step 5): tick 480) */
+    pad(m, 0, 100), pad(m, 0, 0);
+    adv(m, 384 * FPT - 96 * FPT + 2 * FPT);             /* (bar 3, just past its line) */
+    CHECK(m->seq.len[0] == 48);                         /* (a third page while it records) */
+    press(m, MR_CC_REC);
+    CHECKF(m->seq.len[0] == 32 && rfmv_seq_find(m, 0, 20, 48) >= 0 && nnotes_clip(m, 0) == 1, "len %d", m->seq.len[0]);
+    rfm_move_seq_play(m, 0);
     /* Capture onto a triplet track: the phrase's times onto live steps */
     fresh(m);
     m->seq.tr[0].rate = 2, m->seq.tr[0].feel = RFM_MOVE_FEEL_TRIPLET;

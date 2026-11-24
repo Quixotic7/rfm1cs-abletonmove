@@ -338,6 +338,50 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   "State 5 / stored", "State 6 / empty"), a click (released within `RFM_MOVE_TAP_MS`, nothing else meanwhile) saves,
   loads or saves there at the release, a hold is info only; Copy / Delete held first + a pad still act at the press.
   `test_o14_states_reset` (pictures `sessview_o14_states_reset_*`), `test_o14_states_project`.
+The owner's notes of 2026-11-24: more track rates, and a triplet layout. The project blob is version 10 (no new bytes;
+versions 1..9 load). `rfm_move_track_t` has a new field `feel` (after `rate`) and `sub` / `tps` are 16 bit now:
+rebuild everything. Tests: `test_move_seq.c` `test_rates_feel`, `test_triplet_layout` (exact ticks);
+`move_sessview.c` `test_o14_rates_menu`, `test_o14_triplet_steps` (pictures `sessview_o14_rates_menu_*`,
+`sessview_o14_triplet_*`).
+
+*The design, in short.* The triplet layout is automatic with the Triplet feel. The clip is not reshaped: it keeps
+its 256 steps, 16 a page, and a Triplet track's step n with n % 4 == 3 (the fourth of every group of four keys) is
+dead: it takes no time and is never played or entered. The engine counts time in live steps (`rfmv_seq_live_below`,
+`rfmv_seq_live_key`: step i of the 12 live steps of a page is key i + i / 3), so a page of 16 keys holds 12 steps and
+spans 4 groups; nothing else in the clip (notes, locks, loops, pages, copy / paste, undo) knows about it. Switching
+the feel moves nothing: a note on a fourth step is skipped while Triplet and plays again with another feel. The one
+place notes move: a project from before 0.14.0 whose track had a triplet rate, so it keeps its timing (below).
+
+- (the owner's, "Track settings needs more rates. Look at the rates we have available in Elasticat. I'd add a
+  separate parameter for doing straight, dotted, or triplet rates") **a base rate and a feel**: the rates are
+  Elasticat's tempo-synced list (its delay times and MOTION rates, 1/32 .. 4BAR): 1/32 1/16 1/8 1/4 1/2 1 Bar 2 Bars
+  4 Bars (`RFM_MOVE_SEQ_RATES` 8, the default 1/16 is 1 now); the feel (`RFM_MOVE_FEEL_*`) Straight, Dotted (x 3/2),
+  Triplet (x 2/3), any rate with any feel: a step 8 .. 2304 ticks. Was ten rates, 1/32T .. 1/2. Elasticat's pattern
+  RATE (a speed ratio, 1/16 .. 4) is not a step length and not taken; it has no 1/64, nor does this. The track
+  settings (Shift + step 3, Shift + Track 1..3): knob 3 the feel (a list), Quantize moved to knob 4; the header on
+  touch "Feel Triplet", said "Feel: Triplet"; four rows, three shown, the list scrolled to show the selected one;
+  a row too wide for 2x shows its value alone (the feel's: "Straight", "Dotted", "Triplet"; "100%" while Quant is
+  edited). A rate's word with its feel: "1/16T", "1/8D", "1 Bar T" (the `MENU_RATE` popup and its speech). A
+  feel changed while playing applies from the next step.
+- (the owner's, "Also add a layout for triplets which disables to 4th step in each group of 4 steps, So each group is
+  the 3 notes of a triplet") **the triplet layout**, automatic with the Triplet feel (a separate switch was not needed:
+  every triplet rate wants it, and an old triplet track is moved into it): the fourth step key of each group dark and
+  dead (no note, hold, copy, paste, cut; a tap does nothing; never the playhead), the three others the group's
+  triplet. At 1/8 Triplet a page is a bar and stays in phase with straight tracks bar after bar; at 1/16 Triplet half
+  a bar. Loop lengths, the launch quantization CLIP, LEAP / RANDOM / JUMP / RESTART / REPEAT, a recording clip's pages
+  and Capture count live steps; a recorded note lands on the nearest live step (early or late, its micro in 24ths of
+  that step); a held step + another: the length counts live steps; Step record's cursor skips the fourth steps;
+  ratchets and micro timing as on any step, at the triplet's length; no groove on a triplet track (it has no off
+  16ths). The steps row and the piano roll leave the fourth steps out (a note's bar spans those it covers). A
+  degenerate loop with no live step (one fourth step) plays silent at the rate.
+- **The blob, version 10**: the 16 track rate bytes hold the base rate (bits 0..3) and the feel (bits 4..5); no new
+  bytes. Versions 2..9: the ten old rates read as their base rate and feel (1/16T = 1/16 Triplet ..), and an old
+  triplet track's clips are moved into the layout (`old_tri_remap`): step n onto n + n / 3, loop starts and ends,
+  JUMP targets (the TRIG lock and the TRIG default) with them, so every note plays at its old tick; a clip of more than
+  192 old triplet steps (12 pages) cannot fit in 256 keys and is cut there (the only loss). **Core 0.13.0 with a
+  project saved by this core**: it refuses the blob (`parse`: version 10 > 9): a load shows "Load failed" and its
+  own project stays, the grid's info of that slot is not read, and a project file holding one is refused as damaged
+  (`rfm1cs_file_unpack`). The stored blob is not changed; it loads again in 0.14.0.
 
 ## 0.13.0 (2026-11-23)
 
