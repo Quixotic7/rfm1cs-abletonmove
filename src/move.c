@@ -1703,7 +1703,8 @@ static void on_jog_click(rfm_move_t *m, int down)
         return;                                         /* (0.13.0, the owner's) a Shift menu: the jog's click edits the
                                                          * selected parameter, again: selects (where its turn goes) */
     if (down && m->seq.smenu == RFM_MOVE_SM_ARP && !rfmv_lay_menu(m) && !rfmv_t4_menu(m)) {
-        rfmv_seq_arp_toggle(m);                         /* (0.11.0, the owner's) the arp menu: the jog's click: on / off */
+        rfmv_seq_arp_click(m);                          /* (0.11.0, the owner's) the arp menu: the jog's click: on / off
+                                                         * (0.14.0: Delete held: reset; a lane: random) */
         return;
     }
     if (down && rfmv_fwp_live(m) && !rfmv_lay_menu(m) && !rfmv_t4_menu(m) && !m->seq.smenu) {

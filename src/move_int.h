@@ -94,7 +94,8 @@ void rfmv_fm1_art(const rfm_move_t *m, mr_canvas_t *cv);   /* FM-1 mode's left h
 /* ---- seq.c: the data model (sorted arrays), the journal, the clock, the engine */
 #define SEQ_CLIP(track, scene) ((track) * RFM_MOVE_SEQ_SCENES + (scene))
 enum { SEQ_NONE = -2, SEQ_STOP = -1 };
-enum { OP_NOTE_ADD = 1, OP_NOTE_DEL, OP_LOCK, OP_LEN, OP_LSTART, OP_CSET, OP_MADE };   /* (0.12.0: a clip's launch settings) */
+enum { OP_NOTE_ADD = 1, OP_NOTE_DEL, OP_LOCK, OP_LEN, OP_LSTART, OP_CSET, OP_MADE, OP_ARP };   /* (0.14.0 OP_ARP: a byte
+                                                         * of a track's arp: n.clip the track, n.step the byte) */   /* (0.12.0: a clip's launch settings) */
 #define SEQ_NOLOCK 0xFF
 
 void rfmv_seq_init(rfm_move_t *m);                     /* an empty project, the clock reset */
@@ -185,7 +186,9 @@ int rfmv_seq_arp_rate_of(int i);                       /* the arp's RATE: notes 
 int rfmv_seq_arp_on(rfm_move_t *m, int note, int vel); /* the selected track's arp takes a pad note: 1 */
 void rfmv_seq_arp_off(rfm_move_t *m, int track, int note);   /* (0.14.0: the track the pad played) */
 void rfmv_seq_arp_stop(rfm_move_t *m);                  /* (0.14.0) the pads' notes out of every arp; the clips' stay */
-void rfmv_seq_arp_stop_t(rfm_move_t *m, int tr);       /* (0.14.0) track tr's arp emptied (-1: every track's) */                  /* (advance) a step held long enough: its popup */
+void rfmv_seq_arp_stop_t(rfm_move_t *m, int tr);
+void rfmv_seq_arp_put(rfm_move_t *m, int tr, const rfm_move_arp_t *a);   /* (0.14.0) track tr's arp set to a, undoable
+                                                         * (the current undo group) */       /* (0.14.0) track tr's arp emptied (-1: every track's) */                  /* (advance) a step held long enough: its popup */
 void rfmv_seq_dirty(rfm_move_t *m);
 
 /* ---- project.c */
@@ -351,7 +354,8 @@ void rfmv_seq_route_pad(rfm_move_t *m, int fw, int p);  /* (0.11.0) session, a T
 void rfmv_seq_route_leds(const rfm_move_t *m, int fw, rfmv_rgb_t c[L_WHITE0]);   /* .. its pads, steps and knobs */
 int rfmv_sess_on(const rfm_move_t *m);                  /* (0.11.0) session view is what the pads show */
 void rfmv_sv_toggle(rfm_move_t *m);                     /* (0.12.0) session view in / out, from any layout */
-void rfmv_seq_arp_toggle(rfm_move_t *m);                /* (0.11.0) the arp menu's jog click: on / off */
+void rfmv_seq_arp_toggle(rfm_move_t *m);
+void rfmv_seq_arp_click(rfm_move_t *m);                 /* (0.14.0) the arp menu's jog click: Delete held reset, else toggle / random */                /* (0.11.0) the arp menu's jog click: on / off */
 const char *rfmv_seq_arp_mode_name(int mode);           /* (0.12.0) "Off", "On", "First" .. */
 int rfmv_seq_arp_silent(const rfm_move_t *m, int tr);   /* (0.14.0) on, but it can never sound (CHANCE 0, MOD all rests) */
 void rfmv_seq_al_take(rfm_move_t *m);                   /* (0.12.0) a held arp lane step takes the pads */

@@ -2303,6 +2303,39 @@ int rfmv_seq_menu_knobs(const rfm_move_t *m)
     }
 }
 
+/* (0.14.0, the owner's 2026-11-24: "Need a page/quick way to reset the arp to defaults") Delete held + the arp menu's
+ * jog click: on the main page the track's whole arp to its defaults (its lanes too; on / off as it was), on a lane page
+ * that lane (its steps and length); one undo step; "Arp" / "Reset" (a lane: "Mod" / "Transpose" over "Reset") */
+static void arp_reset(rfm_move_t *m)
+{
+    rfm_move_seq_t *q = Q(m);
+    const rfm_move_arp_t *a = &q->tr[q->sel_track].arp;
+    rfm_move_arp_t d = *a;
+    if (!q->arp_page) {
+        rfmv_seq_arp_default(&d);
+        d.mode = a->mode;
+    } else {
+        const int L = q->arp_page - 1;
+        memset(d.lane[L], 0, sizeof d.lane[L]);
+        if (L)
+            d.tlen = 16;
+        else
+            d.mlen = 16;
+    }
+    q->mods_used |= SEQ_M_DELETE;
+    rfmv_seq_group(m);
+    rfmv_seq_arp_put(m, q->sel_track, &d);
+    rfmv_seq_group(m);
+    rfm_move_popup(m, !q->arp_page ? "Arp Reset" : q->arp_page == 1 ? "Mod Reset" : "Transpose Reset");
+    rfmv_seq_dirty(m);
+}
+void rfmv_seq_arp_click(rfm_move_t *m)
+{
+    if (m->seq.mods & SEQ_M_DELETE)
+        arp_reset(m);
+    else
+        rfmv_seq_arp_toggle(m);
+}
 /* (0.11.0, the owner's: a quick way to turn the arp on and off) the arp menu's jog click: off, or on again as it was
  * (On at first); its header says which at once */
 void rfmv_seq_arp_toggle(rfm_move_t *m)
@@ -3310,7 +3343,8 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
         w[W_LOOP] = (q->mods & SEQ_M_LOOP) ? 127 : 40;
     w[W_COPY] = (q->mods & SEQ_M_COPY) ? 127 : q->paste ? (bl ? 127 : 30) : q->clip_kind && q->cut ? 70 : 30;
     w[W_MUTE] = (q->mods & SEQ_M_MUTE) ? 127 : q->tr[q->sel_track].mute ? 100 : 30;
-    w[W_DELETE] = (q->mods & SEQ_M_DELETE) ? 127 : 30;
+    w[W_DELETE] = (q->mods & SEQ_M_DELETE) ? 127 : q->smenu == RFM_MOVE_SM_ARP ? 90 : 30;   /* (0.14.0: the arp menu:
+                                                         * Delete + the jog's click resets: lit) */
 }
 
 /* ================================================================ the screen === */

@@ -210,6 +210,15 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   while the transport runs) and keeps its place in the pattern and lanes. `test_n24_arp_rate` (held note, 1/16 ->
   1/8 -> 1/32, stopped and running: the counts a second at each rate, no burst; it failed before the fix: 1 and 0
   notes a second), picture `sessview_n24_arp_rate`.
+- (item 9, "Need a page/quick way to reset the arp to defaults") in the arp menu **Delete held + the jog's click**
+  (`rfmv_seq_arp_click`, `arp_reset`): on the main page the track's whole arp back to its defaults
+  (`rfmv_seq_arp_default`: pattern, rate, octaves, gate, spread, sync, reset, both lanes and their lengths), its on /
+  off kept (a reset never silences or starts it); "Arp Reset" the whole screen a second (`rfm_move_popup`, said); on
+  a lane page that lane only, its 16 steps and its length 16 ("Mod Reset", "Transpose Reset"). **One undo step**: the
+  sequencer's journal carries it with a new entry kind, `OP_ARP` (a byte of a track's arp: old / new;
+  `rfmv_seq_arp_put`), so Undo brings the whole arp back, Redo resets it again (the journal is RAM, the project blob
+  unchanged). Delete's light is 90 while the arp menu is open (the gesture is there; 127 held, 30 elsewhere as
+  before). `test_n24_arp_reset`, pictures `sessview_n24_arp_reset`, `_mod`.
 
 ## 0.13.0 (2026-11-23)
 

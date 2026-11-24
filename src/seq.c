@@ -397,6 +397,10 @@ static void op_apply(rfm_move_t *m, const rfm_move_op_t *o, int forward)
     case OP_LEN: q->len[o->n.clip] = forward ? o->nu : o->old; break;
     case OP_LSTART: q->lstart[o->n.clip] = (uint8_t)(forward ? o->nu : o->old); break;
     case OP_CSET: q->cset[o->n.clip] = (uint8_t)(forward ? o->nu : o->old); break;
+    case OP_ARP:                                        /* (0.14.0: the arp menu's reset and random lanes) */
+        if (o->n.step < sizeof(rfm_move_arp_t))
+            ((uint8_t *)&q->tr[o->n.clip % RFM_MOVE_SEQ_TRACKS].arp)[o->n.step] = (uint8_t)(forward ? o->nu : o->old);
+        break;
     case OP_MADE: {
         const uint8_t b = (uint8_t)(1u << (o->n.clip & 7));
         q->made[o->n.clip >> 3] = (uint8_t)((forward ? o->nu : o->old) ? q->made[o->n.clip >> 3] | b : q->made[o->n.clip >> 3] & ~b);
@@ -404,6 +408,22 @@ static void op_apply(rfm_move_t *m, const rfm_move_op_t *o, int forward)
     }
     default: break;
     }
+}
+/* (0.14.0) track tr's arp set to a, byte by byte into the undo journal (each changed byte an OP_ARP) */
+void rfmv_seq_arp_put(rfm_move_t *m, int tr, const rfm_move_arp_t *a)
+{
+    uint8_t *o = (uint8_t *)&m->seq.tr[tr % RFM_MOVE_SEQ_TRACKS].arp;
+    const uint8_t *s = (const uint8_t *)a;
+    rfm_move_note_t n;
+    size_t i;
+    memset(&n, 0, sizeof n);
+    n.clip = (uint8_t)(tr % RFM_MOVE_SEQ_TRACKS);
+    for (i = 0; i < sizeof *a; i++)
+        if (o[i] != s[i]) {
+            n.step = (uint8_t)i;
+            jot(m, OP_ARP, &n, o[i], s[i]);
+            o[i] = s[i];
+        }
 }
 int rfmv_seq_undo(rfm_move_t *m)
 {

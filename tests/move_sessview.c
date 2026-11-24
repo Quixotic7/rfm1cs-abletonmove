@@ -5408,8 +5408,67 @@ static void test_n24_arp_rate(void)
     ap->mode = RFM_MOVE_AM_OFF, ap->rate = 6, ap->range = 2, ap->quant = 10;
 }
 
+/* item 9: "Need a page/quick way to reset the arp to defaults": Delete held + the jog's click in the arp menu: the main
+ * page the whole arp (lanes too, on / off kept), a lane page that lane; one undo step; Delete lit in the menu */
+static void test_n24_arp_reset(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    rfm_move_arp_t *ap, keep, def;
+    int tr, i;
+    track_view();
+    tr = M.seq.sel_track, ap = &M.seq.tr[tr].arp;
+    rfmv_seq_arp_default(&def);
+    shift_step(10), rest();
+    CHECK(M.seq.smenu == RFM_MOVE_SM_ARP);
+    jog_click(), rest();                                /* (on) */
+    leds(w);
+    CHECK(w[L_WHITE0 + W_DELETE][0] == 90);
+    ap->pat = 5, ap->rate = 11, ap->range = 4, ap->gate = 150, ap->odist = -7, ap->quant = 0, ap->reset = 2;
+    ap->mlen = 5, ap->tlen = 9;
+    for (i = 0; i < 16; i++)
+        ap->lane[0][i] = (int8_t)(i % 4), ap->lane[1][i] = (int8_t)(i - 8);
+    keep = *ap;
+    /* a lane page (MOD): that lane only */
+    jog(1), rest();
+    CHECK(M.seq.arp_page == 1);
+    clear(), button(MR_CC_DELETE, 1);
+    leds(w);
+    CHECK(w[L_WHITE0 + W_DELETE][0] == 127);
+    jog_click();
+    CHECK(ap->mlen == 16 && ap->lane[0][3] == 0 && ap->tlen == 9 && ap->lane[1][0] == -8 && ap->pat == 5);
+    CHECK(M.pop == POP_HOST && !strcmp(M.pop_text, "Mod Reset") && strstr(said, "Mod Reset"));
+    write_pbm("n24_arp_reset_mod");
+    button(MR_CC_DELETE, 0), rest();
+    CHECK(M.seq.smenu == RFM_MOVE_SM_ARP && ap->mode == RFM_MOVE_AM_ON);   /* (Delete's release: nothing else) */
+    press(MR_CC_UNDO), rest();
+    CHECK(!memcmp(ap, &keep, sizeof keep));
+    /* TRANSPOSE */
+    jog(1), rest();
+    button(MR_CC_DELETE, 1), jog_click(), button(MR_CC_DELETE, 0), rest();
+    CHECK(ap->tlen == 16 && ap->lane[1][0] == 0 && ap->mlen == 5 && ap->lane[0][3] == 3);
+    press(MR_CC_UNDO), rest();
+    CHECK(!memcmp(ap, &keep, sizeof keep));
+    /* the main page: all of it, the mode kept (on) */
+    jog(-2), rest();
+    clear(), button(MR_CC_DELETE, 1), jog_click();
+    def.mode = RFM_MOVE_AM_ON;
+    CHECK(!memcmp(ap, &def, sizeof def) && !strcmp(M.pop_text, "Arp Reset"));
+    write_pbm("n24_arp_reset");
+    button(MR_CC_DELETE, 0), rest();
+    press(MR_CC_UNDO), rest();                          /* (one undo step: all of it back) */
+    CHECK(!memcmp(ap, &keep, sizeof keep));
+    /* the click alone still turns it off and on */
+    jog_click(), rest();
+    CHECK(ap->mode == RFM_MOVE_AM_OFF);
+    back(), rest();
+    leds(w);
+    CHECK(w[L_WHITE0 + W_DELETE][0] == 30);
+    rfmv_seq_arp_default(ap);
+}
+
 int main(void)
 {
+    test_n24_arp_reset();
     test_n24_arp_rate();
     test_n24_arp_clip();
     test_n24_shift_knob();
