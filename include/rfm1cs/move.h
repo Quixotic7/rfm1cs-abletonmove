@@ -194,7 +194,7 @@ enum {
  * 2..32 a library shared by all projects, and no state is ever active. With RFM_MOVE_CAP_PROJFW every STATE_* index k
  * means: 0 the open project's own sound (the project's copy of the firmware, which the firmware holds while the project
  * is open), 1..31 the library's state file k. The host never autosaves into a state file (only into the project's copy
- * and flash.bin, as before), and keeps one undo per slot (the memory before the last NEW, LOAD or PASTE onto 0).
+ * and flash.bin, as before), and keeps one undo per slot (the memory before the last NEW 255, LOAD or PASTE onto 0).
  *  - pad 1 clicked: PROJECT_SAVE, index the open project, value 1 (as the open project's click in Projects).
  *  - STATE_SAVE (k 1..31 only): the memory now (synced) stored as state k. It is not made active.
  *  - STATE_LOAD (k 1..31 only): state k INTO the project: the memory now kept as the undo (and written into the
@@ -204,7 +204,9 @@ enum {
  *  - STATE_COPY: k 0: the memory now (synced) into the state buffer; k 1..31: that state, as before.
  *  - STATE_PASTE: k 1..31, value 0: the buffer stored as state k (replacing one there); k 0, value 1: the buffer
  *    loaded into the firmware as the project's sound, the memory before it kept as the undo.
- *  - STATE_NEW: as above; it is the project's sound now (no state active, none touched).
+ *  - STATE_NEW: index 255 (pad 1 reset, step 14): as above; it is the project's sound now (no state active, none
+ *    touched). Index 1..31 (a library pad held + Delete: reset): the firmware as first installed (a fresh memory, no
+ *    working memory) stored as state k, as the page's "Reset to default"; the firmware is not touched, no undo kept.
  *  - STATE_UNDO: value -1, index 255 always: the undo back into the firmware (nothing kept: nothing).
  * The host reports rfm_move_fw_states as before (bit k: library state k; bit 0 is ignored); rfm_move_fw_state_cur is
  * ignored. A state file at index 0 (made before 0.14.0): the host moves it once to the first free index 1..31. */

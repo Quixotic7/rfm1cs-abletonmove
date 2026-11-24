@@ -328,6 +328,16 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   "States: the host's contract" and move.h's `RFM_MOVE_ACT_STATE_*` comments. `test_o14_states_project`,
   `test_o14_states_old_host`, `test_o14_state_pad`, `test_ps_gestures`, `test_ps_new_undo` (pictures
   `sessview_o14_states*`).
+- (the owner's, after reading that: "You should be able to reset a state by holding the state and pressing delete")
+  **a state pad held + Delete resets it** to the firmware as first installed: a library pad, stored or empty, gets a
+  fresh state (`STATE_NEW` with its index 1..31, the page's "Reset to default"; the sound you are in untouched), pad 1
+  as step 14's New (`STATE_NEW` index 255, Undo after it). Delete held first + pad 1 now does the same (the "kept"
+  refusal is gone); Delete held first + a library pad stays the cut. Delete lit full while a pad is held, the pad red
+  for `RFMV_PJ_DEL_MS`, "State 5 / reset", "Project 3 / reset". For the hold, **a state pad no longer acts at its
+  press** (gated as the Projects page's in 0.14.0, `fw.sl_tap`): the press shows its info ("Project 3 / ChoralRoot",
+  "State 5 / stored", "State 6 / empty"), a click (released within `RFM_MOVE_TAP_MS`, nothing else meanwhile) saves,
+  loads or saves there at the release, a hold is info only; Copy / Delete held first + a pad still act at the press.
+  `test_o14_states_reset` (pictures `sessview_o14_states_reset_*`), `test_o14_states_project`.
 
 ## 0.13.0 (2026-11-23)
 
