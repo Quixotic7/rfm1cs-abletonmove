@@ -4920,8 +4920,79 @@ static void test_o14_clear_clip(void)
     jog_click(), rest(), jog(-1), rest();
 }
 
+/* ================================================================ the owner's notes of 2026-11-24 === */
+/* the Track buttons over 1.2 s: each one's dimmest and brightest */
+static void n24_tracks(int lo[4], int hi[4])
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int k, t;
+    for (t = 0; t < 4; t++)
+        lo[t] = 9999, hi[t] = 0;
+    for (k = 0; k < 24; k++) {
+        adv_ms(50), leds(w);
+        for (t = 0; t < 4; t++) {
+            const int b = bright(w[L_TRACK0 + t]);
+            lo[t] = b < lo[t] ? b : lo[t], hi[t] = b > hi[t] ? b : hi[t];
+        }
+    }
+}
+/* item 1: "Track Button LEDs should stay lit to show which Firmware/Mode I'm on": the played firmware's Track lit at
+ * rest in every mode (steady in the FM-1 layout and a takeover, breathing in the sequencer), never dark and always
+ * brighter than the others loaded; an empty slot dark */
+static void test_n24_track_leds(void)
+{
+    int lo[4], hi[4];
+    /* the note layout (track view): Track 2 breathing, Track 1 a quarter, Track 3 (empty) dark, Track 4 dim */
+    track_view();
+    n24_tracks(lo, hi);
+    CHECKF(lo[1] > 2 * hi[0] && hi[1] > lo[1] && !hi[2] && hi[3] < lo[1], "note layout: %d..%d / %d / %d / %d", lo[1],
+           hi[1], hi[0], hi[2], hi[3]);
+    write_pbm("n24_tracks_note");
+    /* the FM-1 knob page, Knobs and Knobs+Keys: the same */
+    jog(1), rest();
+    n24_tracks(lo, hi);
+    CHECK(lo[1] > 2 * hi[0] && hi[1] > lo[1] && !hi[2]);
+    jog_click(), rest();
+    CHECK(rfm_move_fwp_level(&M) == 2);
+    n24_tracks(lo, hi);
+    CHECK(lo[1] > 2 * hi[0] && hi[1] > lo[1] && !hi[2]);
+    write_pbm("n24_tracks_knobskeys");
+    jog_click(), rest(), jog(-1), rest();
+    /* session view: the same */
+    press(MR_CC_MENU), rest();
+    CHECK(M.seq.view);
+    n24_tracks(lo, hi);
+    CHECK(lo[1] > 2 * hi[0] && hi[1] > lo[1] && !hi[2] && hi[3] < lo[1]);
+    write_pbm("n24_tracks_session");
+    press(MR_CC_MENU), rest();
+    /* the FM-1 layout (Track 1's): Track 1 steady full, Track 2 a quarter */
+    hold_track(0), hit(24), track(0, 0), rest(), tap_track(0), rest();
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && M.fw.active == 0);
+    n24_tracks(lo, hi);
+    CHECKF(lo[0] == hi[0] && lo[0] > 2 * hi[1] && !hi[2] && hi[3] < lo[0], "FM-1 layout: %d..%d / %d", lo[0], hi[0], hi[1]);
+    write_pbm("n24_tracks_fm1");
+    /* a takeover (ChoralRoot's, not claiming the Tracks): steady, as the FM-1 layout */
+    rfm_move_set_takeover(&M, 0, 0x5F, "ChoralRoot");
+    hold_track(0), hit(25), track(0, 0), rest();
+    CHECKF(m_tk_shown() == 0, "takeover %d mode %d", m_tk_shown(), M.s.mode);
+    n24_tracks(lo, hi);
+    CHECK(lo[0] == hi[0] && lo[0] > 2 * hi[1] && !hi[2]);
+    write_pbm("n24_tracks_takeover");
+    /* the Mixer (Track 4's page): Track 4 full, the played Track still lit (60 %, steady) */
+    tap_track(1), rest(), press(MR_CC_MENU), rest(), tap_track(3), rest();
+    CHECK(M.seq.projects);
+    n24_tracks(lo, hi);
+    CHECKF(lo[1] == hi[1] && lo[1] > 2 * hi[0] && lo[3] > hi[1] && !hi[2], "Mixer: %d..%d, Track 4 %d", lo[1], hi[1], lo[3]);
+    write_pbm("n24_tracks_mixer");
+    /* the empty slot played: faint white, never dark */
+    tap_track(2), rest();
+    n24_tracks(lo, hi);
+    CHECK(lo[2] > 0);
+}
+
 int main(void)
 {
+    test_n24_track_leds();
     test_o14_clear_clip();
     test_o14_projects();
     test_o14_shift_knob();

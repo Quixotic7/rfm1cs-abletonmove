@@ -124,6 +124,19 @@ and their times.
   PLAY only, as before. `test_o14_clear_clip` (levels 1 and 2: nothing reaches the firmware, the clip one bar, Undo
   brings both back), `test_move_seq`'s clear-clip check.
 
+The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures `sessview_n24_*`; engine checks in
+`tests/test_move_seq.c`).
+
+- (item 1, "Track Button LEDs should stay lit to show which Firmware/Mode I'm on") the played firmware's Track is lit
+  at rest in every mode and view (`rfmv_track_leds`): **steady full** in the FM-1 layout and a firmware's takeover,
+  **breathing** in the sequencer (a note layout's track view, its Knobs and Knobs+Keys pages, session view, the browser
+  over it): full `RFMV_ACTIVE_ON_MS` (700), 60 % `RFMV_ACTIVE_OFF_MS` (300), the beat of the active state's pad (two
+  LED writes a second). The other loaded slots a quarter in their colour (silent ones still blinking slowly), an empty
+  slot dark (the played one, empty, faint white), Track 4 a quarter except on its own pages (Mixer, Routing, the
+  project grid: full, the played Track 60 % steady there) or held. Was: in the sequencer every firmware Track a
+  quarter, the played one not told apart, and Track 4 full; an empty slot faint white. A takeover that claims the
+  Track buttons still lights them itself. `test_n24_track_leds`, pictures `sessview_n24_tracks_*`.
+
 ## 0.13.0 (2026-11-23)
 
 The first tag since 0.9.1: it carries 0.9.2, 0.10.0, 0.11.0 and 0.12.0 below, which were never tagged by themselves.

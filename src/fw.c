@@ -2140,28 +2140,37 @@ void rfmv_track_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
 {
     const rfm_move_fw_state_t *f = &m->fw;
     const int snd = rfm_move_fw_sounding(m), slow = rfmv_now_ms(m) % 1000u < 500u, ns = rfmv_fw_nslots(m);
-    const int side = m->s.mode == RFM_MOVE_MODE_SEQ || (m->seq.projects && (f->fx || f->track == 3));
+    const int t4pg = m->seq.projects && (f->fx || f->track == 3);
+    /* (0.14.0, the owner's "Track Button LEDs should stay lit to show which Firmware/Mode I'm on") the played firmware's
+     * Track is lit at rest in every mode and view: steady full in the FM-1 layout (and a takeover), breathing in the
+     * sequencer (a note layout, its Knobs / Knobs+Keys page, session view; RFMV_ACTIVE_ON_MS full, then
+     * RFMV_ACTIVE_OFF_MS at 60 %, the beat of the active state's pad); the others loaded a quarter; an empty slot dark
+     * (the played one, empty, faint white); Track 4 full only while its own pages are shown (the played Track 60 % there,
+     * steady) or it is held. Was: in the
+     * sequencer (and on Track 4's pages) every firmware Track a quarter and Track 4 full */
+    const int breath = m->s.mode == RFM_MOVE_MODE_SEQ &&
+                       rfmv_now_ms(m) % (RFMV_ACTIVE_ON_MS + RFMV_ACTIVE_OFF_MS) >= RFMV_ACTIVE_ON_MS;
     int t, held = -1;
     for (t = 0; t < ns; t++)
         if (rfmv_track_held(m, t))
             held = t;
     for (t = 0; t < 3; t++) {
-        const int on = held >= 0 ? t == held : (!side || rfmv_sess_on(m)) && f->active == t;   /* (0.11.0: session
-                                                         * view: the firmware whose tracks its knobs light) */
+        const int top = held >= 0 ? 256 : t4pg ? A(0.6) : 256;   /* (Track 4's pages: Track 4 the brightest) */
+        const int on = held >= 0 ? t == held : f->active == t, full = !on ? 0 : held >= 0 || t4pg || !breath ? top : top * 6 / 10;
         rgb_t v;
         if (t >= ns)
             v = OFF;                                    /* (0.5.10: one slot) */
         else if (!f->host)
-            v = lit(rfmv_mode_rgb[0], on ? 256 : A(0.25));   /* (no list: the one firmware) */
+            v = lit(rfmv_mode_rgb[0], on ? full : A(0.25));   /* (no list: the one firmware) */
         else if (slot_loaded(m, t)) {
-            v = lit(RFMV_SLOT_RGB[t], on ? 256 : A(0.25));   /* (0.12.0, q1: the slot's own colour) */
+            v = lit(RFMV_SLOT_RGB[t], on ? full : A(0.25));   /* (0.12.0, q1: the slot's own colour) */
             if (!(snd >> t & 1) && !slow)               /* (loaded past the host's voices: silent, blinking slowly) */
                 v = lit(v, 40);
         } else
-            v = lit(WHITE, on ? A(0.6) : A(0.1));
+            v = on ? lit(WHITE, full * 6 / 10) : OFF;
         c[L_TRACK0 + t] = v;
     }
-    c[L_TRACK0 + 3] = lit(TRACK4, (side && held < 0) || rfmv_track_held(m, 3) ? 256 : A(0.25));
+    c[L_TRACK0 + 3] = lit(TRACK4, (t4pg && held < 0) || rfmv_track_held(m, 3) ? 256 : A(0.25));
     rfmv_pfw_track_leds(m, c);                          /* (0.13.0) a project's firmwares loading: lit when ready */
 }
 

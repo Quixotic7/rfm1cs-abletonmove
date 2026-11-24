@@ -767,8 +767,11 @@ the host guide's v0.4.0 section and `include/rfm1cs/move.h`.
 
 (0.8.0) A firmware Track's double click opens the view on that slot; Track 4's tap the Mixer or Routing, its double
 click (and Shift + step 1) the projects. In the view a Track tap leaves it (Track 1..3: that slot played; Track 4: the
-Mixer / Routing flip). Track LEDs: the loaded firmware's colour (full shown, dim otherwise),
-an empty slot faint white, a slot past the host's voices blinking slowly; in FX setup the pages' colours.
+Mixer / Routing flip). Track LEDs: the loaded firmware's colour, the played one lit at rest everywhere (0.14.0:
+steady full in the FM-1 layout and a takeover, breathing 700 ms full / 300 ms at 60 % in the sequencer: a note layout,
+its Knobs / Knobs+Keys pages, session view; 60 % steady on Track 4's pages, where Track 4 is full), the others a
+quarter, an empty slot dark (the played one faint white), a slot past the host's voices blinking slowly; in FX setup the
+pages' colours.
 
 | On a firmware track | Does |
 |---|---|
