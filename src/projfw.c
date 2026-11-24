@@ -403,9 +403,11 @@ void rfm_move_proj_fw(rfm_move_t *m, int slot, int status)
     rfmv_say_check(m);
 }
 int rfm_move_proj_fw_loading(const rfm_move_t *m) { return m->pfw_on != 0; }
+/* (0.14.0, the owner's 2026-11-24) with the capability no shared state is ever active (pad 1 is the project's own
+ * sound): ignored. An older host: as before (the browser's States) */
 void rfm_move_fw_state_cur(rfm_move_t *m, int slot, int k)
 {
-    if (slot >= 0 && slot < RFM_MOVE_FW_SLOTS && k >= -1 && k < RFM_MOVE_FW_STATES)
+    if (!rfmv_pfw_cap(m) && slot >= 0 && slot < RFM_MOVE_FW_SLOTS && k >= -1 && k < RFM_MOVE_FW_STATES)
         m->fw.st_cur[slot] = (int8_t)k;
     rfmv_say_check(m);
 }
@@ -544,9 +546,26 @@ void rfmv_pfw_proj_words(const rfm_move_t *m, const rfm_move_proj_info_t *in, ch
 }
 
 /* ================================================================ States as a layer === */
-static const char *const WORDS[5] = { "saved", "loaded", "copied", "pasted", "deleted" };
+/* (0.14.0, the owner's 2026-11-24: "a project should keep it's own unique firmware state which then shows up as slot 1,
+ * so slot 1 always means project state, a unique state per project") pad 1 (k 0) is the open project's own sound, the
+ * project's copy of the firmware: always there, always the one you are in, saved by the host as you play. Pads 2..32
+ * (k 1..31) are a library shared by all projects: a stored one loads INTO the project (Undo after it), an empty one
+ * stores the sound as it is now; none is ever active, none changes by playing. st_cur is not read here */
+static const char *const WORDS[6] = { "saved", "loaded", "copied", "pasted", "deleted", "kept" };
 enum { SP_NONE, SP_NAME, SP_STATE, SP_NEW, SP_UNDO, SP_EMPTY };
-enum { SW_SAVED, SW_LOADED, SW_COPIED, SW_PASTED, SW_DELETED };
+enum { SW_SAVED, SW_LOADED, SW_COPIED, SW_PASTED, SW_DELETED, SW_KEPT };
+static int st_used(const rfm_move_fw_state_t *f, int t, int k) { return !k || (f->st_used[t] >> k & 1); }
+static int pad_of(int k) { return (3 - k / 8) * 8 + k % 8; }
+static void st_name(const rfm_move_t *m, int k, char *o, int cap)   /* "Project 3" (pad 1), "State 5" */
+{
+    const int p = m->seq.proj_cur;
+    if (k)
+        snprintf(o, (size_t)cap, "State %d", k + 1);
+    else if (p >= 0 && p < RFM_MOVE_PROJECTS)
+        snprintf(o, (size_t)cap, "Project %d", p + 1);
+    else
+        snprintf(o, (size_t)cap, "Project");
+}
 
 int rfmv_st_on(const rfm_move_t *m) { return m->fw.sl && rfmv_fw_slot_loaded(m, m->fw.sl - 1) ? m->fw.sl : 0; }
 int rfm_move_states_open(const rfm_move_t *m) { return rfmv_st_on(m) - 1; }
@@ -560,7 +579,13 @@ static void st_pop(rfm_move_t *m, int kind, int k, int w, int slot)
     f->sl_pop = (uint8_t)kind, f->sl_pk = (int8_t)k, f->sl_pw = (int8_t)w, f->sl_pslot = (int8_t)slot;
     f->sl_pop_ms = now_ms(m);
 }
-static int pop_up(const rfm_move_t *m) { return m->fw.sl_pop && now_ms(m) - m->fw.sl_pop_ms < RFM_MOVE_POPUP_MS; }
+/* (0.14.0) a pad's popup stays while that pad is held: what it is, project or library */
+static int pop_up(const rfm_move_t *m)
+{
+    const rfm_move_fw_state_t *f = &m->fw;
+    return f->sl_pop && (now_ms(m) - f->sl_pop_ms < RFM_MOVE_POPUP_MS ||
+                         (f->sl_pop == SP_STATE && f->sl_pk >= 0 && (f->sl_pads >> pad_of(f->sl_pk) & 1)));
+}
 void rfmv_st_open(rfm_move_t *m, int t, int from)
 {
     rfm_move_fw_state_t *f = &m->fw;
@@ -593,34 +618,44 @@ static void st_act(rfm_move_t *m, int kind, int t, int k, int value)
 }
 static void st_say(rfm_move_t *m, int k, int w)
 {
-    char b[32];
-    snprintf(b, sizeof b, "State %d %s", k + 1, WORDS[w]);
+    char b[32], n[16];
+    st_name(m, k, n, sizeof n);
+    snprintf(b, sizeof b, "%s %s", n, WORDS[w]);
     rfmv_say_text(m, b);
 }
-/* a state's pad, as a clip's in session view (the owner's choice): a stored one loads, an empty one saves (the active
- * one is autosaved by the host); Copy + a state copies it, or pastes when armed or empty; Delete + a state deletes it
- * into the buffer. Nothing loads while Copy or Delete is held */
+/* the project's sound changed by the layer (New, a library load, a paste onto pad 1): Undo brings back the one before
+ * (one step; the host keeps it). undo_cur: what Undo undoes (-1 New, 0 the paste, k the load of state k + 1) */
+static void st_changed(rfm_move_t *m, int t, int what)
+{
+    m->fw.undo = (uint8_t)(t + 1), m->fw.undo_cur = (int8_t)what;
+}
+/* a state's pad, as a clip's in session view (the owner's choice). Pad 1, the project's own sound: saved now (as the
+ * open project's click in Projects: PROJECT_SAVE value 1). A library pad: a stored one loads into the project, an empty
+ * one stores the sound as it is. Copy + a pad copies it (pad 1: the sound now), or pastes when armed or empty (onto
+ * pad 1: into the project); Delete + a library pad deletes it into the buffer, + pad 1 is refused ("kept"). Nothing
+ * loads while Copy or Delete is held. Only Undo's own changes (New, a load, a paste onto pad 1) replace its undo */
 static void st_pad(rfm_move_t *m, int k)
 {
     rfm_move_fw_state_t *f = &m->fw;
-    const int t = f->sl - 1, used = f->st_used[t] >> k & 1;
+    const int t = f->sl - 1, used = st_used(f, t, k);
     if (f->sl_mods & 2) {                               /* Delete + a stored state: gone, into the buffer (armed) */
+        if (!k) {                                       /* (the project's own sound is never deleted: "kept", red) */
+            st_pop(m, SP_STATE, 0, SW_KEPT, t);
+            return;
+        }
         if (!used)
             return;
         st_act(m, RFM_MOVE_ACT_STATE_DELETE, t, k, 0);
         f->st_used[t] &= ~(1u << k);
-        if (f->st_cur[t] == k)
-            f->st_cur[t] = -1;                          /* (the firmware keeps what it holds; none active) */
         f->sb_kind = 2, f->sb_src = (int8_t)k, f->sb_armed = 1, f->sb_xshow = 1;
         snprintf(f->sb_id, sizeof f->sb_id, "%s", f->slot_id[t]);
-        f->undo = 0;
         st_say(m, k, SW_DELETED);
         return;
     }
     if (f->sl_mods & 1) {                               /* Copy + a state */
         const int ok = buf_ok(m, t);
         if (used && !(ok && f->sb_armed && !(k == f->sb_src && f->sb_kind == 1))) {
-            st_act(m, RFM_MOVE_ACT_STATE_COPY, t, k, 0);   /* (copied: dashed, armed) */
+            st_act(m, RFM_MOVE_ACT_STATE_COPY, t, k, 0);   /* (copied: dashed, armed; k 0: the sound now) */
             f->sb_kind = 1, f->sb_src = (int8_t)k, f->sb_armed = 1;
             snprintf(f->sb_id, sizeof f->sb_id, "%s", f->slot_id[t]);
             st_say(m, k, SW_COPIED);
@@ -628,30 +663,35 @@ static void st_pad(rfm_move_t *m, int k)
         }
         if (!ok)
             return;                                     /* (an empty pad, nothing of this firmware's to paste) */
-        st_act(m, RFM_MOVE_ACT_STATE_PASTE, t, k, f->st_cur[t] == k);   /* (onto the active one: loaded too) */
-        f->st_used[t] |= 1u << k;
-        f->sb_armed = 0, f->undo = 0;                   /* (a paste disarms) */
+        st_act(m, RFM_MOVE_ACT_STATE_PASTE, t, k, !k);  /* (onto pad 1: into the project, value 1) */
+        if (k)
+            f->st_used[t] |= 1u << k;
+        else
+            st_changed(m, t, 0);
+        f->sb_armed = 0;                                /* (a paste disarms) */
         st_pop(m, SP_STATE, k, SW_PASTED, t);
         return;
     }
-    f->undo = 0;
-    if (used) {
+    if (!k) {                                           /* pad 1: the project saved now, "Project 3 / saved" */
+        if (m->seq.proj_pending >= 0 || m->pfw_on)
+            return;
+        rfmv_proj_save_own(m);
+        st_pop(m, SP_STATE, 0, SW_SAVED, t);
+    } else if (used) {                                  /* a library state: into the project (Undo) */
         st_act(m, RFM_MOVE_ACT_STATE_LOAD, t, k, 0);
-        f->st_cur[t] = (int8_t)k;
+        st_changed(m, t, k);
         st_pop(m, SP_STATE, k, SW_LOADED, t);
-    } else {
+    } else {                                            /* an empty one: the sound as it is stored there */
         st_act(m, RFM_MOVE_ACT_STATE_SAVE, t, k, 0);
-        f->st_used[t] |= 1u << k, f->st_cur[t] = (int8_t)k;
+        f->st_used[t] |= 1u << k;
         st_pop(m, SP_STATE, k, SW_SAVED, t);
     }
 }
-static void st_new(rfm_move_t *m)                       /* step 14: the firmware as first installed; Undo after it */
+static void st_new(rfm_move_t *m)                       /* step 14: the project's sound as first installed; Undo after */
 {
-    rfm_move_fw_state_t *f = &m->fw;
-    const int t = f->sl - 1;
+    const int t = m->fw.sl - 1;
     st_act(m, RFM_MOVE_ACT_STATE_NEW, t, -1, 0);
-    f->undo = (uint8_t)(t + 1), f->undo_cur = f->st_cur[t];
-    f->st_cur[t] = -1;
+    st_changed(m, t, -1);
     st_pop(m, SP_NEW, -1, 0, t);
 }
 static void st_undo(rfm_move_t *m)
@@ -659,10 +699,10 @@ static void st_undo(rfm_move_t *m)
     rfm_move_fw_state_t *f = &m->fw;
     const int t = f->sl - 1;
     if (f->undo != f->sl)
-        return;                                         /* (no New to undo: dead) */
-    st_act(m, RFM_MOVE_ACT_STATE_UNDO, t, f->undo_cur, f->undo_cur);
-    f->st_cur[t] = f->undo_cur, f->undo = 0;
-    st_pop(m, SP_UNDO, -1, 0, t);
+        return;                                         /* (nothing to undo: dead) */
+    st_act(m, RFM_MOVE_ACT_STATE_UNDO, t, -1, -1);      /* (no state is active again: always -1 / 255) */
+    f->undo = 0;
+    st_pop(m, SP_UNDO, f->undo_cur, 0, t);
 }
 static int bt_get(const rfm_move_fw_state_t *f, int cc) { return f->sl_bt[(cc & 127) >> 3] >> (cc & 7) & 1; }
 static void bt_set(rfm_move_fw_state_t *f, int cc, int on)
@@ -775,7 +815,8 @@ void rfmv_st_track(rfm_move_t *m, int t)
  * a pressed pad (white, steady). The open project's pad (rfmv_active_rgb) is the same */
 rfmv_rgb_t rfmv_active_rgb(uint32_t ms) { return ms % (RFMV_ACTIVE_ON_MS + RFMV_ACTIVE_OFF_MS) < RFMV_ACTIVE_ON_MS ? RFMV_WHITE : rfmv_sc(RFMV_WHITE, 85); }
 rfmv_rgb_t rfmv_st_active_rgb(const rfm_move_t *m) { return rfmv_active_rgb(now_ms(m) - m->fw.sl_ms); }
-/* the lights: the states in the slot's colour (the active one white, breathing; stored ones dim, empty dark, a pressed one white),
+/* the lights: the states in the slot's colour (pad 1, the project's own sound, white, breathing; stored library pads
+ * dim, empty dark, a pressed one white; pad 1 saved: off, on, off),
  * swept in column by column on opening (unswept pads keep what they showed: 8 LED writes a frame at most); step 14
  * New; the buttons the layer uses lit, the rest dark */
 void rfmv_st_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
@@ -791,8 +832,11 @@ void rfmv_st_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
     sw = (now_ms(m) - f->sl_ms) / RFMV_ST_SWEEP_MS;
     for (p = 0; p < RFM_MOVE_NPADS; p++) {
         const int k = (3 - p / 8) * 8 + p % 8, c = p % 8;
-        if (f->sl_pads >> p & 1)
-            v = RFMV_WHITE;
+        if (f->sl_pads >> p & 1)                        /* (pad 1 under Delete: red, refused) */
+            v = !k && (f->sl_mods & 2) ? RFMV_RED : RFMV_WHITE;
+        else if (!k && f->sl_pop == SP_STATE && !f->sl_pk && f->sl_pw == SW_SAVED &&
+                 now_ms(m) - f->sl_pop_ms < 3 * RFMV_PJ_ACK_MS)
+            v = (now_ms(m) - f->sl_pop_ms) / RFMV_PJ_ACK_MS == 1 ? RFMV_WHITE : RFMV_OFF;   /* (saved: off, on, off) */
         else if (sw < 8 && (uint32_t)c > sw) {          /* (not swept yet: as it was) */
             if (!m->sent_ok[L_PAD0 + p])
                 memset(w[L_PAD0 + p], 0, 3);
@@ -802,7 +846,7 @@ void rfmv_st_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         } else if (sw < 8 && (uint32_t)c == sw)
             v = col;
         else
-            v = f->st_cur[t] == k ? rfmv_st_active_rgb(m) : f->st_used[t] >> k & 1 ? rfmv_sc(col, 108) : RFMV_OFF;
+            v = !k ? rfmv_st_active_rgb(m) : f->st_used[t] >> k & 1 ? rfmv_sc(col, 108) : RFMV_OFF;   /* (pad 1: the project's) */
         w[L_PAD0 + p][0] = v.r, w[L_PAD0 + p][1] = v.g, w[L_PAD0 + p][2] = v.b;
     }
     for (p = 0; p < RFM_MOVE_NSTEPS; p++) {
@@ -832,21 +876,26 @@ int rfmv_st_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_fw_state_t *f = &m->fw;
     const int t = rfmv_st_on(m) - 1;
-    char nm[48], c[48], b[16];
+    char nm[48], c[48], b[16] = "";
     int i;
     if (t < 0)
         return 0;
     mr_gfx_clear(cv, 0);
     rfmv_fw_slot_name(m, t, nm, sizeof nm);
     if (pop_up(m)) {                                    /* (a whole-screen word: 2x, the name or the state under it) */
-        const char *top = "States", *sub = nm;
+        const char *top = b, *sub = nm;
         switch (f->sl_pop) {
+        case SP_NAME: st_name(m, 0, b, sizeof b); break;   /* (0.14.0: opening, the one you are in: "Project 3") */
         case SP_STATE:
-            snprintf(b, sizeof b, "State %d", f->sl_pk + 1);
-            top = b, sub = WORDS[f->sl_pw % 5];
+            st_name(m, f->sl_pk, b, sizeof b);
+            sub = WORDS[f->sl_pw % 6];
             break;
         case SP_NEW: top = "New state"; break;
-        case SP_UNDO: top = "Undo", sub = "New state"; break;
+        case SP_UNDO:
+            top = "Undo", sub = f->sl_pk < 0 ? "New state" : f->sl_pk ? b : "paste";
+            if (f->sl_pk > 0)
+                st_name(m, f->sl_pk, b, sizeof b);
+            break;
         case SP_EMPTY:
             snprintf(b, sizeof b, "Track %d", f->sl_pslot + 1);
             top = b, sub = "empty";
@@ -868,7 +917,7 @@ int rfmv_st_screen(const rfm_move_t *m, mr_canvas_t *cv)
     {
         const int marks = f->sb_armed && buf_ok(m, t);  /* (copied: dashed, deleted: crossed, while armed) */
         for (i = 0; i < RFM_MOVE_FW_STATES; i++) {
-            const int x = (i % 8) * 16 + 1, y = 16 + (i / 8) * 12, cur = f->st_cur[t] == i, used = f->st_used[t] >> i & 1;
+            const int x = (i % 8) * 16 + 1, y = 16 + (i / 8) * 12, cur = !i, used = st_used(f, t, i);   /* (1: "P") */
             const int src = marks && i == f->sb_src;
             if (src && f->sb_kind == 2 && !used && f->sb_xshow) {
                 v2_X(cv, x, y, 14, 11);
@@ -879,6 +928,8 @@ int rfmv_st_screen(const rfm_move_t *m, mr_canvas_t *cv)
                 continue;
             }
             snprintf(b, sizeof b, "%d", i + 1);
+            if (!i)
+                b[0] = 'P', b[1] = 0;
             if (cur) {
                 v2_R(cv, x, y, 14, 11, 1);
                 if (src && f->sb_kind == 1)
@@ -909,15 +960,16 @@ int rfmv_st_base_words(const rfm_move_t *m, char *o, int cap)
 int rfmv_st_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp)
 {
     const rfm_move_fw_state_t *f = &m->fw;
-    char nm[48];
+    char nm[48], b[16];
     if (!pop_up(m))
         return 0;
     rfmv_fw_slot_name(m, rfmv_st_on(m) - 1, nm, sizeof nm);
+    st_name(m, f->sl_pk > 0 ? f->sl_pk : 0, b, sizeof b);
     switch (f->sl_pop) {
-    case SP_NAME: snprintf(o, (size_t)cap, "States, %s", nm); break;
-    case SP_STATE: snprintf(o, (size_t)cap, "State %d %s", f->sl_pk + 1, WORDS[f->sl_pw % 5]); break;
+    case SP_NAME: snprintf(o, (size_t)cap, "States, %s, %s", nm, b); break;
+    case SP_STATE: snprintf(o, (size_t)cap, "%s %s", b, WORDS[f->sl_pw % 6]); break;
     case SP_NEW: snprintf(o, (size_t)cap, "New state, %s", nm); break;
-    case SP_UNDO: snprintf(o, (size_t)cap, "Undo, new state"); break;
+    case SP_UNDO: snprintf(o, (size_t)cap, "Undo, %s", f->sl_pk < 0 ? "new state" : f->sl_pk ? b : "paste"); break;
     default: snprintf(o, (size_t)cap, "Track %d, empty", f->sl_pslot + 1); break;
     }
     *subj = (uint16_t)(0x4A0 | f->sl_pop), *stamp = f->sl_pop_ms;

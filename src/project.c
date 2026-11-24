@@ -489,6 +489,7 @@ static void proj_save(rfm_move_t *m, int value)
         m->fn(m->ctx, &a);
 }
 void rfmv_proj_save_now(rfm_move_t *m) { proj_save(m, 0); }
+void rfmv_proj_save_own(rfm_move_t *m) { proj_save(m, 1); }   /* (States' pad 1: value 1, the player's own) */
 
 void rfm_move_project_flush(rfm_move_t *m)
 {

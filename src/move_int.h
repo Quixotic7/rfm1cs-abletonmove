@@ -195,6 +195,7 @@ void rfmv_seq_dirty(rfm_move_t *m);
 void rfmv_proj_open(rfm_move_t *m, int slot);          /* grid: load (current saved first) or a new empty one */
 void rfmv_proj_delete(rfm_move_t *m, int slot);
 void rfmv_proj_save_now(rfm_move_t *m);                /* PROJECT_SAVE for the current slot */
+void rfmv_proj_save_own(rfm_move_t *m);                /* .. value 1: the player's own save (the firmwares now too) */
 void rfmv_proj_poll(rfm_move_t *m);                    /* the autosave's debounce (from advance) */
 void rfmv_proj_info(const rfm_move_t *m, int slot, rfm_move_proj_info_t *o);   /* the current one: live */
 

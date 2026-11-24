@@ -3037,7 +3037,9 @@ static void test_ps_pad7(void)
 }
 
 /* p7: the States screen and lights; the opening's name and sweep (LED writes counted); Track 1..3 taps */
-static void ps_states(void)                             /* ChoralRoot's States: 1, 2, 5 and 16 stored, 2 the active one */
+static void ps_states(void)                             /* ChoralRoot's States: 1, 2, 5 and 16 stored, 2 the active one
+                                                         * (0.14.0: ignored; bit 0, a state file at index 0 the host has
+                                                         * not moved yet: pad 1 is the project's all the same) */
 {
     ps_fresh(1);
     ps_slots("choralroot", "sloop", "felucca");
@@ -3077,13 +3079,13 @@ static void test_ps_layer(void)
     printf("states sweep: %d pad LED writes in a second, at most %d at once\n", np, peak);
     CHECKF(np <= 100 && peak <= 9, "sweep: %d pad writes, %d at once", np, peak);
     leds(w);
-    CHECK(white(w[L_PAD0 + 25]));                       /* (state 2, the active one: 0.14.0 white, breathing) */
-    CHECK(w[L_PAD0 + 24][0] == 107 && w[L_PAD0 + 28][0] == 107 && w[L_PAD0 + 23][0] == 107 && !lit(w[L_PAD0 + 26]));
+    CHECK(white(w[L_PAD0 + 24]));                       /* (0.14.0: pad 1, the project's own sound: white, breathing) */
+    CHECK(w[L_PAD0 + 25][0] == 107 && w[L_PAD0 + 28][0] == 107 && w[L_PAD0 + 23][0] == 107 && !lit(w[L_PAD0 + 26]));
     CHECK(!lit(w[L_STEP0 + 0]) && w[L_STEP0 + 13][0] == 63 && w[L_ICON0 + 13][0] == 127 && w[L_ICON0 + 12][0] == 0);
     CHECK(!lit(w[L_RING0 + 0]) && w[L_WHITE0 + W_BACK][0] == 80 && w[L_WHITE0 + W_UNDO][0] == 0);
     CHECK(w[L_TRACK0 + 0][0] == 255 && w[L_TRACK0 + 1][2] == 63);
     screen();
-    CHECK(px(1 + 16 + 1, 16 + 1) && px(1, 16) && !px(1 + 1, 16 + 1) && px(1 + 32 + 6, 16 + 5) && !px(1 + 32 + 1, 16 + 1));
+    CHECK(px(1 + 1, 16 + 1) && px(1 + 16, 16) && !px(1 + 16 + 1, 16 + 1) && px(1 + 32 + 6, 16 + 5) && !px(1 + 32 + 1, 16 + 1));
     write_pbm("ps_states");
     /* dead: the other steps, the knobs, the jog, Shift */
     ps_clear();
@@ -3106,7 +3108,7 @@ static void test_ps_layer(void)
     tap_track(0), adv_ms(60);
     pad(ps_pad(4), 100);
     leds(w);
-    CHECK(white(w[L_PAD0 + ps_pad(4)]) && M.fw.st_cur[0] == 4);
+    CHECK(white(w[L_PAD0 + ps_pad(4)]) && M.fw.undo == 1);   /* (0.14.0: loaded into the project) */
     pad(ps_pad(4), 0);
     /* Track 4: the layer closes, Track 4 does its job */
     rest();
@@ -3115,8 +3117,9 @@ static void test_ps_layer(void)
     back(), rest();
 }
 
-/* p8: the gestures on a state pad, as clips in session view: load, save, copy, paste, replace when armed, copy when
- * not, delete (the active one too), paste onto the active one (value 1); Copy / Delete clicked alone: nothing */
+/* p8: the gestures on a state pad, as clips in session view; (0.14.0, the owner's 2026-11-24) pads 2..32 a library: a
+ * stored one loads into the project (none active), an empty one stores the sound; copy, paste, replace when armed,
+ * copy when not, delete; Copy / Delete clicked alone: nothing. Pad 1's own gestures: test_o14_states_project */
 static void ps_open0(void)
 {
     hold_track(0), hit(30), track(0, 0), rest(), ps_clear();
@@ -3126,44 +3129,40 @@ static void test_ps_gestures(void)
     const ps_act_t *a;
     ps_states();
     ps_open0();
-    hit(ps_pad(4));                                     /* a stored state: loaded, the active one */
-    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_LOAD, 0)) && a->index == 4 && !strcmp(a->id, "choralroot"));
-    CHECK(M.fw.st_cur[0] == 4 && M.fw.sl_pop == 2);
+    hit(ps_pad(4));                                     /* a stored state: loaded into the project; pad 1 stays */
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_LOAD, 0)) && a->index == 4 && a->value == 0 && !strcmp(a->id, "choralroot"));
+    CHECK(M.fw.st_cur[0] == -1 && M.fw.sl_pop == 2 && M.fw.undo == 1);
     screen();
     CHECK(lit_rows(10, 24) > 30);
     write_pbm("ps_state_loaded");
     rest(), ps_clear();
-    hit(ps_pad(2));                                     /* an empty one: saved there, the active one */
-    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_SAVE, 0)) && a->index == 2 && M.fw.st_cur[0] == 2 && (M.fw.st_used[0] >> 2 & 1));
+    hit(ps_pad(2));                                     /* an empty one: the sound stored there (not active) */
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_SAVE, 0)) && a->index == 2 && M.fw.st_cur[0] == -1 && (M.fw.st_used[0] >> 2 & 1));
     rest(), ps_clear();
     press(MR_CC_COPY), press(MR_CC_DELETE);             /* (clicked alone: nothing) */
-    CHECK(npa == 0 && !M.fw.sb_kind && M.fw.st_cur[0] == 2);
+    CHECK(npa == 0 && !M.fw.sb_kind);
     /* Copy held: its icon in the header; + a stored state: copied (dashed), armed */
     button(MR_CC_COPY, 1);
     screen();
     CHECK(pixels(116, 1, 11, 11) > 10);
-    hit(ps_pad(0));
-    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_COPY, 0)) && a->index == 0 && M.fw.sb_armed && M.fw.st_cur[0] == 2);
+    hit(ps_pad(1));
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_COPY, 0)) && a->index == 1 && M.fw.sb_armed);
     screen();
-    CHECK(px(1 + 1, 16) && !px(1 + 3, 16));             /* (dashed: 2 on, 2 off) */
+    CHECK(px(17 + 1, 16) && !px(17 + 3, 16));           /* (dashed: 2 on, 2 off) */
     write_pbm("ps_states_copied");
-    /* + an empty one: pasted there (not active: value 0), disarmed */
+    /* + an empty one: pasted there (value 0), disarmed; the undo of the load above kept (the sound unchanged) */
     hit(ps_pad(7));
     CHECK((a = ps_find(RFM_MOVE_ACT_STATE_PASTE, 0)) && a->index == 7 && a->value == 0 && !M.fw.sb_armed &&
-          (M.fw.st_used[0] >> 7 & 1) && M.fw.st_cur[0] == 2);
+          (M.fw.st_used[0] >> 7 & 1) && M.fw.undo == 1);
     /* not armed: + a stored state copies it; armed: + another stored one pastes over it */
     ps_clear();
     hit(ps_pad(4));
     CHECK(ps_find(RFM_MOVE_ACT_STATE_COPY, 0) && ps_find(RFM_MOVE_ACT_STATE_COPY, 0)->index == 4 && M.fw.sb_armed);
     hit(ps_pad(15));
     CHECK((a = ps_find(RFM_MOVE_ACT_STATE_PASTE, 0)) && a->index == 15 && a->value == 0 && !M.fw.sb_armed);
-    /* the active one replaced: the host loads it too (value 1) */
-    ps_clear();
-    hit(ps_pad(0)), hit(ps_pad(2));
-    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_PASTE, 0)) && a->index == 2 && a->value == 1 && M.fw.st_cur[0] == 2);
     CHECK(!ps_find(RFM_MOVE_ACT_STATE_LOAD, -1));       /* (nothing loads while Copy is held) */
     button(MR_CC_COPY, 0), rest();
-    /* Delete held + a stored state: deleted into the buffer (crossed), armed; the active one: none active */
+    /* Delete held + a stored state: deleted into the buffer (crossed), armed */
     ps_clear();
     button(MR_CC_DELETE, 1);
     hit(ps_pad(15));
@@ -3188,7 +3187,8 @@ static void test_ps_gestures(void)
     CHECK(rfm_move_states_open(&M) < 0);
 }
 
-/* p9: step 14 New (the firmware as first installed; none active), Undo after it (its light only while there) */
+/* p9: step 14 New (the project's sound as first installed; none active), Undo after it (its light only while there);
+ * (0.14.0) Undo after a library load too, one step */
 static void test_ps_new_undo(void)
 {
     uint8_t w[RFM_MOVE_NLEDS][3];
@@ -3201,13 +3201,14 @@ static void test_ps_new_undo(void)
     CHECK((a = ps_find(RFM_MOVE_ACT_STATE_NEW, 0)) && a->slot == 0 && !strcmp(a->id, "choralroot") && M.fw.st_cur[0] == -1);
     leds(w);
     CHECK(white(w[L_STEP0 + 13]) && w[L_ICON0 + 13][0] == 127 && w[L_WHITE0 + W_UNDO][0] == 127 && w[L_PAD0 + 25][0] == 107);
+    CHECK(white(w[L_PAD0 + 24]));                       /* (pad 1 stays the one you are in) */
     CHECKF(strstr(said, "New state, ChoralRoot") != NULL, "said %s", said);
     write_pbm("ps_state_new");
     step(13, 0);
     CHECK(M.fw.st_used[0] == (1u | 2u | 16u | 1u << 15));   /* (no stored state touched) */
     ps_clear(), clear();
     press(MR_CC_UNDO);
-    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_UNDO, 0)) && a->value == 1 && a->index == 1 && M.fw.st_cur[0] == 1);
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_UNDO, 0)) && a->value == -1 && a->index == 255 && M.fw.st_cur[0] == -1);
     leds(w);
     CHECK(w[L_WHITE0 + W_UNDO][0] == 0 && w[L_STEP0 + 13][0] == 63);
     CHECKF(strstr(said, "Undo, new state") != NULL, "said %s", said);
@@ -3215,15 +3216,25 @@ static void test_ps_new_undo(void)
     ps_clear();
     press(MR_CC_UNDO);                                  /* (one step: nothing more) */
     CHECK(npa == 0);
-    /* a New, then a load: the undo is gone */
-    step(13, 1), step(13, 0), rest();
+    /* a library load: Undo brings back the sound from before it */
+    rest(), ps_clear(), clear();
     hit(ps_pad(4));
     leds(w);
-    CHECK(w[L_WHITE0 + W_UNDO][0] == 0);
+    CHECK(w[L_WHITE0 + W_UNDO][0] == 127 && white(w[L_PAD0 + 24]));
+    press(MR_CC_UNDO);
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_UNDO, 0)) && a->value == -1 && a->index == 255 && npa == 2);
+    CHECKF(strstr(said, "Undo, State 5") != NULL, "said %s", said);
+    write_pbm("o14_states_undo_load");
     ps_clear();
     press(MR_CC_UNDO);
     CHECK(npa == 0);
-    /* a New, then States left: gone too */
+    /* a New, then a load: the load's undo (one step) */
+    step(13, 1), step(13, 0), rest();
+    hit(ps_pad(4)), rest();
+    ps_clear();
+    press(MR_CC_UNDO), press(MR_CC_UNDO);
+    CHECK(ps_count(RFM_MOVE_ACT_STATE_UNDO) == 1);
+    /* a New, then States left: gone */
     step(13, 1), step(13, 0), back(), rest();
     ps_open0();
     leds(w);
@@ -4501,32 +4512,151 @@ static void test_o14_state_pad(void)
     ps_states();
     rfm_move_fw_states(&M, 1, 1u | 4u | 8u), rfm_move_fw_state_cur(&M, 1, 2);
     rfm_move_fw_states(&M, 2, 1u | 2u), rfm_move_fw_state_cur(&M, 2, 0);
+    CHECK(M.fw.st_cur[0] == -1 && M.fw.st_cur[1] == -1 && M.fw.st_cur[2] == -1);   /* (2026-11-24: ignored) */
     hold_track(0), hit(30), track(0, 0);
-    for (t = 0; t < 3; t++) {
-        const int cur = t == 0 ? 1 : t == 1 ? 2 : 0, other = t == 0 ? 4 : t == 1 ? 3 : 1;
+    for (t = 0; t < 3; t++) {                           /* (2026-11-24) pad 1, the project's, in every slot */
+        const int other = t == 0 ? 1 : t == 1 ? 2 : 1;
         if (t)
             tap_track(t);
         adv_ms(500);                                    /* (swept in; the beat's bright part) */
         CHECK(rfm_move_states_open(&M) == t);
         leds(w);
-        CHECKF(full(w[L_PAD0 + 24 + cur]), "slot %d: active %02x%02x%02x", t + 1, w[L_PAD0 + 24 + cur][0],
-               w[L_PAD0 + 24 + cur][1], w[L_PAD0 + 24 + cur][2]);
+        CHECKF(full(w[L_PAD0 + 24]), "slot %d: pad 1 %02x%02x%02x", t + 1, w[L_PAD0 + 24][0], w[L_PAD0 + 24][1],
+               w[L_PAD0 + 24][2]);
         CHECKF(lit(w[L_PAD0 + 24 + other]) && !white(w[L_PAD0 + 24 + other]) &&
-               bright(w[L_PAD0 + 24 + other]) * 2 < bright(w[L_PAD0 + 24 + cur]), "slot %d: stored", t + 1);
+               bright(w[L_PAD0 + 24 + other]) * 2 < bright(w[L_PAD0 + 24]), "slot %d: stored", t + 1);
         write_pbm(nm[t]);
         for (k = 0; k < 20; k++) {                      /* (a second: bright, then a third, then bright) */
             adv_ms(50), leds(w);
-            hi += full(w[L_PAD0 + 24 + cur]);
-            lo += white(w[L_PAD0 + 24 + cur]) && !full(w[L_PAD0 + 24 + cur]);
+            hi += full(w[L_PAD0 + 24]);
+            lo += white(w[L_PAD0 + 24]) && !full(w[L_PAD0 + 24]);
         }
     }
     CHECKF(hi >= 30 && lo >= 9, "breathing: %d bright, %d dim", hi, lo);
-    /* a pressed pad: white and steady, the active one meanwhile breathing (the press itself loads it: white too) */
+    /* a pressed pad: white and steady, pad 1 meanwhile breathing */
     pad(24 + 3, 100);
     for (k = 0, hi = 0; k < 20; k++)
         adv_ms(50), leds(w), hi += full(w[L_PAD0 + 24 + 3]);
     CHECK(hi == 20);
     pad(24 + 3, 0), back(), rest();
+}
+
+/* (0.14.0, the owner's 2026-11-24: "a project should keep it's own unique firmware state which then shows up as slot 1,
+ * so slot 1 always means project state, a unique state per project") pad 1 is the open project's own sound: named
+ * "Project 3" on opening and while held, white and breathing, a click saves the project now (PROJECT_SAVE value 1,
+ * its pad off, on, off); Delete + pad 1 refused (red, "kept", nothing sent); Copy + pad 1 copies the sound now, a
+ * paste onto it goes into the project (value 1, Undo after it); a held library pad says "State 5" */
+static void test_o14_states_project(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    const ps_act_t *a;
+    int seen[3] = { 0, 0, 0 }, k;
+    ps_states();
+    M.seq.proj_cur = 2;                                 /* (project 3 open) */
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    rest(), ps_clear(), clear();
+    hold_track(0), hit(30);                             /* opening: the one you are in, at once */
+    screen();
+    CHECK(lit_rows(2, 20) > 40);
+    CHECKF(strstr(said, "States, ChoralRoot, Project 3") != NULL, "said %s", said);
+    write_pbm("o14_states_open");
+    track(0, 0), rest(), ps_clear(), clear();
+    leds(w);
+    CHECK(white(w[L_PAD0 + 24]) && w[L_PAD0 + 25][0] == 107 && w[L_PAD0 + 28][0] == 107 && !lit(w[L_PAD0 + 26]));
+    screen();
+    CHECK(px(1 + 1, 16 + 1) && !px(1 + 4, 16 + 4));     /* (pad 1's tile filled, its "P" dark in it) */
+    write_pbm("o14_states");
+    /* pad 1 pressed: the project saved now; held: "Project 3 / saved" stays */
+    pad(ps_pad(0), 100);
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_PROJECT_SAVE, -1)) && a->index == 2 && a->value == 1);
+    CHECK(!ps_count(RFM_MOVE_ACT_STATE_SAVE) && M.fw.undo == 0 && (M.seq.proj_used >> 2 & 1));
+    CHECKF(strstr(said, "Project 3 saved") != NULL, "said %s", said);
+    adv_ms(RFM_MOVE_POPUP_MS + 200);
+    screen();
+    CHECK(lit_rows(10, 24) > 30 && !px(1 + 1, 16 + 1));
+    write_pbm("o14_states_held_project");
+    pad(ps_pad(0), 0), adv_ms(20);
+    screen();
+    CHECK(px(1 + 1, 16 + 1));                           /* (let go: the grid again) */
+    /* a quick click: its pad off, on, off, then breathing again */
+    rest(), ps_clear();
+    hit(ps_pad(0));
+    for (k = 0; k < 40; k++) {
+        leds(w);
+        if (k * 10 < 3 * RFMV_PJ_ACK_MS - 20)
+            seen[(k * 10) / RFMV_PJ_ACK_MS] |= white(w[L_PAD0 + 24]) ? 2 : lit(w[L_PAD0 + 24]) ? 4 : 1;
+        adv_ms(10);
+    }
+    CHECKF(seen[0] == 1 && seen[1] == 2 && (seen[2] & 1), "ack %d %d %d", seen[0], seen[1], seen[2]);
+    leds(w);
+    CHECK(white(w[L_PAD0 + 24]) && ps_count(RFM_MOVE_ACT_PROJECT_SAVE) == 1);
+    /* a library pad held: "State 5", not the project; loaded into it */
+    rest(), ps_clear(), clear();
+    pad(ps_pad(4), 100), adv_ms(RFM_MOVE_POPUP_MS + 200);
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_LOAD, 0)) && a->index == 4);
+    screen();
+    CHECK(lit_rows(10, 24) > 30);
+    write_pbm("o14_states_held_library");
+    pad(ps_pad(4), 0), rest();
+    leds(w);
+    CHECK(white(w[L_PAD0 + 24]) && w[L_PAD0 + 28][0] == 107);   /* (pad 1 stays the one you are in) */
+    /* Delete + pad 1: refused, red while held, "Project 3 / kept" */
+    ps_clear(), clear();
+    button(MR_CC_DELETE, 1), pad(ps_pad(0), 100);
+    leds(w);
+    CHECK(npa == 0 && w[L_PAD0 + 24][0] > 100 && w[L_PAD0 + 24][1] < 40 && w[L_PAD0 + 24][2] < 40);
+    CHECKF(strstr(said, "Project 3 kept") != NULL, "said %s", said);
+    write_pbm("o14_states_delete_project");
+    pad(ps_pad(0), 0), button(MR_CC_DELETE, 0), rest();
+    CHECK(npa == 0 && !M.fw.sb_kind);
+    /* Copy + pad 1: the sound now into the buffer; + a stored library pad: written over; again + an empty one: in it */
+    ps_clear();
+    button(MR_CC_COPY, 1), hit(ps_pad(0));
+    CHECK(npa == 1 && (a = ps_find(RFM_MOVE_ACT_STATE_COPY, 0)) && a->index == 0 && M.fw.sb_src == 0 && M.fw.sb_armed);
+    screen();
+    CHECK(px(0, 15) && px(1 + 1, 16 + 1));              /* (pad 1's tile filled and dashed round) */
+    write_pbm("o14_states_copy_project");
+    hit(ps_pad(4));
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_PASTE, 0)) && a->index == 4 && a->value == 0 && !M.fw.sb_armed);
+    hit(ps_pad(0)), hit(ps_pad(9));
+    CHECK(ps_count(RFM_MOVE_ACT_STATE_COPY) == 2 && (a = ps_find(RFM_MOVE_ACT_STATE_PASTE, 0)) && a->index == 9 &&
+          (M.fw.st_used[0] >> 9 & 1) && M.fw.undo == 1);   /* (the load's undo kept: the sound unchanged) */
+    /* a library state copied, pasted onto pad 1: into the project (value 1), Undo after it */
+    ps_clear();
+    hit(ps_pad(1)), hit(ps_pad(0));
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_PASTE, 0)) && a->index == 0 && a->value == 1 && M.fw.undo == 1);
+    CHECK(!ps_find(RFM_MOVE_ACT_STATE_LOAD, -1) && !(M.fw.st_used[0] & 1u << 30));
+    button(MR_CC_COPY, 0);
+    leds(w);
+    CHECK(w[L_WHITE0 + W_UNDO][0] == 127);
+    write_pbm("o14_states_paste_project");
+    rest(), ps_clear(), clear();
+    press(MR_CC_UNDO);
+    CHECK((a = ps_find(RFM_MOVE_ACT_STATE_UNDO, 0)) && a->value == -1 && a->index == 255);
+    CHECKF(strstr(said, "Undo, paste") != NULL, "said %s", said);
+    /* the host's state file moved from index 0 to a library pad: its report, as any */
+    rfm_move_fw_states(&M, 0, M.fw.st_used[0] & ~1u);
+    rest();
+    leds(w);
+    CHECK(white(w[L_PAD0 + 24]));
+    back(), rest();
+}
+
+/* (0.14.0) a host without RFM_MOVE_CAP_PROJFW: its States as before (the browser's Loop): pad 1 a state like any,
+ * the active one its rfm_move_fw_state_cur's, no project save */
+static void test_o14_states_old_host(void)
+{
+    ps_fresh(0);
+    rfm_move_fw_states(&M, 0, 1u | 2u), rfm_move_fw_state_cur(&M, 0, 1);
+    CHECK(M.fw.st_cur[0] == 1);
+    dbl_track(0), rest();
+    press(MR_CC_LOOP);
+    CHECK(M.fw.states && !M.fw.sl);
+    ps_clear();
+    hit(ps_pad(0));
+    CHECK(npa == 1 && ps_find(RFM_MOVE_ACT_STATE_LOAD, 0) && ps_find(RFM_MOVE_ACT_STATE_LOAD, 0)->index == 0 &&
+          M.fw.st_cur[0] == 0 && !ps_count(RFM_MOVE_ACT_PROJECT_SAVE));
+    back(), back(), rest();
 }
 
 /* item 5: "Using SHIFT + a track button should take you to Track settings similar to Ableton's Move software
@@ -5893,6 +6023,8 @@ int main(void)
     test_o14_fwp_jog();
     test_o14_shift_track();
     test_o14_state_pad();
+    test_o14_states_project();
+    test_o14_states_old_host();
     test_o14_kpage();
     test_o14_arp_notes();
     test_scenes();
