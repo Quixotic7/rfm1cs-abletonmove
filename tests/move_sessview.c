@@ -1973,15 +1973,15 @@ static void test_held_over_menu(void)
     t = &M.seq.tr[M.seq.sel_track];
     clip = SEQ_CLIP(M.seq.sel_track, t->sel);
     rfmv_seq_note_put(&M, clip, 0, 60, 100, 24, 0);
-    shift_step(2);                                      /* Workflow: knobs 1..3 */
+    shift_step(2);                                      /* Workflow: knobs 1..4 (0.14.0: the feel) */
     CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
     rest(), scr_save();
-    CHECK(rings_menu(0x07));
+    CHECK(rings_menu(0x0F));
     write_pbm("over_menu_rest");
     ch = t->ch;
     /* a held step: its popup at 300 ms over the menu; the knobs, jog, volume, arrows its; the menu stays */
     step(0, 1);
-    CHECK(rfmv_seq_held_takes(&M) && !rings_menu(0x07));
+    CHECK(rfmv_seq_held_takes(&M) && !rings_menu(0x0F));
     adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20);
     CHECK(rfmv_pop_up(&M, POP_STEP) && !scr_same());
     write_pbm("over_menu_step");
@@ -1995,7 +1995,7 @@ static void test_held_over_menu(void)
     CHECK(rfmv_seq_find(&M, clip, 0, 61) >= 0);
     write_pbm("over_menu_step_turn");
     step(0, 0);
-    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW && rings_menu(0x07));
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW && rings_menu(0x0F));
     rest();
     CHECK(scr_same());
     knob(0, RFM_MOVE_LIST_TICKS);                       /* (the menu's knob again: the channel) */
@@ -2004,7 +2004,7 @@ static void test_held_over_menu(void)
     /* Loop held: its pages picture and the jog (the clip's length); the menu keeps its knobs, lit */
     len = M.seq.len[clip];
     button(MR_CC_LOOP, 1);
-    CHECK(!scr_same() && rings_menu(0x07));
+    CHECK(!scr_same() && rings_menu(0x0F));
     write_pbm("over_menu_loop");
     jog(1);
     CHECK(M.seq.len[clip] == len + 1 && M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
@@ -2015,12 +2015,12 @@ static void test_held_over_menu(void)
     rest(), scr_save();
     /* Loop's quick click under the menu: latched, shown over it; Back closes the latch first, then the menu */
     press(MR_CC_LOOP);
-    CHECK(M.seq.loop_latch && !scr_same() && rings_menu(0x07));
+    CHECK(M.seq.loop_latch && !scr_same() && rings_menu(0x0F));
     back();
     CHECK(!M.seq.loop_latch && M.seq.smenu == RFM_MOVE_SM_WORKFLOW && scr_same());
     /* Copy, Delete held: the track screen with their icon; Mute held: the 16 tracks, a step mutes */
     button(MR_CC_COPY, 1);
-    CHECK(!scr_same() && rings_menu(0x07) && rfmv_seq_held_icon(&M) == 2);
+    CHECK(!scr_same() && rings_menu(0x0F) && rfmv_seq_held_icon(&M) == 2);
     write_pbm("over_menu_copy");
     button(MR_CC_COPY, 0);
     CHECK(scr_same());
@@ -2030,13 +2030,13 @@ static void test_held_over_menu(void)
     rest();
     CHECK(scr_same());
     button(MR_CC_MUTE, 1);
-    CHECK(!scr_same() && rings_menu(0x07));
+    CHECK(!scr_same() && rings_menu(0x0F));
     write_pbm("over_menu_mute");
     step(5, 1), step(5, 0);
     CHECK(M.seq.tr[5].mute && M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
     button(MR_CC_MUTE, 0);
     rest();
-    CHECK(scr_same() && rings_menu(0x07) && M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
+    CHECK(scr_same() && rings_menu(0x0F) && M.seq.smenu == RFM_MOVE_SM_WORKFLOW);
     rfmv_seq_mute(&M, 5, 0);
     /* Shift held: the shortcuts' icons; Shift + another menu's step switches, + its own closes it */
     button(MR_CC_SHIFT, 1);
@@ -2056,7 +2056,7 @@ static void test_held_over_menu(void)
     CHECK(lit_rows(0, 64) > 0);
     write_pbm("over_menu_tracktap");
     rest();
-    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW && rings_menu(0x07));
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW && rings_menu(0x0F));
     write_pbm("over_menu_tracktap_after");
     tap_track(1), rest();
     CHECK(M.fw.active == 1 && M.seq.smenu == RFM_MOVE_SM_WORKFLOW && scr_same());
@@ -2127,7 +2127,7 @@ static void menu_heads(const char *name, int bits)
 static void test_menu_heads(void)
 {
     track_view();
-    shift_step(2), menu_heads("workflow", 0x07);
+    shift_step(2), menu_heads("workflow", 0x0F);
     jog(1);                                             /* (the jog's value named: the channel) */
     CHECK(!scr_same());
     write_pbm("menu_workflow_jog");
@@ -2199,7 +2199,7 @@ static void test_menu_over_views(void)
     CHECK(!M.seq.smenu && M.seq.projects);
     tap_track(3), rest();                               /* Routing */
     CHECK(M.seq.projects && M.fw.fx);
-    menu_over("routing", 2, 0x07);
+    menu_over("routing", 2, 0x0F);
     back(), rest();
     /* the FM-1 layout: Track 4 held + step 5 opens Tempo */
     tap_track(0), rest();
@@ -2721,7 +2721,7 @@ static void test_ps_blob(void)
     M.s.slot[2].lay = RFM_MOVE_LAY_DRUM, M.s.slot[2].cc[7] = 99, M.s.lock[2] = 11;
     M.s.drum[0] = 41, M.s.vel_mode = RFM_MOVE_VEL_FIXED, M.s.vel_level = 90;
     n = rfm_move_project_save(&M, b9, sizeof b9);
-    CHECK(n == RFM_MOVE_PROJECT_FIXED && b9[4] == 9 && rfm_move_project_check(b9, (uint32_t)n) == 0);
+    CHECK(n == RFM_MOVE_PROJECT_FIXED && b9[4] == RFM_MOVE_PROJECT_VERSION && rfm_move_project_check(b9, (uint32_t)n) == 0);
     part = b9 + n - 4 - RFM_MOVE_PFW_BYTES;
     CHECK(!strcmp((const char *)part, "choralroot") && !strcmp((const char *)part + RFM_MOVE_PFW_SLOT_BYTES, "sloop"));
     CHECK(part[RFM_MOVE_PFW_SLOT_BYTES + RFM_MOVE_FW_ID_MAX] == 77);
@@ -2757,7 +2757,7 @@ static void test_ps_blob(void)
     CHECK(ps_count(RFM_MOVE_ACT_PROJECT_FW) == 0 && !rfm_move_proj_fw_loading(&M) && !strcmp(M.fw.slot_id[0], "dub"));
     CHECK(M.fw.level[0] == 50 && M.s.drum[0] != 41 && M.s.vel_mode != RFM_MOVE_VEL_FIXED);
     n = rfm_move_project_save(&M, b9, sizeof b9);
-    CHECK(b9[4] == 9 && !strcmp((const char *)b9 + n - 4 - RFM_MOVE_PFW_BYTES, "dub"));
+    CHECK(b9[4] == RFM_MOVE_PROJECT_VERSION && !strcmp((const char *)b9 + n - 4 - RFM_MOVE_PFW_BYTES, "dub"));
     {                                                   /* the grid's info of a version 8 project: no firmwares */
         rfm_move_proj_info_t in;
         CHECK(rfm_move_project_info(&M, 9, b8, (uint32_t)n8) == 0);
@@ -2915,7 +2915,7 @@ static void test_ps_new(void)
     CHECK(M.seq.proj_cur == 12 && ps_count(RFM_MOVE_ACT_PROJECT_FW) == 3 && (a = ps_find(RFM_MOVE_ACT_PROJECT_FW, 2)) &&
           !a->id[0] && a->index == 12 && !rfm_move_proj_fw_loading(&M));
     CHECK(!M.fw.slot_id[0][0] && !M.fw.slot_id[1][0] && M.fw.level[1] == 66);
-    CHECK(PS_N[12] && PS_BLOB[12][4] == 9 && !ps_part(12)[0] && ps_part(12)[RFM_MOVE_PFW_SLOT_BYTES + RFM_MOVE_FW_ID_MAX] == 66);
+    CHECK(PS_N[12] && PS_BLOB[12][4] == RFM_MOVE_PROJECT_VERSION && !ps_part(12)[0] && ps_part(12)[RFM_MOVE_PFW_SLOT_BYTES + RFM_MOVE_FW_ID_MAX] == 66);
     back(), rest();
 }
 /* p5: a held project shows its firmwares (the mock-ups' rows); a version 8 one three dotted lines; duplicated with
@@ -3259,7 +3259,7 @@ static void test_ps_newproj(void)
         ok &= M.seq.tr[t].ch == t % 4;
     CHECK(ok && M.s.lock[0] == 0 && M.s.lock[1] == 4 && M.s.lock[2] == 8 && M.seq.fx.mfx[0].filt == 0xFFFF);
     CHECK(ps_find(RFM_MOVE_ACT_ROUTE, -1) && ps_find(RFM_MOVE_ACT_SETTINGS, -1));
-    CHECK(PS_BLOB[12][4] == 9);                         /* (saved with them) */
+    CHECK(PS_BLOB[12][4] == RFM_MOVE_PROJECT_VERSION);                         /* (saved with them) */
     /* a loaded project keeps its own: project 1 (all routed, track n on channel n) */
     hit(ps_pad(0));
     CHECK(M.seq.proj_cur == 0 && M.seq.fx.ffilt[0] == 0xFFFF && M.seq.fx.ffilt[2] == 0xFFFF && M.seq.tr[9].ch == 9);
@@ -4036,7 +4036,7 @@ static void mj_open(int sm)
 static void test_mj_menus(void)
 {
     static const struct { int sm, bits; const char *name; } MN[] = {
-        { RFM_MOVE_SM_WORKFLOW, 0x07, "workflow" }, { RFM_MOVE_SM_TEMPO, 0x03, "tempo" },
+        { RFM_MOVE_SM_WORKFLOW, 0x0F, "workflow" }, { RFM_MOVE_SM_TEMPO, 0x03, "tempo" },
         { RFM_MOVE_SM_GROOVE, 0x03, "groove" },     { RFM_MOVE_SM_LAYOUT, 0x01, "layout" },
         { RFM_MOVE_SM_KEYS, 0x0F, "keys" },         { RFM_MOVE_SM_VEL, 0x03, "velocity" },
         { RFM_MOVE_SM_REC, 0x03, "record" },
@@ -4086,7 +4086,7 @@ static void test_mj_menus(void)
         jog(1);
         mj_vals(v1, sizeof v1);
         {
-            const int list = (MN[i].sm == RFM_MOVE_SM_WORKFLOW && n <= 1) || (MN[i].sm == RFM_MOVE_SM_GROOVE && n == 1) ||
+            const int list = (MN[i].sm == RFM_MOVE_SM_WORKFLOW && n <= 2) || (MN[i].sm == RFM_MOVE_SM_GROOVE && n == 1) ||
                              MN[i].sm == RFM_MOVE_SM_LAYOUT || (MN[i].sm == RFM_MOVE_SM_KEYS && n <= 3) ||
                              (MN[i].sm == RFM_MOVE_SM_VEL && n == 1) || MN[i].sm == RFM_MOVE_SM_REC;
             rfm_move_t *keep = malloc(sizeof *keep);
@@ -6062,6 +6062,57 @@ static void test_n24_proj_random(void)
     CHECK(!npa && M.pop == POP_HOST && !strcmp(M.pop_text, "No empty slot") && M.seq.proj_cur == 2);
     write_pbm("n24_proj_random_full");
     back(), rest();
+/* (2026-11-24, the owner's: "Track settings needs more rates ... I'd add a separate parameter for doing straight,
+ * dotted, or triplet rates") the track settings (Shift + step 3): Ch, Rate, Feel, Quant on knobs 1..4, three rows
+ * shown, the list scrolled to the selected one; a knob touched names it on top (its row inverted) */
+static void test_o14_rates_menu(void)
+{
+    rfm_move_track_t *t;
+    char w[48];
+    track_view();
+    t = &M.seq.tr[M.seq.sel_track];
+    CHECK(t->rate == RFM_MOVE_SEQ_RATE_16 && t->feel == RFM_MOVE_FEEL_STRAIGHT);
+    shift_step(2), rest();
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW && rings_menu(0x0F));
+    screen();
+    CHECK(lit_rows(50, 63) > 0);                        /* (the third row: Feel) */
+    write_pbm("o14_rates_menu_rest");
+    /* knob 3: the feel, a list (an item every RFM_MOVE_LIST_TICKS); its row selected */
+    touch(2, 1), knob(2, 2 * RFM_MOVE_LIST_TICKS);
+    CHECK(t->feel == RFM_MOVE_FEEL_TRIPLET && t->rate == RFM_MOVE_SEQ_RATE_16);
+    rfmv_seq_smenu_words(&M, 2, w, sizeof w);
+    CHECKF(!strcmp(w, "Feel: Triplet"), "%s", w);
+    screen();
+    CHECK(px(1, 50) && px(126, 50) && px(1, 61) && px(126, 61));   /* (row 3 inverted) */
+    write_pbm("o14_rates_menu_feel");
+    touch(2, 0);
+    knob(2, 5 * RFM_MOVE_LIST_TICKS);
+    CHECK(t->feel == RFM_MOVE_FEEL_TRIPLET);            /* (the end of the list) */
+    knob(2, -RFM_MOVE_LIST_TICKS);
+    CHECK(t->feel == RFM_MOVE_FEEL_DOTTED);
+    /* knob 2: the rate, 1/32 .. 4 Bars */
+    knob(1, 9 * RFM_MOVE_LIST_TICKS);
+    CHECK(t->rate == RFM_MOVE_SEQ_RATES - 1 && t->feel == RFM_MOVE_FEEL_DOTTED);
+    rfmv_seq_smenu_words(&M, 1, w, sizeof w);
+    CHECKF(!strcmp(w, "Rate: 4 Bars"), "%s", w);
+    knob(1, -9 * RFM_MOVE_LIST_TICKS);
+    CHECK(t->rate == 0);
+    write_pbm("o14_rates_menu_rate");
+    /* knob 4: Quantize, scrolled into view (Rate, Feel, Quant), its row the third */
+    rest(), touch(3, 1);
+    screen();
+    CHECK(px(1, 50) && px(126, 50) && rfmv_seq_menu_knobs(&M) == 0x0F);
+    write_pbm("o14_rates_menu_quant");
+    knob(3, -2);
+    CHECK(M.seq.qstrength == 90);
+    touch(3, 0), rest();
+    /* the jog selects over the four, then edits the feel */
+    jog(-5), jog(2), jog_click(), jog(-1), rest();
+    CHECK(rfmv_seq_menu_sel(&M) == 2 && rfmv_seq_menu_editing(&M) && t->feel == RFM_MOVE_FEEL_STRAIGHT);
+    write_pbm("o14_rates_menu_jog_feel");
+    jog_click(), back(), rest();
+    CHECK(!M.seq.smenu);
+    t->feel = RFM_MOVE_FEEL_STRAIGHT, t->rate = RFM_MOVE_SEQ_RATE_16, M.seq.qstrength = 100;
 }
 
 int main(void)
@@ -6082,6 +6133,7 @@ int main(void)
     test_n24_fw_play();
     test_n24_back_play();
     test_n24_track_leds();
+    test_o14_rates_menu();
     test_o14_clear_clip();
     test_o14_projects();
     test_o14_shift_knob();

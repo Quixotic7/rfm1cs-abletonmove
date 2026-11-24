@@ -550,8 +550,12 @@ enum { RFM_MOVE_MIXP_LEVEL, RFM_MOVE_MIXP_PAN, RFM_MOVE_MIXP_SEND1, RFM_MOVE_MIX
 #define RFM_MOVE_SEQ_CAPTURE_BARS 16                    /* .. a phrase of at most 16 bars */
 #define RFM_MOVE_SEQ_CAPTURE_GAP 2                      /* .. silence of more than 2 bars ends a phrase */
 #define RFM_MOVE_SEQ_HOLD_MS 300                        /* a step held this long is a hold (its popup; no tap) */
-#define RFM_MOVE_SEQ_RATES 10                           /* track rates: 1/32T 1/32 1/16T 1/16 1/8T 1/8 1/4T 1/4 1/2T 1/2 */
-#define RFM_MOVE_SEQ_RATE_16 3                          /* .. 1/16, the default */
+#define RFM_MOVE_SEQ_RATES 8                            /* (0.14.0) track rates: 1/32 1/16 1/8 1/4 1/2 1 Bar 2 Bars
+                                                         * 4 Bars (Elasticat's), each with a feel */
+#define RFM_MOVE_SEQ_RATE_16 1                          /* .. 1/16, the default */
+/* (0.14.0, the owner's) a track's feel: its rate as is, dotted (x 3/2) or a triplet (x 2/3: the triplet layout, each
+ * fourth step key dead) */
+enum { RFM_MOVE_FEEL_STRAIGHT, RFM_MOVE_FEEL_DOTTED, RFM_MOVE_FEEL_TRIPLET, RFM_MOVE_FEELS };
 /* the trig parameters (the TRIG knob page): kept as CC locks with these numbers (above the MIDI CCs, never sent) */
 enum { RFM_MOVE_TRIG_RATCHET = 128,                     /* 2..8 hits in the step (none: 1) */
        RFM_MOVE_TRIG_CHANCE,                            /* 1..99 % (none: 100) */
@@ -617,11 +621,12 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 9                      /* (versions 1..8 load too; 5 adds FX setup, 6 its 128
+#define RFM_MOVE_PROJECT_VERSION 10                     /* (versions 1..9 load too; 5 adds FX setup, 6 its 128
                                                          * values a slot, 7 the firmwares' MIDI routes, 8 the launch
                                                          * quantization and each clip's launch settings, 9 (0.13.0) the
                                                          * firmwares: each slot's id, level, settings and track, the
-                                                         * slot played, the drum notes, the pads' velocity) */
+                                                         * slot played, the drum notes, the pads' velocity, 10 (0.14.0)
+                                                         * the rate bytes: a base rate and a feel; no new bytes) */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -671,6 +676,7 @@ typedef struct {
     int8_t queued;                                      /* -2 nothing, -1 stop, 0..15: launch at the next bar */
     uint8_t grow, grow_stop;                            /* recording into an empty clip: it grows a bar at a time */
     uint8_t rate;                                       /* (saved) 0..RFM_MOVE_SEQ_RATES - 1 */
+    uint8_t feel;                                       /* (saved, 0.14.0) RFM_MOVE_FEEL_* */
     uint8_t groove;                                     /* (saved) Move's groove 0..150 %: 100 = a triplet swing */
     rfm_move_arp_t arp;                                 /* (saved) */
     uint8_t layout;                                     /* (saved) the pads' layout on this track */
@@ -688,7 +694,8 @@ typedef struct {
     int16_t rsrc, nrsrc;                                /* REPEAT: the step whose content plays at pos (-1: pos's own), at
                                                          * next */
     uint8_t rleft, nrleft;                              /* .. repeats still to come after pos, after next */
-    uint8_t sub, tps;                                   /* ticks into the step, ticks the step lasts */
+    uint16_t sub, tps;                                  /* ticks into the step, ticks the step lasts (0.14.0: 16 bit,
+                                                         * up to 4 Bars dotted, 2304) */
     int8_t dir;                                         /* +1, -1 (REVERSE) */
     uint8_t fire, nfire;                                /* the step's (the next one's) condition and chance passed */
     uint8_t pre;                                        /* the last condition's result (PRE, NEI) */
@@ -1274,7 +1281,8 @@ void rfm_move_seq_set_clock(rfm_move_t *m, int mode);  /* RFM_MOVE_CLOCK_* */
 /* how far ahead of what sounds the host advances the clock (the web player: its 30 ms lead): recordings and
  * Capture place what is played this much earlier, where it was heard */
 void rfm_move_seq_set_lead_us(rfm_move_t *m, uint32_t us);
-const char *rfm_move_seq_rate_name(int rate);           /* "1/16" .. */
+const char *rfm_move_seq_rate_name(int rate);           /* "1/16" .. "4 Bars" */
+const char *rfm_move_seq_feel_name(int feel);           /* (0.14.0) "Straight", "Dotted", "Triplet" */
 int rfm_move_seq_following(const rfm_move_t *m);       /* 1: the external clock drives the sequencer now */
 
 /* ---- projects: 32 slots the host stores (the core never does IO)

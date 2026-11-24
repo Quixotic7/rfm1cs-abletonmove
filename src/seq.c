@@ -7,6 +7,7 @@
  * Time: a tick is 1/24 of a step (96 PPQN). `tl` counts every tick the clock gives (playing or not); `T` is the
  * song position while playing. A note sits at step*24 + micro in its clip; a clip of len steps loops every
  * len*24 ticks from its start t0. */
+#include <stdio.h>
 #include <string.h>
 
 #include "move_int.h"
@@ -106,11 +107,34 @@ int rfmv_seq_loop_hi(const rfm_move_t *m, int clip)
     const int h = m->seq.lstart[clip] + m->seq.len[clip];
     return h > RFM_MOVE_SEQ_MAXLEN ? RFM_MOVE_SEQ_MAXLEN : h;
 }
-static const uint8_t RATE_TPS[RFM_MOVE_SEQ_RATES] = { 8, 12, 16, 24, 32, 48, 64, 96, 128, 192 };
-static const char *const RATE_NAMES[RFM_MOVE_SEQ_RATES] = { "1/32T", "1/32", "1/16T", "1/16", "1/8T", "1/8", "1/4T",
-                                                            "1/4", "1/2T", "1/2" };
-int rfmv_seq_tps(int rate) { return RATE_TPS[rate >= 0 && rate < RFM_MOVE_SEQ_RATES ? rate : RFM_MOVE_SEQ_RATE_16]; }
+/* (0.14.0, the owner's: "Track settings needs more rates. Look at the rates we have available in Elasticat. I'd add a
+ * separate parameter for doing straight, dotted, or triplet rates") the base rates: Elasticat's tempo-synced list
+ * (1/32 .. 4BAR), each Straight, Dotted (x 3/2) or Triplet (x 2/3); was 1/32T .. 1/2 */
+static const uint16_t RATE_TPS[RFM_MOVE_SEQ_RATES] = { 12, 24, 48, 96, 192, 384, 768, 1536 };
+static const char *const RATE_NAMES[RFM_MOVE_SEQ_RATES] = { "1/32", "1/16", "1/8", "1/4", "1/2", "1 Bar", "2 Bars",
+                                                            "4 Bars" };
+static const char *const FEEL_NAMES[RFM_MOVE_FEELS] = { "Straight", "Dotted", "Triplet" };
+int rfmv_seq_tps(int rate, int feel)
+{
+    const int t = RATE_TPS[rate >= 0 && rate < RFM_MOVE_SEQ_RATES ? rate : RFM_MOVE_SEQ_RATE_16];
+    return feel == RFM_MOVE_FEEL_DOTTED ? t * 3 / 2 : feel == RFM_MOVE_FEEL_TRIPLET ? t * 2 / 3 : t;
+}
 const char *rfm_move_seq_rate_name(int rate) { return rate >= 0 && rate < RFM_MOVE_SEQ_RATES ? RATE_NAMES[rate] : "?"; }
+const char *rfm_move_seq_feel_name(int feel) { return feel >= 0 && feel < RFM_MOVE_FEELS ? FEEL_NAMES[feel] : "?"; }
+void rfmv_seq_rate_label(int rate, int feel, char *o, int cap)   /* "1/16", "1/8D", "1/16T", "1 Bar T" */
+{
+    const char *n = rfm_move_seq_rate_name(rate);
+    snprintf(o, (size_t)cap, "%s%s%s", n, feel && strchr(n, ' ') ? " " : "",
+             feel == RFM_MOVE_FEEL_DOTTED ? "D" : feel == RFM_MOVE_FEEL_TRIPLET ? "T" : "");
+}
+void rfmv_seq_feel_set(rfm_move_t *m, int track, int feel)
+{
+    rfm_move_track_t *t = &m->seq.tr[track];
+    if (feel == t->feel)
+        return;
+    t->feel = (uint8_t)feel;
+    t->next = -1, t->nrsrc = -1, t->nrleft = 0;        /* (the next step chosen again with it, at the step's end) */
+}
 int rfmv_seq_trig(const rfm_move_t *m, int clip, int step, int id) { return rfmv_seq_lock_get(m, clip, step, id); }
 
 int rfmv_seq_track_used(const rfm_move_t *m, int track)
@@ -904,9 +928,9 @@ static void seek(rfm_move_t *m, int track, int32_t T)
     int lo, hi;
     int32_t d = T - t->t0, st;
     loop_of(q, track, clip, &lo, &hi);
-    t->tps = (uint8_t)rfmv_seq_tps(t->rate);
+    t->tps = (uint16_t)rfmv_seq_tps(t->rate, t->feel);
     st = d / t->tps;
-    t->pos = (int16_t)(lo + st % (hi - lo)), t->sub = (uint8_t)(d % t->tps);
+    t->pos = (int16_t)(lo + st % (hi - lo)), t->sub = (uint16_t)(d % t->tps);
     t->pass = (uint16_t)clampi(1 + st / (hi - lo), 1, 60000);
     t->dir = 1, t->next = -1, t->rsrc = t->nrsrc = -1, t->rleft = t->nrleft = 0;
     t->fire = (uint8_t)decide(m, track, clip, t->pos, t->pass);
@@ -995,7 +1019,7 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
             choose(m, tr);
         t->pos = t->next, t->pass = t->npass, t->fire = t->nfire, t->sub = 0, t->next = -1;
         t->rsrc = t->nrsrc, t->rleft = t->nrleft, t->nrsrc = -1, t->nrleft = 0;
-        t->tps = (uint8_t)rfmv_seq_tps(t->rate);
+        t->tps = (uint16_t)rfmv_seq_tps(t->rate, t->feel);
         loop_of(q, tr, clip, &llo, &lhi);
         if (t->grow == 1 && (old + 1 - llo) % RFM_MOVE_SEQ_PAGE == 0) {   /* a recording clip: a page more, or done */
             const int k = (old + 1 - llo) / RFM_MOVE_SEQ_PAGE;
@@ -1070,7 +1094,7 @@ static int32_t loop_ticks(const rfm_move_t *m, int track)   /* the active clip's
     if (t->active < 0)
         return 0;
     loop_of(q, track, SEQ_CLIP(track, t->active), &lo, &hi);
-    return (int32_t)(hi - lo) * rfmv_seq_tps(t->rate);
+    return (int32_t)(hi - lo) * rfmv_seq_tps(t->rate, t->feel);
 }
 static int launch_due(const rfm_move_t *m, int tr, int32_t T)
 {
@@ -1137,7 +1161,7 @@ static void play_tick(rfm_move_t *m, int32_t T)
 void rfmv_seq_preview(rfm_move_t *m, int clip, int step)
 {
     rfm_move_seq_t *q = &m->seq;
-    const int track = clip / RFM_MOVE_SEQ_SCENES, tps = rfmv_seq_tps(q->tr[track].rate);
+    const int track = clip / RFM_MOVE_SEQ_SCENES, tps = rfmv_seq_tps(q->tr[track].rate, q->tr[track].feel);
     int lo, hi = rfmv_seq_range(m, clip, step, &lo), i;
     for (i = lo; i < hi; i++) {
         const rfm_move_note_t n = q->notes[i];
@@ -2133,7 +2157,7 @@ static void rec_finish(rfm_move_t *m, int pad)
 {
     rfm_move_seq_t *q = &m->seq;
     rfm_move_recnote_t *r = &q->recn[pad];
-    const int track = r->clip / RFM_MOVE_SEQ_SCENES, tps = rfmv_seq_tps(q->tr[track].rate);
+    const int track = r->clip / RFM_MOVE_SEQ_SCENES, tps = rfmv_seq_tps(q->tr[track].rate, q->tr[track].feel);
     int32_t now = T_now(m);
     int i;
     uint16_t g;
@@ -2300,7 +2324,7 @@ int rfmv_seq_capture(rfm_move_t *m)
     rfm_move_track_t *t = &q->tr[tr];
     static cnote_t c[RFM_MOVE_SEQ_CAPTURE];
     const int32_t now = tl_now(m), tl0 = q->tl - q->T;
-    int i, j, n = 0, first, scene = -1, clip, L, pages, tps = rfmv_seq_tps(t->rate), any_clip = 0;
+    int i, j, n = 0, first, scene = -1, clip, L, pages, tps = rfmv_seq_tps(t->rate, t->feel), any_clip = 0;
     int32_t origin, oT = 0, start_t;
     const int start = (q->cap_head - q->ncap + RFM_MOVE_SEQ_CAPTURE) % RFM_MOVE_SEQ_CAPTURE;
     for (i = 0; i < q->ncap; i++) {                     /* the notes, on .. off */

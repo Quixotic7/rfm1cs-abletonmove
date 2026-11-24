@@ -380,7 +380,12 @@ static void menu_words(const rfm_move_t *m, int t, char *o, int cap)
         }
         break;
     case MENU_TRACK: track_words(m, i, o, cap); break;
-    case MENU_RATE: snprintf(o, (size_t)cap, "Rate: %s", rfm_move_seq_rate_name(i)); break;
+    case MENU_RATE: {                                   /* (0.14.0: with the track's feel, "1/16T") */
+        char r[16];
+        rfmv_seq_rate_label(i, m->seq.tr[m->seq.sel_track].feel, r, sizeof r);
+        snprintf(o, (size_t)cap, "Rate: %s", r);
+        break;
+    }
     default: break;
     }
 }

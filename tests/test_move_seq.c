@@ -2025,11 +2025,11 @@ static void test_controls(void)
     CHECK(m->s.octave == 0 && m->s.mode == RFM_MOVE_MODE_SEQ);
     /* the rate: Workflow (Shift + step 3), knob 2: 1/16 -> 1/8 */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 2), button(m, MR_CC_SHIFT, 0);
-    knob(m, 1, 2 * RFM_MOVE_LIST_TICKS);
+    knob(m, 1, RFM_MOVE_LIST_TICKS);                    /* (0.14.0: the base rates, a feel apart: 1/16 -> 1/8 an item) */
     rfm_move_screen(m, NULL, out);
     write_pbm("move_seq_trackmenu_rate.pbm", out);
     press(m, MR_CC_BACK);
-    CHECK(m->seq.tr[0].rate == 5 && !m->seq.smenu && m->s.mode == RFM_MOVE_MODE_SEQ);
+    CHECK(m->seq.tr[0].rate == 2 && m->seq.tr[0].feel == RFM_MOVE_FEEL_STRAIGHT && !m->seq.smenu && m->s.mode == RFM_MOVE_MODE_SEQ);
     m->s.layout = RFM_MOVE_LAYOUT_SCALE;
     rfmv_seq_note_put(m, 0, 1, 64, 100, 24, 0);
     clear();
@@ -2093,11 +2093,12 @@ static void test_controls(void)
     }
     rfm_move_seq_play(m, 0);
     m->seq.groove = 0;
-    /* Shift + step 3: Workflow Settings: the jog the channel, knob 2 the rate, knob 3 Quantize's amount */
+    /* Shift + step 3: Workflow Settings: the jog the channel, knob 2 the rate, (0.14.0) knob 3 the feel, knob 4
+     * Quantize's amount */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 2), button(m, MR_CC_SHIFT, 0);
     CHECK(m->seq.smenu == RFM_MOVE_SM_WORKFLOW);
-    jog_click(m), jog(m, 2), knob(m, 1, -RFM_MOVE_LIST_TICKS), knob(m, 2, -10);
-    CHECK(m->seq.tr[0].ch == 2 && m->seq.tr[0].rate == 2 && m->seq.qstrength == 50);
+    jog_click(m), jog(m, 2), knob(m, 1, -RFM_MOVE_LIST_TICKS), knob(m, 3, -10);
+    CHECK(m->seq.tr[0].ch == 2 && m->seq.tr[0].rate == 0 && m->seq.qstrength == 50);
     rest(m);
     rfm_move_screen(m, NULL, out);
     write_pbm("move_seq_workflow.pbm", out);
@@ -3231,8 +3232,76 @@ static void test_api_seq(void)
     rfm_move_release_all(m);
 }
 
+/* (0.14.0, the owner's: "Track settings needs more rates. Look at the rates we have available in Elasticat. I'd add a
+ * separate parameter for doing straight, dotted, or triplet rates") the base rates and the feel: the ticks a step,
+ * the names, playback at exact ticks, the blob (version 10: a base rate and a feel in the rate byte; versions 2..9:
+ * the ten old rates read as the same timing) */
+#define RATE_BYTE(n, tr) ((n) - 4 - RFM_MOVE_PROJECT_EXT + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_SEQ_CLIPS / 8 + (tr))
+static void test_rates_feel(void)
+{
+    static const int BASE[RFM_MOVE_SEQ_RATES] = { 12, 24, 48, 96, 192, 384, 768, 1536 };
+    static const int OLD[10] = { 8, 12, 16, 24, 32, 48, 64, 96, 128, 192 };   /* (1/32T 1/32 1/16T .. 1/2T 1/2) */
+    static uint8_t a[RFM_MOVE_PROJECT_MAX], b[RFM_MOVE_PROJECT_MAX];
+    rfm_move_t *m = &M, *m2 = &M2;
+    char l[16];
+    uint64_t at;
+    int r, n, i;
+    for (r = 0; r < RFM_MOVE_SEQ_RATES; r++)
+        CHECKF(rfmv_seq_tps(r, RFM_MOVE_FEEL_STRAIGHT) == BASE[r] && rfmv_seq_tps(r, RFM_MOVE_FEEL_DOTTED) == BASE[r] * 3 / 2 &&
+               rfmv_seq_tps(r, RFM_MOVE_FEEL_TRIPLET) == BASE[r] * 2 / 3, "rate %d", r);
+    CHECK(!strcmp(rfm_move_seq_rate_name(0), "1/32") && !strcmp(rfm_move_seq_rate_name(RFM_MOVE_SEQ_RATE_16), "1/16") &&
+          !strcmp(rfm_move_seq_rate_name(7), "4 Bars") && !strcmp(rfm_move_seq_feel_name(RFM_MOVE_FEEL_DOTTED), "Dotted"));
+    rfmv_seq_rate_label(2, RFM_MOVE_FEEL_DOTTED, l, sizeof l);
+    CHECK(!strcmp(l, "1/8D"));
+    rfmv_seq_rate_label(5, RFM_MOVE_FEEL_TRIPLET, l, sizeof l);
+    CHECK(!strcmp(l, "1 Bar T"));
+    rfmv_seq_rate_label(1, RFM_MOVE_FEEL_STRAIGHT, l, sizeof l);
+    CHECK(!strcmp(l, "1/16"));
+    /* playback: step 2 of a 1/8 dotted track at tick 72; of a 1 Bar track at tick 384; the second loop of a 4 Bars
+     * one-step loop at 1536 */
+    fresh(m);
+    m->seq.tr[0].rate = 2, m->seq.tr[0].feel = RFM_MOVE_FEEL_DOTTED;
+    m->seq.tr[1].rate = 5;
+    m->seq.tr[2].rate = 7;
+    rfmv_seq_note_put(m, SEQ_CLIP(0, 0), 1, 60, 100, 24, 0);
+    rfmv_seq_note_put(m, SEQ_CLIP(1, 0), 1, 61, 100, 24, 0);
+    rfmv_seq_note_put(m, SEQ_CLIP(2, 0), 0, 62, 100, 12, 0);
+    rfmv_seq_loop_set(m, SEQ_CLIP(2, 0), 0, 1);
+    clear();
+    rfm_move_seq_play(m, 1);
+    adv(m, 2000 * FPT);
+    CHECK(find_midi(0x90, 60, 100, &at) && at == 72 * FPT);
+    CHECK(find_midi(0x91, 61, 100, &at) && at == 384 * FPT);
+    CHECK(find_midi(0x82, 62, 0, &at) && at == 768 * FPT && count_midi(0x92, 62) == 2);   /* (half a 4 Bars step long) */
+    rfm_move_seq_play(m, 0);
+    /* the blob: version 10 keeps the base rate and the feel */
+    n = rfm_move_project_save(m, a, sizeof a);
+    CHECK(a[4] == 10 && a[RATE_BYTE(n, 0)] == (2 | RFM_MOVE_FEEL_DOTTED << 4) && a[RATE_BYTE(n, 2)] == 7);
+    rfm_move_init(m2, NULL, on_act, NULL);
+    CHECK(rfm_move_project_load(m2, 1, a, (uint32_t)n) == 0 && m2->seq.tr[0].rate == 2 &&
+          m2->seq.tr[0].feel == RFM_MOVE_FEEL_DOTTED && m2->seq.tr[2].rate == 7 && m2->seq.tr[3].rate == RFM_MOVE_SEQ_RATE_16 &&
+          m2->seq.tr[3].feel == RFM_MOVE_FEEL_STRAIGHT);
+    memcpy(b, a, (size_t)n), b[RATE_BYTE(n, 0)] = 8, refnv(b, (uint32_t)n);   /* (no such base rate) */
+    CHECK(rfm_move_project_check(b, (uint32_t)n) == -9);
+    memcpy(b, a, (size_t)n), b[RATE_BYTE(n, 0)] = 3 << 4, refnv(b, (uint32_t)n);   /* (no such feel) */
+    CHECK(rfm_move_project_check(b, (uint32_t)n) == -9);
+    /* version 9 (0.13.0, the same bytes): tracks 1..10 with the ten old rates load with their timing */
+    memcpy(b, a, (size_t)n), b[4] = 9;
+    for (i = 0; i < 10; i++)
+        b[RATE_BYTE(n, i)] = (uint8_t)i;
+    refnv(b, (uint32_t)n);
+    rfm_move_init(m2, NULL, on_act, NULL);
+    CHECK(rfm_move_project_load(m2, 1, b, (uint32_t)n) == 0);
+    for (i = 0; i < 10; i++)
+        CHECKF(rfmv_seq_tps(m2->seq.tr[i].rate, m2->seq.tr[i].feel) == OLD[i] &&
+               m2->seq.tr[i].feel == (i & 1 ? RFM_MOVE_FEEL_STRAIGHT : RFM_MOVE_FEEL_TRIPLET), "old rate %d", i);
+    b[RATE_BYTE(n, 0)] = 10, refnv(b, (uint32_t)n);     /* (version 9 had ten) */
+    CHECK(rfm_move_project_check(b, (uint32_t)n) == -9);
+}
+
 int main(void)
 {
+    test_rates_feel();
     test_record_8_bars();
     test_model();
     test_playback();

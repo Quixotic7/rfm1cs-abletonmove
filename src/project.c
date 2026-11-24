@@ -4,7 +4,7 @@
  * host stores them in (the core asks with actions; it never does IO). A blob may come from a file someone sent:
  * rfm_move_project_check reads nothing past n and accepts only a blob every field of which is in range.
  *
- *   0  "RMSQ"  4 version (3; 2 loads: a shorter arp, no per-track key; 1 loads: no extension)  5 flags (0)  6 bpm10 u16  8 clock mode  9 fixed velocity  10 selected track
+ *   0  "RMSQ"  4 version (10; 3..9 load; 2 loads: a shorter arp, no per-track key; 1 loads: no extension)  5 flags (0)  6 bpm10 u16  8 clock mode  9 fixed velocity  10 selected track
  *   11 tracks (16)  12 scenes (16)  13 record mode (RFM_MOVE_RM_*)  14 record style (RFM_MOVE_RS_*)  15 groove
  *   16 root  17 scale (version 3)  18 colour 0..16 (any version: older blobs have 0, the slot's own)  19..23 zero
  *   24 16 tracks x { channel 0..15, mute 0/1, active clip 0..15 or 255, edited clip 0..15 }
@@ -27,6 +27,9 @@
  *      project's, 1..6 RFM_MOVE_LQ_* + 1; bit 3 after its loop the next clip)
  *      (version 9, 0.13.0) the firmwares (projfw.c): 3 slots x { id 32 NUL padded ("" empty), level, layout, scale,
  *      root, channel, octave, 8 CC numbers, the sequencer track }, the slot played, 32 drum notes, velocity mode, level
+ *      (version 10, 0.14.0: no new bytes) a track's rate byte is its base rate (bits 0..3, RFM_MOVE_SEQ_RATES) and its
+ *      feel (bits 4..5, RFM_MOVE_FEEL_*); before, one of 10 rates 1/32T 1/32 1/16T .. 1/2T 1/2 (OLD_RATES), read as
+ *      the same timing (old_rate)
  *      FNV-1a (32 bit) of everything before it */
 #include <stdio.h>
 #include <string.h>
@@ -87,7 +90,7 @@ int rfm_move_project_save(rfm_move_t *m, uint8_t *out, uint32_t cap)
     memcpy(p, q->lstart, RFM_MOVE_SEQ_CLIPS), p += RFM_MOVE_SEQ_CLIPS;
     memcpy(p, q->made, sizeof q->made), p += sizeof q->made;
     for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++)
-        *p++ = q->tr[i].rate;
+        *p++ = (uint8_t)(q->tr[i].rate | q->tr[i].feel << 4);   /* (version 10: the base rate and the feel) */
     for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++)
         *p++ = q->tr[i].groove;
     for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++, p += RFM_MOVE_ARP_BYTES) {
@@ -114,6 +117,18 @@ int rfm_move_project_save(rfm_move_t *m, uint8_t *out, uint32_t cap)
 }
 
 /* a trig parameter's value is in range */
+/* (0.14.0) the track rate bytes of versions 2..9: 1/32T 1/32 1/16T 1/16 1/8T 1/8 1/4T 1/4 1/2T 1/2, each a base rate
+ * (1/32 .. 1/2) as a triplet, then straight: the same timing as that base rate and feel */
+#define OLD_RATES 10
+static void old_rate(int r, uint8_t *rate, uint8_t *feel)
+{
+    *rate = (uint8_t)(r / 2), *feel = (uint8_t)(r & 1 ? RFM_MOVE_FEEL_STRAIGHT : RFM_MOVE_FEEL_TRIPLET);
+}
+static int rate_ok(int ver, int r)
+{
+    return ver >= 10 ? (r & 15) < RFM_MOVE_SEQ_RATES && (r >> 4) < RFM_MOVE_FEELS : r < OLD_RATES;
+}
+
 static int trig_ok(int cc, int v)
 {
     switch (cc) {
@@ -202,7 +217,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
             const uint8_t *r = x + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_SEQ_CLIPS / 8;
             const uint8_t *a = r + 2 * RFM_MOVE_SEQ_TRACKS + i * ab;
             int k;
-            if (r[i] >= RFM_MOVE_SEQ_RATES || r[RFM_MOVE_SEQ_TRACKS + i] > 150 || a[0] >= RFM_MOVE_AP_N ||
+            if (!rate_ok(ver, r[i]) || r[RFM_MOVE_SEQ_TRACKS + i] > 150 || a[0] >= RFM_MOVE_AP_N ||
                 a[1] >= RFM_MOVE_ARP_RATES || a[2] < 1 || a[2] > 8 || a[3] > 100 || a[4] >= RFM_MOVE_AM_N || a[5] < 2 ||
                 a[5] > 200 || (int8_t)a[6] < -24 || (int8_t)a[6] > 24)
                 return -9;
@@ -284,7 +299,11 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
             const uint8_t *r = x + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_SEQ_CLIPS / 8;
             const uint8_t *a = r + 2 * RFM_MOVE_SEQ_TRACKS + i * ab;
             rfm_move_arp_t *o = &q->tr[i].arp;
-            q->tr[i].rate = r[i], q->tr[i].groove = r[RFM_MOVE_SEQ_TRACKS + i];
+            q->tr[i].groove = r[RFM_MOVE_SEQ_TRACKS + i];
+            if (ver >= 10)
+                q->tr[i].rate = (uint8_t)(r[i] & 15), q->tr[i].feel = (uint8_t)(r[i] >> 4);
+            else
+                old_rate(r[i], &q->tr[i].rate, &q->tr[i].feel);
             o->pat = a[0], o->rate = a[1], o->range = a[2], o->chance = 100, o->mode = a[4], o->gate = a[5];
             o->down = a[3] == 99;                       /* (0.14.0: the octaves down; OCT DIST stored negated, so a core
                                                          * before 0.14.0 walks them down too) */
@@ -328,7 +347,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
         for (i = 0; i < nn; i++)
             q->made[q->notes[i].clip >> 3] = (uint8_t)(q->made[q->notes[i].clip >> 3] | 1u << (q->notes[i].clip & 7));
         for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++)
-            q->tr[i].rate = RFM_MOVE_SEQ_RATE_16;
+            q->tr[i].rate = RFM_MOVE_SEQ_RATE_16, q->tr[i].feel = RFM_MOVE_FEEL_STRAIGHT;
     }
     return 0;
 }

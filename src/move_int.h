@@ -112,7 +112,9 @@ int rfmv_seq_clip_has(const rfm_move_t *m, int clip);  /* used, or made (an empt
 void rfmv_seq_clip_make(rfm_move_t *m, int clip, int on);
 int rfmv_seq_loop_lo(const rfm_move_t *m, int clip);   /* the loop: [lo, hi) */
 int rfmv_seq_loop_hi(const rfm_move_t *m, int clip);
-int rfmv_seq_tps(int rate);                            /* ticks a step at a rate */
+int rfmv_seq_tps(int rate, int feel);                  /* ticks a step at a rate and feel */
+void rfmv_seq_rate_label(int rate, int feel, char *o, int cap);   /* (0.14.0) "1/16", "1/8D", "1/16T", "1 Bar T" */
+void rfmv_seq_feel_set(rfm_move_t *m, int track, int feel);   /* (0.14.0) a track's feel (from its next step) */
 /* edits (journaled into the current undo group, the project marked changed) */
 void rfmv_seq_group(rfm_move_t *m);                    /* a new undo group: one gesture */
 int rfmv_seq_note_put(rfm_move_t *m, int clip, int step, int note, int vel, int len, int micro);   /* add/replace */

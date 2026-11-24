@@ -2269,7 +2269,7 @@ static void trig_turn(rfm_move_t *m, int clip, int abs, int k, int d)
 static int smenu_list(const rfm_move_seq_t *q, int k)
 {
     switch (q->smenu) {
-    case RFM_MOVE_SM_WORKFLOW: return k == 0 || k == 1;
+    case RFM_MOVE_SM_WORKFLOW: return k <= 2;            /* (0.14.0: the feel too) */
     case RFM_MOVE_SM_GROOVE: return k == 1;
     case RFM_MOVE_SM_LAYOUT: return k == 0;
     case RFM_MOVE_SM_KEYS: return k <= 3;
@@ -2289,7 +2289,7 @@ int rfmv_seq_menu_knobs(const rfm_move_t *m)
 {
     const rfm_move_seq_t *q = &m->seq;
     switch (q->smenu) {
-    case RFM_MOVE_SM_WORKFLOW: return 0x07;
+    case RFM_MOVE_SM_WORKFLOW: return 0x0F;             /* (0.14.0: channel, rate, feel, quantize) */
     case RFM_MOVE_SM_TEMPO: return q->following ? 0 : 0x03;
     case RFM_MOVE_SM_GROOVE: return 0x03;
     case RFM_MOVE_SM_LAYOUT: return 0x01;
@@ -2496,7 +2496,7 @@ static uint32_t smenu_sig(const rfm_move_t *m)
 {
     const rfm_move_seq_t *q = &m->seq;
     const rfm_move_track_t *t = &q->tr[q->sel_track];
-    return (uint32_t)t->ch ^ (uint32_t)t->rate << 4 ^ (uint32_t)q->qstrength << 8 ^ (uint32_t)rfm_move_seq_bpm10(m) << 12 ^
+    return (uint32_t)t->ch ^ (uint32_t)t->rate << 4 ^ (uint32_t)t->feel << 6 ^ (uint32_t)q->qstrength << 8 ^ (uint32_t)rfm_move_seq_bpm10(m) << 12 ^
            (uint32_t)rfmv_seq_groove_of(m, q->sel_track) << 3 ^ (uint32_t)t->own << 28 ^ (uint32_t)m->s.layout << 26 ^
            (uint32_t)m->s.root << 20 ^ (uint32_t)m->s.scale << 15 ^ (uint32_t)m->s.vel_mode << 24 ^
            (uint32_t)m->s.vel_level << 9 ^ (uint32_t)q->rec_mode << 30 ^ (uint32_t)q->rec_style << 29;
@@ -2518,7 +2518,7 @@ static void smenu_turn(rfm_move_t *m, int k, int d, int jog)   /* (jog: the jog 
         return;                                         /* (not a whole item yet) */
     rfmv_menu(m, MENU_NONE, k < 0 ? 0 : k);
     switch (q->smenu) {
-    case RFM_MOVE_SM_WORKFLOW:                          /* channel, rate, quantize amount */
+    case RFM_MOVE_SM_WORKFLOW:                          /* channel, rate, (0.14.0) feel, quantize amount */
         if (k <= 0) {
             const int ch = clampi(t->ch + d, 0, 15);
             if (ch != t->ch)
@@ -2526,6 +2526,8 @@ static void smenu_turn(rfm_move_t *m, int k, int d, int jog)   /* (jog: the jog 
         } else if (k == 1)
             t->rate = (uint8_t)clampi(t->rate + d, 0, RFM_MOVE_SEQ_RATES - 1);
         else if (k == 2)
+            rfmv_seq_feel_set(m, q->sel_track, clampi(t->feel + d, 0, RFM_MOVE_FEELS - 1));
+        else if (k == 3)
             q->qstrength = (uint8_t)clampi(q->qstrength + d * 5, 0, 100);
         break;
     case RFM_MOVE_SM_TEMPO:                             /* (following the firmware's clock: locked) */
@@ -4127,6 +4129,8 @@ static void smenu_head(const rfm_move_t *m, int k, char *o, int cap)   /* knob k
             snprintf(o, (size_t)cap, "Channel %d", t->ch + 1);
         else if (k == 1)
             snprintf(o, (size_t)cap, "Rate %s", rfm_move_seq_rate_name(t->rate));
+        else if (k == 2)
+            snprintf(o, (size_t)cap, "Feel %s", rfm_move_seq_feel_name(t->feel));
         else
             snprintf(o, (size_t)cap, "Quantize %d%%", q->qstrength);
         break;
@@ -4228,6 +4232,25 @@ static void smenu_top(const rfm_move_t *m, mr_canvas_t *cv, int hk)
     }
     smenu_ticks(m, cv, hk >= 0 ? hk : sel);
 }
+/* (0.14.0) the track settings' rows: Ch, Rate, Feel, Quant (knobs 1..4), at 2x: a row too wide for that (w px) shows
+ * its value alone ("Straight", "Dotted", "Triplet"; "100%" while edited) */
+static void wf_row(const rfm_move_t *m, int i, char *b, int cap, int w)
+{
+    const rfm_move_track_t *t = &m->seq.tr[m->seq.sel_track];
+    char v[16];
+    if (i == 0)
+        snprintf(v, sizeof v, "%d", t->ch + 1);
+    else if (i == 1)
+        snprintf(v, sizeof v, "%s", rfm_move_seq_rate_name(t->rate));
+    else if (i == 2)
+        snprintf(v, sizeof v, "%s", rfm_move_seq_feel_name(t->feel));
+    else
+        snprintf(v, sizeof v, "%d%%", m->seq.qstrength);
+    snprintf(b, (size_t)cap, "%s %s", i == 0 ? "Ch" : i == 1 ? "Rate" : i == 2 ? "Feel" : "Quant", v);
+    if (v2_tw(b, 2) > w)
+        snprintf(b, (size_t)cap, "%s", v);
+}
+static int wf_top(int cur) { return cur >= 3 ? 1 : 0; }   /* (three rows shown: Quant's selection scrolls one) */
 static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_seq_t *q = &m->seq;
@@ -4242,21 +4265,18 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
                                                          * line stays "Workflow". (0.14.0, the owner's 2026-11-24: "No
                                                          * need to draw the little lines to show which parameter is
                                                          * selected, the highlighted parameter is enough") no knob
-                                                         * ticks: the rows are the knobs in order */
-        const int sel = smenu_sel(m), cur = hk >= 0 ? hk : q->sm_sel >= 0 ? sel : -1;
+                                                         * ticks: the rows are the knobs in order. (0.14.0) four rows
+                                                         * (the feel), three shown: the list scrolls to show the
+                                                         * selected one */
+        const int sel = smenu_sel(m), cur = hk >= 0 ? hk : q->sm_sel >= 0 ? sel : -1, top = wf_top(cur);
         snprintf(c, sizeof c, "Track %d", q->sel_track + 1);   /* (0.14.0: the track's settings, named by it) */
         v2_TC(cv, 64, 0, c, 2, 1);
-        for (i = 0; i < 3; i++) {
-            if (i == 0)
-                snprintf(b, sizeof b, "Ch %d", t->ch + 1);
-            else if (i == 1)
-                snprintf(b, sizeof b, "Rate %s", rfm_move_seq_rate_name(t->rate));
-            else
-                snprintf(b, sizeof b, "Quant %d%%", q->qstrength);
+        for (i = top; i < top + 3; i++) {
+            wf_row(m, i, b, sizeof b, i == cur && i == sel && q->sm_edit ? 106 : 118);
             if (i == cur)
-                sel_row(cv, 19 + i * 15, 15, b, i == sel && q->sm_edit);
+                sel_row(cv, 19 + (i - top) * 15, 15, b, i == sel && q->sm_edit);
             else
-                v2_T(cv, 3, 19 + i * 15 + 1, b, 2, 1);
+                v2_T(cv, 3, 19 + (i - top) * 15 + 1, b, 2, 1);
         }
         break;
     }
@@ -4520,7 +4540,7 @@ void rfmv_seq_track_menu(const rfm_move_t *m, mr_canvas_t *cv)
             snprintf(l, sizeof l, "Knob %d CC", (m->menu_i & 7) + 1);
             snprintf(b, sizeof b, "%d", m->s.cc[m->s.bank][m->menu_i & 7]);
             break;
-        case MENU_RATE: snprintf(l, sizeof l, "Rate"), snprintf(b, sizeof b, "%s", rfm_move_seq_rate_name(t->rate)); break;
+        case MENU_RATE: snprintf(l, sizeof l, "Rate"), rfmv_seq_rate_label(t->rate, t->feel, b, sizeof b); break;
         case MENU_LAYOUT: snprintf(l, sizeof l, "Layout"), rfmv_tcase(rfm_move_layout_name(m->s.layout), b, sizeof b); break;
         case MENU_SCALE: snprintf(l, sizeof l, "Scale"), rfmv_tcase(rfm_move_scale_name(m->s.scale), b, sizeof b); break;
         default: break;
@@ -4559,6 +4579,8 @@ void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap)
         if (k == 1)
             snprintf(o, (size_t)cap, "Rate: %s", rfm_move_seq_rate_name(t->rate));
         else if (k == 2)
+            snprintf(o, (size_t)cap, "Feel: %s", rfm_move_seq_feel_name(t->feel));
+        else if (k == 3)
             snprintf(o, (size_t)cap, "Quantize: %d%%", q->qstrength);
         else if (k == 0)
             snprintf(o, (size_t)cap, "Track channel: %d", t->ch + 1);
