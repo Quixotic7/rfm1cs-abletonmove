@@ -540,7 +540,7 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
         return;
     }
     case POP_BACK: {                                    /* (0.12.x) Back held + a button: what it did */
-        static const char *const BK[] = { "Bar 1", "Track 1", "Scene 1", "All closed", "None" };
+        static const char *const BK[] = { "Bar 1", "Track 1", "Scene 1", "All closed", "None", "Move play", "Move stop" };
         snprintf(o, (size_t)cap, "%s", BK[i < (int)(sizeof BK / sizeof BK[0]) ? i : BK_NONE]);
         return;
     }

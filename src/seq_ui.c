@@ -2062,6 +2062,11 @@ void rfmv_seq_back_pop(const rfm_move_t *m, mr_canvas_t *cv)
         v2_strip(cv, RFM_MOVE_SEQ_SCENES, 15u << q->scene_off, -1, 0, 128);
         break;
     case BK_CLOSED: v2_msg(cv, "All closed", NULL); break;
+    case BK_PLAY:                                       /* (0.14.0) the Move's own Play where Play is the firmware's */
+    case BK_STOP:
+        v2_ic(cv, m->pop_i == BK_PLAY ? V2I_PLAY : V2I_STOP, 58, 4, 1);
+        v2_msg(cv, m->pop_i == BK_PLAY ? "Move Play" : "Move Stop", NULL);
+        break;
     default: v2_msg(cv, "None", NULL); break;
     }
 }

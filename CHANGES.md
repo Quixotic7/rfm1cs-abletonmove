@@ -136,6 +136,16 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   project grid: full, the played Track 60 % steady there) or held. Was: in the sequencer every firmware Track a
   quarter, the played one not told apart, and Track 4 full; an empty slot faint white. A takeover that claims the
   Track buttons still lights them itself. `test_n24_track_leds`, pictures `sessview_n24_tracks_*`.
+- (item 2, "Holding back + Play should always trigger play on the Move's side") where Play alone is the firmware's
+  (the FM-1 layout, the FM-1 page's Knobs+Keys with Delete / Copy not held, a firmware's takeover: `rfmv_play_fw`),
+  Back held + Play is the Move's own Play at the press: it starts or stops the Move's sequencer exactly as Play does
+  in the track view (`play_toggle`), nothing reaches the firmware, Back's click does not come; the popup the play /
+  stop icon over "Move Play" / "Move Stop" (`POP_BACK`, `BK_PLAY`, `BK_STOP`; said "Move play"). A takeover that
+  claims the buttons holds Back for the core already: Play with it is now the core's too and Back is not sent
+  (`takeover.c`); one that also claims the Track buttons has Back itself, so there it stays the firmware's. Where Play
+  is the Move's (the track and session views, Knobs) Back + Play stays the 0.12.x shortcut, "to bar 1": playing,
+  every clip from its start (Shift + Play's restart); stopped, nothing; it never starts or stops. No conflict, kept.
+  `test_n24_back_play`, pictures `sessview_n24_back_play_*`.
 
 ## 0.13.0 (2026-11-23)
 

@@ -4990,8 +4990,62 @@ static void test_n24_track_leds(void)
     CHECK(lo[2] > 0);
 }
 
+/* item 2: "Holding back + Play should always trigger play on the Move's side": where Play alone is the firmware's (the
+ * FM-1 layout, Knobs+Keys, a takeover claiming the buttons) Back held + Play starts and stops the Move's sequencer;
+ * the firmware hears neither; Back's click does not come */
+static void n24_back_play(const char *pic)
+{
+    clear(), back_down(), button(MR_CC_PLAY, 1);
+    CHECKF((M.seq.playing || M.seq.start_pending) && M.pop == POP_BACK && M.pop_i == BK_PLAY, "%s: playing %d pop %d",
+           pic, M.seq.playing, M.pop);
+    CHECKF(strstr(said, "Move play") != NULL, "said %s", said);
+    write_pbm(pic);
+    button(MR_CC_PLAY, 0), back_up(), adv_ms(300);
+    CHECK(M.seq.playing && !count(RFM_MOVE_ACT_BTN) && !count(RFM_MOVE_ACT_TK_INPUT));
+    clear(), back_down(), button(MR_CC_PLAY, 1), back_up(), button(MR_CC_PLAY, 0);   /* (released in either order) */
+    CHECK(!M.seq.playing && !M.seq.start_pending && M.pop_i == BK_STOP && !count(RFM_MOVE_ACT_BTN) &&
+          !count(RFM_MOVE_ACT_TK_INPUT));
+    rest();
+}
+static void test_n24_back_play(void)
+{
+    const int8_t oct = 0;
+    track_view();
+    /* Knobs+Keys: Play alone the firmware's PLAY; Back + Play the Move's */
+    jog(1), rest(), jog_click(), rest();
+    CHECK(rfm_move_fwp_level(&M) == 2);
+    clear(), press(MR_CC_PLAY);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY) == 2 && !M.seq.playing);
+    rest(), n24_back_play("n24_back_play_knobskeys");
+    CHECK(rfm_move_fwp_level(&M) == 2 && M.s.mode == RFM_MOVE_MODE_SEQ);
+    jog_click(), rest(), jog(-1), rest();
+    /* the track view: Back + Play is still "Bar 1" (never a start) */
+    clear(), back_down(), button(MR_CC_PLAY, 1);
+    CHECK(!M.seq.playing && !M.seq.start_pending && M.pop_i == BK_BAR1);
+    button(MR_CC_PLAY, 0), back_up(), rest();
+    /* the FM-1 layout: the same; the mode stays (no Back click) */
+    hold_track(1), hit(24), track(1, 0), rest();
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1);
+    clear(), press(MR_CC_PLAY);
+    CHECK(acts_of(RFM_MOVE_ACT_BTN, RFM_MOVE_B_PLAY) == 2 && !M.seq.playing);
+    rest(), n24_back_play("n24_back_play_fm1");
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1 && M.s.octave == oct);
+    /* a takeover claiming the buttons (Back is held by the core): the same, the firmware gets no Back */
+    rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_SCREEN | RFM_MOVE_TK_PADS | RFM_MOVE_TK_BUTTONS, "ChoralRoot");
+    hold_track(0), hit(25), track(0, 0), rest(), tap_track(0), rest();
+    CHECK(m_tk_shown() == 0);
+    clear(), press(MR_CC_PLAY);
+    CHECK(count(RFM_MOVE_ACT_TK_INPUT) == 2 && !M.seq.playing);
+    rest(), n24_back_play("n24_back_play_takeover");
+    CHECK(m_tk_shown() == 0);
+    clear(), press(MR_CC_BACK);                         /* (Back alone: still the firmware's press and release) */
+    CHECK(count(RFM_MOVE_ACT_TK_INPUT) == 2);
+    rfm_move_set_takeover(&M, 0, 0, "");
+}
+
 int main(void)
 {
+    test_n24_back_play();
     test_n24_track_leds();
     test_o14_clear_clip();
     test_o14_projects();

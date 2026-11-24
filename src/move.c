@@ -1262,6 +1262,15 @@ int rfmv_back_keys(const rfm_move_t *m)
            !m->seq.fill && rfm_move_states_open(m) < 0 &&   /* (0.13.0: not in the States layer, where Back closes it) */
            !rfmv_fwp_full(m);                           /* (the FM-1 page's level 2: as the FM-1 layout) */
 }
+/* (0.14.0, the owner's 2026-11-24: "Holding back + Play should always trigger play on the Move's side") where Play
+ * alone is the firmware's: the FM-1 layout (a takeover's too: its Play claimed or not), the FM-1 page's level 2
+ * (Knobs+Keys, Delete / Copy not held) */
+int rfmv_play_fw(const rfm_move_t *m)
+{
+    if (m->seq.projects || rfmv_t4_menu(m) || rfmv_lay_menu(m))
+        return 0;
+    return m->s.mode == RFM_MOVE_MODE_FM1 || (m->s.mode == RFM_MOVE_MODE_SEQ && rfmv_fwp_full(m) && !m->fwg);
+}
 static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
 {
     rfm_move_hold_t *h;
@@ -1275,6 +1284,15 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
         if (down && rfmv_back_keys(m)) {
             m->back_cut = (uint16_t)(m->back_cut | 1u << b);
             rfmv_seq_back_key(m, cc);
+            return;
+        }
+        if (down && cc == MR_CC_PLAY && m->back_down && rfmv_play_fw(m)) {
+            m->back_cut = (uint16_t)(m->back_cut | 1u << b);   /* (0.14.0) Back held + Play where Play is the
+                                                         * firmware's: the Move's Play, as in the track view (nothing
+                                                         * to the firmware; its release nothing either) */
+            m->back_used = 1;
+            play_toggle(m);
+            rfmv_pop(m, POP_BACK, m->seq.playing || m->seq.start_pending ? BK_PLAY : BK_STOP);
             return;
         }
     }

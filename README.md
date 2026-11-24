@@ -718,6 +718,7 @@ Back works the same in every mode and in the projects view, on its release:
 | held + Right, Down | dead |
 | held + Loop | the selected clip's loop back to the whole clip (from step 1 to its loop's end or its last note's bar, whichever is later), one undo step; already whole: the popup only ("Loop", the length, as the jog's) |
 | held + Play | the transport to bar 1, never started or stopped: playing, every clip again from its start (Shift + Play's restart); stopped, nothing (Play starts at bar 1 anyway). Its icon over "Bar 1" |
+| held + Play where Play alone is the firmware's | (0.14.0, the owner's "Holding back + Play should always trigger play on the Move's side") the FM-1 layout, the FM-1 page's Knobs+Keys, a takeover (its buttons claimed or not): the Move's Play, at the press: starts or stops the Move's sequencer as Play does in the track view; nothing reaches the firmware (neither Play nor Back), Back's click does not come. The play / stop icon over "Move Play" / "Move Stop" (said "Move play"; a takeover's own screen stays). A takeover that claims the Track buttons too has Back itself: there it stays the firmware's |
 | held + Delete | closes at once everything Back's clicks would (a Shift menu, Loop's and Mute's latches, Shift's lock, the clipboards' marks): "All closed"; nothing open: "None" (as Undo). Deletes nothing, arms no delete, the view and mode stay |
 
 Shift + step 1 and Track 4 held + step 1 open the sequencer's projects (0.8.0; as Track 4's double click).

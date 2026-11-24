@@ -317,6 +317,11 @@ static int route(rfm_move_t *m, const mr_event_t *ev)
         }
         if (ev->value && m->tk_back && (btn_claim(i) == RFM_MOVE_TK_TRACKS || i == MR_CC_MENU))
             m->tk_back_trk = 1;                         /* (Back + Track: the slots; Back is not the firmware's) */
+        if (ev->value && m->tk_back && i == MR_CC_PLAY) {
+            m->tk_back_trk = 1;                         /* (0.14.0: Back + Play: the Move's Play, the core's; Back is
+                                                         * not sent) */
+            return 0;
+        }
         if (ev->value && m->tk_back && i == MR_CC_MENU)
             return 0;                                   /* (0.12.0: Back + Menu: session view, the core's; Back is not
                                                          * sent either) */
