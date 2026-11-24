@@ -3299,9 +3299,184 @@ static void test_rates_feel(void)
     CHECK(rfm_move_project_check(b, (uint32_t)n) == -9);
 }
 
+/* (0.14.0, the owner's: "add a layout for triplets which disables to 4th step in each group of 4 steps, So each group
+ * is the 3 notes of a triplet") a Triplet track's fourth steps take no time and never play; the 12 live steps of a
+ * page span 4 groups (1/8T: a bar, in phase with a straight track bar after bar); what is on a fourth step stays and
+ * plays again when the feel is changed back; ratchets and micro timing on its steps; loops and the launch quantization
+ * CLIP; recording lands on a live step; an old 1/16T track (version 9) keeps its timing in the layout */
+static int on_ticks(int ch, int note, uint64_t *t, int max)   /* the note's ons, in ticks from b0 */
+{
+    int i, n = 0;
+    for (i = 0; i < nact; i++)
+        if (acts[i].a.kind == RFM_MOVE_ACT_MIDI && acts[i].a.bytes[0] == (0x90 | ch) && acts[i].a.bytes[1] == note &&
+            acts[i].a.bytes[2] && n < max)
+            t[n++] = (acts[i].at - b0) / FPT;
+    return n;
+}
+static void test_triplet_layout(void)
+{
+    static uint8_t a[RFM_MOVE_PROJECT_MAX];
+    rfm_move_t *m = &M, *m2 = &M2;
+    uint64_t t[64];
+    int i, k, n, ok, lo;
+    /* track 1: 1/8 Triplet (32 ticks a step), a note on every live step of page 1 and one on step 4 (dead); track 2
+     * straight 1/16, a note on step 1 */
+    fresh(m);
+    m->seq.tr[0].rate = 2, m->seq.tr[0].feel = RFM_MOVE_FEEL_TRIPLET;
+    for (k = 0; k < 16; k++)
+        rfmv_seq_note_put(m, 0, k, (k & 3) == 3 ? 70 : 60, 100, 12, 0);
+    rfmv_seq_note_put(m, SEQ_CLIP(1, 0), 0, 62, 100, 24, 0);
+    CHECK(rfmv_seq_dead(m, 0, 3) && rfmv_seq_dead(m, 0, 15) && !rfmv_seq_dead(m, 0, 4) && !rfmv_seq_dead(m, 1, 3));
+    clear();
+    rfm_move_seq_play(m, 1), b0 = base;
+    adv(m, 3 * 384 * FPT);                              /* three bars */
+    n = on_ticks(0, 60, t, 64);
+    for (i = 0, ok = n == 36; i < n && ok; i++)
+        ok = t[i] == (uint64_t)i * 32;                  /* (each live step 32 ticks on: 12 a bar) */
+    CHECKF(ok, "triplet ons %d", n);
+    CHECK(count_on(0, 70) == 0);                        /* (the dead steps: never) */
+    n = on_ticks(1, 62, t, 64);
+    CHECK(n == 3 && t[0] == 0 && t[1] == 384 && t[2] == 768);   /* (in phase: bar after bar) */
+    CHECK(rfmv_seq_clip_pos(m, 0) >= 0 && !rfmv_seq_dead(m, 0, rfmv_seq_clip_pos(m, 0)));
+    rfm_move_seq_play(m, 0);
+    /* the feel back to Straight: step 4's note plays again (at 1/8: 48 ticks a step); Triplet again: gone again */
+    rfmv_seq_feel_set(m, 0, RFM_MOVE_FEEL_STRAIGHT);
+    clear();
+    rfm_move_seq_play(m, 1), b0 = base;
+    adv(m, 384 * FPT);
+    n = on_ticks(0, 70, t, 64);
+    CHECK(n == 2 && t[0] == 3 * 48 && t[1] == 7 * 48);
+    rfm_move_seq_play(m, 0);
+    rfmv_seq_feel_set(m, 0, RFM_MOVE_FEEL_TRIPLET);
+    /* switched while playing: from the next step, a dead step never reached */
+    clear();
+    rfm_move_seq_play(m, 1), b0 = base;
+    adv(m, 70 * FPT);
+    rfmv_seq_feel_set(m, 0, RFM_MOVE_FEEL_STRAIGHT);
+    adv(m, 150 * FPT);
+    CHECK(count_on(0, 70) == 1);                        /* (step 4 at 1/8 straight, at 96) */
+    rfmv_seq_feel_set(m, 0, RFM_MOVE_FEEL_TRIPLET);
+    clear();
+    adv(m, 2 * 384 * FPT);
+    CHECK(count_on(0, 70) == 0 && count_on(0, 60) > 0);
+    rfm_move_seq_play(m, 0);
+    /* 1/16T: a page of 16 keys is 12 x 16 = 192 ticks (half a bar); a loop of one group (4 keys) 3 steps; the launch
+     * quantization CLIP counts live steps (a 6-key loop: 5 live steps, 80 ticks) */
+    fresh(m);
+    m->seq.tr[0].rate = 1, m->seq.tr[0].feel = RFM_MOVE_FEEL_TRIPLET;
+    rfmv_seq_note_put(m, 0, 0, 60, 100, 12, 0);
+    rfmv_seq_note_put(m, 0, 4, 61, 100, 12, 0);
+    clear();
+    rfm_move_seq_play(m, 1), b0 = base;
+    adv(m, 450 * FPT);
+    n = on_ticks(0, 61, t, 64);
+    CHECK(n == 3 && t[0] == 48 && t[1] == 240 && t[2] == 432);
+    rfm_move_seq_play(m, 0);
+    rfmv_seq_loop_set(m, 0, 0, 4);
+    clear();
+    rfm_move_seq_play(m, 1), b0 = base;
+    adv(m, 200 * FPT);
+    n = on_ticks(0, 60, t, 64);
+    CHECK(n == 5 && t[1] == 48 && t[4] == 192);
+    rfm_move_seq_play(m, 0);
+    rfmv_seq_loop_set(m, 0, 0, 6);                      /* (steps 1..6: 5 live) */
+    rfmv_seq_note_put(m, SEQ_CLIP(0, 1), 0, 63, 100, 12, 0);
+    m->seq.cset[SEQ_CLIP(0, 1)] = (uint8_t)(RFM_MOVE_LQ_CLIP + 1);
+    clear();
+    rfm_move_seq_play(m, 1), b0 = base;
+    adv(m, 30 * FPT);
+    rfmv_seq_launch(m, 0, 1);
+    adv(m, 200 * FPT);
+    n = on_ticks(0, 63, t, 64);
+    CHECK(n >= 1 && t[0] == 80);
+    rfm_move_seq_play(m, 0);
+    /* ratchets and micro timing on live steps (1/8T: 32 ticks): step 7 (live 5) a ratchet of 2 at 160 and 176; step 6
+     * (live 4) a quarter step late: 128 + 8 */
+    fresh(m);
+    m->seq.tr[0].rate = 2, m->seq.tr[0].feel = RFM_MOVE_FEEL_TRIPLET;
+    rfmv_seq_note_put(m, 0, 6, 64, 100, 6, 0);
+    rfmv_seq_lock_set(m, 0, 6, RFM_MOVE_TRIG_RATCHET, 2);
+    rfmv_seq_note_put(m, 0, 5, 65, 100, 6, 6);
+    rfmv_seq_note_put(m, 0, 8, 66, 100, 6, -6);         /* (step 9, live 6: 192, a quarter early: 184) */
+    clear();
+    rfm_move_seq_play(m, 1), b0 = base;
+    adv(m, 300 * FPT);
+    n = on_ticks(0, 64, t, 64);
+    CHECK(n == 2 && t[0] == 160 && t[1] == 176);
+    n = on_ticks(0, 65, t, 64);
+    CHECK(n == 1 && t[0] == 136);
+    n = on_ticks(0, 66, t, 64);
+    CHECK(n == 1 && t[0] == 184);
+    rfm_move_seq_play(m, 0);
+    /* recording: a played note lands on the nearest live step, early or late (its micro in 24ths of a step): tick 94
+     * on step 5 (live 3, at 96), never the dead step 4; tick 148 on step 7 (live 5, 160); tick 220 on step 10 (live 7,
+     * 224) past the dead step 8 */
+    fresh(m);
+    m->seq.tr[0].rate = 2, m->seq.tr[0].feel = RFM_MOVE_FEEL_TRIPLET;
+    rfmv_seq_note_put(m, 0, 0, 60, 100, 24, 0);
+    rfm_move_seq_play(m, 1), b0 = base;
+    adv(m, 2 * FPT);
+    press(m, MR_CC_REC);
+    CHECK(m->seq.rec);
+    adv(m, 92 * FPT);
+    pad(m, 1, 90), pad(m, 1, 0);                        /* (D3 at tick 94) */
+    i = rfmv_seq_find(m, 0, 4, 50);
+    CHECK(i >= 0 && m->seq.notes[i].micro < 0 && rfmv_seq_find(m, 0, 3, 50) < 0);
+    adv(m, 54 * FPT);                                   /* (tick 148: live step 4 (step 6) + 20, nearer live 5: step 7) */
+    pad(m, 2, 90), pad(m, 2, 0);
+    i = rfmv_seq_find(m, 0, 6, 52);
+    CHECK(i >= 0 && m->seq.notes[i].micro == -9 && rfmv_seq_find(m, 0, 5, 52) < 0 && rfmv_seq_find(m, 0, 7, 52) < 0);
+    adv(m, 72 * FPT);                                   /* (tick 220: live 6 (step 9) + 28: step 10, -4 ticks) */
+    pad(m, 4, 90), pad(m, 4, 0);
+    CHECK(rfmv_seq_find(m, 0, 9, 55) >= 0 && rfmv_seq_find(m, 0, 7, 55) < 0 && rfmv_seq_find(m, 0, 8, 55) < 0);
+    press(m, MR_CC_REC);
+    rfm_move_seq_play(m, 0);
+    CHECK(stuck() == 0);
+    /* Capture onto a triplet track: the phrase's times onto live steps */
+    fresh(m);
+    m->seq.tr[0].rate = 2, m->seq.tr[0].feel = RFM_MOVE_FEEL_TRIPLET;
+    rfm_move_seq_play(m, 1), b0 = base;
+    adv(m, 4 * 384 * FPT);
+    for (k = 0; k < 4; k++)                             /* (bar 5: a note every 32 ticks) */
+        pad(m, k, 100), adv(m, 16 * FPT), pad(m, k, 0), adv(m, 16 * FPT);
+    press(m, MR_CC_CAPTURE);
+    CHECK(rfmv_seq_find(m, 0, 0, 48) >= 0 && rfmv_seq_find(m, 0, 1, 50) >= 0 && rfmv_seq_find(m, 0, 2, 52) >= 0 &&
+          rfmv_seq_find(m, 0, 4, 53) >= 0 && m->seq.len[0] == 16);
+    rfm_move_seq_play(m, 0);
+    /* an old project (version 9): track 1 at 1/16T (old rate 2), notes on steps 1..6, a loop of 6 steps from step 2,
+     * a JUMP to step 4: the layout keeps their time: steps 1 2 3 5 6 7, the loop steps 2..7 (5 live), JUMP to 5 */
+    fresh(m);
+    for (k = 0; k < 6; k++)
+        rfmv_seq_note_put(m, 0, k, 60 + k, 100, 12, 0);
+    rfmv_seq_lock_set(m, 0, 2, RFM_MOVE_TRIG_FUNC, RFM_MOVE_FN_JUMP);
+    rfmv_seq_lock_set(m, 0, 2, RFM_MOVE_TRIG_JUMP, 3);
+    rfmv_seq_loop_set(m, 0, 1, 5);
+    n = rfm_move_project_save(m, a, sizeof a);
+    a[4] = 9, a[RATE_BYTE(n, 0)] = 2, refnv(a, (uint32_t)n);
+    rfm_move_init(m2, NULL, on_act, NULL);
+    CHECK(rfm_move_project_load(m2, 1, a, (uint32_t)n) == 0);
+    CHECK(m2->seq.tr[0].rate == 1 && m2->seq.tr[0].feel == RFM_MOVE_FEEL_TRIPLET);
+    for (k = 0, ok = 1; k < 6; k++)
+        ok &= rfmv_seq_find(m2, 0, k + k / 3, 60 + k) >= 0;
+    CHECK(ok && rfmv_seq_range(m2, 0, 3, &lo) == lo);
+    CHECK(m2->seq.lstart[0] == 1 && m2->seq.len[0] == 6);
+    CHECK(rfmv_seq_trig(m2, 0, 2, RFM_MOVE_TRIG_JUMP) == 4 && rfmv_seq_trig(m2, 0, 2, RFM_MOVE_TRIG_FUNC) == RFM_MOVE_FN_JUMP);
+    /* .. and plays as before: step 2's note at 0, step 3's at 16, step 3 jumps to (old) step 4 at 32, step 5 at 48 */
+    clear();
+    rfm_move_set_slot_layout(m2, 0, RFM_MOVE_LAY_SCALE);
+    rfm_move_seq_play(m2, 1), b0 = base;
+    adv(m2, 100 * FPT);
+    CHECK(on_ticks(0, 61, t, 64) >= 1 && t[0] == 0);
+    CHECK(on_ticks(0, 62, t, 64) >= 1 && t[0] == 16);
+    CHECK(on_ticks(0, 63, t, 64) >= 1 && t[0] == 32);
+    CHECK(on_ticks(0, 64, t, 64) >= 1 && t[0] == 48);
+    rfm_move_seq_play(m2, 0);
+}
+
 int main(void)
 {
     test_rates_feel();
+    test_triplet_layout();
     test_record_8_bars();
     test_model();
     test_playback();

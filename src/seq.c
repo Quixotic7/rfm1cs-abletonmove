@@ -135,6 +135,34 @@ void rfmv_seq_feel_set(rfm_move_t *m, int track, int feel)
     t->feel = (uint8_t)feel;
     t->next = -1, t->nrsrc = -1, t->nrleft = 0;        /* (the next step chosen again with it, at the step's end) */
 }
+/* ---- (0.14.0, the owner's: "add a layout for triplets which disables to 4th step in each group of 4 steps, So each
+ * group is the 3 notes of a triplet") a Triplet track's step keys: in each group of four (absolute steps 4k .. 4k+3)
+ * the fourth is dead: it takes no time, never plays, takes no input; what is stored there stays (back when the feel
+ * changes). The clip keeps its 256 steps, 16 a page: a page holds 12 live steps. The engine counts time in live steps
+ * (rfmv_seq_live_below, rfmv_seq_live_key); a straight track's are its steps */
+int rfmv_seq_dead(const rfm_move_t *m, int track, int step)
+{
+    return m->seq.tr[track % RFM_MOVE_SEQ_TRACKS].feel == RFM_MOVE_FEEL_TRIPLET && (step & 3) == 3;
+}
+int rfmv_seq_live_below(int tri, int k) { return tri ? k - k / 4 : k; }   /* live steps in [0, k) */
+int rfmv_seq_live_key(int tri, int i) { return tri ? i + i / 3 : i; }     /* the i-th live step */
+/* the layout in a loop [lo, hi): a Triplet track's, unless the loop holds no live step (then its steps as they are,
+ * the dead ones silent) */
+static int tri_loop(const rfm_move_seq_t *q, int track, int lo, int hi)
+{
+    return q->tr[track].feel == RFM_MOVE_FEEL_TRIPLET && rfmv_seq_live_below(1, hi) > rfmv_seq_live_below(1, lo);
+}
+static int skip_dead(const rfm_move_seq_t *q, int track, int s, int dir, int lo, int hi, int *pass)   /* (s in [lo, hi)) */
+{
+    while (tri_loop(q, track, lo, hi) && (s & 3) == 3) {
+        s += dir;
+        if (s >= hi)
+            s = lo, *pass += 1;
+        else if (s < lo)
+            s = hi - 1, *pass += 1;
+    }
+    return s;
+}
 int rfmv_seq_trig(const rfm_move_t *m, int clip, int step, int id) { return rfmv_seq_lock_get(m, clip, step, id); }
 
 int rfmv_seq_track_used(const rfm_move_t *m, int track)
@@ -791,7 +819,7 @@ static int groove_at(const rfm_move_t *m, int tr, int step, int mt)
 {
     const rfm_move_track_t *t = &m->seq.tr[tr];
     const int g = rfmv_seq_groove_of(m, tr);
-    if (!g || !(step & 1))
+    if (!g || !(step & 1) || t->feel == RFM_MOVE_FEEL_TRIPLET)   /* (0.14.0: a triplet track has no off 16ths) */
         return mt;
     mt += g * t->tps / 300;
     return mt > t->tps - 1 ? t->tps - 1 : mt;
@@ -855,9 +883,10 @@ static void choose(rfm_move_t *m, int track)
     rfm_move_seq_t *q = &m->seq;
     rfm_move_track_t *t = &q->tr[track];
     const int clip = SEQ_CLIP(track, t->active), pos = t->pos;
-    int lo, hi, L, f = 0, next = -1, pass = t->pass, rep = 0;
+    int lo, hi, L, f = 0, next = -1, pass = t->pass, rep = 0, tri, b, nat;
     loop_of(q, track, clip, &lo, &hi);
-    L = hi - lo;
+    tri = tri_loop(q, track, lo, hi), b = rfmv_seq_live_below(tri, lo);
+    L = rfmv_seq_live_below(tri, hi) - b;               /* (0.14.0: live steps; a triplet layout's fourth steps none) */
     if (t->rsrc >= 0)
         f = 0;                                          /* (a repeat: the step under it does nothing) */
     else if (t->fire && t->grow != 1 && (f = rfmv_seq_lock_get(m, clip, pos, RFM_MOVE_TRIG_FUNC)) < 0)
@@ -869,12 +898,12 @@ static void choose(rfm_move_t *m, int track)
     case RFM_MOVE_FN_REVERSE: t->dir = -1; break;
     case RFM_MOVE_FN_FORWARD: t->dir = 1; break;
     case RFM_MOVE_FN_FLIP: t->dir = (int8_t)-t->dir; break;
-    case RFM_MOVE_FN_RANDOM: next = lo + (int)(rnd(q) % (uint32_t)L); break;
+    case RFM_MOVE_FN_RANDOM: next = rfmv_seq_live_key(tri, b + (int)(rnd(q) % (uint32_t)L)); break;
     case RFM_MOVE_FN_LEAP: {
         const int v = rfmv_seq_lock_get(m, clip, pos, RFM_MOVE_TRIG_LEAP), n = (v < 0 ? 2 : v - 15) * t->dir;
-        const int r = pos - lo + n;
+        const int r = rfmv_seq_live_below(tri, pos) - b + n;
         if (pos >= lo && pos < hi) {
-            next = lo + ((r % L) + L) % L;
+            next = rfmv_seq_live_key(tri, b + ((r % L) + L) % L);
             if (r >= L || r < 0)
                 pass++;
         }
@@ -905,10 +934,15 @@ static void choose(rfm_move_t *m, int track)
             next = lo, pass++;
         else if (next < lo)
             next = hi - 1, pass++;
+        next = skip_dead(q, track, next, t->dir, lo, hi, &pass);   /* (0.14.0: past a dead fourth step) */
+    } else {
+        int p0 = 0;
+        next = skip_dead(q, track, clampi(next, lo, hi - 1), 1, lo, hi, &p0);   /* (RESTART, JUMP onto one: the next) */
     }
+    nat = pos + 1 + (tri && ((pos + 1) & 3) == 3);      /* (REPEAT's next: the next live step) */
     t->next = (int16_t)next, t->npass = (uint16_t)clampi(pass, 1, 60000);
     t->nrsrc = -1, t->nrleft = 0;
-    if ((t->rsrc >= 0 ? t->rleft > 0 : rep > 0) && pass == t->pass && t->dir > 0 && next == pos + 1) {
+    if ((t->rsrc >= 0 ? t->rleft > 0 : rep > 0) && pass == t->pass && t->dir > 0 && next == nat) {
         /* REPEAT: the next step plays the source's content (its condition and chance as decided for it), until the
          * count is done or the loop's end (no wrap) */
         t->nrsrc = (int16_t)(t->rsrc >= 0 ? t->rsrc : pos);
@@ -925,13 +959,14 @@ static void seek(rfm_move_t *m, int track, int32_t T)
     rfm_move_seq_t *q = &m->seq;
     rfm_move_track_t *t = &q->tr[track];
     const int clip = SEQ_CLIP(track, t->active);
-    int lo, hi;
+    int lo, hi, tri, b, L;
     int32_t d = T - t->t0, st;
     loop_of(q, track, clip, &lo, &hi);
+    tri = tri_loop(q, track, lo, hi), b = rfmv_seq_live_below(tri, lo), L = rfmv_seq_live_below(tri, hi) - b;
     t->tps = (uint16_t)rfmv_seq_tps(t->rate, t->feel);
-    st = d / t->tps;
-    t->pos = (int16_t)(lo + st % (hi - lo)), t->sub = (uint16_t)(d % t->tps);
-    t->pass = (uint16_t)clampi(1 + st / (hi - lo), 1, 60000);
+    st = d / t->tps;                                    /* (0.14.0: live steps, the triplet layout's) */
+    t->pos = (int16_t)rfmv_seq_live_key(tri, b + st % L), t->sub = (uint16_t)(d % t->tps);
+    t->pass = (uint16_t)clampi(1 + st / L, 1, 60000);
     t->dir = 1, t->next = -1, t->rsrc = t->nrsrc = -1, t->rleft = t->nrleft = 0;
     t->fire = (uint8_t)decide(m, track, clip, t->pos, t->pass);
 }
@@ -1013,19 +1048,20 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
     if (t->pos < 0)
         seek(m, tr, T);
     else if (++t->sub >= t->tps) {                      /* the next step */
-        const int old = t->pos;
-        int llo, lhi;
+        int old = t->pos, llo, lhi;
         if (t->next < 0)
             choose(m, tr);
         t->pos = t->next, t->pass = t->npass, t->fire = t->nfire, t->sub = 0, t->next = -1;
         t->rsrc = t->nrsrc, t->rleft = t->nrleft, t->nrsrc = -1, t->nrleft = 0;
         t->tps = (uint16_t)rfmv_seq_tps(t->rate, t->feel);
         loop_of(q, tr, clip, &llo, &lhi);
+        if (t->grow == 1 && (old + 1 - llo) % RFM_MOVE_SEQ_PAGE && rfmv_seq_dead(m, tr, old + 1))
+            old++;                                      /* (0.14.0: a page's last step dead: crossed with it) */
         if (t->grow == 1 && (old + 1 - llo) % RFM_MOVE_SEQ_PAGE == 0) {   /* a recording clip: a page more, or done */
             const int k = (old + 1 - llo) / RFM_MOVE_SEQ_PAGE;
             if (t->grow_stop || llo + k * RFM_MOVE_SEQ_PAGE >= RFM_MOVE_SEQ_MAXLEN) {
                 grow_finish(m, tr, k);
-                t->pos = (int16_t)llo, t->pass++;
+                t->pos = (int16_t)(llo + rfmv_seq_dead(m, tr, llo)), t->pass++;
                 t->fire = (uint8_t)decide(m, tr, clip, t->pos, t->pass);
             } else
                 q->len[clip] = (uint16_t)((k + 1) * RFM_MOVE_SEQ_PAGE);
@@ -1045,7 +1081,7 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
         choose(m, tr);
     if (!rfmv_seq_audible(m, tr))                       /* (muted, or another track soloed) */
         return;
-    if (t->fire) {
+    if (t->fire && !rfmv_seq_dead(m, tr, t->pos)) {    /* (0.14.0: a dead fourth step never plays) */
         const int ps = t->rsrc >= 0 ? t->rsrc : t->pos; /* (a repeat: the source's content) */
         const int r = rfmv_seq_lock_get(m, clip, ps, RFM_MOVE_TRIG_RATCHET), nr = r < 2 ? 1 : r;
         hi = rfmv_seq_range(m, clip, ps, &lo);
@@ -1065,7 +1101,8 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
                 rfmv_emit_midi_t(m, tr + 1, 0xB0 | t->ch, q->locks[i].cc, q->locks[i].val);
         }
     }
-    if (t->next >= 0 && t->nfire && t->sub >= t->tps / 2) {   /* the next step's early notes */
+    if (t->next >= 0 && t->nfire && t->sub >= t->tps / 2 && !rfmv_seq_dead(m, tr, t->next)) {   /* the next step's
+                                                         * early notes */
         hi = rfmv_seq_range(m, clip, t->nrsrc >= 0 ? t->nrsrc : t->next, &lo);
         for (i = lo; i < hi; i++) {
             const rfm_move_note_t n = q->notes[i];
@@ -1090,11 +1127,12 @@ static int32_t loop_ticks(const rfm_move_t *m, int track)   /* the active clip's
 {
     const rfm_move_seq_t *q = &m->seq;
     const rfm_move_track_t *t = &q->tr[track];
-    int lo, hi;
+    int lo, hi, tri;
     if (t->active < 0)
         return 0;
     loop_of(q, track, SEQ_CLIP(track, t->active), &lo, &hi);
-    return (int32_t)(hi - lo) * rfmv_seq_tps(t->rate, t->feel);
+    tri = tri_loop(q, track, lo, hi);
+    return (int32_t)(rfmv_seq_live_below(tri, hi) - rfmv_seq_live_below(tri, lo)) * rfmv_seq_tps(t->rate, t->feel);
 }
 static int launch_due(const rfm_move_t *m, int tr, int32_t T)
 {
@@ -2247,8 +2285,10 @@ void rfmv_seq_sample(rfm_move_t *m)
     }
     q->srec = 0, q->rec = 0;
     if (t->grow == 1 && t->pos >= 0 && t->active >= 0) {
-        const int lo = q->lstart[SEQ_CLIP(tr, t->active)], page = RFM_MOVE_SEQ_PAGE * t->tps;
-        const int32_t passed = (int32_t)(t->pos - lo) * t->tps + t->sub;
+        const int lo = q->lstart[SEQ_CLIP(tr, t->active)], tri = t->feel == RFM_MOVE_FEEL_TRIPLET;
+        const int page = (RFM_MOVE_SEQ_PAGE - (tri ? RFM_MOVE_SEQ_PAGE / 4 : 0)) * t->tps;   /* (0.14.0: a triplet
+                                                         * page: 12 live steps) */
+        const int32_t passed = (int32_t)(rfmv_seq_live_below(tri, t->pos) - rfmv_seq_live_below(tri, lo)) * t->tps + t->sub;
         const int k = (int)(passed / page);
         if (k >= 1 && (passed % page) * 2 < page) {     /* just past a bar line: done at it, the loop goes on */
             grow_finish(m, tr, k);
@@ -2325,6 +2365,8 @@ int rfmv_seq_capture(rfm_move_t *m)
     static cnote_t c[RFM_MOVE_SEQ_CAPTURE];
     const int32_t now = tl_now(m), tl0 = q->tl - q->T;
     int i, j, n = 0, first, scene = -1, clip, L, pages, tps = rfmv_seq_tps(t->rate, t->feel), any_clip = 0;
+    const int tri = t->feel == RFM_MOVE_FEEL_TRIPLET, live = tri ? RFM_MOVE_SEQ_PAGE * 3 / 4 : RFM_MOVE_SEQ_PAGE;   /* (0.14.0:
+                                                         * the live steps a page) */
     int32_t origin, oT = 0, start_t;
     const int start = (q->cap_head - q->ncap + RFM_MOVE_SEQ_CAPTURE) % RFM_MOVE_SEQ_CAPTURE;
     for (i = 0; i < q->ncap; i++) {                     /* the notes, on .. off */
@@ -2373,7 +2415,7 @@ int rfmv_seq_capture(rfm_move_t *m)
         origin = oT + tl0;
     } else
         origin = c[first].on;
-    pages = clampi((c[n - 1].on - origin) / (RFM_MOVE_SEQ_PAGE * tps) + 1, 1, RFM_MOVE_SEQ_PAGES);
+    pages = clampi((c[n - 1].on - origin) / (live * tps) + 1, 1, RFM_MOVE_SEQ_PAGES);
     if (!rfmv_seq_clip_has(m, SEQ_CLIP(tr, t->sel)))
         scene = t->sel;
     for (i = 0; i < RFM_MOVE_SEQ_SCENES && scene < 0; i++)
@@ -2391,12 +2433,13 @@ int rfmv_seq_capture(rfm_move_t *m)
         int s, micro;
         if (rel < 0)
             continue;
-        s = (int)((rel + tps / 2) / tps);
+        s = (int)((rel + tps / 2) / tps);               /* (a live step: 0.14.0, a triplet's its key below) */
         micro = (int)((rel - (int32_t)s * tps) * TPS / tps);
-        if (s >= L)
-            s -= L;                                     /* (early for the loop's first step) */
-        if (s >= L)
+        if (s >= pages * live)
+            s -= pages * live;                          /* (early for the loop's first step) */
+        if (s >= pages * live)
             continue;
+        s = rfmv_seq_live_key(tri, s);
         rfmv_seq_note_put(m, clip, s, c[i].note, c[i].vel,
                           clampi((c[i].off - c[i].on) * TPS / tps, 1, L * TPS), micro);
     }

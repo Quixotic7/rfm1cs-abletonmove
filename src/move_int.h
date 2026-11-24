@@ -115,6 +115,9 @@ int rfmv_seq_loop_hi(const rfm_move_t *m, int clip);
 int rfmv_seq_tps(int rate, int feel);                  /* ticks a step at a rate and feel */
 void rfmv_seq_rate_label(int rate, int feel, char *o, int cap);   /* (0.14.0) "1/16", "1/8D", "1/16T", "1 Bar T" */
 void rfmv_seq_feel_set(rfm_move_t *m, int track, int feel);   /* (0.14.0) a track's feel (from its next step) */
+int rfmv_seq_dead(const rfm_move_t *m, int track, int step);   /* (0.14.0) a Triplet track's fourth step of a group */
+int rfmv_seq_live_below(int tri, int k);               /* .. the live steps before step k (tri 0: k) */
+int rfmv_seq_live_key(int tri, int i);                 /* .. the i-th live step (tri 0: i) */
 /* edits (journaled into the current undo group, the project marked changed) */
 void rfmv_seq_group(rfm_move_t *m);                    /* a new undo group: one gesture */
 int rfmv_seq_note_put(rfm_move_t *m, int clip, int step, int note, int vel, int len, int micro);   /* add/replace */

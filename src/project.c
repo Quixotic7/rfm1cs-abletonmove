@@ -124,6 +124,46 @@ static void old_rate(int r, uint8_t *rate, uint8_t *feel)
 {
     *rate = (uint8_t)(r / 2), *feel = (uint8_t)(r & 1 ? RFM_MOVE_FEEL_STRAIGHT : RFM_MOVE_FEEL_TRIPLET);
 }
+/* (0.14.0) an old triplet track's clips into the triplet layout: its step i (each one live) onto the i-th live step
+ * (i + i / 3), so every note, lock, loop and JUMP target keeps its time; past step 255 (old clips longer than 192
+ * steps) cut */
+static int tri_key(int s) { return rfmv_seq_live_key(1, s); }
+static void old_tri_remap(rfm_move_seq_t *q, int track)
+{
+    const int c0 = track * RFM_MOVE_SEQ_SCENES, c1 = c0 + RFM_MOVE_SEQ_SCENES;
+    int i, j, c;
+    for (i = j = 0; i < q->nnotes; i++) {
+        rfm_move_note_t n = q->notes[i];
+        if (n.clip >= c0 && n.clip < c1) {
+            if (tri_key(n.step) >= RFM_MOVE_SEQ_MAXLEN)
+                continue;
+            n.step = (uint8_t)tri_key(n.step);
+        }
+        q->notes[j++] = n;
+    }
+    q->nnotes = (uint16_t)j;
+    for (i = j = 0; i < q->nlocks; i++) {
+        rfm_move_lock_t l = q->locks[i];
+        if (l.clip >= c0 && l.clip < c1) {
+            if (tri_key(l.step) >= RFM_MOVE_SEQ_MAXLEN)
+                continue;
+            l.step = (uint8_t)tri_key(l.step);
+            if (l.cc == RFM_MOVE_TRIG_JUMP)
+                l.val = (uint8_t)(tri_key(l.val) < RFM_MOVE_SEQ_MAXLEN ? tri_key(l.val) : 0);
+        }
+        q->locks[j++] = l;
+    }
+    q->nlocks = (uint16_t)j;
+    for (c = c0; c < c1; c++) {
+        const int lo = tri_key(q->lstart[c]) < RFM_MOVE_SEQ_MAXLEN - 4 ? tri_key(q->lstart[c]) : RFM_MOVE_SEQ_MAXLEN - 4;
+        int hi = tri_key(q->lstart[c] + q->len[c] - 1) + 1;
+        hi = hi > RFM_MOVE_SEQ_MAXLEN ? RFM_MOVE_SEQ_MAXLEN : hi < lo + 1 ? lo + 1 : hi;
+        q->lstart[c] = (uint8_t)lo, q->len[c] = (uint16_t)(hi - lo);
+    }
+    if (q->tr[track].tdef[4] == RFM_MOVE_FN_JUMP && tri_key(q->tr[track].tdef[6]) < RFM_MOVE_SEQ_MAXLEN)   /* (the TRIG
+                                                         * page's JUMP default) */
+        q->tr[track].tdef[6] = (uint8_t)tri_key(q->tr[track].tdef[6]);
+}
 static int rate_ok(int ver, int r)
 {
     return ver >= 10 ? (r & 15) < RFM_MOVE_SEQ_RATES && (r >> 4) < RFM_MOVE_FEELS : r < OLD_RATES;
@@ -303,7 +343,8 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
             if (ver >= 10)
                 q->tr[i].rate = (uint8_t)(r[i] & 15), q->tr[i].feel = (uint8_t)(r[i] >> 4);
             else
-                old_rate(r[i], &q->tr[i].rate, &q->tr[i].feel);
+                old_rate(r[i], &q->tr[i].rate, &q->tr[i].feel);   /* (an old triplet's steps: old_tri_remap below,
+                                                         * once its clips are read) */
             o->pat = a[0], o->rate = a[1], o->range = a[2], o->chance = 100, o->mode = a[4], o->gate = a[5];
             o->down = a[3] == 99;                       /* (0.14.0: the octaves down; OCT DIST stored negated, so a core
                                                          * before 0.14.0 walks them down too) */
@@ -341,6 +382,10 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
         q->launch_q = x[RFM_MOVE_PROJECT_EXT_V7];
         memcpy(q->cset, x + RFM_MOVE_PROJECT_EXT_V7 + 1, sizeof q->cset);
     }
+    if (ext && ver < 10)                                /* (0.14.0) the old triplet tracks' steps into the layout */
+        for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++)
+            if (q->tr[i].feel == RFM_MOVE_FEEL_TRIPLET)
+                old_tri_remap(q, (int)i);
     if (!ext) {                                            /* version 1: loops from step 1, clips with notes, 1/16 */
         memset(q->lstart, 0, sizeof q->lstart);
         memset(q->made, 0, sizeof q->made);
