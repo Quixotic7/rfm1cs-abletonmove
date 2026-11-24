@@ -355,7 +355,8 @@ void rfmv_seq_route_leds(const rfm_move_t *m, int fw, rfmv_rgb_t c[L_WHITE0]);  
 int rfmv_sess_on(const rfm_move_t *m);                  /* (0.11.0) session view is what the pads show */
 void rfmv_sv_toggle(rfm_move_t *m);                     /* (0.12.0) session view in / out, from any layout */
 void rfmv_seq_arp_toggle(rfm_move_t *m);
-void rfmv_seq_arp_click(rfm_move_t *m);                 /* (0.14.0) the arp menu's jog click: Delete held reset, else toggle / random */                /* (0.11.0) the arp menu's jog click: on / off */
+void rfmv_seq_arp_click(rfm_move_t *m);
+uint32_t rfmv_ui_rnd(rfm_move_t *m);                    /* (0.14.0) the interface's dice: the next number */                 /* (0.14.0) the arp menu's jog click: Delete held reset, else toggle / random */                /* (0.11.0) the arp menu's jog click: on / off */
 const char *rfmv_seq_arp_mode_name(int mode);           /* (0.12.0) "Off", "On", "First" .. */
 int rfmv_seq_arp_silent(const rfm_move_t *m, int tr);   /* (0.14.0) on, but it can never sound (CHANCE 0, MOD all rests) */
 void rfmv_seq_al_take(rfm_move_t *m);                   /* (0.12.0) a held arp lane step takes the pads */

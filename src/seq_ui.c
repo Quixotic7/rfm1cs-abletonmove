@@ -2329,10 +2329,44 @@ static void arp_reset(rfm_move_t *m)
     rfm_move_popup(m, !q->arp_page ? "Arp Reset" : q->arp_page == 1 ? "Mod Reset" : "Transpose Reset");
     rfmv_seq_dirty(m);
 }
+static void al_wave_start(rfm_move_t *m);
+/* (0.14.0, the owner's 2026-11-24: "Clicking Jogwheel on the Mod or transpose pages should create a random pattern")
+ * a lane page's jog click: the lane, over its length, a new random pattern, musical: MOD step 1 plays, then mostly
+ * plays, some rests and ties (a tie only after a note), now and then a repeat or an accent (lowest, highest, power
+ * chord, chord); TRANSPOSE mostly 0, octaves, fifths and a few scale steps. One undo step; the step keys' wave */
+static void arp_random(rfm_move_t *m)
+{
+    static const int8_t ACC[4] = { RFM_MOVE_AL_LO, RFM_MOVE_AL_HI, RFM_MOVE_AL_PWR, RFM_MOVE_AL_CHORD };
+    static const int8_t TR[20] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 12, -12, 7, 7, -5, 2, 3, 5, -2 };
+    rfm_move_seq_t *q = Q(m);
+    const int L = q->arp_page - 1;
+    rfm_move_arp_t d = q->tr[q->sel_track].arp;
+    const int len = clampi(L ? d.tlen : d.mlen, 1, 16);
+    int i;
+    for (i = 0; i < len; i++) {
+        const int r = (int)(rfmv_ui_rnd(m) % 100u);
+        if (L)
+            d.lane[1][i] = TR[r % 20];
+        else if (!i)
+            d.lane[0][i] = RFM_MOVE_AL_PLAY;
+        else
+            d.lane[0][i] = (int8_t)(r < 62 ? RFM_MOVE_AL_PLAY : r < 76 ? RFM_MOVE_AL_REST
+                                    : r < 88 ? (d.lane[0][i - 1] == RFM_MOVE_AL_REST ? RFM_MOVE_AL_PLAY : RFM_MOVE_AL_TIE)
+                                    : r < 92 ? RFM_MOVE_AL_REPEAT : ACC[r % 4]);
+    }
+    rfmv_seq_group(m);
+    rfmv_seq_arp_put(m, q->sel_track, &d);
+    rfmv_seq_group(m);
+    al_wave_start(m);                                   /* (R1: the step keys roll in, as entering the lane) */
+    rfmv_say_text(m, L ? "Transpose random" : "Mod random");
+    rfmv_seq_dirty(m);
+}
 void rfmv_seq_arp_click(rfm_move_t *m)
 {
     if (m->seq.mods & SEQ_M_DELETE)
         arp_reset(m);
+    else if (m->seq.arp_page)
+        arp_random(m);                                  /* (0.14.0: the toggle stays the main page's) */
     else
         rfmv_seq_arp_toggle(m);
 }

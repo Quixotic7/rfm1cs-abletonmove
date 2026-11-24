@@ -1267,6 +1267,12 @@ int rfmv_back_keys(const rfm_move_t *m)
 /* (0.14.0, the owner's 2026-11-24: "Holding back + Play should always trigger play on the Move's side") where Play
  * alone is the firmware's: the FM-1 layout (a takeover's too: its Play claimed or not), the FM-1 page's level 2
  * (Knobs+Keys, Delete / Copy not held) */
+uint32_t rfmv_ui_rnd(rfm_move_t *m)
+{
+    uint32_t x = m->ui_rng ? m->ui_rng : 0x2545F491u;
+    x ^= x << 13, x ^= x >> 17, x ^= x << 5;
+    return m->ui_rng = x;
+}
 int rfmv_play_fw(const rfm_move_t *m)
 {
     if (m->seq.projects || rfmv_t4_menu(m) || rfmv_lay_menu(m))

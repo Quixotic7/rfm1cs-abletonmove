@@ -1636,7 +1636,7 @@ static void test_arp_toggle(void)
     screen();
     off_px = pixels(0, 19, 128, 37);
     write_pbm("arp_offdim_lane");
-    jog_click(), rest();
+    jog(-1), jog_click(), jog(1), rest();               /* (0.14.0: on from the main page; a lane's click is random) */
     screen();
     on_px = pixels(0, 19, 128, 37);
     CHECKF(off_px > 0 && off_px * 3 < on_px * 2, "lane on %d, off %d", on_px, off_px);
@@ -5466,8 +5466,65 @@ static void test_n24_arp_reset(void)
     rfmv_seq_arp_default(ap);
 }
 
+/* item 10: "Clicking Jogwheel on the Mod or transpose pages should create a random pattern": a lane page's click fills
+ * the lane over its length, musically; a new one each click; the step keys' wave; undoable; the main page toggles */
+static void test_n24_arp_random(void)
+{
+    rfm_move_arp_t *ap, before;
+    int tr, i, k, zeros = 0, plays = 0, tot = 0, bad = 0;
+    track_view();
+    tr = M.seq.sel_track, ap = &M.seq.tr[tr].arp;
+    M.ui_rng = 12345;
+    shift_step(10), rest(), jog_click(), rest();        /* (on) */
+    CHECK(ap->mode == RFM_MOVE_AM_ON);
+    ap->mlen = 8;
+    for (i = 8; i < 16; i++)
+        ap->lane[0][i] = RFM_MOVE_AL_CHORD;
+    jog(1), rest();
+    before = *ap;
+    clear(), jog_click();
+    CHECK(ap->mode == RFM_MOVE_AM_ON && ap->lane[0][0] == RFM_MOVE_AL_PLAY && !rfmv_seq_arp_silent(&M, tr) &&
+          M.seq.al_wave && memcmp(ap, &before, sizeof before) && strstr(said, "Mod random"));
+    for (i = 8; i < 16; i++)
+        CHECK(ap->lane[0][i] == RFM_MOVE_AL_CHORD);    /* (past its length: untouched) */
+    write_pbm("n24_arp_random_mod");
+    press(MR_CC_UNDO), rest();
+    CHECK(!memcmp(ap, &before, sizeof before));
+    ap->mlen = 16;
+    for (k = 0; k < 30; k++) {                          /* (each click a new one; musical) */
+        rfm_move_arp_t prev = *ap;
+        jog_click();
+        CHECK(memcmp(ap, &prev, sizeof prev) && ap->lane[0][0] == RFM_MOVE_AL_PLAY && !rfmv_seq_arp_silent(&M, tr));
+        for (i = 0; i < 16; i++, tot++) {
+            plays += ap->lane[0][i] == RFM_MOVE_AL_PLAY;
+            bad += ap->lane[0][i] < 0 || ap->lane[0][i] >= RFM_MOVE_AL_N1 ||
+                   (i && ap->lane[0][i] == RFM_MOVE_AL_TIE && ap->lane[0][i - 1] == RFM_MOVE_AL_REST);
+        }
+    }
+    CHECKF(plays * 2 > tot && plays * 10 < tot * 9 && !bad, "MOD: %d plays of %d, %d bad", plays, tot, bad);
+    rest();
+    /* TRANSPOSE: mostly 0, octaves, fifths, a few steps */
+    jog(1), rest(), tot = 0;
+    for (k = 0; k < 30; k++) {
+        jog_click();
+        for (i = 0; i < 16; i++, tot++) {
+            const int v = ap->lane[1][i];
+            zeros += v == 0;
+            bad += v != 0 && v != 12 && v != -12 && v != 7 && v != -5 && v != 2 && v != 3 && v != 5 && v != -2;
+        }
+    }
+    CHECKF(zeros * 3 > tot && zeros * 10 < tot * 8 && !bad, "TRANSPOSE: %d zeros of %d, %d bad", zeros, tot, bad);
+    write_pbm("n24_arp_random_transpose");
+    /* the main page: the click still turns it off */
+    jog(-2), rest(), jog_click();
+    CHECK(ap->mode == RFM_MOVE_AM_OFF);
+    back(), rest();
+    rfmv_seq_arp_default(ap);
+}
+
 int main(void)
 {
+    test_n24_arp_random();
     test_n24_arp_reset();
     test_n24_arp_rate();
     test_n24_arp_clip();

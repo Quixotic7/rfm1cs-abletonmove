@@ -219,6 +219,17 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   `rfmv_seq_arp_put`), so Undo brings the whole arp back, Redo resets it again (the journal is RAM, the project blob
   unchanged). Delete's light is 90 while the arp menu is open (the gesture is there; 127 held, 30 elsewhere as
   before). `test_n24_arp_reset`, pictures `sessview_n24_arp_reset`, `_mod`.
+- (item 10, "Clicking Jogwheel on the Mod or transpose pages should create a random pattern") on a lane page the jog's
+  click fills that lane over its current length with a random pattern (`arp_random`); the steps past the length
+  are left alone; the on / off toggle is the main page's click only (was: every page). Musical: MOD step 1 plays,
+  the others about 62 % play, 14 % rest, 12 % tie (a tie only after a note: after a rest it plays), 4 % repeat, 8 % an
+  accent (lowest, highest, power chord, chord): never all silent. TRANSPOSE: half 0, then octaves (+12, -12), fifths
+  (+7, -5) and a few scale steps (+2, +3, +5, -2). A new pattern each click (the interface's own dice, `rfmv_ui_rnd`,
+  state `ui_rng` new at the end of `rfm_move_t`, so the engine's `seq.rng` sequences are as before; seedable). The
+  feedback: the step keys' wave (`al_wave_start`, as entering a lane), the lane's picture, said "Mod random" /
+  "Transpose random". One undo step (`OP_ARP`). `test_n24_arp_random` (30 clicks a lane: shares, validity, never
+  silent, undo), pictures `sessview_n24_arp_random_mod`, `_transpose`; `test_arp_toggle` turns the arp on from the
+  main page now.
 
 ## 0.13.0 (2026-11-23)
 

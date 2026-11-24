@@ -1135,6 +1135,10 @@ typedef struct {
     /* (0.14.0, the owner's 2026-11-24) the FM-1 page's Knobs: the Move's Shift held + an FM-1 knob turned put the
      * firmware's GLO down (let go with Shift) */
     uint8_t fwp_glo;
+    /* (0.14.0) the interface's own dice (the arp lanes' random fill, the browser's and the projects' Random): a
+     * xorshift state of its own, so the engine's (seq.rng) sequences stay as they were; 0: the default seed. A host
+     * or a test may set it */
+    uint32_t ui_rng;
 } rfm_move_t;
 /* (0.5.4) a host's message on the screen ("FM-1 linked"), as a mode's name shows: big, a second (RFM_MOVE_POPUP_MS),
  * over any screen; a newer popup replaces it. ASCII; wrapped at spaces onto two rows, cut where it does not fit
