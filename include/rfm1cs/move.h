@@ -560,6 +560,18 @@ typedef struct {
     uint8_t mlen, tlen;                                 /* the lanes' lengths 1..16 */
     int8_t lane[2][RFM_MOVE_ARP_LANE];                  /* 0 MOD (RFM_MOVE_AL_*), 1 TRANSPOSE (-48..48) */
 } rfm_move_arp_t;
+/* (0.14.0) a track's running arp (RAM): what it holds and where its walk is. Fed by the track's pads (while it is the
+ * selected one) and its clip's notes; each held note's holders: pad (bit 0 of src) and the clip's (cnt, until coff) */
+typedef struct {
+    uint8_t n, down, run, nseq, last;
+    uint8_t pitch[8], vel[8], ord[8], seq[32];
+    uint8_t src[8], cnt[8];                             /* src bit 0: a pad holds it; cnt: the clip's notes holding it */
+    int32_t coff[8];                                    /* .. the last of them ends at this tick */
+    uint8_t fromclip;                                   /* the clip has fed it since it last started */
+    uint16_t pos, oct, steps, mpos, tpos;
+    uint8_t lastn, lastp[8];
+    int32_t next, k, t0;
+} rfm_move_arpst_t;
 /* Shift + step (Ableton Move's printed functions, Move manual: step 1 Set Overview, 2 Setup, 3 Workflow Settings,
  * 5 Tempo, 6 Metronome, 7 Groove, 8 Layout (16 Pitches), 9 Keys & Scales, 10 Velocity (a menu), 11 Repeat (Arp),
  * 14 New Clip, 15 Double Loop, 16 Quantize); the menus they open (rfm_move_seq_t.smenu) */
@@ -809,13 +821,9 @@ typedef struct {
     uint8_t stash_layout, stash_cc[RFM_MOVE_NBANKS][RFM_MOVE_NKNOBS];   /* .. MIDI / Control mode's, meanwhile */
     uint8_t stash_root, stash_scale;
     uint32_t shift_ms;                                  /* .. its last press */
-    /* the arp (the selected track's pads) */
-    uint8_t arp_n, arp_down, arp_run, arp_track, arp_nseq, arp_last;
-    uint8_t arp_pitch[8], arp_vel[8], arp_ord[8], arp_seq[32];
-    uint16_t arp_pos, arp_oct, arp_steps, arp_mpos, arp_tpos;
-    uint8_t arp_lastn, arp_lastp[8];
-    uint8_t jr_n, jr_clip[8], jr_note[8];              /* the arp's notes just recorded (not played twice) */
-    int32_t arp_next, arp_k, arp_t0;
+    /* the arp: (0.14.0) one a track, fed by its pads and its clip (was one, the selected track's pads) */
+    rfm_move_arpst_t arps[RFM_MOVE_SEQ_TRACKS];
+    uint8_t jr_n, jr_clip[8], jr_note[8];              /* (before 0.14.0: the arp's notes just recorded; unused) */
     uint16_t rec_group;
     rfm_move_recnote_t recn[RFM_MOVE_NPADS];            /* notes being recorded, by pad */
     rfm_move_cap_t cap[RFM_MOVE_SEQ_CAPTURE];

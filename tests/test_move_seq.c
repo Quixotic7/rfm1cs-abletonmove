@@ -2149,7 +2149,7 @@ static void test_controls(void)
     pad(m, 0, 0), pad(m, 2, 0);
     CHECK(count_on(0, 48) == 1 && count_on(0, 52) == 1 && count_on(0, 60) == 1 && count_on(0, 64) == 1);
     adv(m, 4 * FPS);
-    CHECK(count_on(0, 48) == 1 && !m->seq.arp_run && stuck() == 0);   /* (released: it stops) */
+    CHECK(count_on(0, 48) == 1 && !m->seq.arps[m->seq.sel_track].run && stuck() == 0);   /* (released: it stops) */
     m->seq.tr[0].arp.mode = RFM_MOVE_AM_OFF;
     /* Shift + step 14: a new clip in the track's next empty slot, selected */
     button(m, MR_CC_SHIFT, 1), tap_step(m, 13), button(m, MR_CC_SHIFT, 0);
@@ -2548,7 +2548,8 @@ static void test_round2(void)
         }
         pad(m, 0, 0);
         adv(m, 2 * FPS);
-        /* recording: the arp's notes go into the clip with their timing (not the pad's) */
+        /* recording: (0.14.0, the owner's 2026-11-24) the notes played go into the clip, with their real lengths (the
+         * clip then feeds the arp: arpeggiated once); before 0.14.0 the arp's notes were recorded */
         ap->quant = 10, ap->mlen = 16;                  /* (QUANT 1/16: on the steps) */
         rfmv_seq_clip_clear(m, 0);
         m->seq.rec_mode = RFM_MOVE_RM_RECORD;
@@ -2561,9 +2562,10 @@ static void test_round2(void)
         pad(m, 0, 0), pad(m, 2, 0);
         press(m, MR_CC_REC);
         c = nnotes_clip(m, 0);
-        CHECKF(c >= 3 && c <= 5, "the arp recorded: %d notes", c);
+        CHECKF(c == 2, "the notes played recorded: %d notes", c);
         for (i = 0; i < m->seq.nnotes; i++)
-            CHECK(m->seq.notes[i].micro == 0 && m->seq.notes[i].len == 24 * 90 / 100);   /* (on the grid, GATE 90 %) */
+            CHECKF(m->seq.notes[i].len >= 4 * 24 - 2 && m->seq.notes[i].len <= 5 * 24 && m->seq.notes[i].vel >= 90,
+                   "len %d", m->seq.notes[i].len);     /* (held four steps and a tick) */
         rfm_move_seq_play(m, 0);
         ap->mode = RFM_MOVE_AM_OFF;
         adv(m, 2 * FPS);

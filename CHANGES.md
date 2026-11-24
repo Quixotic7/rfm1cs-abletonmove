@@ -183,6 +183,24 @@ The owner's notes of 2026-11-24 (`tests/move_sessview.c` `test_n24_*`, pictures 
   send nothing; Shift's release after such a turn latches nothing. Was: the turn reached the firmware unshifted.
   Knobs+Keys unchanged (Shift is GLO at its own press there). `test_n24_shift_knob` (pictures
   `sessview_n24_shift_knob`, `_engine`); `test_o14_shift_knob`'s level 1 check follows.
+- (item 7, "Arp does not work for the sequenced notes"; the owner regards the arp as a MIDI effect after the
+  sequencer) **a track's clip feeds its arp**: with the track's arp on, each of the clip's notes goes into the arp at its
+  time and is held for its length (`clip_note`, `arp_in`, `arp_ends`); the arp's notes go out on the track
+  (`track` 1..16: the host's routing as for the clip), the clip's own notes are not sent. Every track has its own
+  arp now (`rfm_move_arpst_t arps[16]` in `rfm_move_seq_t`, RAM, in place of the one `arp_*` set that followed the
+  selected track's pads); the pads of the selected track feed the same arp as its clip (a note held by both stays
+  till both let go; a pad's release goes to the track it was played on: `rfmv_seq_arp_off` takes the track). The
+  arps run after the clips each tick (`arp_tick` moved after `play_tick`), so a clip's note starts its arp on that
+  tick (QUANT's grid as before). The Hold and one-pass (Once, 1-st) modes work with the clip's notes as with the pads;
+  the transport's stop and a clip's launch or stop let go of what the clip held, a set it latched too
+  (`arp_clip_drop`, from `rfmv_seq_release`): no notes hang; a muted track's (or one not soloed) clip arp is silent,
+  as its clip; the pads' notes still sound through a muted track's arp as they do live.
+  **Recording with the arp on records what was played, not the arp's output** (a change): the pad's note goes into
+  the clip at its press with its real length at its release (`rfmv_seq_pad_on` / `_off`, as with the arp off; Capture
+  too), and the arp's notes are no longer recorded (`arp_record` gone). Played back, the clip feeds the arp, so the
+  phrase is arpeggiated once, not twice. `test_n24_arp_clip` (off: the chord, on: 16ths and never the chord, the stop,
+  mute, solo, Once, Hold, a pad with it; picture `sessview_n24_arp_clip`); `test_move_seq`'s recording check now
+  expects the two notes played with their lengths.
 
 ## 0.13.0 (2026-11-23)
 

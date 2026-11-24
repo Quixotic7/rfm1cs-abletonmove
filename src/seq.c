@@ -686,10 +686,12 @@ static void snd_off(rfm_move_t *m, int i)
     rfmv_emit_midi_t(m, q->snd[i].track + 1, 0x80 | q->snd[i].ch, q->snd[i].note, 0);
     q->snd[i] = q->snd[--q->nsnd];
 }
+static void arp_clip_drop(rfm_move_t *m, int tr);
 void rfmv_seq_release(rfm_move_t *m, int track)
 {
     rfm_move_seq_t *q = &m->seq;
     int i = 0;
+    arp_clip_drop(m, track);                            /* (0.14.0: what its clip held in its arp too) */
     while (i < q->nsnd)
         if (track < 0 || q->snd[i].track == track)
             snd_off(m, i);
@@ -954,6 +956,7 @@ static void launch_now(rfm_move_t *m, int track, int scene, int32_t T)
     }
 }
 
+static void clip_note(rfm_move_t *m, int tr, int note, int vel, int len);
 /* a track's tick: the playhead on, then what is due now */
 static void track_tick(rfm_move_t *m, int tr, int32_t T)
 {
@@ -1010,7 +1013,7 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
                 len = t->tps / nr;
             for (k = 0; k < nr; k++)
                 if (mt + k * t->tps / nr == t->sub && !rec_held(q, clip, n.note))
-                    note_on(m, tr, n.note, n.vel, len);
+                    clip_note(m, tr, n.note, n.vel, len);   /* (0.14.0: the track's arp, while on) */
         }
         if (t->sub == 0) {
             hi = rfmv_seq_lock_range(m, clip, ps, &lo);
@@ -1024,7 +1027,7 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
             const rfm_move_note_t n = q->notes[i];
             const int mt = groove_at(m, tr, t->next, micro_ticks(n.micro, t->tps));
             if (mt < 0 && t->tps + mt == t->sub && !rec_held(q, clip, n.note))
-                note_on(m, tr, n.note, n.vel, n.len * t->tps / RFM_MOVE_SEQ_TPS);
+                clip_note(m, tr, n.note, n.vel, n.len * t->tps / RFM_MOVE_SEQ_TPS);
         }
     }
 }
@@ -1225,175 +1228,289 @@ static int arp_order(int pat, int n, uint8_t *out)
 #undef PUT
     return k;
 }
-static void arp_build(rfm_move_t *m)
+static void arp_build(rfm_move_t *m, int tr)
 {
     rfm_move_seq_t *q = &m->seq;
-    const int pat = q->tr[q->arp_track].arp.pat, n = q->arp_n;
+    rfm_move_arpst_t *s = &q->arps[tr];
+    const int pat = q->tr[tr].arp.pat, n = s->n;
     int i, j;
     for (i = 0; i < n; i++)
-        q->arp_ord[i] = (uint8_t)i;
+        s->ord[i] = (uint8_t)i;
     for (i = 1; i < n; i++)                             /* by pitch */
-        for (j = i; j > 0 && q->arp_pitch[q->arp_ord[j]] < q->arp_pitch[q->arp_ord[j - 1]]; j--) {
-            const uint8_t x = q->arp_ord[j];
-            q->arp_ord[j] = q->arp_ord[j - 1], q->arp_ord[j - 1] = x;
+        for (j = i; j > 0 && s->pitch[s->ord[j]] < s->pitch[s->ord[j - 1]]; j--) {
+            const uint8_t x = s->ord[j];
+            s->ord[j] = s->ord[j - 1], s->ord[j - 1] = x;
         }
-    q->arp_nseq = (uint8_t)arp_order(pat, n, q->arp_seq);
+    s->nseq = (uint8_t)arp_order(pat, n, s->seq);
     if (pat == RFM_MOVE_AP_RONC)
         for (i = n - 1; i > 0; i--) {                   /* (a shuffle: every note once) */
             const int x = (int)(rnd(q) % (uint32_t)(i + 1));
-            const uint8_t t = q->arp_seq[i];
-            q->arp_seq[i] = q->arp_seq[x], q->arp_seq[x] = t;
+            const uint8_t t = s->seq[i];
+            s->seq[i] = s->seq[x], s->seq[x] = t;
         }
 }
-int rfmv_seq_arp_on(rfm_move_t *m, int note, int vel)   /* 1: the arp took it */
+static void arp_del(rfm_move_arpst_t *s, int i)         /* held note i out */
+{
+    const size_t k = (size_t)(s->n - i - 1);
+    memmove(&s->pitch[i], &s->pitch[i + 1], k), memmove(&s->vel[i], &s->vel[i + 1], k);
+    memmove(&s->src[i], &s->src[i + 1], k), memmove(&s->cnt[i], &s->cnt[i + 1], k);
+    memmove(&s->coff[i], &s->coff[i + 1], k * sizeof s->coff[0]);
+    s->n--;
+}
+/* (0.14.0, the owner's 2026-11-24: "Arp does not work for the sequenced notes") a note into track tr's arp: from a pad
+ * (src 1) or the track's clip (src 2, held until coff); now: the tick the run would start from. 1: the arp took it */
+static int arp_in(rfm_move_t *m, int tr, int note, int vel, int src, int32_t coff, int32_t now)
 {
     rfm_move_seq_t *q = &m->seq;
-    const rfm_move_arp_t *a = &q->tr[q->sel_track].arp;
+    const rfm_move_arp_t *a = &q->tr[tr].arp;
+    rfm_move_arpst_t *s = &q->arps[tr];
     int i;
     if (a->mode == RFM_MOVE_AM_OFF)
         return 0;
-    if (q->arp_track != q->sel_track)
-        q->arp_n = q->arp_down = q->arp_run = 0, q->arp_track = q->sel_track;
-    if ((a->mode == RFM_MOVE_AM_HOLD || a->mode == RFM_MOVE_AM_1ST) && !q->arp_down && q->arp_n)
-        q->arp_n = 0, q->arp_run = 0;                   /* (a latched set: the next note after every key is up) */
-    for (i = 0; i < q->arp_n && q->arp_pitch[i] != note; i++) {}
-    if (i == q->arp_n && q->arp_n < 8)
-        q->arp_pitch[q->arp_n] = (uint8_t)note, q->arp_vel[q->arp_n++] = (uint8_t)vel;
-    q->arp_down++;
-    arp_build(m);
+    if ((a->mode == RFM_MOVE_AM_HOLD || a->mode == RFM_MOVE_AM_1ST) && !s->down && s->n)
+        s->n = 0, s->run = 0;                           /* (a latched set: the next note after every key is up) */
+    for (i = 0; i < s->n && s->pitch[i] != note; i++) {}
+    if (i == s->n && s->n < 8) {
+        s->pitch[i] = (uint8_t)note, s->vel[i] = (uint8_t)vel, s->src[i] = 0, s->cnt[i] = 0, s->coff[i] = 0;
+        s->n++;
+    }
+    if (i < s->n) {
+        if (src == 1)
+            s->src[i] |= 1;
+        else {
+            s->src[i] |= 2, s->fromclip = 1;
+            if (s->cnt[i] < 255)
+                s->cnt[i]++;
+            if (s->cnt[i] == 1 || coff > s->coff[i])
+                s->coff[i] = coff;
+        }
+    }
+    s->down++;
+    arp_build(m, tr);
     if (a->reset == RFM_MOVE_AR_NOTE)                   /* RESET NOTE: a new note starts it again */
-        q->arp_pos = q->arp_oct = q->arp_mpos = q->arp_tpos = 0;
-    if (!q->arp_run) {                                  /* starts on QUANT's grid (0: the next tick; the song's bars
-                                                         * while playing) */
-        const int32_t now = q->tl + 1, ref = q->playing ? q->tl - q->T : 0;
-        q->arp_run = 1, q->arp_pos = q->arp_oct = q->arp_steps = q->arp_mpos = q->arp_tpos = 0, q->arp_last = 0xFF;
-        q->arp_lastn = 0;
+        s->pos = s->oct = s->mpos = s->tpos = 0;
+    if (!s->run) {                                      /* starts on QUANT's grid (0: at now; the song's bars while
+                                                         * playing) */
+        const int32_t ref = q->playing ? q->tl - q->T : 0;
+        s->run = 1, s->pos = s->oct = s->steps = s->mpos = s->tpos = 0, s->last = 0xFF;
+        s->lastn = 0;
         if (a->quant) {
             const int32_t Q = BAR / rfmv_seq_arp_rate_of(a->quant - 1), d = now - ref;
-            q->arp_t0 = ref + (d >= 0 ? (d + Q - 1) / Q * Q : -((-d) / Q) * Q);
+            s->t0 = ref + (d >= 0 ? (d + Q - 1) / Q * Q : -((-d) / Q) * Q);
         } else
-            q->arp_t0 = now;
-        q->arp_k = 0, q->arp_next = q->arp_t0;
+            s->t0 = now;
+        s->k = 0, s->next = s->t0;
     }
     return 1;
 }
-void rfmv_seq_arp_off(rfm_move_t *m, int note)
+/* a holder of note let go (src 1 a pad, 2 the clip's notes) */
+static void arp_let(rfm_move_t *m, int tr, int note, int src)
 {
     rfm_move_seq_t *q = &m->seq;
-    const int mode = q->tr[q->arp_track].arp.mode;
-    int i;
-    if (q->arp_down)
-        q->arp_down--;
+    rfm_move_arpst_t *s = &q->arps[tr];
+    const int mode = q->tr[tr].arp.mode;
+    int i, k = 1;
+    for (i = 0; i < s->n && s->pitch[i] != note; i++) {}
+    if (i < s->n) {
+        if (src == 1)
+            s->src[i] &= (uint8_t)~1;
+        else
+            k = s->cnt[i] ? s->cnt[i] : 1, s->cnt[i] = 0;
+    }
+    s->down = (uint8_t)(s->down > k ? s->down - k : 0);
     if (mode == RFM_MOVE_AM_ON || mode == RFM_MOVE_AM_ONCE || mode == RFM_MOVE_AM_OFF) {
-        for (i = 0; i < q->arp_n && q->arp_pitch[i] != note; i++) {}
-        if (i < q->arp_n) {
-            memmove(&q->arp_pitch[i], &q->arp_pitch[i + 1], (size_t)(q->arp_n - i - 1));
-            memmove(&q->arp_vel[i], &q->arp_vel[i + 1], (size_t)(q->arp_n - i - 1));
-            q->arp_n--;
-        }
-        arp_build(m);
-        if (!q->arp_n)
-            q->arp_run = 0;
+        if (i < s->n && !(s->src[i] & 1) && !s->cnt[i])
+            arp_del(s, i);
+        arp_build(m, tr);
+        if (!s->n)
+            s->run = 0;
     }
 }
-void rfmv_seq_arp_stop(rfm_move_t *m)                  /* every held note let go, a latched arp too */
+int rfmv_seq_arp_on(rfm_move_t *m, int note, int vel)   /* the selected track's pads: 1, the arp took it */
 {
-    m->seq.arp_n = m->seq.arp_down = m->seq.arp_run = 0;
+    return arp_in(m, m->seq.sel_track, note, vel, 1, 0, m->seq.tl + 1);
 }
-static void arp_record(rfm_move_t *m, int note, int vel, int len);
+void rfmv_seq_arp_off(rfm_move_t *m, int track, int note) { arp_let(m, track % RFM_MOVE_SEQ_TRACKS, note, 1); }
+/* track tr's arp stopped: everything it holds let go, latched too (tr < 0: every track's) */
+void rfmv_seq_arp_stop_t(rfm_move_t *m, int tr)
+{
+    int t;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++)
+        if (tr < 0 || t == tr)
+            memset(&m->seq.arps[t], 0, sizeof m->seq.arps[t]);
+}
+/* every arp's pad notes let go, a set the pads latched too (0.14.0: what the clips hold plays on) */
+void rfmv_seq_arp_stop(rfm_move_t *m)
+{
+    int t, i;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++) {
+        rfm_move_arpst_t *s = &m->seq.arps[t];
+        for (i = s->n - 1; i >= 0; i--) {
+            s->src[i] &= (uint8_t)~1;
+            if (!(s->src[i] & 2))
+                arp_del(s, i);
+        }
+        for (i = 0, s->down = 0; i < s->n; i++)
+            s->down = (uint8_t)(s->down + s->cnt[i]);
+        arp_build(m, t);
+        if (!s->n)
+            s->run = 0;
+    }
+}
+/* the clip's notes of track tr (tr < 0: every track's) out of its arp: the transport stopped, the clip launched or
+ * stopped. A set they latched goes too; the pads' notes stay */
+static void arp_clip_drop(rfm_move_t *m, int tr)
+{
+    int t, i;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++) {
+        rfm_move_arpst_t *s = &m->seq.arps[t];
+        if ((tr >= 0 && t != tr) || !s->fromclip)
+            continue;
+        for (i = s->n - 1; i >= 0; i--) {
+            s->cnt[i] = 0, s->src[i] &= (uint8_t)~2;
+            if (!s->src[i])
+                arp_del(s, i);
+        }
+        s->down = 0, s->fromclip = 0;
+        for (i = 0; i < s->n; i++)
+            s->down = (uint8_t)(s->down + (s->src[i] & 1));
+        arp_build(m, t);
+        if (!s->n)
+            s->run = 0;
+    }
+}
+/* a clip's note (track_tick): to the firmware, or (0.14.0) into the track's arp while it is on, held for its length */
+static void clip_note(rfm_move_t *m, int tr, int note, int vel, int len)
+{
+    rfm_move_seq_t *q = &m->seq;
+    if (q->hush)
+        return;
+    if (!arp_in(m, tr, note, vel, 2, q->tl + (len < 1 ? 1 : len), q->tl))
+        note_on(m, tr, note, vel, len);
+}
 
 /* one step (FIZZ's arp_step): the pattern's next note through the MOD lane (play, rest, tie, repeat, low, high,
  * power chord, chord, the n-th played) and the TRANSPOSE lane, each its own length; RESET MPAT / TPAT start the
  * pattern again as a lane comes round */
-static void arp_step(rfm_move_t *m)
+static void arp_step(rfm_move_t *m, int atr)
 {
     rfm_move_seq_t *q = &m->seq;
-    const rfm_move_arp_t *a = &q->tr[q->arp_track].arp;
-    const int n = q->arp_n, range = clampi(a->range, 1, 8), mlen = clampi(a->mlen, 1, 16), tlen = clampi(a->tlen, 1, 16);
-    int idx, mod, tr, ties = 0, i, np = 0, pitch[8 + 2];
-    if (!n || !q->arp_nseq) {
-        q->arp_run = 0;
+    rfm_move_arpst_t *s = &q->arps[atr];
+    const rfm_move_arp_t *a = &q->tr[atr].arp;
+    const int n = s->n, range = clampi(a->range, 1, 8), mlen = clampi(a->mlen, 1, 16), tlen = clampi(a->tlen, 1, 16);
+    int idx, mod, tr, ties = 0, i, np = 0, pitch[8 + 2], pads = 0;
+    if (!n || !s->nseq) {
+        s->run = 0;
         return;
     }
-    if ((a->mode == RFM_MOVE_AM_ONCE || a->mode == RFM_MOVE_AM_1ST) && q->arp_steps >= q->arp_nseq * range) {
-        q->arp_run = 0;
+    if ((a->mode == RFM_MOVE_AM_ONCE || a->mode == RFM_MOVE_AM_1ST) && s->steps >= s->nseq * range) {
+        s->run = 0;
         return;
     }
-    q->arp_steps++;
-    if (q->arp_pos >= q->arp_nseq) {                    /* a pass ends: the next octave */
-        q->arp_pos = 0;
-        if (++q->arp_oct >= range)
-            q->arp_oct = 0;
+    s->steps++;
+    if (s->pos >= s->nseq) {                            /* a pass ends: the next octave */
+        s->pos = 0;
+        if (++s->oct >= range)
+            s->oct = 0;
         if (a->pat == RFM_MOVE_AP_RONC)
-            arp_build(m);
+            arp_build(m, atr);
     }
-    mod = a->lane[0][q->arp_mpos % mlen], tr = a->lane[1][q->arp_tpos % tlen];
-    for (i = 1; i < mlen && a->lane[0][(q->arp_mpos + i) % mlen] == RFM_MOVE_AL_TIE; i++)
+    mod = a->lane[0][s->mpos % mlen], tr = a->lane[1][s->tpos % tlen];
+    for (i = 1; i < mlen && a->lane[0][(s->mpos + i) % mlen] == RFM_MOVE_AL_TIE; i++)
         ties++;
     switch (a->pat) {
     case RFM_MOVE_AP_RAND: idx = (int)(rnd(q) % (uint32_t)n); break;
     case RFM_MOVE_AP_ROTH:
         idx = (int)(rnd(q) % (uint32_t)n);
-        if (n > 1 && idx == q->arp_last)
+        if (n > 1 && idx == s->last)
             idx = (idx + 1 + (int)(rnd(q) % (uint32_t)(n - 1))) % n;
         break;
-    case RFM_MOVE_AP_ASP: idx = -1 - (q->arp_pos % n); break;   /* (as played) */
-    default: idx = q->arp_seq[q->arp_pos % q->arp_nseq]; break;
+    case RFM_MOVE_AP_ASP: idx = -1 - (s->pos % n); break;   /* (as played) */
+    default: idx = s->seq[s->pos % s->nseq]; break;
     }
-    q->arp_last = (uint8_t)idx;
+    s->last = (uint8_t)idx;
     {
-        const int lo = q->arp_pitch[q->arp_ord[0]], hi = q->arp_pitch[q->arp_ord[n - 1]], hp = n == 1 ? hi + 12 : hi;
-        const int e = idx < 0 ? q->arp_pitch[-1 - idx] : q->arp_pitch[q->arp_ord[idx]], on = q->arp_oct * a->odist;
+        const int lo = s->pitch[s->ord[0]], hi = s->pitch[s->ord[n - 1]], hp = n == 1 ? hi + 12 : hi;
+        const int e = idx < 0 ? s->pitch[-1 - idx] : s->pitch[s->ord[idx]], on = s->oct * a->odist;
         switch (mod) {
         case RFM_MOVE_AL_PLAY: pitch[np++] = e + on + tr; break;
         case RFM_MOVE_AL_REST: case RFM_MOVE_AL_TIE: break;
         case RFM_MOVE_AL_REPEAT:
-            for (i = 0; i < q->arp_lastn; i++)
-                pitch[np++] = q->arp_lastp[i];
+            for (i = 0; i < s->lastn; i++)
+                pitch[np++] = s->lastp[i];
             break;
         case RFM_MOVE_AL_LO: pitch[np++] = lo - 12 + tr; break;
         case RFM_MOVE_AL_HI: pitch[np++] = hp + 12 + tr; break;
-        case RFM_MOVE_AL_PWR: pitch[np++] = lo + 12 * q->arp_oct + tr, pitch[np++] = hp + 12 * q->arp_oct + tr; break;
+        case RFM_MOVE_AL_PWR: pitch[np++] = lo + 12 * s->oct + tr, pitch[np++] = hp + 12 * s->oct + tr; break;
         case RFM_MOVE_AL_CHORD:
             for (i = 0; i < n; i++)
-                pitch[np++] = q->arp_pitch[q->arp_ord[i]] + 12 * q->arp_oct + tr;
+                pitch[np++] = s->pitch[s->ord[i]] + 12 * s->oct + tr;
             break;
         default:                                        /* the n-th note played */
             if (mod - RFM_MOVE_AL_N1 < n)
-                pitch[np++] = q->arp_pitch[mod - RFM_MOVE_AL_N1] + on + tr;
+                pitch[np++] = s->pitch[mod - RFM_MOVE_AL_N1] + on + tr;
             break;
         }
     }
-    q->arp_pos++;
-    q->arp_mpos = (uint16_t)((q->arp_mpos + 1) % mlen);
-    q->arp_tpos = (uint16_t)((q->arp_tpos + 1) % tlen);
-    if ((a->reset == RFM_MOVE_AR_MPAT && q->arp_mpos == 0) || (a->reset == RFM_MOVE_AR_TPAT && q->arp_tpos == 0))
-        q->arp_pos = 0, q->arp_oct = 0;
-    if (!np)                                            /* (0.14.0, the owner's: no CHANCE: every step plays) */
+    s->pos++;
+    s->mpos = (uint16_t)((s->mpos + 1) % mlen);
+    s->tpos = (uint16_t)((s->tpos + 1) % tlen);
+    if ((a->reset == RFM_MOVE_AR_MPAT && s->mpos == 0) || (a->reset == RFM_MOVE_AR_TPAT && s->tpos == 0))
+        s->pos = 0, s->oct = 0;
+    for (i = 0; i < n; i++)
+        pads |= s->src[i] & 1;
+    if (!np || (!pads && !rfmv_seq_audible(m, atr)))   /* (0.14.0, the owner's: no CHANCE: every step plays; the
+                                                         * clip's notes on a muted track: silent, as the clip) */
         return;
     {
         const int steplen = BAR / rfmv_seq_arp_rate_of(a->rate);
-        const int len = steplen * clampi(a->gate, 2, 200) / 100 * (1 + ties), vel = q->arp_vel[0];
+        const int len = steplen * clampi(a->gate, 2, 200) / 100 * (1 + ties), vel = s->vel[0];
         if (mod != RFM_MOVE_AL_REPEAT)
-            q->arp_lastn = 0;
+            s->lastn = 0;
         for (i = 0; i < np; i++) {
             if (pitch[i] < 0 || pitch[i] > 127)
                 continue;
-            if (mod != RFM_MOVE_AL_REPEAT && q->arp_lastn < 8)
-                q->arp_lastp[q->arp_lastn++] = (uint8_t)pitch[i];
-            note_on(m, q->arp_track, pitch[i], vel, len < 1 ? 1 : len);
-            arp_record(m, pitch[i], vel, len < 1 ? 1 : len);
+            if (mod != RFM_MOVE_AL_REPEAT && s->lastn < 8)
+                s->lastp[s->lastn++] = (uint8_t)pitch[i];
+            note_on(m, atr, pitch[i], vel, len < 1 ? 1 : len);   /* (0.14.0: never recorded: the clip takes what was
+                                                         * played, the arp plays it back) */
         }
     }
 }
+/* the clip's notes that end now let go of their arps (before this tick's notes come in, as note offs before ons) */
+static void arp_ends(rfm_move_t *m)
+{
+    rfm_move_seq_t *q = &m->seq;
+    int t, i;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++) {
+        rfm_move_arpst_t *s = &q->arps[t];
+        for (i = s->n - 1; i >= 0; i--)
+            if (i < s->n && s->cnt[i] && s->coff[i] <= q->tl)
+                arp_let(m, t, s->pitch[i], 2);
+    }
+}
+/* (0.14.0: every track's arp, after the clips' notes of this tick came in) */
 static void arp_tick(rfm_move_t *m)
 {
     rfm_move_seq_t *q = &m->seq;
-    if (!q->arp_run || q->tl < q->arp_next)
-        return;
-    arp_step(m);
-    q->arp_k++;
-    q->arp_next = q->arp_t0 + (int32_t)((int64_t)q->arp_k * BAR / rfmv_seq_arp_rate_of(q->tr[q->arp_track].arp.rate));
+    int t;
+    for (t = 0; t < RFM_MOVE_SEQ_TRACKS; t++) {
+        rfm_move_arpst_t *s = &q->arps[t];
+        const rfm_move_arp_t *a = &q->tr[t].arp;
+        if (!s->n && !s->run)
+            continue;
+        if (a->mode == RFM_MOVE_AM_OFF) {               /* (switched off: nothing of it left) */
+            memset(s, 0, sizeof *s);
+            continue;
+        }
+        if (!s->run)
+            continue;
+        if (q->tl < s->next)
+            continue;
+        arp_step(m, t);
+        s->k++;
+        s->next = s->t0 + (int32_t)((int64_t)s->k * BAR / rfmv_seq_arp_rate_of(a->rate));
+    }
 }
 
 static void tick(rfm_move_t *m, uint32_t frame)
@@ -1410,13 +1527,14 @@ static void tick(rfm_move_t *m, uint32_t frame)
             snd_off(m, i);
         else
             i++;
+    arp_ends(m);                                        /* (0.14.0: the clips' notes ending now leave their arps) */
     if (q->metro && q->start_pending == 3 && q->count_in > 0 && (q->count_in - 1) % (BAR / 4) == 0)
         rfmv_emit(m, RFM_MOVE_ACT_CLICK, 0, 0, 0, q->count_in - 1 == BAR);   /* (the count-in's beats) */
-    arp_tick(m);
     if (q->playing && m->clk_on && !q->following && (q->T + 1) % 4 == 0)
         clk_out(m, 0xF8);                               /* (0.9.0: 24 PPQN, the first with Start) */
     if (q->playing)
         play_tick(m, ++q->T);
+    arp_tick(m);                                        /* (0.14.0: after the clips, so their notes feed it this tick) */
     q->jr_n = 0;
 }
 
@@ -1902,31 +2020,6 @@ static void rec_pos_r(rfm_move_t *m, int tr, int arp, int *step, int *micro)
 }
 
 static void rec_pos(rfm_move_t *m, int tr, int *step, int *micro) { rec_pos_r(m, tr, 0, step, micro); }
-
-/* the arp's note, recorded with its timing and length while recording (not played again by the clip this tick) */
-static void arp_record(rfm_move_t *m, int note, int vel, int len)
-{
-    rfm_move_seq_t *q = &m->seq;
-    const int tr = q->arp_track;
-    rfm_move_track_t *t = &q->tr[tr];
-    int step, micro, clip, i;
-    uint16_t g;
-    if (!q->rec || !q->playing || tr != q->sel_track || q->steprec)
-        return;
-    if (t->active < 0) {
-        const int32_t T = q->T + 1;
-        t->active = t->sel, t->t0 = T - T % BAR, t->pos = -1, t->queued = SEQ_NONE;
-    }
-    clip = SEQ_CLIP(tr, t->active);
-    rec_pos_r(m, tr, 1, &step, &micro);
-    g = q->group, q->group = q->rec_group;
-    rfmv_seq_note_put(m, clip, step, note, vel, clampi(len * TPS / (t->tps ? t->tps : TPS), 1, RFM_MOVE_SEQ_MAXLEN * TPS), micro);
-    q->group = g;
-    if ((i = rfmv_seq_find(m, clip, step, note)) >= 0)
-        q->notes[i].rsv = q->take;
-    if (q->jr_n < 8)
-        q->jr_clip[q->jr_n] = (uint8_t)clip, q->jr_note[q->jr_n++] = (uint8_t)note;
-}
 
 static void rec_start_note(rfm_move_t *m, int pad, int clip, int step, int micro, int note, int vel, int32_t T)
 {

@@ -501,8 +501,10 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
     if (!vel) {
         q->chord &= ~(1u << p);
         rfmv_pop_let(m, POP_PROJ, (3 - p / 8) * 8 + p % 8);
-        if (h->kind == H_ARP)
-            rfmv_seq_arp_off(m, h->b), h->kind = H_NONE;
+        if (h->kind == H_ARP) {                         /* (0.14.0: the track it was played on; recorded as played) */
+            rfmv_seq_arp_off(m, h->a, h->b), h->kind = H_NONE;
+            rfmv_seq_pad_off(m, p, h->b);
+        }
         if (h->kind == H_NOTE)
             rfmv_seq_pad_off(m, p, h->b);
         if (q->steps_chord & (1u << p)) {              /* Step record: the chord let go, the cursor a step on */
@@ -699,7 +701,10 @@ void rfmv_seq_pad(rfm_move_t *m, int p, int vel, uint32_t now)
         }
         vel = vel_of(m, vel);
         if (!q->step_held && !q->steprec && rfmv_seq_arp_on(m, note, vel)) {   /* the track's arp plays it */
-            h->kind = H_ARP, h->b = (uint8_t)note;
+            h->kind = H_ARP, h->a = (uint8_t)q->sel_track, h->b = (uint8_t)note;
+            rfmv_seq_pad_on(m, p, note, vel);           /* (0.14.0, the owner's "Arp does not work for the sequenced
+                                                         * notes": a recording takes the note played, with its length;
+                                                         * the clip then feeds the arp. Was: the arp's notes recorded) */
             return;
         }
         h->kind = H_NOTE, h->a = (uint8_t)ch, h->b = (uint8_t)note;
@@ -2310,7 +2315,7 @@ void rfmv_seq_arp_toggle(rfm_move_t *m)
     } else {
         q->arp_was[q->sel_track] = a->mode;
         a->mode = RFM_MOVE_AM_OFF;
-        rfmv_seq_arp_stop(m);
+        rfmv_seq_arp_stop_t(m, q->sel_track);
     }
     q->sm_k = 4, q->sm_ms = rfmv_now_ms(m);             /* (its header: the mode, as knob 5 shows it) */
     rfmv_pop(m, POP_ARPW, rfmv_seq_arp_silent(m, q->sel_track) ? RFM_MOVE_AM_N : a->mode);   /* (0.14.0: "Silent") */
@@ -2538,7 +2543,7 @@ static void smenu_turn(rfm_move_t *m, int k, int d, int jog)   /* (jog: the jog 
         case 4:
             a->mode = (uint8_t)clampi(a->mode + d, 0, RFM_MOVE_AM_N - 1);
             if (a->mode == RFM_MOVE_AM_OFF)
-                rfmv_seq_arp_stop(m);
+                rfmv_seq_arp_stop_t(m, q->sel_track);
             else
                 q->arp_was[q->sel_track] = a->mode;     /* (the jog's click brings this one back) */
             break;
@@ -3130,7 +3135,7 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
              * something else than play (a transpose) orange, a rest faint; past the lane's length dark */
             const rfm_move_arp_t *a = &q->tr[q->sel_track].arp;
             const int L = q->arp_page - 1, len = clampi(L ? a->tlen : a->mlen, 1, 16), lv = a->lane[L][i];
-            const int at = q->arp_run && q->arp_track == q->sel_track ? ((L ? q->arp_tpos : q->arp_mpos) + len - 1) % len : -1;
+            const int at = q->arps[q->sel_track].run ? ((L ? q->arps[q->sel_track].tpos : q->arps[q->sel_track].mpos) + len - 1) % len : -1;
             if (i >= len)
                 v = RFMV_OFF;
             else if (i == q->arp_sel)
@@ -4253,7 +4258,7 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
                                                          * TRANSPOSE: bars from the line. The picked one underlined, the
                                                          * one just played ticked; past its length a dot */
             const int L = q->arp_page - 1, len = clampi(L ? a->tlen : a->mlen, 1, 16);
-            const int at = q->arp_run && q->arp_track == q->sel_track ? ((L ? q->arp_tpos : q->arp_mpos) + len - 1) % len : -1;
+            const int at = q->arps[q->sel_track].run ? ((L ? q->arps[q->sel_track].tpos : q->arps[q->sel_track].mpos) + len - 1) % len : -1;
             if (L)
                 v2_dotH(cv, 0, 38, 128);
             for (i = 0; i < RFM_MOVE_ARP_LANE; i++) {

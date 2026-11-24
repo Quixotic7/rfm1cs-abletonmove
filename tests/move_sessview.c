@@ -5276,8 +5276,100 @@ static void test_n24_shift_knob(void)
     rfm_move_set_labels(&M, NULL);
 }
 
+/* item 7: "Arp does not work for the sequenced notes": the clip's notes feed the track's arp (down for their length),
+ * the arp's notes go out on the track (its routing), the raw notes not; Hold and one-pass modes, the transport's stop,
+ * mutes and solo; a recording takes what was played */
+static int ons_of(int tr, int note)                     /* note ons of track tr (1..16), note (-1 any) */
+{
+    int i, n = 0;
+    for (i = 0; i < nact; i++)
+        n += A[i].kind == RFM_MOVE_ACT_MIDI && A[i].track == tr && (A[i].bytes[0] & 0xF0) == 0x90 && A[i].bytes[2] &&
+             (note < 0 || A[i].bytes[1] == note);
+    return n;
+}
+static int sounding_left(int tr)                        /* note ons minus offs of track tr since clear() */
+{
+    int i, n = 0;
+    for (i = 0; i < nact; i++)
+        if (A[i].kind == RFM_MOVE_ACT_MIDI && A[i].track == tr)
+            n += ((A[i].bytes[0] & 0xF0) == 0x90 && A[i].bytes[2]) ? 1 : ((A[i].bytes[0] & 0xF0) == 0x80 ||
+                                                                          (A[i].bytes[0] & 0xF0) == 0x90) ? -1 : 0;
+    return n;
+}
+static void test_n24_arp_clip(void)
+{
+    rfm_move_arp_t *ap;
+    int tr, clip, n;
+    track_view();
+    tr = M.seq.sel_track, clip = edit_clip_now();
+    ap = &M.seq.tr[tr].arp;
+    rfmv_seq_note_put(&M, clip, 0, 60, 100, 16 * 24, 0), rfmv_seq_note_put(&M, clip, 0, 64, 100, 16 * 24, 0);
+    rfmv_seq_note_put(&M, clip, 0, 67, 100, 16 * 24, 0);   /* (C E G held the whole bar) */
+    ap->rate = 9, ap->range = 1;                        /* (16 a bar, one octave) */
+    /* the arp off: the chord itself, three notes a bar */
+    clear(), press(MR_CC_PLAY), adv_ms(2000 - 10);
+    n = ons_of(tr + 1, -1);
+    CHECKF(n == 3 && ons_of(tr + 1, 64) == 1, "off: %d notes a bar", n);
+    press(MR_CC_PLAY), adv_ms(200);
+    /* on: the arp's 16ths over C E G (on the track: its routing), not the chord */
+    ap->mode = RFM_MOVE_AM_ON;
+    clear(), press(MR_CC_PLAY), adv_ms(60);
+    CHECKF(ons_of(tr + 1, -1) == 1 && ons_of(tr + 1, 60) == 1, "the first 16th: %d", ons_of(tr + 1, -1));   /* (C, not
+                                                         * the chord) */
+    adv_ms(2000 - 70);
+    n = ons_of(tr + 1, -1);
+    CHECKF(n >= 15 && n <= 16 && ons_of(tr + 1, 64) >= 5 && ons_of(0, -1) == 0, "on: %d notes a bar, %d E", n,
+           ons_of(tr + 1, 64));
+    write_pbm("n24_arp_clip");
+    /* the transport stopped: nothing left sounding or running */
+    press(MR_CC_PLAY), adv_ms(600);
+    CHECKF(sounding_left(tr + 1) == 0 && !M.seq.arps[tr].run && !M.seq.arps[tr].n && !M.seq.nsnd, "left %d",
+           sounding_left(tr + 1));
+    clear(), adv_ms(1000);
+    CHECK(ons_of(tr + 1, -1) == 0);
+    /* muted: silent; unmuted: again; another track soloed: silent */
+    rfmv_seq_mute(&M, tr, 1);
+    clear(), press(MR_CC_PLAY), adv_ms(1000);
+    CHECK(ons_of(tr + 1, -1) == 0);
+    rfmv_seq_mute(&M, tr, 0), adv_ms(2000);
+    CHECK(ons_of(tr + 1, -1) >= 8);
+    M.seq.tr[(tr + 1) % 16].solo = 1, clear(), adv_ms(2000);
+    CHECK(ons_of(tr + 1, -1) == 0);
+    M.seq.tr[(tr + 1) % 16].solo = 0;
+    press(MR_CC_PLAY), adv_ms(300);
+    /* one pass (Once): C E G once a bar (the chord comes again each bar) */
+    ap->mode = RFM_MOVE_AM_ONCE;
+    clear(), press(MR_CC_PLAY), adv_ms(4000 - 10);
+    CHECKF(ons_of(tr + 1, -1) == 6 && ons_of(tr + 1, 60) == 2, "once: %d", ons_of(tr + 1, -1));
+    press(MR_CC_PLAY), adv_ms(300);
+    /* Hold: the clip's chord a step long; the arp goes on after it, until the transport stops */
+    rfmv_seq_clip_clear(&M, clip);
+    rfmv_seq_note_put(&M, clip, 0, 60, 100, 24, 0), rfmv_seq_note_put(&M, clip, 0, 64, 100, 24, 0);
+    ap->mode = RFM_MOVE_AM_HOLD;
+    clear(), press(MR_CC_PLAY), adv_ms(2000 - 10);
+    CHECKF(ons_of(tr + 1, -1) >= 15, "hold: %d", ons_of(tr + 1, -1));
+    press(MR_CC_PLAY), adv_ms(300);
+    CHECK(!M.seq.arps[tr].run && sounding_left(tr + 1) == 0);
+    clear(), adv_ms(1000);
+    CHECK(ons_of(tr + 1, -1) == 0);
+    /* a pad with it (the selected track): merged into the same arp; let go: the clip's notes play on */
+    ap->mode = RFM_MOVE_AM_ON;
+    rfmv_seq_clip_clear(&M, clip);
+    rfmv_seq_note_put(&M, clip, 0, 60, 100, 16 * 24, 0);
+    clear(), press(MR_CC_PLAY), adv_ms(200);
+    pad(0, 100), adv_ms(600);
+    CHECK(M.seq.arps[tr].n == 2);
+    pad(0, 0), adv_ms(100);
+    CHECK(M.seq.arps[tr].n == 1 && M.seq.arps[tr].run);
+    press(MR_CC_PLAY), adv_ms(300);
+    CHECK(!M.seq.arps[tr].run && !M.seq.nsnd);
+    ap->mode = RFM_MOVE_AM_OFF, ap->rate = 6, ap->range = 2;
+    rfmv_seq_clip_clear(&M, clip);
+}
+
 int main(void)
 {
+    test_n24_arp_clip();
     test_n24_shift_knob();
     test_n24_settings_ticks();
     test_n24_knob_lock();

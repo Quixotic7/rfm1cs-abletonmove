@@ -183,8 +183,9 @@ void rfmv_seq_load_track(rfm_move_t *m);              /* .. and back (the select
 void rfmv_seq_arp_default(rfm_move_arp_t *a);
 int rfmv_seq_arp_rate_of(int i);                       /* the arp's RATE: notes a bar */
 int rfmv_seq_arp_on(rfm_move_t *m, int note, int vel); /* the selected track's arp takes a pad note: 1 */
-void rfmv_seq_arp_off(rfm_move_t *m, int note);
-void rfmv_seq_arp_stop(rfm_move_t *m);                  /* (advance) a step held long enough: its popup */
+void rfmv_seq_arp_off(rfm_move_t *m, int track, int note);   /* (0.14.0: the track the pad played) */
+void rfmv_seq_arp_stop(rfm_move_t *m);                  /* (0.14.0) the pads' notes out of every arp; the clips' stay */
+void rfmv_seq_arp_stop_t(rfm_move_t *m, int tr);       /* (0.14.0) track tr's arp emptied (-1: every track's) */                  /* (advance) a step held long enough: its popup */
 void rfmv_seq_dirty(rfm_move_t *m);
 
 /* ---- project.c */
