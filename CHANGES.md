@@ -3,7 +3,22 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
-## Unreleased: the kit, stages 3a and 3b
+## Unreleased: the kit, stages 3a, 3b and 3c
+
+### Stage 3c: making sounds
+
+README "The kit (stage 3c)". `rfm_move_kit_pad_t` and `rfm_move_kit_t` gain fields (RAM only; the project is still
+version 12): rebuild everything.
+
+- **Mix and join**: Copy held, a pad, then another: Copy / Mix / Join (board N), the jog chooses, the click does it;
+  `KIT_MERGE` (73) for Mix and Join, the result on the second pad (board O: its seam); Copy let go first: nothing; Undo.
+- **A pad's own edits**: the Sound row's tools are Play, Trim, Normalize, Reverse, Delete (board V); `KIT_EDIT` (74),
+  the host's new file the pad's own (Trim: the region whole, Normalize kept, Reverse mirrored); Undo.
+- **Slicing**: To Kit then Slice (To Pad: the chosen pad); `KIT_SLICE` (75) / `rfm_move_kit_slices`; Hits, Equal 16 /
+  8 / 4, Steps; the pads play the slices, knobs 1 and 2 the chosen cut, Shift + a pad the first pad, the click the
+  slices onto the pads (one file, a region each, board P); one Undo brings the kit back.
+- The page's calls `rfm_move_kit_play`, `_choose`, `_set`.
+- Tests: `move_kit` 25..29 and boards N, O, P, V (whole).
 
 ### Stage 3b: shaping and sharing
 

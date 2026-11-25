@@ -1210,7 +1210,7 @@ a host that sets `RFM_MOVE_CAP_KIT` (`rfm_move_fw_caps`; not in `RFM_MOVE_CAPS_A
 3a is playing: the pads, their sounds from Takes and Samples, a pad held + Sample, pitch, reverse, start and end, the
 play modes with the envelope, choke, level and pan, the right half, tracks 13..16, kept in the project, the sampler's
 To Kit. Stretch, the sends, the Mixer's Kit strip, whole folders, saving and loading kits, the sampler's Kit source and
-destination are stage 3b (below); mixing, joining, slicing and a pad's own edits (3c) are not built.
+destination are stage 3b (below); mixing, joining, slicing and a pad's own edits are stage 3c (below).
 
 **Where it lives.** Track 4's tap goes round Mixer, Routing, Kit (a double click: the projects); held: pad 1 the
 Mixer, 2 Routing, 3 the Kit, 4 the Looper (not built: dark and dead), 5 the projects. From another Track, Track 4
@@ -1321,6 +1321,50 @@ The project is version 12 (`RFM_MOVE_KIT_BYTES` 3112: the layout, the routing, t
 defaults, no name). Tests: `move_kit` 18..24 (Stretch and its refit, the sends, the Mixer and Routing's kit, a folder
 and its Undo, Save / Load / apply / Undo, the sampler's To Kit, the version 12 and 11 projects) and boards D, H, K
 (below the stand-in wave), R and U (the sampler's own level line masked).
+
+## The kit (stage 3c)
+
+Making sounds, from the same round's picks (KIT-SPEC.md "Stage 3c"; boards N, O, P, V). Every new file is the host's,
+written on its file thread; the core asks and draws what comes.
+
+**Mix and join.** Copy held, a pad, then another: the first blinks, the second is white and the screen offers Copy
+(I_COPY), Mix (I_MIX), Join (I_JOIN) with the two pads' numbers and an arrow (board N); the jog chooses, the click
+does it. Copy puts the first pad's sound and settings on the second (its `KIT_LOAD` and `KIT_SET`s, no new file). Mix
+and Join send `KIT_MERGE`: the host makes a new file of the two regions (Mix summed and normalized not to clip, Join
+the first then the second) and answers with `rfm_move_kit_loaded` on the second pad; the Pad tab shows it with its
+Sound row ("Join 2+5") and a join's seam dotted (board O). Mix and Join want a sound on both pads, Copy on the first
+("Empty" else). Copy let go before the click, or Back: nothing done. Undo brings the second pad back.
+
+**A pad's own edits.** The Sound row's click: Play, Trim, Normalize, Reverse, Delete (board V; the knobs and the right
+half dark and dead meanwhile). Trim, Normalize and Reverse send `KIT_EDIT`; the host's new file is the pad's own copy,
+the file it came from untouched. Trim gives the file cut to the region (then the region whole), Normalize keeps the
+region, Reverse mirrors it. Undo brings the pad back (its file and settings); a refused edit keeps the sound.
+
+**Slicing a take.** A take's To Kit opens the Kit view with the pads blinking and two icons, To Pad (I_PAD: the click
+puts the take on the chosen pad; a pad's press on that pad) and Slice (I_SLICE). Slice sends `KIT_SLICE`
+(`RFM_MOVE_KIT_SL_ASK`, the take, the method, a step's microseconds); the host answers `rfm_move_kit_slices` with the
+take's file, its cuts and its wave. The screen (board P): the wave with the cuts dotted, the chosen slice a white
+block, the method row (Hits the default, Equal 16 / 8 / 4, Steps: a slice a step at the tempo and the first pad's
+track's rate; the jog changes it and the cuts are asked again at once) and the pads they go to ("Pads 1-16"). The
+pads light the slices in the take's source colour (a slot's, else the kit's pink) and a press plays one
+(`RFM_MOVE_KIT_SL_PLAY`, the preview path) and chooses it; knobs 1 (a column of the wave) and 2 (a millisecond; Shift
+on 1 too) move the chosen slice's cut (10 ms from its neighbours at least; the row shows its time while a knob is in
+use); Shift + a pad chooses the first pad (the chosen pad at first). The click puts the slices onto the pads from the
+first on (as many as fit), every pad the take's one file with its own region (`keep`: the host's answer keeps it), the
+pads' other settings at their defaults; one Undo brings the kit back. Back leaves the slicing (`RFM_MOVE_KIT_SL_DONE`).
+
+**The page.** `rfm_move_kit_play` (a pad heard or let go, its glow), `rfm_move_kit_choose` (the chosen pad; its track
+selected while the Kit view shows), `rfm_move_kit_set` (a setting as the knobs clamp it: its `KIT_SET`, the project
+edited) for the host's Kit tab.
+
+| Action | Fields | Answer |
+|---|---|---|
+| `RFM_MOVE_ACT_KIT_MERGE` (73) | `index` the second pad, `take` the first, `value` `RFM_MOVE_KIT_MG_MIX` / `_JOIN` | `rfm_move_kit_loaded` (the second pad, the new file) |
+| `RFM_MOVE_ACT_KIT_EDIT` (74) | `index` the pad, `value` `RFM_MOVE_KIT_ED_TRIM` / `_NORMALIZE` / `_REVERSE` | `rfm_move_kit_loaded` (the new file) |
+| `RFM_MOVE_ACT_KIT_SLICE` (75) | `param` `RFM_MOVE_KIT_SL_ASK` (`take`, `value` `RFM_MOVE_KIT_SM_*`, `from` a step's us), `_PLAY` (`from`, `count` frames), `_DONE` | `rfm_move_kit_slices(m, take, path, frames, rate, n, cuts, npk, peaks)` |
+
+Nothing new is saved with the project (a pad's path and region, as before). Tests: `move_kit` 25..29 (the tools, mix
+and join, slicing, the page's calls) and boards N, O, P and V whole (O's one wave column at the seam masked).
 
 ## FX parameter pages (0.5.0)
 
