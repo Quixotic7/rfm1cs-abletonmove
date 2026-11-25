@@ -1137,9 +1137,8 @@ Record sees stage 1 unchanged. The boards are mock_recorder_v4.c's takes, days, 
 
 | Screen | What shows | What it takes (else the layer's under it) |
 |---|---|---|
-| Takes | the tabs line; three rows of the day, the newest on top: the source's sign (M, 1, 2, 3, the input's icon, S; "?" not known), the length ("4 Bars", "7.25 s"), the take's picture (14 peaks); the chosen row inverted. No takes: "No takes" | the jog, Left (the days), Right (the days: into the chosen one; else dark, dead), Delete (held: the next click deletes; the days: dark, dead), Undo |
-| the days (Left) | a folder icon and "Today" or "23 Nov", newest first | as Takes; the click (or Right) opens the day, Back: the day's takes again |
-| a take's actions (the click) | its whole wave on top, a row of icons Play, Trim, Delete (a stems take: Play, Delete), the chosen one's name the only word | the jog, Undo |
+| Takes | the tabs line; three rows of one list of every take (the owner's 2026-11-25: "scroll through everything I've recorded, newest at the top"), the newest on top: the source's sign (M, 1, 2, 3, the input's icon, S; "?" not known), the length ("4 Bars", "7.25 s"), the take's picture (14 peaks); the chosen row inverted. No takes: "No takes" | the jog, Delete (held: the next click deletes), Undo, Sample (plays the chosen take) |
+| a take's actions (the click) | its whole wave on top, a row of icons Play, Trim, Normalize, Reverse, Fade In, Fade Out, Delete (the owner's 2026-11-25: the full editor on any take; seven icons 17 px apart; a stems take: Play, Delete), the chosen one's name the only word | the jog, Undo, Sample (plays it) |
 | Trim | the chosen marker's time top left ("1.84 s", to the ms with Shift), the wave with the part kept a white block, icons start, end, play, keep; while a marker moves the view zooms on it | the jog, knobs 1 (start) and 2 (end) with their touch, the other knobs dark and dead (R3), Shift (fine), Undo |
 | Tools | the chosen take's wave, icons Trim, Normalize, Reverse, Fade In, Fade Out, the chosen one's name; the jog on the tabs: the tabs line in the wave's place; a stems take: "Stems", no tools | the jog, Undo |
 | a Fade's popup | "Fade In" / "100 ms" (5, 10, 20, 50, 100, 200, 500 ms, 1, 2, 5 s; remembered) | the jog |
@@ -1153,10 +1152,12 @@ take covers it as before (R3).
 | the click on a take | its actions, Play chosen (two clicks play a take) |
 | Delete held + the click | the take deleted (`SMP_EDIT` DELETE), "Deleted"; Undo brings it back |
 | Play (the click) | `SMP_PLAY` value 1, the whole take (a stems take: its Master); again: value 0 (stop). A line moves over the wave at the host's `play_pos`. Leaving the screen (Back, the app closed): stopped |
-| Trim (the click) | Trim on it: the start 0, the end the take's length, Start chosen |
+| Trim (the click) | Trim on it: the start 0, the end the take's length, Play chosen (the knobs are the markers') |
+| Sample outside Record | (the owner's 2026-11-25) Takes, Tools, a take's actions, Trim: `SMP_PLAY` of the take chosen or edited (Trim: the part kept); again: stop. No `SMP_PRESS` there; a take armed or recording: the record key as ever |
+| Back in Takes / Tools | (the owner's 2026-11-25) from the tab's content: the tabs, the jog choosing one at once (the list's chosen take becomes the tools'); on the tabs, and anywhere in Record: the app closes. A take's actions, Trim, a popup: one level back first |
 | Delete (the click) | as Delete held + the click; the list again |
 | Trim: the jog | the icon; its click on Start / End: the jog moves that marker (zoomed, the icon underlined) until a click or Back |
-| Trim: knob 1 / 2 | the start / the end, a detent a step; touched or turned: End / Start chosen, zoomed until a second after |
+| Trim: knob 1 / 2 | the start / the end, a detent a step; touched or turned: zoomed on it until a second after; the jog's icon stays where it is (the owner's 2026-11-25) |
 | Trim: steps | 1/256 of the take a detent; Shift held: 1/16 of that. The zoomed view is 64 steps (the wave's 64 columns), centred on the marker (at the take's ends: against them). The markers keep 64 frames between them |
 | Trim: Play | the part kept, once (`SMP_PLAY` from the start, its frames); again: stop |
 | Trim: Keep | `SMP_EDIT` TRIM (from the start, the frames kept), "Trimmed", back where Trim came from; nothing cut: back, nothing sent |

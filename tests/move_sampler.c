@@ -464,9 +464,7 @@ static void t_tabs(void)
     jog(1);
     jog_click();
     CHECK(!M.smp.picking && M.smp.on_tabs && M.smp.tab == RFM_MOVE_SMP_TAB_TAKES);
-    jog_click(), back();
-    CHECK(!M.smp.picking && M.smp.open);
-    back();
+    jog_click(), back();                                /* (the tabs: Back closes the app) */
     CHECK(!M.smp.open);
     sample();                                           /* the tab and the row remembered */
     CHECK(M.smp.open && M.smp.tab == RFM_MOVE_SMP_TAB_TAKES && M.smp.on_tabs);
@@ -1080,6 +1078,15 @@ static void answer_rows(const rfm_move_act_t *a)
         rfm_move_smp_rows(&M, 0, 0, nfd, (int)a->from, n, rows);
         return;
     }
+    if (folder == RFM_MOVE_SMP_ALL) {                   /* every take, the newest day's first */
+        int k = 0;
+        for (d = 0; d < nfd; d++)
+            for (i = 0; i < FD[d].nt; i++, k++)
+                if (k >= (int)a->from && n < (int)a->count)
+                    rows[n++] = FD[d].t[i];
+        rfm_move_smp_rows(&M, folder, folder, k, (int)a->from, n, rows);
+        return;
+    }
     if (folder == RFM_MOVE_SMP_NEWEST) {
         for (i = 0; i < nfd && !FD[i].nt; i++) {}
         d = i < nfd ? i : -1;
@@ -1126,7 +1133,7 @@ static void takes_app(void)
     sample();
     jog(-1), jog_click(), jog(1), jog_click(), jog(1);  /* (the tabs, their click, Takes, the click, the first row) */
     serve();
-    CHECK(M.smp.tab == RFM_MOVE_SMP_TAB_TAKES && !M.smp.on_tabs && M.smp.sel == 0 && M.smp.known && M.smp.total == 6);
+    CHECK(M.smp.tab == RFM_MOVE_SMP_TAB_TAKES && !M.smp.on_tabs && M.smp.sel == 0 && M.smp.known && M.smp.total == 9);
     rest(), clear();
 }
 static void to_tab(int t)                               /* the jog to the tabs, a tab picked */
@@ -1155,7 +1162,7 @@ static void t2_takes(void)
     clear();
     jog(-1), jog_click(), jog(1);
     CHECK(M.smp.tab == RFM_MOVE_SMP_TAB_TAKES && count(RFM_MOVE_ACT_SMP_ROWS) == 1 &&
-          last(RFM_MOVE_ACT_SMP_ROWS)->take == RFM_MOVE_SMP_NEWEST && last(RFM_MOVE_ACT_SMP_ROWS)->from == 0 &&
+          last(RFM_MOVE_ACT_SMP_ROWS)->take == RFM_MOVE_SMP_ALL && last(RFM_MOVE_ACT_SMP_ROWS)->from == 0 &&
           last(RFM_MOVE_ACT_SMP_ROWS)->count == 3);
     jog_click(), jog(1);
     CHECK(!M.smp.on_tabs && M.smp.sel == 0 && count(RFM_MOVE_ACT_SMP_ROWS) == 1);   /* (asked once until answered) */
@@ -1164,7 +1171,7 @@ static void t2_takes(void)
                                                          * block, nothing else) */
     dump("takes_late");
     serve();
-    CHECK(M.smp.known && M.smp.total == 6 && M.smp.folder == DAY0);
+    CHECK(M.smp.known && M.smp.total == 9 && M.smp.folder == RFM_MOVE_SMP_ALL);
     screen();
     CHECK(pixels(0, 32, 128, 32) > 60);
     jog(1);
@@ -1177,7 +1184,7 @@ static void t2_takes(void)
     CHECKF(!strcmp(w, "Sampler, Slot 2, 4 bars"), "%s", w);
     clear();
     jog(2);                                             /* (row 3 in the middle: rows 2..4, two of them not here) */
-    CHECK(M.smp.sel == 3 && count(RFM_MOVE_ACT_SMP_ROWS) == 1 && last(RFM_MOVE_ACT_SMP_ROWS)->take == DAY0 &&
+    CHECK(M.smp.sel == 3 && count(RFM_MOVE_ACT_SMP_ROWS) == 1 && last(RFM_MOVE_ACT_SMP_ROWS)->take == RFM_MOVE_SMP_ALL &&
           last(RFM_MOVE_ACT_SMP_ROWS)->from == 2);
     screen();
     p0 = pixels(0, 32, 128, 15);
@@ -1191,11 +1198,13 @@ static void t2_takes(void)
     jog(1);
     words(w, sizeof w);
     CHECKF(!strcmp(w, "Sampler, Take, 3.0 seconds"), "%s", w);   /* (a source not known: "?") */
-    jog(1), serve(), jog(5);
-    CHECK(M.smp.sel == 5);                              /* (the last: no wrap) */
+    jog(1), serve();
+    CHECK(M.smp.sel == 5);
     words(w, sizeof w);
     CHECKF(!strcmp(w, "Sampler, Stems, 2 bars"), "%s", w);
     dump("takes_stems");
+    jog(10), serve();
+    CHECK(M.smp.sel == 8);                              /* (the oldest take of all: no wrap) */
     jog(-10);
     CHECK(M.smp.on_tabs && M.smp.sel == 0);             /* (up past the first: the tabs) */
     jog(1);
@@ -1203,56 +1212,102 @@ static void t2_takes(void)
     CHECK(!count(RFM_MOVE_ACT_MIDI) && !count(RFM_MOVE_ACT_SMP_SET));
 }
 
-/* 23. the days: the left arrow, a click on a day opens it, Right too, Back the day's takes; the arrows and Delete lit */
-static void t2_days(void)
+/* 23. (the owner's 2026-11-25) one list of every take; Left and Right are not the app's; a take saved meanwhile: the
+ * chosen one stays chosen; Sample plays the chosen take (no record key outside Record); a take's actions hold the
+ * tools; Back: the tabs with the jog on them (the take chosen is the tools'), then out */
+static void t2_all(void)
 {
-    static const box_t TOOLS = { 36, 0, 16, 14 };
+    rfm_move_smp_row_t nw;
     char w[96];
-    int in, out, pg;
+    int i;
     takes_app();
-    CHECK(white(W_LEFT) == 60 && white(W_RIGHT) == 0 && white(W_DELETE) == 60 && white(W_UNDO) == 0);
-    pg = M.seq.page;
-    press(MR_CC_LEFT);
-    CHECK(M.smp.days && count(RFM_MOVE_ACT_SMP_ROWS) == 1 && last(RFM_MOVE_ACT_SMP_ROWS)->take == 0 &&
-          last(RFM_MOVE_ACT_SMP_ROWS)->from == 0 && M.seq.page == pg);   /* (the app's Left, not the page's) */
-    serve();
-    CHECK(M.smp.dknown && M.smp.dtotal == 3);
-    out = vs_ref("days", &TOOLS, 1, &in);
-    CHECKF(out == 0 && in > 0, "days: %d differ, %d in Tools' place", out, in);
-    printf("mock days: %d pixels differ outside the third tab's place, %d inside it\n", out, in);
-    dump("days");
+    CHECK(white(W_DELETE) == 60 && white(W_UNDO) == 0 && white(W_LEFT) != 60);
+    jog(7), serve();
+    CHECK(M.smp.sel == 7 && M.smp.total == 9);
     words(w, sizeof w);
-    CHECKF(!strcmp(w, "Sampler, Today"), "%s", w);
-    CHECK(white(W_LEFT) == 0 && white(W_RIGHT) == 60 && white(W_DELETE) == 0);
-    jog(1);
-    words(w, sizeof w);
-    CHECKF(!strcmp(w, "Sampler, 23 November"), "%s", w);
+    CHECKF(!strcmp(w, "Sampler, Slot 2, 4 bars"), "%s", w);   /* (an older day's take, in the same list) */
     clear();
+    press(MR_CC_LEFT), press(MR_CC_RIGHT);
+    CHECK(!M.smp.days && !count(RFM_MOVE_ACT_SMP_ROWS) && !M.smp.ldown && !M.smp.rdown && M.smp.sel == 7);
+    clear();
+    sample();                                           /* Sample: the chosen take plays, nothing recorded */
+    CHECK(count(RFM_MOVE_ACT_SMP_PLAY) == 1 && last(RFM_MOVE_ACT_SMP_PLAY)->value == 1 &&
+          last(RFM_MOVE_ACT_SMP_PLAY)->take == FD[1].t[1].id && !count(RFM_MOVE_ACT_SMP_PRESS) &&
+          M.smp.cur.id == FD[1].t[1].id);
+    sample();                                           /* (again: it stops) */
+    CHECK(count(RFM_MOVE_ACT_SMP_PLAY) == 2 && last(RFM_MOVE_ACT_SMP_PLAY)->value == 0);
+    nw = FD[0].t[0], nw.id = 0x2000u;                   /* a take saved meanwhile: above the chosen one */
+    for (i = FD[0].nt; i > 0; i--)
+        FD[0].t[i] = FD[0].t[i - 1];
+    FD[0].t[0] = nw, FD[0].nt++;
+    rfm_move_smp_saved(&M, &nw, RFM_MOVE_SMP_M_BARS);
+    serve();
+    CHECK(M.smp.sel == 8 && M.smp.total == 10 && M.smp.scr == 0);
+    serve();
+    clear();
+    jog_click();                                        /* its actions: Play, the five tools, Delete */
+    CHECK(M.smp.scr == 1 && M.smp.cur.id == FD[1].t[1].id);
+    serve();
+    jog(2);
+    words(w, sizeof w);
+    CHECKF(!strcmp(w, "Sampler, Normalize"), "%s", w);
+    screen();
+    CHECK(pixels(37, 26, 15, 15) > 150 && pixels(3, 26, 15, 15) < 150);   /* (seven icons, 17 px apart: the third chosen) */
+    dump("act_tools");
     jog_click();
-    CHECK(!M.smp.days && M.smp.folder == DAY0 + 1 && M.smp.sel == 0 && last(RFM_MOVE_ACT_SMP_ROWS)->take == DAY0 + 1);
-    serve();
-    CHECK(M.smp.total == 2);
-    press(MR_CC_LEFT), serve();
-    CHECK(M.smp.days && M.smp.dsel == 1);               /* (the day chosen remembered) */
+    CHECK(count(RFM_MOVE_ACT_SMP_EDIT) == 1 && last(RFM_MOVE_ACT_SMP_EDIT)->index == RFM_MOVE_SMP_OP_NORMALIZE &&
+          last(RFM_MOVE_ACT_SMP_EDIT)->take == FD[1].t[1].id && M.smp.scr == 1);
+    rest(), jog(1), jog_click();
+    CHECK(last(RFM_MOVE_ACT_SMP_EDIT)->index == RFM_MOVE_SMP_OP_REVERSE);
+    rest(), jog(1), clear(), jog_click();               /* Fade in: its popup over the actions */
+    CHECK(M.smp.fade == 1 && M.smp.scr == 1 && !count(RFM_MOVE_ACT_SMP_EDIT));
+    words(w, sizeof w);
+    CHECKF(!strcmp(w, "Sampler, Fade in: 100 ms"), "%s", w);
     back();
-    CHECK(!M.smp.days && M.smp.open && M.smp.folder == DAY0 + 1);   /* (Back: the day's takes again) */
-    press(MR_CC_LEFT), jog(1), press(MR_CC_RIGHT), serve();
-    CHECK(!M.smp.days && M.smp.folder == DAY0 + 2 && M.smp.total == 1);
-    FD[2].nt = 0;                                       /* (its last take deleted elsewhere: the day gone) */
+    CHECK(!M.smp.fade && M.smp.scr == 1 && !count(RFM_MOVE_ACT_SMP_EDIT));
+    jog_click(), jog(1), jog_click();
+    CHECK(count(RFM_MOVE_ACT_SMP_EDIT) == 1 && last(RFM_MOVE_ACT_SMP_EDIT)->index == RFM_MOVE_SMP_OP_FADE_IN &&
+          last(RFM_MOVE_ACT_SMP_EDIT)->value == 200 && M.smp.scr == 1);
+    rest(), jog(1), jog_click(), jog_click();
+    CHECK(last(RFM_MOVE_ACT_SMP_EDIT)->index == RFM_MOVE_SMP_OP_FADE_OUT);
+    rest();
     clear();
-    rfm_move_smp_changed(&M);
-    serve();
-    CHECK(M.smp.folder == DAY0 && M.smp.total == 6 && count(RFM_MOVE_ACT_SMP_ROWS) >= 2 &&
-          last(RFM_MOVE_ACT_SMP_ROWS)->take == RFM_MOVE_SMP_NEWEST);   /* (the newest day instead) */
-    back();
+    sample();                                           /* Sample in the actions: the take plays */
+    CHECK(count(RFM_MOVE_ACT_SMP_PLAY) == 1 && last(RFM_MOVE_ACT_SMP_PLAY)->value == 1 && !count(RFM_MOVE_ACT_SMP_PRESS));
+    back();                                             /* Back: the list (the play stopped) */
+    CHECK(M.smp.scr == 0 && M.smp.open && !M.smp.on_tabs && last(RFM_MOVE_ACT_SMP_PLAY)->value == 0);
+    jog(-1), serve();
+    back();                                             /* Back: the tabs, the jog on them */
+    CHECK(M.smp.open && M.smp.on_tabs && M.smp.picking && M.smp.tab == RFM_MOVE_SMP_TAB_TAKES && M.smp.sel == 7 &&
+          M.smp.cur.id == FD[1].t[0].id);
+    jog(1);
+    CHECK(M.smp.tab == RFM_MOVE_SMP_TAB_TOOLS && M.smp.picking);
+    jog_click(), jog(1), jog(1);                        /* Tools, on the take chosen in the list */
+    CHECK(!M.smp.on_tabs && M.smp.ti == 1 && M.smp.cur.id == FD[1].t[0].id);
+    clear();
+    sample();                                           /* Sample in Tools: it plays */
+    CHECK(count(RFM_MOVE_ACT_SMP_PLAY) == 1 && last(RFM_MOVE_ACT_SMP_PLAY)->take == FD[1].t[0].id &&
+          !count(RFM_MOVE_ACT_SMP_PRESS));
+    sample();
+    back();                                             /* Back in Tools: the tabs, not out */
+    CHECK(M.smp.open && M.smp.on_tabs && M.smp.picking && M.smp.tab == RFM_MOVE_SMP_TAB_TOOLS);
+    jog(-2);
+    CHECK(M.smp.tab == RFM_MOVE_SMP_TAB_RECORD);
+    jog_click(), jog(1);
+    clear();
+    sample();                                           /* the Record tab: Sample is the record key */
+    CHECK(count(RFM_MOVE_ACT_SMP_PRESS) == 1 && !count(RFM_MOVE_ACT_SMP_PLAY));
+    back();                                             /* .. and Back always closes */
     CHECK(!M.smp.open);
-    CHECK(white(W_LEFT) != 60 || M.s.mode != RFM_MOVE_MODE_SEQ);   /* (closed: the layer's lights) */
+    sample(), to_tab(1);
+    back(), back();                                     /* Takes: the tabs, then out */
+    CHECK(!M.smp.open);
 }
 
 /* 24. a take's actions: the click, its wave, Play (twice: it stops), the line moving, Back; a stems take; the mock */
 static void t2_act(void)
 {
-    static const box_t ICONS = { 58, 26, 70, 16 };      /* (the mock's row has "to a kit pad" and "to the looper") */
+    static const box_t ICONS = { 0, 26, 128, 16 };      /* (the mock's row: five icons 25 px apart; here seven, 17 apart) */
     static uint8_t a1[MR_SCREEN_BYTES];
     const rfm_move_smp_row_t *t;
     char w[96];
@@ -1273,17 +1328,16 @@ static void t2_act(void)
     serve();
     jog(1);
     out = vs_ref("act", &ICONS, 1, &in);
-    CHECKF(out == 0 && in > 0, "act: %d differ, %d in the row's last three places", out, in);
-    printf("mock act: %d pixels differ outside the icons' last three places, %d inside them (the mock's five icons, "
-           "this stage's three)\n", out, in);
+    CHECKF(out == 0 && in > 0, "act: %d differ, %d in the icons' row", out, in);
+    printf("mock act: %d pixels differ outside the icons' row, %d inside it (the mock's five icons, here seven)\n", out, in);
     dump("act");
     words(w, sizeof w);
     CHECKF(!strcmp(w, "Sampler, Trim"), "%s", w);
-    jog(5);
-    CHECK(M.smp.ai == 2);
+    jog(9);
+    CHECK(M.smp.ai == 6);
     words(w, sizeof w);
     CHECKF(!strcmp(w, "Sampler, Delete"), "%s", w);
-    jog(-5);
+    jog(-9);
     clear();
     jog_click();                                        /* Play */
     CHECK(count(RFM_MOVE_ACT_SMP_PLAY) == 1 && last(RFM_MOVE_ACT_SMP_PLAY)->value == 1 &&
@@ -1354,7 +1408,7 @@ static void t2_trim(void)
     jog(1);
     clear();
     jog_click();
-    CHECK(M.smp.scr == 2 && M.smp.trim_ret == 1 && M.smp.t_start == 0 && M.smp.t_end == F && M.smp.t_i == 0 &&
+    CHECK(M.smp.scr == 2 && M.smp.trim_ret == 1 && M.smp.t_start == 0 && M.smp.t_end == F && M.smp.t_i == 2 &&
           !count(RFM_MOVE_ACT_SMP_PEAKS));              /* (the whole take's wave: here from the actions) */
     leds(lw);
     for (i = 0; i < 8; i++)
@@ -1362,8 +1416,11 @@ static void t2_trim(void)
     CHECK(ok && lw[L_WHITE0 + W_SHIFT][0] == 40);
     dump("trim_start");
     words(w, sizeof w);
-    CHECKF(!strcmp(w, "Sampler, Start, 0.000 seconds"), "%s", w);
-    knob(0, 3);                                         /* knob 1: the start, 3 steps; zoomed on it */
+    CHECKF(!strcmp(w, "Sampler, Play"), "%s", w);     /* (the jog starts on Play: the knobs are the markers') */
+    knob(0, 3);                                         /* knob 1: the start, 3 steps; zoomed on it; the jog stays */
+    words(w, sizeof w);
+    CHECKF(!strcmp(w, "Sampler, Start, 0.093 seconds"), "%s", w);
+    CHECK(M.smp.t_i == 2 && !M.smp.t_move);
     CHECK(M.smp.t_start == 3 * st && !count(RFM_MOVE_ACT_MIDI) && count(RFM_MOVE_ACT_SMP_PEAKS) == 1 &&
           last(RFM_MOVE_ACT_SMP_PEAKS)->from == 0 && last(RFM_MOVE_ACT_SMP_PEAKS)->count == 64 * st);
     serve();
@@ -1371,15 +1428,25 @@ static void t2_trim(void)
     CHECK(pixels(0, 0, 60, 14) > 30);                   /* (its time on top) */
     dump("trim_zoom");
     clear();
+    jog_click();                                        /* the jog's click: Play, the part kept (no turn to get there) */
+    CHECK(count(RFM_MOVE_ACT_SMP_PLAY) == 1 && last(RFM_MOVE_ACT_SMP_PLAY)->value == 1 &&
+          last(RFM_MOVE_ACT_SMP_PLAY)->from == 3 * st && last(RFM_MOVE_ACT_SMP_PLAY)->count == F - 3 * st);
+    sample();                                           /* Sample: the same (playing: it stops), never the record key */
+    CHECK(count(RFM_MOVE_ACT_SMP_PLAY) == 2 && last(RFM_MOVE_ACT_SMP_PLAY)->value == 0 && !count(RFM_MOVE_ACT_SMP_PRESS));
+    sample();
+    CHECK(last(RFM_MOVE_ACT_SMP_PLAY)->value == 1 && last(RFM_MOVE_ACT_SMP_PLAY)->from == 3 * st);
+    sample();
+    clear();
     knob(2, 5), knob(7, -2), touch(3, 1), touch(3, 0);  /* (the others: dead) */
     CHECK(!nact && M.smp.t_start == 3 * st && M.smp.t_end == F);
-    touch(1, 1);                                        /* knob 2 touched: zoomed on the end, End chosen */
-    CHECK(M.smp.t_i == 1 && M.smp.t_knob == 2 && last(RFM_MOVE_ACT_SMP_PEAKS)->from == F - 64 * st);
+    touch(1, 1);                                        /* knob 2 touched: zoomed on the end, the jog still on Play */
+    CHECK(M.smp.t_i == 2 && M.smp.t_knob == 2 && last(RFM_MOVE_ACT_SMP_PEAKS)->from == F - 64 * st);
     leds(lw);
     CHECK(lw[L_RING0 + 1][0] == 255 && lw[L_RING0][0] == 109);
     touch(1, 0);
     rest();
     CHECK(!M.smp.t_turned && !M.smp.t_knob);           /* (a second after: the whole take) */
+    jog(-1);
     clear();
     jog_click();                                        /* (End chosen) its click: the jog moves it */
     CHECK(M.smp.t_move == 2);
@@ -1550,7 +1617,7 @@ static void t2_delete(void)
     rfm_move_smp_done(&M, RFM_MOVE_SMP_OP_DELETE, 1, NULL);
     CHECK(count(RFM_MOVE_ACT_SMP_ROWS) == 1 && !M.smp.known);   /* (the list asked again) */
     serve();
-    CHECK(M.smp.total == 5 && M.smp.sel == 1);
+    CHECK(M.smp.total == 8 && M.smp.sel == 1);
     rest();
     CHECK(white(W_UNDO) == 60);
     clear();
@@ -1563,11 +1630,11 @@ static void t2_delete(void)
     status(RFM_MOVE_SMP_ST_IDLE);
     rfm_move_smp_done(&M, RFM_MOVE_SMP_OP_UNDO, 1, &gone);
     serve();
-    CHECK(M.smp.total == 6 && white(W_UNDO) == 0);
+    CHECK(M.smp.total == 9 && white(W_UNDO) == 0);
     clear();
     press(MR_CC_UNDO);                                  /* (nothing to undo: dark, dead) */
     CHECK(!count(RFM_MOVE_ACT_SMP_UNDO) && !nact);
-    jog_click(), jog(2);                                /* from the actions: Delete */
+    jog_click(), jog(6);                                /* from the actions: Delete */
     clear();
     jog_click();
     CHECK(count(RFM_MOVE_ACT_SMP_EDIT) == 1 && last(RFM_MOVE_ACT_SMP_EDIT)->take == gone.id && M.smp.scr == 0 &&
@@ -1647,12 +1714,12 @@ static void t2_auto(void)
     CHECK(rfm_move_smp_saved(&M, &r, RFM_MOVE_SMP_M_CAPTURE) == 1);
     CHECK(M.smp.scr == 1 && M.smp.cur.id == r.id && M.smp.ai == 0 && M.smp.tab == RFM_MOVE_SMP_TAB_RECORD &&
           count(RFM_MOVE_ACT_SMP_PLAY) == 1 && last(RFM_MOVE_ACT_SMP_PLAY)->value == 1 &&
-          last(RFM_MOVE_ACT_SMP_PLAY)->take == r.id && M.smp.folder == r.folder && M.smp.sel == 0);
+          last(RFM_MOVE_ACT_SMP_PLAY)->take == r.id && M.smp.sel == 0);
     screen();
     CHECK(pixels(0, 12, 128, 14) > 50);                 /* ("Captured" first, its second) */
     rest(), serve();
     screen();
-    CHECK(pixels(8, 26, 15, 15) > 150);                 /* (then the actions, Play chosen) */
+    CHECK(pixels(3, 26, 15, 15) > 150);                 /* (then the actions, Play chosen) */
     dump("preview");
     words(w, sizeof w);
     CHECKF(!strcmp(w, "Sampler, Play"), "%s", w);
@@ -1689,7 +1756,7 @@ static void t2_auto(void)
     CHECK(M.smp.scr == 2);
     status(RFM_MOVE_SMP_ST_IDLE);
     screen();
-    CHECK(pixels(10, 48, 15, 15) > 150);                /* (Trim's icons: Start chosen) */
+    CHECK(pixels(72, 48, 15, 15) > 150);                /* (Trim's icons: Play chosen) */
     back();
     status(RFM_MOVE_SMP_ST_RECORDING);                  /* (a new take recording: nothing comes over it) */
     rfm_move_smp_saved(&M, &r, RFM_MOVE_SMP_M_CAPTURE);
@@ -1723,7 +1790,7 @@ static void t2_none(void)
     rfm_move_smp_offer(&M, 0, 0, 0x7, 0);
     sample();
     to_tab(1);
-    CHECK(M.smp.known && !M.smp.total && !M.smp.folder);
+    CHECK(M.smp.known && !M.smp.total && M.smp.folder == RFM_MOVE_SMP_ALL);
     screen();
     CHECK(pixels(0, 26, 128, 16) > 50);
     dump("no_takes");
@@ -1739,9 +1806,9 @@ static void t2_none(void)
     fake_db();
     clear();
     rfm_move_smp_changed(&M);
-    CHECK(count(RFM_MOVE_ACT_SMP_ROWS) == 1 && last(RFM_MOVE_ACT_SMP_ROWS)->take == RFM_MOVE_SMP_NEWEST);
+    CHECK(count(RFM_MOVE_ACT_SMP_ROWS) == 1 && last(RFM_MOVE_ACT_SMP_ROWS)->take == RFM_MOVE_SMP_ALL);
     serve();
-    CHECK(M.smp.total == 6 && M.smp.folder == DAY0);
+    CHECK(M.smp.total == 9 && M.smp.folder == RFM_MOVE_SMP_ALL);
 }
 
 /* 31. (the owner's 2026-11-25) the host's setter (its page's Sampler window): the app shows it, SMP_SET comes back, the
@@ -1810,7 +1877,7 @@ int main(void)
     t_mock();
     t_scale();
     t2_takes();
-    t2_days();
+    t2_all();
     t2_act();
     t2_trim();
     t2_tools();

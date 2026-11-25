@@ -98,10 +98,13 @@ static void ic(mr_canvas_t *cv, icon_t i, int x, int y, int v)
 /* ---- (stage 2) what a take can do: its actions' row (a take: Play, Trim, Delete; stems: Play, Delete; "to a kit pad"
  * and "to the looper" go between Trim and Delete when they are built, as the mock-up's row), the Tools tab's */
 enum { SCR_TAB, SCR_ACT, SCR_TRIM };
-enum { A_PLAY, A_TRIM, A_DEL };
-static const uint8_t ACT_TAKE[] = { A_PLAY, A_TRIM, A_DEL }, ACT_STEMS[] = { A_PLAY, A_DEL };
-static icon_t *const ACT_ICON[] = { &I_PLAY, &I_TRIM, &I_X };
-static const char *const ACT_NAME[] = { "Play", "Trim", "Delete" };
+/* (the owner, 2026-11-25: "in the second tab where I can select takes I should be able to use the full sound editor")
+ * a take's actions are Play, the Tools tab's five, Delete */
+enum { A_PLAY, A_TRIM, A_NORM, A_REV, A_FIN, A_FOUT, A_DEL };
+static const uint8_t ACT_TAKE[] = { A_PLAY, A_TRIM, A_NORM, A_REV, A_FIN, A_FOUT, A_DEL }, ACT_STEMS[] = { A_PLAY, A_DEL };
+static icon_t *const ACT_ICON[] = { &I_PLAY, &I_TRIM, &I_NORM, &I_REV, &I_FIN, &I_FOUT, &I_X };
+static const char *const ACT_NAME[] = { "Play", "Trim", "Normalize", "Reverse", "Fade In", "Fade Out", "Delete" };
+static const char *const ACT_SAY[] = { "Play", "Trim", "Normalize", "Reverse", "Fade in", "Fade out", "Delete" };
 enum { T_TRIM, T_NORM, T_REV, T_FIN, T_FOUT, T_N };
 static icon_t *const TOOL_ICON[T_N] = { &I_TRIM, &I_NORM, &I_REV, &I_FIN, &I_FOUT };
 static const char *const TOOL_NAME[T_N] = { "Trim", "Normalize", "Reverse", "Fade In", "Fade Out" };
@@ -353,11 +356,11 @@ static void need_rows(rfm_move_t *m, int dl)
     const uint32_t f = dl ? 0 : p->folder;
     const int sel = dl ? p->dsel : p->sel, total = dl ? p->dtotal : p->total, known = dl ? p->dknown : p->known;
     int first, i, miss = 0;
-    if (!dl && !f) {                                    /* (no day yet: the newest one with takes) */
-        if (known || (p->ask_f == RFM_MOVE_SMP_NEWEST && p->ask_i == 0))
+    if (!dl && !f) {                                    /* (not asked yet: every take, the newest first) */
+        if (known || (p->ask_f == RFM_MOVE_SMP_ALL && p->ask_i == 0))
             return;
-        p->ask_f = RFM_MOVE_SMP_NEWEST, p->ask_i = 0;
-        emit_t(m, RFM_MOVE_ACT_SMP_ROWS, 0, 0, RFM_MOVE_SMP_NEWEST, 0, 3);
+        p->ask_f = RFM_MOVE_SMP_ALL, p->ask_i = 0;
+        emit_t(m, RFM_MOVE_ACT_SMP_ROWS, 0, 0, RFM_MOVE_SMP_ALL, 0, 3);
         return;
     }
     if (known && !total)
@@ -387,13 +390,11 @@ static uint32_t tstep(const rfm_move_t *m)
 static int zoom_on(const rfm_move_t *m)                 /* the marker Trim zooms on (1 start, 2 end), 0 none */
 {
     const rfm_move_smp_t *p = &m->smp;
-    if (p->t_move)
-        return p->t_move;
-    if (p->t_knob)
+    if (p->t_knob)                                      /* (a knob held or just turned: its marker, whatever the jog is on) */
         return p->t_knob;
     if (p->t_turned && now(m) - p->t_turn_ms < RFM_MOVE_POPUP_MS)
         return p->t_turned;
-    return 0;
+    return p->t_move;
 }
 /* the frames a wave shows: [*from, *from + *count) of the take p->cur (Trim zoomed: around the marker) */
 static void view(const rfm_move_t *m, uint32_t *from, uint32_t *count)
@@ -472,6 +473,17 @@ static void need(rfm_move_t *m)                         /* what the screen shows
             p->cur = *r;
     }
     need_peaks(m);
+}
+static void play_stop(rfm_move_t *m);
+/* the take chosen in Takes' list becomes the one the tools, Sample and Trim work on (p->cur) */
+static void cur_from_list(rfm_move_t *m)
+{
+    rfm_move_smp_t *p = S(m);
+    const rfm_move_smp_row_t *r = p->folder ? row_get(m, p->folder, p->sel) : NULL;
+    if (!is_take(r) || (r->id == p->cur.id && r->frames == p->cur.frames))
+        return;
+    play_stop(m);
+    p->cur = *r;
 }
 static void play_stop(rfm_move_t *m)                    /* a take playing: stopped (leaving its screen) */
 {
@@ -568,7 +580,9 @@ static void trim_open(rfm_move_t *m, int ret)           /* Trim on p->cur; ret: 
     rfm_move_smp_t *p = S(m);
     play_stop(m);
     p->scr = SCR_TRIM, p->trim_ret = (uint8_t)ret;
-    p->t_start = 0, p->t_end = p->cur.frames, p->t_i = 0, p->t_move = 0, p->t_knob = 0, p->t_turned = 0;
+    /* (the owner, 2026-11-25: "I want to have jogwheel on play and adjust the trim points then be able to preview") the
+     * knobs are the markers', so the jog starts on Play */
+    p->t_start = 0, p->t_end = p->cur.frames, p->t_i = 2, p->t_move = 0, p->t_knob = 0, p->t_turned = 0;
 }
 static void trim_leave(rfm_move_t *m)
 {
@@ -606,6 +620,11 @@ static void turn(rfm_move_t *m, int d)
         need(m);
         return;
     }
+    if (p->fade) {                                      /* a Fade's popup (Tools, a take's actions): its length */
+        const int i = p->fade - 1, v = p->fade_v[i] ? p->fade_v[i] - 1 : FADE_DEF;
+        p->fade_v[i] = (uint8_t)(clampi(v + d, 0, NFADE - 1) + 1);
+        return;
+    }
     if (p->scr == SCR_ACT) {                            /* a take's actions: an icon */
         const uint8_t *ops;
         p->ai = (uint8_t)clampi(p->ai + d, 0, act_ops(m, &ops) - 1);
@@ -613,11 +632,6 @@ static void turn(rfm_move_t *m, int d)
     }
     if (p->edit) {                                      /* the popup: the value, heard at once */
         put(m, p->row, stepv(m, p->row, m->s.smp[p->row], d));
-        return;
-    }
-    if (p->fade) {                                      /* a Fade's popup: its length */
-        const int i = p->fade - 1, v = p->fade_v[i] ? p->fade_v[i] - 1 : FADE_DEF;
-        p->fade_v[i] = (uint8_t)(clampi(v + d, 0, NFADE - 1) + 1);
         return;
     }
     if (p->picking) {                                   /* the tabs: the jog picks one */
@@ -689,6 +703,14 @@ static void click(rfm_move_t *m)
         return;
     p->msg = 0, p->turned = 0;
     touched(m);
+    if (p->fade) {                                      /* a Fade (Tools, a take's actions): applied */
+        const int i = p->fade - 1;
+        p->fade = 0;
+        edit(m, i ? RFM_MOVE_SMP_OP_FADE_OUT : RFM_MOVE_SMP_OP_FADE_IN, fade_ms(m, i), 0, 0);
+        info(m, i ? "Faded Out" : "Faded In", NULL);
+        need(m);
+        return;
+    }
     if (p->scr == SCR_TRIM) {
         if (p->t_i < 2)                                 /* start / end: the jog moves it (zoomed), a click ends it */
             p->t_move = (uint8_t)(p->t_move ? 0 : p->t_i + 1);
@@ -707,38 +729,32 @@ static void click(rfm_move_t *m)
     if (p->scr == SCR_ACT) {
         const uint8_t *ops;
         const int n = act_ops(m, &ops), op = ops[clampi(p->ai, 0, n - 1)];
-        if (op == A_PLAY)
-            play(m, 0, 0);
-        else if (op == A_TRIM)
-            trim_open(m, 1);
-        else {
+        switch (op) {
+        case A_PLAY: play(m, 0, 0); break;
+        case A_TRIM: trim_open(m, 1); break;
+        case A_NORM: edit(m, RFM_MOVE_SMP_OP_NORMALIZE, 0, 0, 0), info(m, "Normalized", NULL); break;
+        case A_REV: edit(m, RFM_MOVE_SMP_OP_REVERSE, 0, 0, 0), info(m, "Reversed", NULL); break;
+        case A_FIN:
+        case A_FOUT: p->fade = (uint8_t)(op == A_FIN ? 1 : 2); break;
+        default:
             del(m, &p->cur);
             p->scr = SCR_TAB;
+            break;
         }
         need(m);
         return;
     }
     if (p->edit)
         p->edit = 0;
-    else if (p->fade) {                                 /* a Fade: applied */
-        const int i = p->fade - 1;
-        p->fade = 0;
-        edit(m, i ? RFM_MOVE_SMP_OP_FADE_OUT : RFM_MOVE_SMP_OP_FADE_IN, fade_ms(m, i), 0, 0);
-        info(m, i ? "Faded Out" : "Faded In", NULL);
-    } else if (p->picking)
+    else if (p->picking)
         p->picking = 0;
     else if (p->on_tabs)
         p->picking = 1;                                 /* (one tab: nothing changes but the jog's job) */
     else if (p->tab == RFM_MOVE_SMP_TAB_TAKES) {
-        const uint32_t f = p->days ? 0 : p->folder;
-        const rfm_move_smp_row_t *r = f || p->days ? row_get(m, f, p->days ? p->dsel : p->sel) : NULL;
+        const rfm_move_smp_row_t *r = p->folder ? row_get(m, p->folder, p->sel) : NULL;
         if (!r)
             return;                                     /* (not come yet: nothing) */
-        if (p->days) {                                  /* a day: its takes, the newest chosen */
-            if (r->id != p->folder)
-                p->folder = r->id, p->sel = 0, p->known = 0, p->total = 0;
-            p->days = 0;
-        } else if (is_take(r) && p->ddown)              /* Delete held + the click: gone (Undo brings it back) */
+        if (is_take(r) && p->ddown)                     /* Delete held + the click: gone (Undo brings it back) */
             del(m, r);
         else if (is_take(r))
             act_open(m, r, 0);
@@ -787,8 +803,7 @@ static void app_close(rfm_move_t *m)
 static int smp_button(rfm_move_t *m, int cc, int down)
 {
     rfm_move_smp_t *p = S(m);
-    uint8_t *held = cc == MR_CC_DELETE ? &p->ddown : cc == MR_CC_UNDO ? &p->udown : cc == MR_CC_LEFT ? &p->ldown
-                  : cc == MR_CC_RIGHT ? &p->rdown : cc == MR_CC_SHIFT ? &p->shdown : NULL;
+    uint8_t *held = cc == MR_CC_DELETE ? &p->ddown : cc == MR_CC_UNDO ? &p->udown : cc == MR_CC_SHIFT ? &p->shdown : NULL;
     int ours;
     if (!held)
         return 0;
@@ -803,10 +818,8 @@ static int smp_button(rfm_move_t *m, int cc, int down)
     if (!takes_on(m) || !rfmv_smp_shown(m) || yield(m) || running(m))
         return 0;
     switch (cc) {
-    case MR_CC_DELETE: ours = in_takes(m); break;           /* (the days: dark, dead) */
+    case MR_CC_DELETE: ours = in_takes(m); break;
     case MR_CC_UNDO: ours = undo_ours(m); break;
-    case MR_CC_LEFT:
-    case MR_CC_RIGHT: ours = in_takes(m); break;
     default: ours = in_trim(m); break;
     }
     if (!ours)
@@ -816,11 +829,7 @@ static int smp_button(rfm_move_t *m, int cc, int down)
     if (cc == MR_CC_UNDO && p->st.undo) {               /* the host's one step back */
         emit_t(m, RFM_MOVE_ACT_SMP_UNDO, 0, 0, 0, 0, 0);
         info(m, "Undo", NULL);
-    } else if (cc == MR_CC_LEFT && !p->days)            /* the days */
-        p->days = 1, p->on_tabs = 0, p->picking = 0, p->msg = 0;
-    else if (cc == MR_CC_RIGHT && p->days)              /* .. a day: as its click */
-        p->on_tabs = 0, p->picking = 0, click(m);
-    else if (cc == MR_CC_SHIFT)
+    } else if (cc == MR_CC_SHIFT)
         p->msg = 0;
     need(m);
     return 1;
@@ -845,13 +854,13 @@ static int smp_knob(rfm_move_t *m, const mr_event_t *ev)
         return 0;
     if (ev->type == MR_EV_TOUCH) {
         p->kdown = (uint8_t)(p->kdown | 1u << k);
-        if (k < 2)
-            p->t_knob = (uint8_t)(k + 1), p->t_i = (uint8_t)k, p->t_move = 0, p->msg = 0, touched(m);
+        if (k < 2)                                      /* (the owner, 2026-11-25: a knob never moves the jog's choice) */
+            p->t_knob = (uint8_t)(k + 1), p->msg = 0, touched(m);
         need(m);
         return 1;
     }
     if (k < 2 && ev->value) {                           /* (MR_EV_KNOB: signed detents) */
-        p->t_i = (uint8_t)k, p->t_move = 0, p->msg = 0;
+        p->msg = 0;
         tmove(m, k + 1, ev->value);
         p->t_turned = (uint8_t)(k + 1), p->t_turn_ms = now(m);
         touched(m);
@@ -897,6 +906,20 @@ int rfmv_smp_input(rfm_move_t *m, const mr_event_t *ev)
                 app_open(m, -1);
                 if (rec)
                     rfmv_emit(m, RFM_MOVE_ACT_SMP_PRESS, 0, 1, 0, m->s.smp[RFM_MOVE_SMP_MODE]);
+            } else if (takes_on(m) && undo_ours(m) && !running(m) && !yield(m)) {
+                /* (the owner, 2026-11-25: "If not in the sampling tab I think the sampling button should play the clip
+                 * I'm on or editing") Takes, Tools, a take's actions, Trim: Sample plays that take, or stops it */
+                p->msg = 0;
+                touched(m);
+                if (in_takes(m) && !p->on_tabs && !p->picking)
+                    cur_from_list(m);
+                if (p->cur.id) {
+                    if (in_trim(m))
+                        play(m, p->t_start, p->t_end - p->t_start);
+                    else
+                        play(m, 0, 0);
+                }
+                need(m);
             } else {
                 p->msg = 0;
                 touched(m);
@@ -941,8 +964,6 @@ int rfmv_smp_back(rfm_move_t *m)
         p->edit = 0;
     else if (p->fade)
         p->fade = 0;
-    else if (p->picking)
-        p->picking = 0;
     else if (p->scr == SCR_TRIM) {                      /* a marker moving: it stops; else the take as it was */
         if (p->t_move)
             p->t_move = 0;
@@ -950,9 +971,14 @@ int rfmv_smp_back(rfm_move_t *m)
             trim_leave(m);
     } else if (p->scr == SCR_ACT)                       /* the list (or the tab a preview came over) */
         play_stop(m), p->scr = SCR_TAB;
-    else if (in_takes(m) && p->days)                    /* the days: the day's takes again */
-        p->days = 0;
-    else
+    else if (takes_on(m) && p->tab != RFM_MOVE_SMP_TAB_RECORD && !p->on_tabs && !p->picking) {
+        /* (the owner, 2026-11-25: "press back when I am not at the root tab level and it should take me back to the
+         * root, not exit the sampler. First tab though back should always exit") Takes, Tools: the tabs, the jog
+         * choosing one at once; there, and in Record, Back closes the app */
+        if (p->tab == RFM_MOVE_SMP_TAB_TAKES)
+            cur_from_list(m);
+        p->on_tabs = 1, p->picking = 1;
+    } else
         app_close(m);                                   /* (a take goes on; Sample brings the app back and ends it) */
     need(m);
     return 1;
@@ -1079,19 +1105,12 @@ int rfm_move_smp_rows(rfm_move_t *m, uint32_t asked, uint32_t folder, int total,
         p->dtotal = (uint16_t)total, p->dknown = 1;
         p->dsel = (int16_t)clampi(p->dsel, 0, total ? total - 1 : 0);
     } else {
-        if (asked == RFM_MOVE_SMP_NEWEST && !p->folder)
-            p->folder = folder, p->sel = 0;             /* (the newest day: the list starts there) */
-        if (folder != p->folder || (asked != folder && asked != RFM_MOVE_SMP_NEWEST))
-            return 0;                                   /* (an older ask's: not the day shown) */
-        if (folder && !total) {                         /* (the day is gone, its last take deleted: the newest day) */
-            p->folder = 0, p->known = 0, p->sel = 0;
-            need(m);
-            return rfm_move_smp_shown(m);
-        }
+        if (asked == RFM_MOVE_SMP_ALL && folder == RFM_MOVE_SMP_ALL && !p->folder)
+            p->folder = folder, p->sel = 0;             /* (every take: the list starts at the newest) */
+        if (folder != p->folder || asked != folder)
+            return 0;                                   /* (an older ask's: not the list shown) */
         p->total = (uint16_t)total, p->known = 1;
         p->sel = (int16_t)clampi(p->sel, 0, total ? total - 1 : 0);
-        if (!folder)
-            p->total = 0;                               /* (no takes at all) */
     }
     for (i = 0; rows && i < n && from + i < total; i++)
         row_put(m, folder, from + i, &rows[i]);
@@ -1160,7 +1179,7 @@ int rfm_move_smp_saved(rfm_move_t *m, const rfm_move_smp_row_t *take, int mode)
     rfm_move_smp_t *p = S(m);
     if (!takes_on(m) || !take || !is_take(take))
         return 0;
-    if (p->folder == take->folder && !p->days && p->known)
+    if (p->folder && p->known)
         p->sel++;                                       /* (the take chosen stays chosen: a newer one is above it) */
     rows_forget(m);
     p->known = 0, p->dknown = 0;
@@ -1170,7 +1189,7 @@ int rfm_move_smp_saved(rfm_move_t *m, const rfm_move_smp_row_t *take, int mode)
          * or recording: nothing comes up over it) */
         /* (the owner: "should launch to a preview afterwards since I don't know what it recorded"; Trim comes up after
          * a Manual or Threshold take) over the tab shown; the list goes to it */
-        p->folder = take->folder, p->sel = 0, p->days = 0;
+        p->sel = 0;
         p->edit = 0, p->picking = 0, p->fade = 0, p->turned = 0;
         if (tabs(m) >> RFM_MOVE_SMP_TAB_TAKES & 1 && p->tab == RFM_MOVE_SMP_TAB_TAKES)
             p->on_tabs = 0;
@@ -1219,9 +1238,7 @@ void rfmv_smp_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         return;
     /* (stage 2) what the takes' screens take: lit with a job (R4, R1: full while held), dark and dead without (R3) */
     if (in_takes(m)) {
-        w[L_WHITE0 + W_LEFT][0] = p->ldown ? 127 : p->days ? 0 : 60;
-        w[L_WHITE0 + W_RIGHT][0] = p->rdown ? 127 : p->days ? 60 : 0;
-        w[L_WHITE0 + W_DELETE][0] = p->ddown ? 127 : p->days ? 0 : 60;
+        w[L_WHITE0 + W_DELETE][0] = p->ddown ? 127 : 60;
     }
     if (undo_ours(m))
         w[L_WHITE0 + W_UNDO][0] = p->udown ? 127 : p->st.undo ? 60 : 0;
@@ -1313,6 +1330,15 @@ int rfmv_smp_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
                p->st.state == RFM_MOVE_SMP_ST_SAVING) {
         snprintf(o, (size_t)cap, "%s", p->st.state == RFM_MOVE_SMP_ST_ARMED ? "Armed" : "Recording");
         *subj = 0x810, *stamp = 0;
+    } else if (p->fade) {                               /* a Fade's popup */
+        snprintf(o, (size_t)cap, "%s: %d ms", TOOL_SAY[p->fade == 1 ? T_FIN : T_FOUT], fade_ms(m, p->fade - 1));
+        *subj = 0x870;
+    } else if (p->scr == SCR_TRIM && (p->t_knob || p->t_turned)) {   /* Trim, a knob: its marker's time */
+        const int k = p->t_knob ? p->t_knob : p->t_turned;
+        char t[32];
+        t_time(m, k, 1, t, sizeof t);
+        snprintf(o, (size_t)cap, "%s, %s", TRIM_SAY[k - 1], t);
+        *subj = (uint16_t)(0x868 | k), *stamp = 0;
     } else if (p->scr == SCR_TRIM) {                    /* (stage 2) Trim: the chosen icon, a marker's time */
         char t[32];
         if (p->t_i < 2) {
@@ -1324,14 +1350,11 @@ int rfmv_smp_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
     } else if (p->scr == SCR_ACT) {                     /* a take's actions: the chosen one's name */
         const uint8_t *ops;
         const int n = act_ops(m, &ops);
-        snprintf(o, (size_t)cap, "%s", ACT_NAME[ops[clampi(p->ai, 0, n - 1)]]);
+        snprintf(o, (size_t)cap, "%s", ACT_SAY[ops[clampi(p->ai, 0, n - 1)]]);
         *subj = (uint16_t)(0x850 | p->ai), *stamp = 0;
     } else if (p->edit) {
         row_words(m, p->row, o, cap);
         *subj = (uint16_t)(0x820 | p->row);
-    } else if (p->fade) {                               /* a Fade's popup */
-        snprintf(o, (size_t)cap, "%s: %d ms", TOOL_SAY[p->fade == 1 ? T_FIN : T_FOUT], fade_ms(m, p->fade - 1));
-        *subj = 0x870;
     } else if (p->picking || p->on_tabs) {
         snprintf(o, (size_t)cap, p->picking ? "Tab: %s" : "Tabs, %s", TAB_NAME[p->tab % RFM_MOVE_SMP_TAB_N]);
         *subj = (uint16_t)(p->picking ? 0x830 : 0x831);
@@ -1567,12 +1590,13 @@ static void take_wave(const rfm_move_t *m, mr_canvas_t *cv, uint32_t from, uint3
         p->st.play_pos < (uint64_t)from + count)
         v2_XR(cv, (int)(((uint64_t)(p->st.play_pos - from) * 128u) / count), y0 - h - 1, 1, 2 * h + 2);
 }
-/* a row of icons (x 10 + 25 i, the mock's), the chosen one a white block, its name the only word */
+/* a row of icons (x 10 + 25 i, the mock's; more than five: 5 + 17 i), the chosen one a white block, its name the only
+ * word */
 static void icon_row(mr_canvas_t *cv, icon_t *const *icons, int n, int chosen, const char *name)
 {
     int i;
     for (i = 0; i < n; i++) {
-        const int x = 10 + i * 25;
+        const int x = n > 5 ? 5 + i * 17 : 10 + i * 25;
         if (i == chosen)
             v2_R(cv, x - 2, 26, 15, 15, 1);
         ic(cv, *icons[i], x, 28, i != chosen);
@@ -1585,7 +1609,7 @@ static void act_screen(const rfm_move_t *m, mr_canvas_t *cv)
     const rfm_move_smp_t *p = &m->smp;
     const uint8_t *ops;
     const int n = act_ops(m, &ops), ai = clampi(p->ai, 0, n - 1);
-    icon_t *icons[4];
+    icon_t *icons[8];
     int i;
     for (i = 0; i < n; i++)
         icons[i] = ACT_ICON[ops[i]];
@@ -1596,12 +1620,6 @@ static void tools_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_smp_t *p = &m->smp;
     const int on = p->on_tabs || p->picking;
-    if (p->fade) {                                      /* a Fade's popup: its name, its length */
-        char v[16];
-        snprintf(v, sizeof v, "%d ms", fade_ms(m, p->fade - 1));
-        v2_titleBox(cv, TOOL_NAME[p->fade == 1 ? T_FIN : T_FOUT], v, 64, 128);
-        return;
-    }
     if (on)
         top(m, cv, 1);                                  /* (the jog on the tabs: they replace the wave) */
     else if (p->cur.id)
@@ -1653,6 +1671,12 @@ int rfmv_smp_screen(const rfm_move_t *m, mr_canvas_t *cv)
     }
     if (running(m)) {
         run_screen(m, cv);
+        return 1;
+    }
+    if (p->fade) {                                      /* a Fade's popup (Tools, a take's actions): its name, its length */
+        char v[16];
+        snprintf(v, sizeof v, "%d ms", fade_ms(m, p->fade - 1));
+        v2_titleBox(cv, TOOL_NAME[p->fade == 1 ? T_FIN : T_FOUT], v, 64, 128);
         return 1;
     }
     if (p->scr == SCR_TRIM) {

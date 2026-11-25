@@ -240,7 +240,9 @@ enum {
  * "The sampler: the takes"; only for a host that offers the Takes or Tools tab, rfm_move_smp_offer). The host owns the
  * files; the core asks, never waits, and draws what has come (a row not answered yet: empty). Each carries the new act
  * fields take, from, count (below):
- *  - SMP_ROWS: take the folder (0: the days; RFM_MOVE_SMP_NEWEST: the newest day that has takes; else a day's id), from
+ *  - SMP_ROWS: take the folder (RFM_MOVE_SMP_ALL: every take, the newest first, which is what the app asks since the
+ *    owner's 2026-11-25 "scroll through everything I've recorded, newest at the top"; 0: the days;
+ *    RFM_MOVE_SMP_NEWEST: the newest day that has takes; else a day's id), from
  *    the first row, count the rows wanted (a window of the list, newest first). Answer: rfm_move_smp_rows.
  *  - SMP_PEAKS: take a take's id, frames [from, from + count), value the columns (1..RFM_MOVE_SMP_WPEAKS): each column's
  *    peak 0..255 (linear). Answer: rfm_move_smp_peaks (a newer ask may replace an older one not yet answered).
@@ -1091,6 +1093,8 @@ enum { RFM_MOVE_SMP_ROW_DAY = 1, RFM_MOVE_SMP_ROW_TAKE = 2, RFM_MOVE_SMP_ROW_STE
 #define RFM_MOVE_SMP_THUMB 14                           /* a take row's picture: its whole length in 14 peaks */
 #define RFM_MOVE_SMP_WPEAKS 64                          /* a wave's columns on the screen, at most (2 px apart) */
 #define RFM_MOVE_SMP_NEWEST 0xFFFFFFFFu                 /* SMP_ROWS: the newest day that has takes */
+#define RFM_MOVE_SMP_ALL 0xFFFFFFFEu                    /* SMP_ROWS: every take of every day, the newest first (answered
+                                                         * with folder RFM_MOVE_SMP_ALL, also when there are none) */
 #define RFM_MOVE_SMP_SRC_NONE 255                       /* a take whose source is not known (its sign: "?") */
 typedef struct {
     uint32_t id;                                        /* the host's, never 0, the same while the file is (an edit
@@ -1787,10 +1791,11 @@ int rfm_move_smp_value(const rfm_move_t *m, int setting);   /* a setting's value
 int rfm_move_smp_set(rfm_move_t *m, int setting, int value);
 /* (stage 2, the owner's 2026-11-24) the takes (README "The sampler: the takes"; the actions SMP_ROWS .. SMP_UNDO above).
  * Offer the Takes and Tools tabs (rfm_move_smp_offer, tabs 0x7) and answer these; a host that offers only Record sees
- * none of it. The tabs: Record, Takes (three rows, the newest on top: the source's sign, the length, the wave; the left
- * arrow the days; Delete held + the jog's click deletes; the click: the take's actions Play, Trim, Delete), Tools (the
+ * none of it. The tabs: Record, Takes (three rows of every take, the newest on top: the source's sign, the length, the
+ * wave; Delete held + the jog's click deletes; the click: the take's actions Play, the five tools, Delete), Tools (the
  * chosen take: Trim, Normalize, Reverse, Fade in, Fade out); Trim takes knobs 1 (start) and 2 (end) and Shift (fine);
- * Undo (the host's one step) in Takes and Tools. Every answer may come late or not at all. */
+ * Undo (the host's one step) in Takes and Tools; outside Record Sample plays the take (SMP_PLAY, no SMP_PRESS) and Back
+ * goes to the tabs before it closes the app. Every answer may come late or not at all. */
 /* SMP_ROWS' answer: asked the folder the act asked for (its take), folder the one answered (the newest day's id when
  * RFM_MOVE_SMP_NEWEST was asked; 0 with total 0: no takes at all), total its rows, rows[0..n) its rows from `from`.
  * Returns 1 when the screen shows them (draw again) */
