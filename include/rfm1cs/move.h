@@ -279,13 +279,29 @@ enum {
  *    recorded; one at a time), down 0 stops it
  *  - KIT_REC: a kit pad held + Sample (down 1, value the sampler's mode RFM_MOVE_SMP_M_*): the recorder as at
  *    SMP_PRESS with the sampler's own settings; the take, once saved, goes onto the pad (rfm_move_kit_loaded). down 0:
- *    the pad let go (a take recording ends and is saved; an armed one is dropped) */
+ *    the pad let go (a take recording ends and is saved; an armed one is dropped)
+ * (stage 3b) shaping and sharing (README "The kit (stage 3b)"):
+ *  - KIT_SET of RFM_MOVE_KIT_P_STRETCH also carries `from`: the microseconds the pad's start..end must last (its
+ *    value's steps at the tempo and its track's rate; 0 Off: its Pitch then). Sent again whenever the tempo or the
+ *    track's rate changes, so the host re-fits it (a voice sounding may follow at once)
+ *  - KIT_SAVE: the kit (every pad's path and settings, the right half, the kit's mix: rfm_move_kit_path,
+ *    rfm_move_kit_value, rfm_move_kit_layout, rfm_move_kit_mix) saved as a new kit, a folder of copies of its sounds and
+ *    its kit.json; the host names it (Kit 1, Kit 2 ..). Answer: rfm_move_kit_saved
+ *  - KIT_OPEN: take a Kits row's id (RFM_MOVE_KIT_PL_KITS): that kit loaded. Answer: rfm_move_kit_apply (NULL: failed)
+ *  - KIT_FOLDER: value the place, take a folder row's id: All To Pads, its first 16 sounds in name order onto pads
+ *    1..16 (the core has emptied every pad: one Undo brings the kit back). Answer: rfm_move_kit_loaded for each pad,
+ *    a sound or (past the folder's sounds) RFM_MOVE_KIT_EMPTY
+ *  - MIX with slot RFM_MOVE_KIT_SLOT (3): the kit's own strip (the Mixer's fourth): level, pan, sends 1..3 to the audio
+ *    FX for the whole kit (a pad's own sends RFM_MOVE_KIT_P_SEND1..3 add to them) */
 #define RFM_MOVE_ACT_KIT_NOTE 64
 #define RFM_MOVE_ACT_KIT_SET 65
 #define RFM_MOVE_ACT_KIT_LOAD 66
 #define RFM_MOVE_ACT_KIT_ROWS 67
 #define RFM_MOVE_ACT_KIT_PREVIEW 68
 #define RFM_MOVE_ACT_KIT_REC 69
+#define RFM_MOVE_ACT_KIT_SAVE 70
+#define RFM_MOVE_ACT_KIT_OPEN 71
+#define RFM_MOVE_ACT_KIT_FOLDER 72
 enum { RFM_MOVE_SMP_OP_DELETE = 1, RFM_MOVE_SMP_OP_TRIM, RFM_MOVE_SMP_OP_NORMALIZE, RFM_MOVE_SMP_OP_REVERSE,
        RFM_MOVE_SMP_OP_FADE_IN, RFM_MOVE_SMP_OP_FADE_OUT, RFM_MOVE_SMP_OP_UNDO };   /* SMP_EDIT's index; _UNDO: answers */
 enum { RFM_MOVE_EP_SET = 1, RFM_MOVE_EP_LOCK = 2, RFM_MOVE_EP_FREE = 3, RFM_MOVE_EP_FREE_ALL = 4 };   /* (EP's op; only
@@ -595,6 +611,7 @@ typedef struct {
     uint8_t fx_pages;                                   /* the focused module's page shown (Right), not the chain */
     uint8_t fx_pg[2][RFM_MOVE_FX_SLOTS];                /* each slot's page (its knobs' page) */
     uint8_t mix_par;                                    /* the Mixer's knobs 1..3: RFM_MOVE_MIXP_* */
+    uint8_t rt_kit;                                     /* (stage 3b) Routing: the kit's pad chosen (not a slot) */
     uint8_t fx_del;                                     /* Delete held in FX setup (Delete + pad empties a slot) */
     /* (0.5.10) */
     uint8_t caps;                                       /* the host's RFM_MOVE_CAP_* (rfm_move_fw_caps) */
@@ -717,13 +734,14 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 11                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
+#define RFM_MOVE_PROJECT_VERSION 12                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
                                                          * values a slot, 7 the firmwares' MIDI routes, 8 the launch
                                                          * quantization and each clip's launch settings, 9 (0.13.0) the
                                                          * firmwares: each slot's id, level, settings and track, the
                                                          * slot played, the drum notes, the pads' velocity, 10 (0.14.0)
                                                          * the rate bytes: a base rate and a feel; no new bytes), 11
-                                                         * (stage 3a) the kit (RFM_MOVE_KIT_BYTES at the end) */
+                                                         * (stage 3a) the kit (RFM_MOVE_KIT_BYTES at the end), 12
+                                                         * (stage 3b) the kit's name, mix, stretch and sends */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -746,12 +764,17 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_PFW_BYTES (RFM_MOVE_FW_SLOTS * RFM_MOVE_PFW_SLOT_BYTES + 1 + RFM_MOVE_NPADS + 2)   /* (176) */
 #define RFM_MOVE_PROJECT_EXT_V10 (RFM_MOVE_PROJECT_EXT_V8 + RFM_MOVE_PFW_BYTES)   /* (versions 9, 10) */
 /* (version 11, the kit) { the right half's layout, the tracks routed to the kit u16 (bits 12..15), the chosen pad 0..15,
- * 4 zero }, then 16 pads x { the sound's path RFM_MOVE_KIT_PATH (NUL padded, "" empty), RFM_MOVE_KIT_P_N settings
- * i16 } */
+ * 4 zero }, then 16 pads x { the sound's path RFM_MOVE_KIT_PATH (NUL padded, "" empty), 12 settings i16 }.
+ * (version 12, stage 3b) { the right half's layout, the routing u16, the chosen pad, the kit's mix (level, pan, sends
+ * 1..3: 0..127), 7 zero }, the kit's name RFM_MOVE_KIT_NAME (NUL padded, "" never saved), then 16 pads x { the path,
+ * RFM_MOVE_KIT_P_N settings i16 } */
 #define RFM_MOVE_KIT_PADS 16
 #define RFM_MOVE_KIT_PATH 160                           /* a sound's path with its NUL (the host's) */
-#define RFM_MOVE_KIT_P_N 12                             /* a pad's settings (RFM_MOVE_KIT_P_*) */
-#define RFM_MOVE_KIT_BYTES (8 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N))   /* (2952) */
+#define RFM_MOVE_KIT_P_N 16                             /* a pad's settings (RFM_MOVE_KIT_P_*; 12 in version 11) */
+#define RFM_MOVE_KIT_P_N_V11 12
+#define RFM_MOVE_KIT_BYTES_V11 (8 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V11))   /* (2952) */
+#define RFM_MOVE_KIT_BYTES (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N))   /* (3112) */
+#define RFM_MOVE_PROJECT_EXT_V11 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V11)
 #define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES)
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 7 + RFM_MOVE_SEQ_LOCKS * 4)
@@ -1208,14 +1231,21 @@ enum { RFM_MOVE_KIT_P_PITCH,                            /* cents -2400..2400 (a 
        RFM_MOVE_KIT_P_REVERSE,                          /* 0 / 1: played backwards (the file untouched) */
        RFM_MOVE_KIT_P_LEVEL,                            /* dB -60..6 (-60: silent) */
        RFM_MOVE_KIT_P_PAN,                              /* -50 (left) .. 50 (right) */
-       RFM_MOVE_KIT_P_MUTE };                           /* 0 / 1 (Mute held + the pad) */
+       RFM_MOVE_KIT_P_MUTE,                             /* 0 / 1 (Mute held + the pad) */
+       /* (stage 3b, version 12) */
+       RFM_MOVE_KIT_P_STRETCH,                          /* 0 Off, 1..64 steps: start..end repitched to last them (the
+                                                         * Pitch ignored; KIT_SET's `from` the microseconds) */
+       RFM_MOVE_KIT_P_SEND1, RFM_MOVE_KIT_P_SEND2, RFM_MOVE_KIT_P_SEND3 };   /* 0..100 %: to audio FX 1..3 */
+#define RFM_MOVE_KIT_STRETCH_MAX 64
 /* how a pad plays: One shot start..end to its end (Hold 0: the release a tail ending at the end; Hold > 0: the release
  * starts after attack + hold), Momentary while the pad (or the step's note) is held, Loop round start..end while held.
  * The envelope (attack, hold, release) on all three */
 enum { RFM_MOVE_KIT_M_ONESHOT, RFM_MOVE_KIT_M_MOMENTARY, RFM_MOVE_KIT_M_LOOP, RFM_MOVE_KIT_M_N };
 enum { RFM_MOVE_KIT_RH_PITCHES, RFM_MOVE_KIT_RH_INKEY, RFM_MOVE_KIT_RH_OFF, RFM_MOVE_KIT_RH_N };   /* the right half */
-enum { RFM_MOVE_KIT_PL_TAKES = 1, RFM_MOVE_KIT_PL_SAMPLES = 2, RFM_MOVE_KIT_PL_KITS = 3 };   /* Files' places (Kits: 3b) */
-enum { RFM_MOVE_KIT_ROW_DIR = 1, RFM_MOVE_KIT_ROW_FILE = 2 };
+enum { RFM_MOVE_KIT_PL_TAKES = 1, RFM_MOVE_KIT_PL_SAMPLES = 2, RFM_MOVE_KIT_PL_KITS = 3 };   /* Files' places */
+enum { RFM_MOVE_KIT_ROW_DIR = 1, RFM_MOVE_KIT_ROW_FILE = 2, RFM_MOVE_KIT_ROW_KIT = 3 };   /* (KIT: a saved kit, Kits') */
+#define RFM_MOVE_KIT_SLOT 3                             /* (stage 3b) MIX's slot for the kit's own strip */
+enum { RFM_MOVE_KIT_MIX_LEVEL, RFM_MOVE_KIT_MIX_PAN, RFM_MOVE_KIT_MIX_SEND1, RFM_MOVE_KIT_MIX_N = 5 };   /* its values */
 /* rfm_move_kit_loaded's status (and a pad's): */
 enum { RFM_MOVE_KIT_OK = 0, RFM_MOVE_KIT_TOO_LONG = 1, RFM_MOVE_KIT_FAILED = 2, RFM_MOVE_KIT_MISSING = 3,
        RFM_MOVE_KIT_LOADING = 4, RFM_MOVE_KIT_EMPTY = 5 };
@@ -1328,6 +1358,20 @@ typedef struct {                                        /* (kit.c) */
     uint32_t glow[RFM_MOVE_KIT_PADS];                   /* each pad's last note (it sounds: bright a moment) */
     uint8_t tool_note;                                  /* the Sound tools' Play of a held mode: pad + 1, let go soon */
     uint32_t tool_ms;
+    /* (stage 3b) */
+    char name[RFM_MOVE_KIT_NAME];                       /* (saved) the kit's name, as saved or loaded ("" none) */
+    uint8_t mix[RFM_MOVE_KIT_MIX_N];                    /* (saved) the kit's strip: level, pan (64 centre), sends 0..127 */
+    uint16_t fit_bpm10;                                 /* the tempo and the kit tracks' rates the stretches were sent */
+    uint8_t fit_rate[4], fit_ok;                        /* .. for (a change: sent again) */
+    uint8_t fact, fai;                                  /* Files: a folder's actions (Shift + the click), the icon */
+    uint32_t fact_id;                                   /* .. the folder's id */
+    char fact_name[RFM_MOVE_KIT_NAME];
+    uint8_t undk;                                       /* one undo of the whole kit (a folder, a kit loaded): 1 */
+    uint8_t undk_rh, undk_mix[RFM_MOVE_KIT_MIX_N];
+    char undk_name[RFM_MOVE_KIT_NAME];
+    rfm_move_kit_pad_t undk_pad[RFM_MOVE_KIT_PADS];
+    uint16_t undk_un, undk_utop;
+    uint8_t saving;                                     /* KIT_SAVE sent, its answer not come */
 } rfm_move_kit_t;
 
 /* ---- the state */
@@ -2006,6 +2050,24 @@ void rfm_move_kit_sync(rfm_move_t *m);                 /* every pad's KIT_LOAD (
 int rfm_move_kit_shown(const rfm_move_t *m);            /* 1: the Kit view is on the screen now */
 /* a pad's setting as KIT_SET sends it (-1: no such pad or setting) */
 int rfm_move_kit_value(const rfm_move_t *m, int pad, int param);
+/* (stage 3b) the kit's own: a pad's path ("" empty, NULL no such pad), the right half's layout (RFM_MOVE_KIT_RH_*), the
+ * kit's strip (RFM_MOVE_KIT_MIX_*: 0..127, -1 none), its name ("" never saved or loaded) */
+const char *rfm_move_kit_path(const rfm_move_t *m, int pad);
+int rfm_move_kit_layout(const rfm_move_t *m);
+int rfm_move_kit_mix(const rfm_move_t *m, int which);
+const char *rfm_move_kit_name(const rfm_move_t *m);
+/* KIT_SAVE's answer: ok 1 and the name it was saved as ("Saved / Kit 3", the kit takes that name), 0 failed ("Not
+ * Saved"). Returns 1 when shown */
+int rfm_move_kit_saved(rfm_move_t *m, int ok, const char *name);
+/* KIT_OPEN's answer (also the page's): the kit made this one (one Undo brings the one before back): its name, the
+ * right half's layout, its strip (mix[RFM_MOVE_KIT_MIX_N], NULL kept), each pad's path (NULL or "": empty) and
+ * settings (v[pad][RFM_MOVE_KIT_P_N], clamped; NULL: the defaults); paths NULL: the kit could not be read ("Not
+ * Loaded", nothing changed). Every pad's KIT_LOAD and KIT_SETs follow. Returns 1 when shown */
+int rfm_move_kit_apply(rfm_move_t *m, const char *name, int layout, const uint8_t *mix,
+                       const char *const paths[RFM_MOVE_KIT_PADS], const int16_t (*v)[RFM_MOVE_KIT_P_N]);
+/* (the sampler's To Kit) the next empty pad 0..15 (-1 none): the take that comes goes there. claim 1: the pad is marked
+ * loading (the next call gives the next one) until the host's rfm_move_kit_loaded for it */
+int rfm_move_kit_next_empty(rfm_move_t *m, int claim);
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */

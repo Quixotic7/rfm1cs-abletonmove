@@ -451,14 +451,18 @@ void rfmv_kit_poll(rfm_move_t *m);                      /* (advance) */
 void rfmv_kit_seq_note(rfm_move_t *m, int track, int note, int vel);   /* (seq.c) a note of a track (vel 0: off) */
 int rfmv_kit_route_flip(rfm_move_t *m, int fw, int track);   /* a held Track's hold on 13..16: kit <-> firmware; 1 done */
 int rfmv_kit_routed(const rfm_move_t *m, int track);
+int rfmv_kit_route_set(rfm_move_t *m, int track, int on);   /* (3b) Routing's kit: track 12..15 to it (off the
+                                                         * firmwares) or not; its state now */
 rfmv_rgb_t rfmv_kit_row_rgb(int track);                 /* a kit track's colour (13 pink .. 16 violet) */
 int rfmv_kit_right_semis(const rfm_move_t *m, int n);   /* the right half's pad n: semitones, -1 dead */
 void rfmv_kit_clear(rfm_move_t *m);                     /* (project.c) an empty kit, unrouted */
 void rfmv_kit_new(rfm_move_t *m);                       /* .. a new project's: empty, tracks 13..16 routed to it */
 int rfmv_kit_used(const rfm_move_t *m);                 /* .. anything to save (version 11) */
 void rfmv_kit_write(const rfm_move_t *m, uint8_t *p);   /* .. RFM_MOVE_KIT_BYTES */
-int rfmv_kit_check(const uint8_t *p);                   /* .. 0 valid */
-void rfmv_kit_read(rfm_move_t *m, const uint8_t *p);
+void rfmv_kit_to_text(const rfm_move_t *m, char *o, int cap);   /* (3b) the sampler's To Kit: "Kit Pad 8" */
+void rfmv_kit_mix_turn(rfm_move_t *m, int par, int d);  /* (3b) the Mixer's kit strip: a value (RFM_MOVE_MIXP_*) */
+int rfmv_kit_check(const uint8_t *p, int ver);          /* .. 0 valid (version 11 or 12's) */
+void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver);
 void rfmv_kit_loaded_project(rfm_move_t *m);            /* .. loaded or made: the host told */
 int rfmv_kit_base_words(const rfm_move_t *m, char *o, int cap);   /* (speech) */
 int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);

@@ -1288,7 +1288,12 @@ static void val_text(const rfm_move_t *m, int k, int pop, char *o, int cap)
     case RFM_MOVE_SMP_THRESHOLD: snprintf(o, (size_t)cap, pop ? "%d" : "%d dB", v); break;
     case RFM_MOVE_SMP_INPUT: snprintf(o, (size_t)cap, v ? (pop ? "%+d" : "%+d dB") : (pop ? "%d" : "%d dB"), v); break;
     case RFM_MOVE_SMP_MONITOR: snprintf(o, (size_t)cap, "%s", v ? "On" : "Off"); break;
-    default: snprintf(o, (size_t)cap, "%s", TO_NAME[clampi(v, 0, RFM_MOVE_SMP_TO_N - 1)]); break;
+    default:
+        if (v == RFM_MOVE_SMP_TO_KIT && rfmv_kit_cap(m))
+            rfmv_kit_to_text(m, o, cap);                /* (stage 3b, board U: the next empty pad) */
+        else
+            snprintf(o, (size_t)cap, "%s", TO_NAME[clampi(v, 0, RFM_MOVE_SMP_TO_N - 1)]);
+        break;
     }
 }
 static void row_words(const rfm_move_t *m, int k, char *o, int cap)

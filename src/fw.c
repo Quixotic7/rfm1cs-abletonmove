@@ -1701,7 +1701,7 @@ static int fx_knob_param(const rfm_move_t *m, int k)
     if (m->fw.browse >= 0 || k < 0 || k >= RFM_MOVE_NKNOBS)
         return 0;
     if (pg == PG_MIX)
-        return k < RFM_MOVE_FW_SLOTS;
+        return k < RFM_MOVE_FW_SLOTS || (k == RFM_MOVE_KIT_SLOT && rfmv_kit_cap(m));   /* (3b: knob 4 the kit's) */
     if (pg == PG_ROUTE)
         return k < RFM_MOVE_MIXP_N;
     if (pg == PG_MIDI || pg == PG_AUDIO)
@@ -1726,18 +1726,33 @@ static void set_pg(rfm_move_t *m, int p)
     if (m->s.fx_page != p)
         m->s.fx_page = (uint8_t)p, rfmv_changed(m);
 }
+/* (stage 3b) the kit in FX setup: Routing's pad column 4, top row; the Mixer's knob 4 and pad column 4 */
+#define KIT_COL 3
+static const rgb_t KITRGB = { 255, 60, 160 };
+static int rkit(const rfm_move_t *m) { return m->fw.rt_kit && rfmv_kit_cap(m) && fx_page(m) == PG_ROUTE; }
+static uint16_t route_filt(const rfm_move_t *m)        /* Routing's tracks: the chosen slot's (3b: or the kit's) */
+{
+    return rkit(m) ? m->kit.route : m->seq.fx.ffilt[m->fw.fx_focus];
+}
 static uint8_t *mix_val(rfm_move_t *m, int slot, int par)   /* (Level: the library's; NULL) */
 {
     return par == RFM_MOVE_MIXP_PAN ? &m->seq.fx.pan[slot] : par >= RFM_MOVE_MIXP_SEND1 ? &m->seq.fx.send[slot][par - 2] : NULL;
 }
 static int mix_get(const rfm_move_t *m, int slot, int par)
 {
+    if (slot == RFM_MOVE_KIT_SLOT)                      /* (stage 3b) the kit's own strip */
+        return rfm_move_kit_mix(m, par);
     return par == RFM_MOVE_MIXP_LEVEL ? m->fw.level[slot] : mix_val((rfm_move_t *)m, slot, par)[0];
 }
 static void mix_turn(rfm_move_t *m, int slot, int par, int d)
 {
-    uint8_t *v = mix_val(m, slot, par);
+    uint8_t *v;
     int nv;
+    if (slot == RFM_MOVE_KIT_SLOT) {
+        rfmv_kit_mix_turn(m, par, d);
+        return;
+    }
+    v = mix_val(m, slot, par);
     if (!v) {
         set_level(m, slot, d);
         return;
@@ -1801,8 +1816,19 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
                 f->mix_par = (uint8_t)MIXPAD[row][col - 4], pop_clear(m);
             return;
         }
+        if (col == KIT_COL && row == 0 && rfmv_kit_cap(m) && fx_page_ok(m, PG_ROUTE)) {   /* (stage 3b) the kit: its
+                                                         * strip on knobs 1..5, its tracks on the steps */
+            if (pg != PG_ROUTE)
+                f->fx_pages = 0;
+            set_pg(m, PG_ROUTE);
+            f->rt_kit = 1, f->browse = -1;
+            memset(f->knob_acc, 0, sizeof f->knob_acc);
+            pop_clear(m);
+            return;
+        }
         if (row > 2 || (np = col_page(col)) < 0 || !fx_page_ok(m, np))
             return;
+        f->rt_kit = 0;
         if (np != pg || row != i)
             f->fx_pages = 0;
         set_pg(m, np);
@@ -1825,6 +1851,10 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
         if (pg == PG_MIDI) {                            /* one track, or (the same step again) all */
             x->mfx[i].filt = x->mfx[i].filt == b ? 0xFFFF : b;
             pop(m, FP_RFILTER, s, 1);
+        } else if (pg == PG_ROUTE && rkit(m)) {        /* (stage 3b) the kit: tracks 13..16 to it or not */
+            if (s - 1 < RFM_MOVE_KIT_TRACK0)
+                return;
+            pop(m, FP_RFILTER, s, rfmv_kit_route_set(m, s - 1, !rfmv_kit_routed(m, s - 1)));
         } else if (pg == PG_ROUTE) {
             x->ffilt[i] ^= b;
             pop(m, FP_RFILTER, s, (x->ffilt[i] & b) != 0);
@@ -1879,8 +1909,8 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
         const int k = ev->index, d = ev->value, tch = touching(m, k);
         if (k < 0 || k >= RFM_MOVE_NKNOBS || !d)
             return;
-        if (pg == PG_MIX) {                             /* knobs 1..3: each slot's chosen value */
-            if (k >= RFM_MOVE_FW_SLOTS)
+        if (pg == PG_MIX) {                             /* knobs 1..3: each slot's chosen value (3b: 4 the kit's) */
+            if (!fx_knob_param(m, k))
                 return;
             mix_turn(m, k, f->mix_par, d);
             pop(m, FP_PARAM, k, tch);
@@ -1889,7 +1919,7 @@ static void fx_input(rfm_move_t *m, const mr_event_t *ev)
         if (pg == PG_ROUTE) {                           /* a firmware selected: level, pan, sends 1..3 */
             if (k >= RFM_MOVE_MIXP_N)
                 return;
-            mix_turn(m, i, k, d);
+            mix_turn(m, rkit(m) ? RFM_MOVE_KIT_SLOT : i, k, d);
             pop(m, FP_PARAM, k, tch);
             return;
         }
@@ -2245,7 +2275,7 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
     const rfm_move_fxset_t *x = &m->seq.fx;
     const int pg = fx_page(m), kind = pg == PG_MIDI ? RFM_MOVE_FX_MIDI : RFM_MOVE_FX_AUDIO;
     const rfm_move_fx_module_t *md = pg == PG_MIDI || pg == PG_AUDIO ? module(m, kind, fxslot((rfm_move_t *)m, kind, f->fx_focus)->mod) : NULL;
-    const uint16_t filt = pg == PG_MIDI ? x->mfx[f->fx_focus].filt : pg == PG_ROUTE ? x->ffilt[f->fx_focus] : 0;
+    const uint16_t filt = pg == PG_MIDI ? x->mfx[f->fx_focus].filt : pg == PG_ROUTE ? route_filt(m) : 0;
     int i, r;
     if (pg == PG_MIX) {                                 /* (0.5.0) columns 1..3 the slots' meters (bottom up); the
                                                          * right 4 x 4 the choice */
@@ -2259,12 +2289,20 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                     part >= 127 ? RFMV_SLOT_RGB[i] : part > 0 ? lit(RFMV_SLOT_RGB[i], A(0.12) + part * (256 - A(0.12)) / 127 / 2) : OFF;
             }
         }
+        if (rfmv_kit_cap(m)) {                          /* (stage 3b) column 4 the kit's */
+            const int v = mix_get(m, RFM_MOVE_KIT_SLOT, f->mix_par) * 4;
+            for (r = 0; r < 4; r++) {
+                const int part = v - r * 127;
+                c[L_PAD0 + pad_of((3 - r) * 8 + KIT_COL)] =
+                    part >= 127 ? KITRGB : part > 0 ? lit(KITRGB, A(0.12) + part * (256 - A(0.12)) / 127 / 2) : OFF;
+            }
+        }
         for (r = 0; r < 4; r++)
             for (i = 0; i < 4; i++)
                 if (MIXPAD[r][i] >= 0)
                     c[L_PAD0 + pad_of(r * 8 + 4 + i)] = lit(MIXCOL[MIXPAD[r][i]], f->mix_par == MIXPAD[r][i] ? 256 : A(0.25));
         for (i = 0; i < RFM_MOVE_NKNOBS; i++)
-            c[L_RING0 + i] = i < nslots(m) ? MIXCOL[f->mix_par] : OFF;   /* (0.6.13: every knob with a job, an
+            c[L_RING0 + i] = i < nslots(m) || (i == RFM_MOVE_KIT_SLOT && rfmv_kit_cap(m)) ? MIXCOL[f->mix_par] : OFF;   /* (0.6.13: every knob with a job, an
                                                          * empty slot's level too) */
         w[W_MENU] = 127, w[W_BACK] = wl(A(0.35));
         return;
@@ -2272,7 +2310,7 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
     for (r = 0; r < 3; r++) {                           /* (0.5.0) MIDI FX, firmwares, audio FX: one layer */
         static const int PGS[3] = { PG_MIDI, PG_ROUTE, PG_AUDIO };
         for (i = 0; i < 3; i++) {
-            const int p = PGS[i], foc = pg == p && f->fx_focus == r;
+            const int p = PGS[i], foc = pg == p && f->fx_focus == r && !(p == PG_ROUTE && rkit(m));
             int empty;
             rgb_t col;
             if (!fx_page_ok(m, p))
@@ -2285,7 +2323,9 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             c[L_PAD0 + slot_pad(p, r)] = lit(col, foc ? (pages_shown(m) ? breathe(m) : 256) : empty ? A(0.12) : A(0.42));
         }
     }
-    if (pg == PG_ROUTE) {                               /* (0.6.6) the MIDI routes: the focused firmware's pad held,
+    if (rfmv_kit_cap(m) && fx_page_ok(m, PG_ROUTE))    /* (stage 3b) the kit's pad (Routing's) */
+        c[L_PAD0 + slot_pad(PG_ROUTE, 0) + KIT_COL - page_col(PG_ROUTE)] = lit(KITRGB, rkit(m) ? 256 : A(0.42));
+    if (pg == PG_ROUTE && !rkit(m)) {                   /* (0.6.6) the MIDI routes: the focused firmware's pad held,
                                                          * its targets (and Out, the pad under them) lit in the routes'
                                                          * colour; at rest Out only where it is on, faint */
         static const rgb_t MROUTE = { 20, 220, 255 };
@@ -2300,7 +2340,8 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
             c[L_PAD0 + slot_pad(PG_ROUTE, 3)] = lit(MROUTE, A(0.2));
     }
     for (i = 0; i < 16; i++)
-        c[L_STEP0 + i] = pg == PG_MIDI || pg == PG_ROUTE ? lit(WHITE, filt >> i & 1 ? 256 : A(0.15)) : OFF;
+        c[L_STEP0 + i] = (pg == PG_MIDI || pg == PG_ROUTE) && !(rkit(m) && i < RFM_MOVE_KIT_TRACK0)
+                       ? lit(WHITE, filt >> i & 1 ? 256 : A(0.15)) : OFF;   /* (3b: the kit's, 13..16 only) */
     for (i = 0; i < RFM_MOVE_NKNOBS; i++)               /* (0.5.0: the page's knobs with a parameter) */
         c[L_RING0 + i] = (pg == PG_ROUTE ? i < RFM_MOVE_MIXP_N : md && knob_param(m, kind, f->fx_focus, i) >= 0) ? FXCOL[pg] : OFF;
     w[W_MENU] = 127, w[W_BACK] = wl(A(0.35));
@@ -2683,7 +2724,9 @@ static void focus_name(const rfm_move_t *m, char *o, int cap)
 {
     const int pg = fx_page(m), i = m->fw.fx_focus;
     char nm[32];
-    if (pg == PG_ROUTE || pg == PG_MIX) {
+    if (pg == PG_ROUTE && rkit(m))
+        snprintf(o, (size_t)cap, "Kit");                /* (stage 3b) */
+    else if (pg == PG_ROUTE || pg == PG_MIX) {
         if (slot_loaded(m, i))
             slot_name(m, i, nm, sizeof nm);
         else
@@ -2706,9 +2749,9 @@ static void pan_text(int v, char *o, int cap)
 static void mix_words(const rfm_move_t *m, int slot, int par, char *t, int tc, char *v, int vc, int lng)
 {
     if (par == RFM_MOVE_MIXP_LEVEL)
-        snprintf(t, (size_t)tc, "Level"), snprintf(v, (size_t)vc, "%d", m->fw.level[slot]);
+        snprintf(t, (size_t)tc, "Level"), snprintf(v, (size_t)vc, "%d", mix_get(m, slot, par));
     else if (par == RFM_MOVE_MIXP_PAN)
-        snprintf(t, (size_t)tc, "Pan"), pan_text(m->seq.fx.pan[slot], v, vc);
+        snprintf(t, (size_t)tc, "Pan"), pan_text(mix_get(m, slot, par), v, vc);
     else {
         const char *an = slot_mod_name(m, RFM_MOVE_FX_AUDIO, par - 2);
         char a2[32];
@@ -2720,7 +2763,7 @@ static void mix_words(const rfm_move_t *m, int slot, int par, char *t, int tc, c
             snprintf(t, (size_t)tc, "Send to %s", a2);
         else
             snprintf(t, (size_t)tc, "Send %d", par - 1);
-        snprintf(v, (size_t)vc, "%d", m->seq.fx.send[slot][par - 2]);
+        snprintf(v, (size_t)vc, "%d", mix_get(m, slot, par));
     }
 }
 static void fx_screen(B *g, const rfm_move_t *m)
@@ -2764,8 +2807,10 @@ static void fx_screen(B *g, const rfm_move_t *m)
         int hint = 0;
         if (pg == PG_ROUTE || pg == PG_MIX) {           /* (0.5.0) a firmware's level, pan, sends: Routing's knobs
                                                          * 1..5 for the selected one, the Mixer's 1..3 for each */
-            const int sl = pg == PG_MIX ? k : i;
-            if (pg == PG_MIX) {
+            const int sl = pg == PG_MIX ? k : rkit(m) ? RFM_MOVE_KIT_SLOT : i;
+            if (sl == RFM_MOVE_KIT_SLOT)
+                snprintf(fn, sizeof fn, "Kit");         /* (stage 3b) the kit's strip */
+            else if (pg == PG_MIX) {
                 char nm[32];
                 if (slot_loaded(m, sl))
                     slot_name(m, sl, nm, sizeof nm);
@@ -2821,7 +2866,7 @@ static void fx_screen(B *g, const rfm_move_t *m)
         return;
     }
     if (pop_up(m, FP_RFILTER) && (pg == PG_MIDI || pg == PG_ROUTE)) {
-        const uint16_t filt = pg == PG_MIDI ? x->mfx[i].filt : x->ffilt[i];
+        const uint16_t filt = pg == PG_MIDI ? x->mfx[i].filt : route_filt(m);
         range_text(filt, t, sizeof t);
         header(g, fn, NULL);
         ctext(g, 14, pg == PG_MIDI ? "acts on tracks" : "hears tracks", 1);
@@ -2880,22 +2925,25 @@ static void fx_screen(B *g, const rfm_move_t *m)
     if (pg == PG_MIX) {                                 /* (0.5.0) the Mixer: what knobs 1..3 set, each slot's */
         mix_words(m, 0, f->mix_par, t, sizeof t, v, sizeof v, 1);
         header(g, "Mixer", t);
-        for (r = 0; r < 3; r++) {
-            const int x0 = r * 43, val = mix_get(m, r, f->mix_par), wfill = rnd(37.0 * val / 127);
+        for (r = 0; r < (rfmv_kit_cap(m) ? 4 : 3); r++) {   /* (stage 3b: the kit a fourth strip, narrower) */
+            const int SW = rfmv_kit_cap(m) ? 32 : 43;
+            const int x0 = r * SW, val = mix_get(m, r, f->mix_par), wfill = rnd((SW - 6) * (double)val / 127);
             char ab[3], nm[12];
-            if (slot_loaded(m, r)) {
+            if (r == RFM_MOVE_KIT_SLOT)
+                snprintf(nm, sizeof nm, "Kit");
+            else if (slot_loaded(m, r)) {
                 char sn[32];
                 slot_name(m, r, sn, sizeof sn);
                 abbr(sn, ab);
                 snprintf(nm, sizeof nm, "%s %d", ab, r + 1);
             } else
                 snprintf(nm, sizeof nm, "- %d", r + 1);
-            ctext_in(g, 12, nm, 1, x0, 41);
+            ctext_in(g, 12, nm, 1, x0, SW - 2);
             mix_words(m, r, f->mix_par, fn, sizeof fn, v, sizeof v, 0);
-            ctext_in(g, 26, v, 2, x0, 41);
-            rect(g, x0 + 2, 50, 39, 9);
+            ctext_in(g, 26, v, 2, x0, SW - 2);
+            rect(g, x0 + 2, 50, SW - 4, 9);
             if (f->mix_par == RFM_MOVE_MIXP_PAN) {      /* (pan: from the centre) */
-                const int c0 = x0 + 21, e = x0 + 3 + rnd(36.0 * val / 127);
+                const int c0 = x0 + (SW - 1) / 2, e = x0 + 3 + rnd((SW - 7) * (double)val / 127);
                 fill(g, e < c0 ? e : c0, 51, (e < c0 ? c0 - e : e - c0) + 1, 7, 1);
             } else
                 fill(g, x0 + 3, 51, wfill, 7, 1);
@@ -2905,7 +2953,7 @@ static void fx_screen(B *g, const rfm_move_t *m)
     {                                                   /* the chain: MIDI FX, the firmwares, the audio FX */
         static const int X[3] = { 2, 46, 90 }, Y[3] = { 12, 29, 46 };
         const int BW = 34, BH = 15;
-        const uint16_t filt = pg == PG_MIDI ? x->mfx[i].filt : x->ffilt[i];
+        const uint16_t filt = pg == PG_MIDI ? x->mfx[i].filt : route_filt(m);
         range_text(filt, t, sizeof t);
         cut(t, 8);
         header(g, fn, pg == PG_AUDIO ? "" : t);
@@ -2925,7 +2973,7 @@ static void fx_screen(B *g, const rfm_move_t *m)
                     asc(n ? n : "-", lab, sizeof lab);
                 }
                 cut(lab, 5);
-                foc = (c == 0 ? pg == PG_MIDI : c == 1 ? pg == PG_ROUTE : pg == PG_AUDIO) && i == r;
+                foc = (c == 0 ? pg == PG_MIDI : c == 1 ? pg == PG_ROUTE && !rkit(m) : pg == PG_AUDIO) && i == r;
                 tx = X[c] + ifloor_div(BW - tw(lab, 1), 2);
                 if (foc)
                     fill(g, X[c], Y[r], BW, BH, 1), text(g, tx, Y[r] + 4, lab, 1, 0);
@@ -3594,9 +3642,12 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap)
         if (pop_up(m, FP_PARAM)) {
             const int k = f->pop_a;
             if (pg == PG_ROUTE || pg == PG_MIX) {
-                const int sl = pg == PG_MIX ? k : i;
+                const int sl = pg == PG_MIX ? k : rkit(m) ? RFM_MOVE_KIT_SLOT : i;
                 mix_words(m, sl, pg == PG_MIX ? f->mix_par : k, t, sizeof t, v, sizeof v, 0);
-                snprintf(o, (size_t)cap, "Slot %d %s: %s", sl + 1, t, v);
+                if (sl == RFM_MOVE_KIT_SLOT)
+                    snprintf(o, (size_t)cap, "Kit %s: %s", t, v);
+                else
+                    snprintf(o, (size_t)cap, "Slot %d %s: %s", sl + 1, t, v);
             } else {
                 const rfm_move_fxslot_t *sl = kind == RFM_MOVE_FX_MIDI ? &m->seq.fx.mfx[i] : &m->seq.fx.afx[i];
                 const rfm_move_fx_module_t *md = module(m, kind, sl->mod);
@@ -3630,11 +3681,13 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap)
             return 1;
         }
         if (pop_up(m, FP_RFILTER) && (pg == PG_MIDI || pg == PG_ROUTE)) {
-            const uint16_t filt = pg == PG_MIDI ? m->seq.fx.mfx[i].filt : m->seq.fx.ffilt[i];
+            const uint16_t filt = pg == PG_MIDI ? m->seq.fx.mfx[i].filt : route_filt(m);
             char r[48];
             range_text(filt, r, sizeof r);
             if (pg == PG_MIDI)
                 fx_slot_words(m, kind, i, t, sizeof t), *strchr(t, ':') = 0;
+            else if (rkit(m))
+                snprintf(t, sizeof t, "Kit");
             else
                 snprintf(t, sizeof t, "Slot %d", i + 1);
             if (filt == 0xFFFF)
