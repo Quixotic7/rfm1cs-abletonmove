@@ -565,6 +565,8 @@ static void t_files(void)
     clear(), jog_click();                               /* onto the chosen pad (7) */
     CHECK((a = last(RFM_MOVE_ACT_KIT_LOAD)) && a->index == 6 && a->take == 9 && a->value == 2 && !D[last_i(RFM_MOVE_ACT_KIT_LOAD)][0]);
     CHECK(M.kit.pad[6].st == RFM_MOVE_KIT_LOADING);
+    clear(), hit(kp(6));                                /* (a pad while browsing: it plays, it is the target) */
+    CHECKF(count(RFM_MOVE_ACT_KIT_NOTE) == 2 && M.kit.cur == 6, "notes %d", count(RFM_MOVE_ACT_KIT_NOTE));
     for (i = 0; i < 64; i++)
         pk[i] = (uint8_t)(255 - i * 3);
     M.kit.pad[6].v[RFM_MOVE_KIT_P_START] = 500;
