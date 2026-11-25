@@ -3,7 +3,30 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
-## Unreleased: the kit, stage 3a
+## Unreleased: the kit, stages 3a and 3b
+
+### Stage 3b: shaping and sharing
+
+README "The kit (stage 3b)". The project goes to version 12 (`RFM_MOVE_KIT_BYTES` 3112: the kit's name, its strip, 16
+settings a pad; version 11 loads with the new ones at their defaults); `RFM_MOVE_KIT_P_N` is 16: rebuild everything.
+
+- **Stretch** (`RFM_MOVE_KIT_P_STRETCH`, knob 3, the row after Pitch): start..end lasts 1..64 steps at the tempo and
+  the track's rate, `KIT_SET`'s `from` the microseconds, sent again when either changes; Pitch reads "Stretch". While
+  Pitch, Stretch, Start or End change the step keys light the steps it lasts (board D).
+- **Sends** `RFM_MOVE_KIT_P_SEND1..3` (knob 8 Send 1, rows Send 1..3, board H) and the kit's own strip: `MIX` with
+  slot `RFM_MOVE_KIT_SLOT` (3); the Mixer's knob 4 and pad column 4, Routing's kit pad (column 4, top: its strip on
+  knobs 1..5, tracks 13..16 on the steps).
+- **A whole folder**: Shift + the click on a folder, Open / All To Pads (board K), `KIT_FOLDER` (72); one Undo brings
+  the kit back. `rfm_move_kit_loaded` takes `RFM_MOVE_KIT_EMPTY`; a sound the host put on a pad itself gets its whole
+  region.
+- **Kits**: the Kit tab's Load, Save, the right half (board Q); `KIT_SAVE` (70) / `rfm_move_kit_saved` ("Saved / Kit
+  3", board R), `KIT_OPEN` (71) / `rfm_move_kit_apply`; Files' third place Kits (`RFM_MOVE_KIT_ROW_KIT`); the kit's
+  `rfm_move_kit_path`, `_layout`, `_mix`, `_name`.
+- **The sampler**: To Kit reads "Kit Pad 8", the next empty pad lit white over the Kit view (board U);
+  `rfm_move_kit_next_empty` for the host's take.
+- Tests: `move_kit` 18..24 and boards D, H, K, R, U; the format tests follow version 12.
+
+### Stage 3a: playing
 
 The kit (the owner's 2026-11-25 kit round, built from the design page's picks; README "The kit (stage 3a)"). New fields
 at the end of `rfm_move_t`, `rfm_move_settings_t` (version 9, 138 bytes; version 8 loads) and the project (version 11,

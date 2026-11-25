@@ -1210,8 +1210,7 @@ a host that sets `RFM_MOVE_CAP_KIT` (`rfm_move_fw_caps`; not in `RFM_MOVE_CAPS_A
 3a is playing: the pads, their sounds from Takes and Samples, a pad held + Sample, pitch, reverse, start and end, the
 play modes with the envelope, choke, level and pan, the right half, tracks 13..16, kept in the project, the sampler's
 To Kit. Stretch, the sends, the Mixer's Kit strip, whole folders, saving and loading kits, the sampler's Kit source and
-destination (3b), mixing, joining, slicing and a pad's own edits (3c) are not built: their knobs are dark and dead,
-their rows absent.
+destination are stage 3b (below); mixing, joining, slicing and a pad's own edits (3c) are not built.
 
 **Where it lives.** Track 4's tap goes round Mixer, Routing, Kit (a double click: the projects); held: pad 1 the
 Mixer, 2 Routing, 3 the Kit, 4 the Looper (not built: dark and dead), 5 the projects. From another Track, Track 4
@@ -1229,7 +1228,7 @@ stay the sequencer's; Up and Down are dark and dead.
 | Delete held + a pad | its notes in its track's clip go first; a pad with none is emptied (the file stays). Undo brings either back (the pad's own undo while no sequencer edit came after it) |
 | Mute held + a pad | the pad muted (grey), saved with the kit |
 | a pad held + Sample | records into that pad with the sampler's own settings (`KIT_REC`) until the pad is let go (or the length, or the threshold): the pad red, Sample red, the kit's screen the take (boards L armed, M recording) |
-| knobs | the chosen pad's, lit pink: 1 Pitch (a semitone; Shift: a cent), 2 Start, 3 Stretch (3b: dark), 4 Play mode, 5 Attack, 6 Release, 7 Level, 8 Send 1 (3b: dark). Touch: the popup, its name and value; turn: changed |
+| knobs | the chosen pad's, lit pink: 1 Pitch (a semitone; Shift: a cent), 2 Start, 3 Stretch (3b), 4 Play mode, 5 Attack, 6 Release, 7 Level, 8 Send 1 (3b). Touch: the popup, its name and value; turn: changed |
 | the jog | the tab's rows: one at rest (under the pad's wave and the steps it lasts), three for a second while it turns; up past the first: the tabs (click, turn, click). A row's click: its popup (the jog its value; Shift fine). Back: a popup, the tools, a folder, the tabs; never out of the view |
 
 **The tabs.** Pad (I_PAD; the chosen pad's number at 2x top right): Sound (its click: Play, Delete), Pitch, Start,
@@ -1274,6 +1273,54 @@ pad held + Sample).
 The project keeps the kit (version 11, `RFM_MOVE_KIT_BYTES` at its end: the right half, the routing, the chosen pad,
 each pad's path and twelve settings); a project load sends every pad's `KIT_LOAD` (its path) and `KIT_SET`s. Tests:
 `move_kit` (dumps `kit_*.pbm` / `.leds`; the boards against `tests/move_kit_ref.h`, packed from `mock_kit_v1.c`'s).
+
+## The kit (stage 3b)
+
+Shaping and sharing, from the same round's picks (KIT-SPEC.md "Stage 3b"; boards D, H, K, Q, R, U).
+
+**Stretch.** Knob 3 (and the row after Pitch): Off, 1..64 steps. The pad's start..end is repitched to last exactly
+that many steps at the tempo and its track's rate (`KIT_SET` of `RFM_MOVE_KIT_P_STRETCH` carries `from`, the
+microseconds); the core sends it again whenever the tempo or a kit track's rate changes, so the host re-fits it. Pitch
+is ignored meanwhile (its popup and row read "Stretch"; a turn keeps the old value for when Stretch is Off). While
+Pitch, Stretch, Start or End change (a knob touched or turned, a row's popup) the popup draws the 16 steps with the
+length as a bar and the step keys light the steps it lasts in the pad's row colour, the first brightest (board D).
+
+**The sends.** Every pad has Send 1, 2, 3 (0..100 %; knob 8 Send 1, rows Send 1..3; the popup a bar, board H) to the
+three audio FX of FX setup. The kit is a fourth strip in the Mixer: knob 4 (lit) sets its level, pan or send as the
+right 4 x 4 chose, pad column 4 its meter (pink), the screen four strips ("Kit" the fourth). In Routing the kit has a
+pad of its own (column 4, top row, pink): chosen, knobs 1..5 are its level, pan, sends, the step keys 13..16 its tracks
+(on: the kit's alone, off the firmwares; 1..12 dark). `MIX` with slot `RFM_MOVE_KIT_SLOT` (3) gives the host the
+strip (level 0..127, 100 at first; pan 64 the centre; sends 0..127); a pad's own sends add to the strip's.
+
+**A whole folder.** Shift + the jog's click on a folder in Files: its actions, Open (I_DIR) and All To Pads (I_KIT,
+chosen; the pads lit in their rows' colours, board K). All To Pads empties every pad to its defaults and sends
+`KIT_FOLDER`; the host answers each pad, a sound (the folder's first 16 in name order onto pads 1..16) or
+`RFM_MOVE_KIT_EMPTY`. One Undo brings the kit back (pads, their settings, the right half, the name).
+
+**Kits.** The Kit tab's rows: Load (I_DIR: Files' Kits), Save (I_SAVE), the right half (I_KEYS); the kit's name top
+right (board Q). Save sends `KIT_SAVE` ("Saving"); the host copies the sounds into
+`Samples/RemoteFM1/Kits/<name>/` with a `kit.json`, names it Kit 1, Kit 2 .., and answers `rfm_move_kit_saved`
+("Saved / Kit 3", board R). Files' third place is Kits: a saved kit a row (`RFM_MOVE_KIT_ROW_KIT`, I_KIT, no preview);
+its click sends `KIT_OPEN` and the host answers `rfm_move_kit_apply` (every pad's path and settings, the layout, the
+strip, the name: one Undo brings the kit before back). The project keeps its own kit whether or not it was saved.
+
+**The sampler.** To Kit (offered by the host) reads "Kit Pad 8": the next empty pad, lit white over the Kit view
+while the app is open (board U); the host takes it with `rfm_move_kit_next_empty(m, 1)` when the take is saved and
+puts the take there (`rfm_move_kit_loaded`: a sound the host put on a pad gets its whole region). Source Kit is the
+host's (the kit's output alone).
+
+| Action | Fields | Answer |
+|---|---|---|
+| `RFM_MOVE_ACT_KIT_SAVE` (70) | (the kit: `rfm_move_kit_path`, `_value`, `_layout`, `_mix`) | `rfm_move_kit_saved(m, ok, name)` |
+| `RFM_MOVE_ACT_KIT_OPEN` (71) | `take` a Kits row's id | `rfm_move_kit_apply(m, name, layout, mix, paths, v)` (paths NULL: failed) |
+| `RFM_MOVE_ACT_KIT_FOLDER` (72) | `value` the place, `take` the folder's id | `rfm_move_kit_loaded` for each pad (`_OK` or `_EMPTY`) |
+| `RFM_MOVE_ACT_MIX` slot 3 | `mix[]` the kit's level, pan, sends 1..3 | |
+
+The project is version 12 (`RFM_MOVE_KIT_BYTES` 3112: the layout, the routing, the chosen pad, the strip, the name,
+16 settings a pad: Stretch and Send 1..3 after Mute); version 11 loads (Stretch Off, no sends, the strip at its
+defaults, no name). Tests: `move_kit` 18..24 (Stretch and its refit, the sends, the Mixer and Routing's kit, a folder
+and its Undo, Save / Load / apply / Undo, the sampler's To Kit, the version 12 and 11 projects) and boards D, H, K
+(below the stand-in wave), R and U (the sampler's own level line masked).
 
 ## FX parameter pages (0.5.0)
 
