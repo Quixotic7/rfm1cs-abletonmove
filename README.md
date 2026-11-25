@@ -102,7 +102,7 @@ nothing.
 | Track | Tap | Held | Double click |
 |---|---|---|---|
 | 1..3 | play that slot in its layout (`FW_ACTIVE`; an empty slot too); a note layout: its track view (0.14.0: the track's knob page as it was left; TRIG for a track never shown); (0.12.x, the owner's) there the steps show the slot's 16 tracks for 600 ms (routed: the slot's colour, not routed: dark, the selected one blinking white / the slot's colour, 100 ms each), then the clip's steps again; a step pressed meanwhile is a clip step and ends it (not in the FM-1 layout, a takeover or session view; not under the held Track's menu or the browser) | one menu (below) | the firmware browser on that slot (there a pad's double tap loads it) |
-| 4 | the Mixer or Routing, the one last shown (the Mixer at first); a tap there flips them | pad 1 the Mixer, pad 2 Routing; the steps the Shift shortcuts, Record / Play / Capture / Undo / Loop / Sample their Shift + button, in every layout | the sequencer's projects |
+| 4 | the Mixer or Routing, the one last shown (the Mixer at first); a tap there flips them. (stage 3a, a host with the kit) the round is Mixer, Routing, Kit: from elsewhere the view it was left on | pad 1 the Mixer, pad 2 Routing; (stage 3a, the kit) pad 3 the Kit, pad 4 the Looper (not built: dark, dead), pad 5 the projects; the steps the Shift shortcuts, Record / Play / Capture / Undo / Loop / Sample their Shift + button, in every layout | the sequencer's projects |
 
 **A note layout** (the sequencer): the pads play the layout into the selected track (live to the slot, recorded with
 Record), the steps are its clip's steps, the knobs the TRIG page then the CC banks (the jog), the buttons the
@@ -1202,6 +1202,79 @@ ms", the messages. Tests: `move_sampler` 22..30 (dumps `sampler_takes*`, `days`,
 and days but the third tab's icon (the mock draws two tabs), act but the row's last three places (the mock's five
 icons: "to a kit pad", "to the looper" come between Trim and Delete when they are built), trim exactly).
 
+## The kit (stage 3a)
+
+The owner's 2026-11-25 kit round (remoteFM14Move-kit `docs/design/KIT-SPEC.md`, cards `kit_*`: "Please build it with
+your best guesses"; the screens are `mock_kit_v1.c`'s boards). Sixteen sampled pads on Track 4's third view. Only for
+a host that sets `RFM_MOVE_CAP_KIT` (`rfm_move_fw_caps`; not in `RFM_MOVE_CAPS_ALL`); without it nothing changes. Stage
+3a is playing: the pads, their sounds from Takes and Samples, a pad held + Sample, pitch, reverse, start and end, the
+play modes with the envelope, choke, level and pan, the right half, tracks 13..16, kept in the project, the sampler's
+To Kit. Stretch, the sends, the Mixer's Kit strip, whole folders, saving and loading kits, the sampler's Kit source and
+destination (3b), mixing, joining, slicing and a pad's own edits (3c) are not built: their knobs are dark and dead,
+their rows absent.
+
+**Where it lives.** Track 4's tap goes round Mixer, Routing, Kit (a double click: the projects); held: pad 1 the
+Mixer, 2 Routing, 3 the Kit, 4 the Looper (not built: dark and dead), 5 the projects. From another Track, Track 4
+opens the view it was left on (`settings.t4_kit`, version 9). The Kit view is the sequencer's track view of the chosen
+pad's track with the kit's own pads, steps, knobs, jog, screen and Back: it enters the Sequencer (a slot in the FM-1
+layout too; Track 4 onto the Mixer gives the slot's layout back), Menu flips to session view and back to the kit, a
+Track 1..3 tap leaves it for that slot's layout. Play, Record, Capture, Loop, Copy, the arrows, Undo, Shift + a step
+stay the sequencer's; Up and Down are dark and dead.
+
+| Control | What |
+|---|---|
+| pads, left 4 x 4 | the kit: pad 1 bottom left, then left to right, rows upward. A press plays the pad (the Velocity setting) and chooses it (its track selected: pads 1-4 track 13 .. 13-16 track 16); Shift + a pad: chosen, silent |
+| pads, right 4 x 4 | the chosen pad's pitches: Pitches (16 semitones up from its own, pitch pad 1 bottom left; its own and its octave bright in its row's colour), In Key (the track's key and scale, rows a fourth apart, four scale notes a row, roots bright), Off (dark, dead) |
+| steps | the chosen pad's notes on its track (the page shown): a click toggles its own note at the release; a step held + pads: their notes in or out of it (the click then nothing); Delete + a step: the chosen pad's notes there |
+| Delete held + a pad | its notes in its track's clip go first; a pad with none is emptied (the file stays). Undo brings either back (the pad's own undo while no sequencer edit came after it) |
+| Mute held + a pad | the pad muted (grey), saved with the kit |
+| a pad held + Sample | records into that pad with the sampler's own settings (`KIT_REC`) until the pad is let go (or the length, or the threshold): the pad red, Sample red, the kit's screen the take (boards L armed, M recording) |
+| knobs | the chosen pad's, lit pink: 1 Pitch (a semitone; Shift: a cent), 2 Start, 3 Stretch (3b: dark), 4 Play mode, 5 Attack, 6 Release, 7 Level, 8 Send 1 (3b: dark). Touch: the popup, its name and value; turn: changed |
+| the jog | the tab's rows: one at rest (under the pad's wave and the steps it lasts), three for a second while it turns; up past the first: the tabs (click, turn, click). A row's click: its popup (the jog its value; Shift fine). Back: a popup, the tools, a folder, the tabs; never out of the view |
+
+**The tabs.** Pad (I_PAD; the chosen pad's number at 2x top right): Sound (its click: Play, Delete), Pitch, Start,
+End (seconds), Play (One shot, Momentary, Loop; its popup draws the three and the envelope), Attack, Hold, Release (ms
+steps 0, 1, 2, 3, 5 .. 10000; the popup draws the AHR, the part turned thick), Choke (Off, groups 1..4; the popup
+lights the group's pads), Reverse, Level (-inf..+6 dB), Pan. Kit (I_KIT): the right half (Pitches, In Key, Off). Files
+(I_DIR): Takes (every take, newest first) and Samples (the Move's `UserLibrary/Samples`, folders and WAV / AIFF): a
+sound plays as the jog lands on it (`KIT_PREVIEW`), its click loads it onto the chosen pad (`KIT_LOAD`), a pad pressed
+chooses the target (blinking white). From the sampler, a take's actions gain To Kit (before Delete): the app closes on
+the Kit view with the pads blinking, the next pad press takes the take.
+
+**How a pad plays** (the host's voices): One shot plays start..end to its end (Hold 0: the release is a tail ending
+there; Hold > 0: the release starts after attack + hold), Momentary while held, Loop round start..end while held; a
+choke group's pad stops the others of its group (a short fade); a pad again takes its own voice back.
+
+**The right half's pitches on the steps.** A kit track's note says the pad and its pitch: the pad's own note is
+`36 + pad` (pads 1..16: 36..51, the Move's drum notes) on its track's channel; a pitch `s` (1..31 semitones) is the
+track's `n`-th other note, `n = (pad % 4) * 31 + s - 1`, counted over 0..127 without the track's four own notes
+(`rfm_move_kit_note`, `rfm_move_kit_pad_of`). Recorded or step-entered, a step keeps the pitch through a save and a
+load; the sequencer's notes of a track routed to the kit come to the host as `KIT_NOTE` (pad, semitones).
+
+**Tracks 13..16.** A new project routes them to the kit (and to no firmware); an older project keeps its routing and
+gets an empty kit. A firmware Track held shows a track the kit plays in its row's colour (13 pink, 14 orange, 15 light
+blue, 16 violet); a hold there routes it to the firmware, again back to the kit.
+
+**The lights.** Each kit row its track's colour: a pad with a sound dim, bright while it sounds, the chosen one white,
+empty dark, muted grey, recorded into red. Track 4 pink; the knobs pink (3 and 8 dark); Sample dim white (its job: a
+pad held + Sample).
+
+**The host's part.** `rfm_move_fw_caps(m, ... | RFM_MOVE_CAP_KIT)`: every pad's `KIT_LOAD` and `KIT_SET`s once (and
+`rfm_move_kit_sync`).
+
+| Action | Fields | Answer |
+|---|---|---|
+| `RFM_MOVE_ACT_KIT_NOTE` (64) | `index` pad, `down` / `vel` (0: let go), `value` semitones, `track` 1..16, `frame` | (the voices) |
+| `RFM_MOVE_ACT_KIT_SET` (65) | `index` pad, `param` `RFM_MOVE_KIT_P_*`, `value` | |
+| `RFM_MOVE_ACT_KIT_LOAD` (66) | `index` pad; `data` / `len` a path, or `take` a row's id and `value` its place; neither: emptied | `rfm_move_kit_loaded(m, pad, status, name, path, frames, rate, n, peaks)` (`RFM_MOVE_KIT_OK`, `_TOO_LONG`: past 64 MB, `_FAILED`, `_MISSING`) |
+| `RFM_MOVE_ACT_KIT_ROWS` (67) | `value` place, `take` folder (0 its top), `from`, `count` | `rfm_move_kit_rows(m, place, folder, total, from, n, rows)` |
+| `RFM_MOVE_ACT_KIT_PREVIEW` (68) | `value` place, `take` row id, `down` 1 / 0 | |
+| `RFM_MOVE_ACT_KIT_REC` (69) | `index` pad, `down` 1 (`value` the sampler's mode) / 0 the pad let go | `rfm_move_smp_status` as ever, then `rfm_move_kit_loaded` with the take |
+
+The project keeps the kit (version 11, `RFM_MOVE_KIT_BYTES` at its end: the right half, the routing, the chosen pad,
+each pad's path and twelve settings); a project load sends every pad's `KIT_LOAD` (its path) and `KIT_SET`s. Tests:
+`move_kit` (dumps `kit_*.pbm` / `.leds`; the boards against `tests/move_kit_ref.h`, packed from `mock_kit_v1.c`'s).
+
 ## FX parameter pages (0.5.0)
 
 A module's own parameter pages, as Schwung's `ui_hierarchy` lays them out: each level's 8 knobs a page, its overflow
@@ -1610,6 +1683,17 @@ built per their header comments): equal but for the second tab's icon (Takes: no
 popup's threshold mark (3 px right: -24 dB on the -60..0 scale is at 60 %, the mock drew it at 57 %)
 (`sampler_*.pbm` and `.leds` in the build directory; the `.leds` have a last row: Sample, Record, Play, Loop, Mute,
 Delete, Copy, Undo, as the mock-up's).
+
+`move_kit` (stage 3a): the kit: the note encoding (every pad and pitch a note of its own, back again), the capability
+off, Track 4's round and its held pads, the pads (play, choose, Shift, the right half Pitches / In Key / Off, a track
+routed to a firmware), the steps (the chosen pad's only, a held step + pads, Delete + a step), the sequencer's notes
+of a kit track, the knobs, the rows, popups and tabs, Files (places, a folder, the preview, a load, the answers),
+Delete / Mute + a pad and Undo, a pad held + Sample, the sampler's To Kit, a held Track's hold on track 14, the project
+(version 11 round trip, four bad kits refused, a version 10 project, a new one), the settings (version 9, a version 8
+image), the layers over it, and thirteen of the mock-up's boards compared pixel for pixel (`move_kit_ref.h`): rest,
+three, pitch, mode and attack (their envelopes masked: the pad's own proportions), choke, kittab (the tabs; its Load
+and Save rows are 3b), inkey, places (Kits is 3b), files, padact (the wave; 3a's tools are Play and Delete), armed,
+recording (`kit_*.pbm` and `.leds` in the build directory).
 
 ## Later phases
 

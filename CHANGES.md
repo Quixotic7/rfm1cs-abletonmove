@@ -3,6 +3,23 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## Unreleased: the kit, stage 3a
+
+The kit (the owner's 2026-11-25 kit round, built from the design page's picks; README "The kit (stage 3a)"). New fields
+at the end of `rfm_move_t`, `rfm_move_settings_t` (version 9, 138 bytes; version 8 loads) and the project (version 11,
+`RFM_MOVE_KIT_BYTES` at its end; versions 1..10 load): rebuild everything.
+
+- **`RFM_MOVE_CAP_KIT`**: Track 4's round Mixer, Routing, Kit (held: pad 3 the Kit, pad 4 the Looper dark, pad 5 the
+  projects); the Kit view: 16 pads on tracks 13..16, the right half (Pitches, In Key, Off), the chosen pad's steps, its
+  knobs, the tabs Pad / Kit / Files, a pad held + Sample, Delete / Mute + a pad, the kit's Undo.
+- **Actions** `KIT_NOTE` (64), `KIT_SET` (65), `KIT_LOAD` (66), `KIT_ROWS` (67), `KIT_PREVIEW` (68), `KIT_REC` (69);
+  **calls** `rfm_move_kit_loaded`, `rfm_move_kit_rows`, `rfm_move_kit_sync`, `rfm_move_kit_shown`,
+  `rfm_move_kit_value`; the note encoding `rfm_move_kit_note` / `rfm_move_kit_pad_of`.
+- The sequencer's notes of a track routed to the kit come as `KIT_NOTE` too; a new project routes tracks 13..16 to the
+  kit; a held Track's hold on a kit track routes it to the firmware and back.
+- The sampler: a take's actions gain To Kit (before Delete; eight icons 15 px apart) with the capability.
+- Tests: `move_kit`; the format tests follow versions 9 and 11.
+
 ## 0.15.0 (2026-11-25)
 
 The sampler app (the owner's 2026-11-24: "pull up the sampler as an app"; README "The sampler"). New fields at the end
