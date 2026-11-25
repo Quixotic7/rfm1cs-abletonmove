@@ -1103,7 +1103,11 @@ listens, else faint (12) (it opens the app: R1). The FM-1 layout, closed and idl
 takeover with the buttons, Global settings: theirs. Back's light is on while the app shows.
 
 **The host's part.** `rfm_move_fw_caps(m, ... | RFM_MOVE_CAP_SAMPLER)`: every setting's `SMP_SET` once (also
-`rfm_move_smp_sync` after settings the host loaded itself). `rfm_move_smp_offer(m, sources, settings, tabs, dests)`:
+`rfm_move_smp_sync` after settings the host loaded itself). A host with a face of its own for the settings (its web
+page's Sampler window) changes one with `rfm_move_smp_set(m, setting, value)`, the value as `SMP_SET` sends it (Length:
+the bars): as the popup's jog, the app shows it at once, `SMP_SET` comes back and the settings are saved; 1 changed
+(draw again), 0 the same, -1 refused (no capability, not offered, out of range, a take armed or running).
+`rfm_move_smp_offer(m, sources, settings, tabs, dests)`:
 bits by `RFM_MOVE_SMP_SRC_*`, `RFM_MOVE_SMP_*` (the rows), `RFM_MOVE_SMP_TAB_*` (Record 0, Takes 1, Tools 2, Loops 3;
 only `RFM_MOVE_SMP_TABS_BUILT` show), `RFM_MOVE_SMP_TO_*`; 0 leaves one; defaults 0x3F, 0x7F, 1, 1. A value no longer
 offered moves to the first offered (`SMP_SET`). `rfm_move_smp_status(m, &st)` as often as it likes (about 30 a

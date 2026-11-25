@@ -1779,6 +1779,12 @@ int rfm_move_smp_event(rfm_move_t *m, int kind, int bars, int bpm10, int ms, con
 void rfm_move_smp_sync(rfm_move_t *m);                 /* every setting's SMP_SET again (with the capability) */
 int rfm_move_smp_shown(const rfm_move_t *m);           /* 1: the app is on the screen now */
 int rfm_move_smp_value(const rfm_move_t *m, int setting);   /* a setting's value as SMP_SET sends it */
+/* (the owner's 2026-11-25: a host's own face for the settings, its page's Sampler window) a setting changed by the host,
+ * as the app's popup changes it: value as SMP_SET sends it (Length: the bars, 0 Open). The app shows it at once, the
+ * SMP_SET comes back (the host's recorder follows it as always), the settings are saved (SETTINGS). Returns 1 changed
+ * (draw again), 0 the same value, -1 refused: no capability, a setting or a value not offered, out of range (Length:
+ * not one of its bars), a take armed or running (as the app: no settings then) */
+int rfm_move_smp_set(rfm_move_t *m, int setting, int value);
 /* (stage 2, the owner's 2026-11-24) the takes (README "The sampler: the takes"; the actions SMP_ROWS .. SMP_UNDO above).
  * Offer the Takes and Tools tabs (rfm_move_smp_offer, tabs 0x7) and answer these; a host that offers only Record sees
  * none of it. The tabs: Record, Takes (three rows, the newest on top: the source's sign, the length, the wave; the left

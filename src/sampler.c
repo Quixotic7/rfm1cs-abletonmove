@@ -275,6 +275,24 @@ int rfmv_smp_covered(const rfm_move_t *m)
 }
 static void touched(rfm_move_t *m) { S(m)->chg_ms = now(m); }
 static int running(const rfm_move_t *m) { return S(m)->st.state != RFM_MOVE_SMP_ST_IDLE; }
+/* (the owner's 2026-11-25: the page's Sampler window) a setting from the host, as the popup's jog sets it: SMP_SET
+ * back, the settings saved; value as SMP_SET sends it (Length: the bars) */
+int rfm_move_smp_set(rfm_move_t *m, int k, int value)
+{
+    int v = value;
+    defaults_offer(m);
+    if (!rfmv_smp_cap(m) || k < 0 || k >= RFM_MOVE_SMP_N || !(S(m)->sets >> k & 1) || running(m))
+        return -1;
+    if (k == RFM_MOVE_SMP_LENGTH)
+        for (v = 0; v < RFM_MOVE_SMP_LENGTHS && LEN_BARS[v] != value; v++) {}
+    if (!in_range(k, v) || ((k == RFM_MOVE_SMP_SOURCE || k == RFM_MOVE_SMP_TO) && !(offered(m, k) >> v & 1)))
+        return -1;
+    if (m->s.smp[k] == v)
+        return 0;
+    put(m, k, v);
+    touched(m);
+    return 1;
+}
 /* (stage 2) the screen over the tab: a take's actions, Trim; else the tab's own */
 static int in_takes(const rfm_move_t *m) { return S(m)->scr == SCR_TAB && S(m)->tab == RFM_MOVE_SMP_TAB_TAKES; }
 static int in_trim(const rfm_move_t *m) { return S(m)->scr == SCR_TRIM; }

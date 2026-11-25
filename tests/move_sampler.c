@@ -1744,6 +1744,48 @@ static void t2_none(void)
     CHECK(M.smp.total == 6 && M.smp.folder == DAY0);
 }
 
+/* 31. (the owner's 2026-11-25) the host's setter (its page's Sampler window): the app shows it, SMP_SET comes back, the
+ * settings saved; Length by its bars; refused: no capability, not offered, out of range, a take running */
+static void t_set(void)
+{
+    uint8_t before[MR_SCREEN_BYTES];
+    fresh_caps(RFM_MOVE_CAPS_ALL);
+    CHECK(rfm_move_smp_set(&M, RFM_MOVE_SMP_MODE, RFM_MOVE_SMP_M_MANUAL) == -1 && !smp_acts());
+    note_view();
+    sample();
+    CHECK(rfm_move_smp_shown(&M) && M.smp.row == RFM_MOVE_SMP_SOURCE);
+    rest(), screen();
+    memcpy(before, SCR, sizeof before);
+    clear();
+    CHECK(rfm_move_smp_set(&M, RFM_MOVE_SMP_SOURCE, RFM_MOVE_SMP_SRC_SLOT3) == 1);
+    CHECK(M.s.smp[RFM_MOVE_SMP_SOURCE] == RFM_MOVE_SMP_SRC_SLOT3 && count(RFM_MOVE_ACT_SMP_SET) == 1 &&
+          last(RFM_MOVE_ACT_SMP_SET)->index == RFM_MOVE_SMP_SOURCE &&
+          last(RFM_MOVE_ACT_SMP_SET)->value == RFM_MOVE_SMP_SRC_SLOT3 && count(RFM_MOVE_ACT_SETTINGS) == 1);
+    screen();
+    CHECK(memcmp(before, SCR, sizeof before) != 0);   /* (the chosen row's value and the sign: shown at once) */
+    clear();
+    CHECK(rfm_move_smp_set(&M, RFM_MOVE_SMP_SOURCE, RFM_MOVE_SMP_SRC_SLOT3) == 0 && !smp_acts());
+    CHECK(rfm_move_smp_set(&M, RFM_MOVE_SMP_LENGTH, 8) == 1 && M.s.smp[RFM_MOVE_SMP_LENGTH] == 4 &&
+          last(RFM_MOVE_ACT_SMP_SET)->value == 8 && rfm_move_smp_value(&M, RFM_MOVE_SMP_LENGTH) == 8);
+    CHECK(rfm_move_smp_set(&M, RFM_MOVE_SMP_LENGTH, 0) == 1 && M.s.smp[RFM_MOVE_SMP_LENGTH] == 0);
+    clear();
+    CHECK(rfm_move_smp_set(&M, RFM_MOVE_SMP_LENGTH, 3) == -1 && rfm_move_smp_set(&M, RFM_MOVE_SMP_THRESHOLD, -61) == -1 &&
+          rfm_move_smp_set(&M, RFM_MOVE_SMP_INPUT, 25) == -1 && rfm_move_smp_set(&M, RFM_MOVE_SMP_MODE, 4) == -1 &&
+          rfm_move_smp_set(&M, RFM_MOVE_SMP_SOURCE, RFM_MOVE_SMP_SRC_KIT) == -1 &&   /* (not offered: 0x3F) */
+          rfm_move_smp_set(&M, RFM_MOVE_SMP_N, 0) == -1 && rfm_move_smp_set(&M, -1, 0) == -1 && !smp_acts());
+    CHECK(rfm_move_smp_set(&M, RFM_MOVE_SMP_THRESHOLD, -40) == 1 && rfm_move_smp_set(&M, RFM_MOVE_SMP_INPUT, -6) == 1 &&
+          M.s.smp[RFM_MOVE_SMP_THRESHOLD] == -40 && M.s.smp[RFM_MOVE_SMP_INPUT] == -6);
+    rfm_move_smp_offer(&M, 0, 1u << RFM_MOVE_SMP_MODE, 0, 0);   /* (a setting not offered) */
+    clear();
+    CHECK(rfm_move_smp_set(&M, RFM_MOVE_SMP_THRESHOLD, -30) == -1 && !smp_acts());
+    CHECK(rfm_move_smp_set(&M, RFM_MOVE_SMP_MODE, RFM_MOVE_SMP_M_THRESHOLD) == 1);
+    status(RFM_MOVE_SMP_ST_ARMED);                      /* (a take armed: as the app, no settings) */
+    clear();
+    CHECK(rfm_move_smp_set(&M, RFM_MOVE_SMP_MODE, RFM_MOVE_SMP_M_BARS) == -1 && !smp_acts());
+    status(RFM_MOVE_SMP_ST_IDLE);
+    CHECK(rfm_move_smp_set(&M, RFM_MOVE_SMP_MODE, RFM_MOVE_SMP_M_BARS) == 1);
+}
+
 int main(void)
 {
     t_cap_off();
@@ -1776,5 +1818,6 @@ int main(void)
     t2_layers();
     t2_auto();
     t2_none();
+    t_set();
     return check_done("move_sampler");
 }

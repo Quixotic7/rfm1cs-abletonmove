@@ -8,6 +8,9 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 The sampler app (the owner's 2026-11-24: "pull up the sampler as an app"; README "The sampler"). New fields at the end
 of `rfm_move_t` and `rfm_move_settings_t`: rebuild everything.
 
+- **`rfm_move_smp_set`** (the owner's 2026-11-25: a web Sampler window on the host's page): a sampler setting changed
+  by the host, as the app's popup changes it (the app shows it, `SMP_SET` back, the settings saved); the value as
+  `SMP_SET` sends it (Length: the bars); -1 when not offered, out of range or a take runs. Test `move_sampler` 31.
 - **Down in FM-1 mode does nothing** (the owner's 2026-11-25: "Get rid of this, it's confusing and the track buttons
   work fine for switching firmwares"): no slot change, no popup, unlit; `rfmv_fw_cycle` removed. A takeover with its
   buttons free no longer loses the screen to Down. The note layouts keep Down (the octave).
