@@ -3,11 +3,19 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
-## Unreleased
+## 0.15.0 (2026-11-25)
 
 The sampler app (the owner's 2026-11-24: "pull up the sampler as an app"; README "The sampler"). New fields at the end
 of `rfm_move_t` and `rfm_move_settings_t`: rebuild everything.
 
+- **The takes after the owner's try on the Move (2026-11-25).** Trim: knobs 1 and 2 never move the jog's icon, and Trim
+  opens with the jog on Play ("I want to have jogwheel on play and adjust the trim points then be able to preview").
+  Outside the Record tab Sample plays the take chosen or edited (Trim: the part kept), again stops it; no `SMP_PRESS`
+  there. A take's actions are Play, Trim, Normalize, Reverse, Fade In, Fade Out, Delete ("the full sound editor" on
+  any take; seven icons 17 px apart). Takes is one list of every take, the newest first: `SMP_ROWS` asks the new
+  `RFM_MOVE_SMP_ALL` (answered with folder `RFM_MOVE_SMP_ALL`); the days' view and its Left / Right are gone. Back in
+  Takes and Tools goes to the tabs with the jog on them, there (and anywhere in Record) it closes the app. Test
+  `move_sampler` 23 (`t2_all`); the lines below describe stage 2 as first built.
 - **`rfm_move_smp_set`** (the owner's 2026-11-25: a web Sampler window on the host's page): a sampler setting changed
   by the host, as the app's popup changes it (the app shows it, `SMP_SET` back, the settings saved); the value as
   `SMP_SET` sends it (Length: the bars); -1 when not offered, out of range or a take runs. Test `move_sampler` 31.
