@@ -564,7 +564,7 @@ static void t_files(void)
     CHECK(count(RFM_MOVE_ACT_KIT_PREVIEW) == 1 && last(RFM_MOVE_ACT_KIT_PREVIEW)->take == 9);
     clear(), jog_click();                               /* onto the chosen pad (7) */
     CHECK((a = last(RFM_MOVE_ACT_KIT_LOAD)) && a->index == 6 && a->take == 9 && a->value == 2 && !D[last_i(RFM_MOVE_ACT_KIT_LOAD)][0]);
-    CHECK(M.kit.pad[6].st == RFM_MOVE_KIT_LOADING && !strcmp(M.kit.pad[6].name, "Hat"));
+    CHECK(M.kit.pad[6].st == RFM_MOVE_KIT_LOADING);
     for (i = 0; i < 64; i++)
         pk[i] = (uint8_t)(255 - i * 3);
     M.kit.pad[6].v[RFM_MOVE_KIT_P_START] = 500;
@@ -574,6 +574,10 @@ static void t_files(void)
           M.kit.pad[6].npk == 64 && M.kit.pad[6].v[RFM_MOVE_KIT_P_START] == 0);   /* (a new sound: its whole region) */
     CHECK(rfm_move_kit_loaded(&M, 5, RFM_MOVE_KIT_TOO_LONG, "Big", NULL, 0, 0, 0, NULL) >= 0 &&
           M.kit.pad[5].st == RFM_MOVE_KIT_TOO_LONG && !strcmp(M.kit.msg, "Too Long"));
+    M.kit.pad[6].st = RFM_MOVE_KIT_LOADING, M.kit.pad[6].fresh = 1;   /* (another sound asked for pad 7, refused: the
+                                                         * pad keeps Hat) */
+    CHECK(rfm_move_kit_loaded(&M, 6, RFM_MOVE_KIT_TOO_LONG, "Big", NULL, 0, 0, 0, NULL) >= 0 &&
+          M.kit.pad[6].st == RFM_MOVE_KIT_OK && M.kit.pad[6].frames == 9600 && strstr(M.kit.pad[6].path, "Hat.wav"));
     /* a folder: entered, its rows asked; Back: up, the places, the tabs */
     rest();
     jog(-2), clear(), jog_click();
@@ -645,12 +649,21 @@ static void t_rec(void)
     CHECK(is_rgb(w[L_SAMPLE], 255, 0, 0) && is_rgb(w[L_PAD0 + kp(6)], 255, 255, 255));
     screen();
     clear(), pad(kp(6), 0);
-    CHECK((a = last(RFM_MOVE_ACT_KIT_REC)) && a->index == 6 && a->down == 0);
+    CHECK((a = last(RFM_MOVE_ACT_KIT_REC)) && a->index == 6 && a->down == 0 && M.kit.rec_pad == 7);
     st.state = RFM_MOVE_SMP_ST_IDLE;
     rfm_move_smp_status(&M, &st);
     rfm_move_kit_loaded(&M, 6, RFM_MOVE_KIT_OK, "Take 3", "/data/UserData/UserLibrary/Samples/RemoteFM1/2026-11-25/t3.wav",
                         96000, 48000, 0, NULL);
     CHECK(!M.kit.rec_pad && !strcmp(M.kit.pad[6].name, "Take 3"));
+    /* armed (Threshold), the pad let go: dropped, the kit's screen again */
+    pad(kp(3), 100), press(MR_CC_SAMPLE);
+    st.state = RFM_MOVE_SMP_ST_ARMED;
+    rfm_move_smp_status(&M, &st);
+    CHECK(M.kit.rec_pad == 4);
+    pad(kp(3), 0);
+    CHECK(!M.kit.rec_pad);
+    st.state = RFM_MOVE_SMP_ST_IDLE;
+    rfm_move_smp_status(&M, &st);
     /* Sample alone: the sampler app as ever */
     clear(), press(MR_CC_SAMPLE);
     CHECK(M.smp.open && !count(RFM_MOVE_ACT_KIT_REC));

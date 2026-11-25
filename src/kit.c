@@ -631,7 +631,7 @@ static void sound_text(const rfm_move_t *m, int k, char *o, int cap)
 {
     const rfm_move_kit_pad_t *d = CPAD(m, k);
     switch (d->st) {
-    case RFM_MOVE_KIT_LOADING: snprintf(o, (size_t)cap, "%s", d->name[0] ? d->name : "Loading"); break;
+    case RFM_MOVE_KIT_LOADING: snprintf(o, (size_t)cap, "Loading"); break;
     case RFM_MOVE_KIT_MISSING: snprintf(o, (size_t)cap, "Missing"); break;
     case RFM_MOVE_KIT_FAILED: snprintf(o, (size_t)cap, "Failed"); break;
     case RFM_MOVE_KIT_TOO_LONG: snprintf(o, (size_t)cap, "Too Long"); break;
@@ -858,9 +858,12 @@ static void pad_up(rfm_move_t *m, int p)
             rfmv_emit_midi_t(m, t->live[p].track + 1, 0x80 | t->live[p].ch, t->live[p].note, 0);
         rfmv_seq_pad_off(m, p, t->live[p].note);
     }
-    if (t->rec_held && kit_of(p) == t->rec_pad - 1) {   /* the pad recorded into let go: the take ends */
+    if (t->rec_held && kit_of(p) == t->rec_pad - 1) {   /* the pad recorded into let go: the take ends (armed: it
+                                                         * is dropped, nothing comes for the pad) */
         t->rec_held = 0;
         act(m, RFM_MOVE_ACT_KIT_REC, t->rec_pad - 1, 0, 0, m->s.smp[RFM_MOVE_SMP_MODE], 0, 0, 0, NULL);
+        if (m->smp.st.state == RFM_MOVE_SMP_ST_ARMED)
+            t->rec_pad = 0;
     }
     t->live[p].pad = -1;
 }
@@ -994,11 +997,12 @@ int rfm_move_kit_loaded(rfm_move_t *m, int k, int status, const char *name, cons
             d->fresh = 0;
             put(m, k, RFM_MOVE_KIT_P_START, 0), put(m, k, RFM_MOVE_KIT_P_END, RFM_MOVE_KIT_FRAC);
         }
+    } else if (d->fresh && d->frames) {                 /* (a new sound refused: the pad keeps the one it had) */
+        d->fresh = 0, d->st = RFM_MOVE_KIT_OK;
+        msg(m, status == RFM_MOVE_KIT_TOO_LONG ? "Too Long" : "Not Loaded", NULL);
     } else {
         d->st = (uint8_t)(status == RFM_MOVE_KIT_TOO_LONG || status == RFM_MOVE_KIT_MISSING ? status : RFM_MOVE_KIT_FAILED);
-        d->frames = 0, d->rate = 0, d->npk = 0;
-        if (d->fresh && status != RFM_MOVE_KIT_MISSING)
-            d->fresh = 0;
+        d->frames = 0, d->rate = 0, d->npk = 0, d->fresh = 0;
         msg(m, status == RFM_MOVE_KIT_TOO_LONG ? "Too Long" : status == RFM_MOVE_KIT_MISSING ? "Missing" : "Not Loaded",
             NULL);
     }
@@ -1163,7 +1167,6 @@ static void click(rfm_move_t *m)
             char pn[8];
             preview_stop(m);
             d->st = RFM_MOVE_KIT_LOADING, d->fresh = 1;
-            snprintf(d->name, sizeof d->name, "%s", r->name);
             act(m, RFM_MOVE_ACT_KIT_LOAD, k, 0, 0, t->place, r->id, 0, 0, NULL);
             rfmv_seq_dirty(m);
             snprintf(pn, sizeof pn, "Pad %d", k + 1);
