@@ -1414,6 +1414,19 @@ static void t_merge(void)
           M.kit.pad[4].st == RFM_MOVE_KIT_LOADING && !strcmp(M.kit.msg, "Mix") && said3c("2+5"));
     sound_at(4, "/s/Kits/Edits/Mix 2+5.wav", 48000, 48000);
     CHECK(!strcmp(M.kit.pad[4].name, "Mix 2+5") && !M.kit.pad[4].cut);
+    {   /* (a path shorter than the one before it: the project's kit still valid, NUL padded) */
+        static uint8_t kb[RFM_MOVE_KIT_BYTES];
+        memset(M.kit.pad[6].path, 'x', sizeof M.kit.pad[6].path - 1);
+        sound_at(6, "/s/a.wav", 4800, 48000);
+        rfmv_kit_write(&M, kb);
+        CHECK(rfmv_kit_check(kb, 12) == 0 && !strcmp(M.kit.pad[6].path, "/s/a.wav"));
+        M.kit.pad[6].path[0] = 0;
+        memset(M.kit.pad[6].path + 1, 'y', 20);
+        rfmv_kit_write(&M, kb);
+        CHECK(rfmv_kit_check(kb, 12) == 0);
+        rfm_move_kit_loaded(&M, 6, RFM_MOVE_KIT_EMPTY, NULL, NULL, 0, 0, 0, NULL);
+        memset(M.kit.pad[6].path, 0, sizeof M.kit.pad[6].path);
+    }
     press(MR_CC_UNDO);
     CHECK(!strcmp(M.kit.pad[4].path, "/s/Snare.wav"));
     sound_at(4, "/s/Snare.wav", 48000, 48000);

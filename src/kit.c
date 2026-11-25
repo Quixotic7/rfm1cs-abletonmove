@@ -385,8 +385,9 @@ void rfmv_kit_write(const rfm_move_t *m, uint8_t *p)    /* RFM_MOVE_KIT_BYTES (v
     memcpy(p, t->name, strlen(t->name) < RFM_MOVE_KIT_NAME ? strlen(t->name) : RFM_MOVE_KIT_NAME - 1);
     p += RFM_MOVE_KIT_NAME;
     for (k = 0; k < RFM_MOVE_KIT_PADS; k++) {
-        memcpy(p, t->pad[k].path, RFM_MOVE_KIT_PATH - 1);
-        p[RFM_MOVE_KIT_PATH - 1] = 0;
+        for (i = 0; i < RFM_MOVE_KIT_PATH - 1 && t->pad[k].path[i]; i++)   /* (3c: NUL padded, whatever a longer path
+                                                         * left after the NUL in RAM) */
+            p[i] = (uint8_t)t->pad[k].path[i];
         p += RFM_MOVE_KIT_PATH;
         for (i = 0; i < RFM_MOVE_KIT_P_N; i++, p += 2)
             w16(p, t->pad[k].v[i]);
@@ -1446,6 +1447,7 @@ int rfm_move_kit_loaded(rfm_move_t *m, int k, int status, const char *name, cons
             if (strcmp(d->path, path)) {                /* (3b: a sound the host put there itself, a take: its whole;
                                                          * 3c: an edit's file keeps or mirrors the region) */
                 d->fresh = d->keep != 1 && d->keep != 2;
+                memset(d->path, 0, sizeof d->path);
                 snprintf(d->path, sizeof d->path, "%s", path), rfmv_seq_dirty(m);
                 if (d->keep != 3)
                     d->cut = 0;                         /* (a join's seam: its own file's only) */
