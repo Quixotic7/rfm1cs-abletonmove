@@ -318,6 +318,9 @@ enum {
 #define RFM_MOVE_ACT_KIT_MERGE 73
 #define RFM_MOVE_ACT_KIT_EDIT 74
 #define RFM_MOVE_ACT_KIT_SLICE 75
+/* (the owner's 2026-11-25) Global settings' last row, Exit (only with RFM_MOVE_CAP_EXIT): a click asks "Exit?", a second
+ * click sends EXIT; the host leaves (on the Move: Move Remote's QUIT, Move's own software starts again). No fields */
+#define RFM_MOVE_ACT_EXIT 76
 enum { RFM_MOVE_KIT_MG_COPY, RFM_MOVE_KIT_MG_MIX, RFM_MOVE_KIT_MG_JOIN, RFM_MOVE_KIT_MG_N };
 enum { RFM_MOVE_KIT_ED_TRIM = 1, RFM_MOVE_KIT_ED_NORMALIZE, RFM_MOVE_KIT_ED_REVERSE };
 enum { RFM_MOVE_KIT_SL_ASK, RFM_MOVE_KIT_SL_PLAY, RFM_MOVE_KIT_SL_DONE };
@@ -2075,6 +2078,9 @@ int rfm_move_smp_saved(rfm_move_t *m, const rfm_move_smp_row_t *take, int mode);
  * 11); a new project routes tracks 13..16 to the kit. Without it nothing changes (no Kit view, no KIT_* action). Every
  * call on the core's thread */
 enum { RFM_MOVE_CAP_KIT = 16 };
+/* (the owner's 2026-11-25) RFM_MOVE_CAP_EXIT (not in RFM_MOVE_CAPS_ALL): the host can leave by itself; Global settings
+ * gains an Exit row at its end (RFM_MOVE_ACT_EXIT). Without it no such row */
+enum { RFM_MOVE_CAP_EXIT = 32 };
 /* KIT_LOAD's answer (also a sound the host put there itself, a take recorded into the pad): status RFM_MOVE_KIT_OK (name
  * shown, path saved with the project, frames / rate its length, n peaks of its whole sound 0..255), _TOO_LONG (past
  * the kit's 64 MB: "Too Long"), _FAILED, _MISSING (a project's file not there: the pad keeps the path, "Missing").

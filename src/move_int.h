@@ -299,7 +299,7 @@ void rfmv_say_readout(rfm_move_t *m, int slot, int expl);   /* (0.6.7) a knob re
 void rfmv_say_turned(rfm_move_t *m);                   /* (0.6.7) an FM-1 knob turned: its readout awaited */
 int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev);   /* (0.6.2) Global settings open: it takes the input
                                                          * (1 taken; releases pass, so nothing stays held) */
-int rfmv_global_rows(void);                             /* (tests) its rows */
+int rfmv_global_rows(const rfm_move_t *m);              /* (tests) its rows (Exit last with RFM_MOVE_CAP_EXIT) */
 void rfmv_global_words(const rfm_move_t *m, char *o, int cap);   /* its row selected, in words */
 void rfmv_global_battery_words(const rfm_move_t *m, char *o, int cap);   /* (0.6.10) "battery 87%" */
 const char *rfmv_seq_smenu_name(int sm);               /* (0.6.1, seq_ui.c) a Shift menu's name, its knobs' words */

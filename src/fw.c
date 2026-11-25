@@ -743,7 +743,7 @@ void rfm_move_fw_caps(rfm_move_t *m, int caps)
     int s;
     const int smp = rfmv_smp_cap(m);
     const int kit = rfmv_kit_cap(m);
-    f->caps = (uint8_t)(caps & (RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW | RFM_MOVE_CAP_SAMPLER | RFM_MOVE_CAP_KIT));
+    f->caps = (uint8_t)(caps & (RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW | RFM_MOVE_CAP_SAMPLER | RFM_MOVE_CAP_KIT | RFM_MOVE_CAP_EXIT));
                                                         /* (0.13.0: PROJFW; 0.15.0: SAMPLER; stage 3a: KIT) */
     rfmv_smp_caps(m, smp);
     rfmv_kit_caps(m, kit);

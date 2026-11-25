@@ -571,7 +571,7 @@ static void test_external(void)
         jog(m, 9);                                      /* (the last row; (0.6.10) the battery the header: "--" until
                                                          * its first STATUS) */
         rfm_move_screen(m, NULL, out);
-        CHECK(m->battery == -1 && m->gl_row == rfmv_global_rows() - 1 && rfmv_global_rows() == 7);   /* (0.12.0: Launch;
+        CHECK(m->battery == -1 && m->gl_row == rfmv_global_rows(m) - 1 && rfmv_global_rows(m) == 7);   /* (0.12.0: Launch;
                                                          * 0.14.0: FW Play) */
         CHECK(rfm_move_set_battery(m, 63, 0) == 1 && rfm_move_set_battery(m, 63, 0) == 0);
         CHECK(rfm_move_set_battery(m, 120, 0) == 1 && m->battery == 100);   /* (clamped) */
@@ -582,6 +582,35 @@ static void test_external(void)
         CHECK(px_at(out2, 5, 8) && px_at(out2, 13, 8) && !px_at(out2, 15, 8));   /* (the fill: 9 of 14 px) */
         CHECK(!px_at(out, 5, 8) && px_at(out, 3, 8) && px_at(out, 22, 8));   /* (empty: the outline, the nub) */
         jog(m, -9);
+    }
+    {   /* (the owner's 2026-11-25) Exit, the last row, only with RFM_MOVE_CAP_EXIT: a click asks, a second leaves (one
+         * EXIT); Back or a turn while asked: not leaving */
+        const int caps = m->fw.caps;
+        int i, ex = 0;
+        uint8_t out[MR_SCREEN_BYTES];
+        rfm_move_fw_caps(m, caps | RFM_MOVE_CAP_EXIT);
+        CHECK(rfmv_global_rows(m) == 8);
+        jog(m, 9);
+        CHECK(m->gl_row == 7 && !m->gl_edit);
+        nact = 0;
+        jog_click(m);
+        CHECK(m->gl_edit);
+        rfm_move_screen(m, NULL, out);
+        write_pbm("move_seq_global_exit.pbm", out);
+        press(m, MR_CC_BACK);
+        CHECK(!m->gl_edit && m->seq.smenu == RFM_MOVE_SM_GLOBAL);
+        jog_click(m), jog(m, 1);
+        CHECK(!m->gl_edit && m->gl_row == 7);
+        for (i = 0; i < nact; i++)
+            ex += acts[i].a.kind == RFM_MOVE_ACT_EXIT;
+        CHECK(ex == 0);
+        jog_click(m), jog_click(m);
+        for (i = 0; i < nact; i++)
+            ex += acts[i].a.kind == RFM_MOVE_ACT_EXIT;
+        CHECK(ex == 1 && !m->gl_edit);
+        jog(m, -9);
+        rfm_move_fw_caps(m, caps);
+        CHECK(rfmv_global_rows(m) == 7);
     }
     m->s.vel_mode = RFM_MOVE_VEL_DYNAMIC, m->s.vel_level = 127;
     tap_step(m, 1);                                     /* (a plain step: (0.6.2) the menu's, it stays) */

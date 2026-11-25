@@ -3895,11 +3895,12 @@ static void fit2(mr_canvas_t *cv, int x, int y, const char *s, int w)   /* 2x wh
  * its value (the value inverted, the jog changes it), a click again (or Back) leaves the edit; Back closes the menu.
  * While it is open it takes the Move's controls (nothing reaches the FM-1, the firmware or the sequencer); releases
  * pass, so nothing pressed before stays held; Track buttons and Shift + step 2 (its own toggle) pass too */
-enum { GL_SPEECH, GL_CLOCK, GL_VEL, GL_LEVEL, GL_POPUP, GL_LAUNCH, GL_FWPLAY, GL_N };   /* (0.14.0: FW Play) */   /* (0.12.0: Launch, the project's launch
+enum { GL_SPEECH, GL_CLOCK, GL_VEL, GL_LEVEL, GL_POPUP, GL_LAUNCH, GL_FWPLAY, GL_EXIT, GL_N };   /* (2026-11-25: Exit, last, only
+                                                         * with RFM_MOVE_CAP_EXIT) */   /* (0.14.0: FW Play) */   /* (0.12.0: Launch, the project's launch
                                                          * quantization) */   /* (0.6.10: the battery a header, no longer a row;
                                                          * 0.6.12: Speech first, the rest scroll) */
 static const char *const GL_NAME[GL_N] = { "Speech", "Clock", "Velocity", "Fixed level", "Popup size", "Launch",
-                                            "FW Play" };
+                                            "FW Play", "Exit" };
 /* (0.12.0) the launch quantizations as a list (the menus' order) and their names */
 const char *rfmv_lq_name(int lq)
 {
@@ -3915,9 +3916,10 @@ int rfmv_lq_step(int lq, int d)                         /* the next one in the l
     return LQ_ORDER[clampi(k + d, 0, RFM_MOVE_LQ_N - 1)];
 }
 #define GL_ROWS 4                                       /* rows on screen (more scroll) */
-int rfmv_global_rows(void) { return GL_N; }
+static int gl_n(const rfm_move_t *m) { return (m->fw.caps & RFM_MOVE_CAP_EXIT) ? GL_N : GL_N - 1; }
+int rfmv_global_rows(const rfm_move_t *m) { return gl_n(m); }
 static void gl_words(const rfm_move_t *m, int r, const char *pre, char *o, int cap);
-void rfmv_global_words(const rfm_move_t *m, char *o, int cap) { gl_words(m, clampi(m->gl_row, 0, GL_N - 1), "", o, cap); }
+void rfmv_global_words(const rfm_move_t *m, char *o, int cap) { gl_words(m, clampi(m->gl_row, 0, gl_n(m) - 1), "", o, cap); }
 static void gl_value(const rfm_move_t *m, int r, char *o, int cap, int spoken)
 {
     static const char *const CK[3] = { "Auto", "Int", "Ext" }, *const CKS[3] = { "Auto", "Internal", "External" };
@@ -3929,6 +3931,7 @@ static void gl_value(const rfm_move_t *m, int r, char *o, int cap, int spoken)
     case GL_LEVEL: snprintf(o, (size_t)cap, "%d", m->s.vel_level); break;
     case GL_LAUNCH: snprintf(o, (size_t)cap, "%s", rfmv_lq_name(m->seq.launch_q)); break;
     case GL_FWPLAY: snprintf(o, (size_t)cap, "%s", m->s.fw_play ? "Both" : "Firmware"); break;
+    case GL_EXIT: snprintf(o, (size_t)cap, "%s", m->gl_edit ? "Exit?" : ""); break;   /* (a click asks, a second leaves) */
     default: snprintf(o, (size_t)cap, "%s", m->s.pop_half ? "Half" : "Full"); break;
     }
 }
@@ -3943,6 +3946,10 @@ void rfmv_global_battery_words(const rfm_move_t *m, char *o, int cap)
 static void gl_words(const rfm_move_t *m, int r, const char *pre, char *o, int cap)
 {
     char v[24];
+    if (r == GL_EXIT) {                                 /* (said: "Exit RemoteFM1", asked: "Click again to exit") */
+        snprintf(o, (size_t)cap, "%s", m->gl_edit ? "Click again to exit" : "Exit RemoteFM1");
+        return;
+    }
     gl_value(m, r, v, sizeof v, 1);
     snprintf(o, (size_t)cap, "%s%s: %s", pre, GL_NAME[r % GL_N], v);
 }
@@ -3988,12 +3995,16 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
         if (!d)
             return 1;
         if (m->gl_edit) {
+            if (m->gl_row == GL_EXIT) {                 /* (a turn while asked: not leaving) */
+                m->gl_edit = 0, rfmv_say_text(m, "Exit RemoteFM1");
+                return 1;
+            }
             gl_change(m, m->gl_row, d);
             if (m->gl_row == GL_SPEECH)
                 return 1;                               /* (its own words, said in any mode) */
             gl_words(m, m->gl_row, "", w, sizeof w);
         } else {
-            m->gl_row = (uint8_t)clampi(m->gl_row + d, 0, GL_N - 1);
+            m->gl_row = (uint8_t)clampi(m->gl_row + d, 0, gl_n(m) - 1);
             gl_words(m, m->gl_row, "", w, sizeof w);
         }
         rfmv_say_text(m, w);
@@ -4002,6 +4013,15 @@ int rfmv_global_input(rfm_move_t *m, const mr_event_t *ev)
     case MR_EV_JOG_CLICK:
         if (!ev->value)
             return 1;
+        if (m->gl_row == GL_EXIT && m->gl_edit) {       /* (the second click: the host leaves) */
+            rfm_move_act_t a;
+            m->gl_edit = 0;
+            memset(&a, 0, sizeof a);
+            a.frame = m->seq.frame, a.kind = RFM_MOVE_ACT_EXIT;
+            if (m->fn)
+                m->fn(m->ctx, &a);
+            return 1;
+        }
         if (m->gl_edit)
             m->gl_edit = 0, rfmv_say_text(m, "Done");
         else {
@@ -4056,7 +4076,7 @@ static void gl_arrow(mr_canvas_t *cv, int x, int y, int right)   /* 3 x 5, point
 }
 static void global_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
-    const int n = GL_N, sel = clampi(m->gl_row, 0, GL_N - 1);
+    const int n = gl_n(m), sel = clampi(m->gl_row, 0, n - 1);
     const int top = n <= GL_ROWS ? 0 : clampi(sel - GL_ROWS / 2, 0, n - GL_ROWS);
     char v[24];
     int i;
@@ -4076,7 +4096,12 @@ static void global_screen(const rfm_move_t *m, mr_canvas_t *cv)
         if (inv)
             v2_R(cv, 0, y, 125, 11, 1);
         v2_T(cv, 3, y + 2, GL_NAME[r], 1, !inv);
-        if (r == sel && m->gl_edit) {                   /* editing: framed; the value inverted between arrows */
+        if (r == sel && m->gl_edit && r == GL_EXIT) {   /* (asked: framed, "Exit?" inverted, no arrows: nothing to turn) */
+            const int tw = v2_tw(v, 1), x0 = 125 - (tw + 6);
+            v2_O(cv, 0, y, 125, 11, 1);
+            v2_R(cv, x0, y + 1, tw + 6, 9, 1);
+            v2_T(cv, x0 + 3, y + 2, v, 1, 0);
+        } else if (r == sel && m->gl_edit) {            /* editing: framed; the value inverted between arrows */
             const int tw = v2_tw(v, 1), w = 2 + 3 + 2 + tw + 2 + 3 + 2, x0 = 125 - w;
             v2_O(cv, 0, y, 125, 11, 1);
             v2_R(cv, x0, y + 1, w, 9, 1);
