@@ -302,6 +302,28 @@ enum {
 #define RFM_MOVE_ACT_KIT_SAVE 70
 #define RFM_MOVE_ACT_KIT_OPEN 71
 #define RFM_MOVE_ACT_KIT_FOLDER 72
+/* (stage 3c) making sounds (README "The kit (stage 3c)"); every new file is the host's, written on its file thread:
+ *  - KIT_MERGE: Copy held, a pad, then another, Mix or Join chosen: index the second pad (where the result goes), take
+ *    the first (0..15), value RFM_MOVE_KIT_MG_MIX (both regions summed, normalized not to clip) or _JOIN (the first's
+ *    region then the second's, end to end). Answer: rfm_move_kit_loaded on the second pad with the new file (its name
+ *    "Mix 2+5" / "Join 2+5"); a failure: the pad keeps its sound. (Copy itself is the core's: no action but the
+ *    second pad's KIT_LOAD and KIT_SETs)
+ *  - KIT_EDIT: a pad's own edit (the Sound row's tools): index the pad, value RFM_MOVE_KIT_ED_TRIM (the file cut to
+ *    its region), _NORMALIZE, _REVERSE; the result a new file (the pad's own copy, the source untouched). Answer:
+ *    rfm_move_kit_loaded with that file
+ *  - KIT_SLICE: param RFM_MOVE_KIT_SL_ASK: take a take's id, value the method (RFM_MOVE_KIT_SM_*), from a step's
+ *    microseconds (Steps) at the tempo: its cuts. Answer: rfm_move_kit_slices. RFM_MOVE_KIT_SL_PLAY: the asked take's
+ *    frames [from, from + count) heard once on the preview path (never recorded); RFM_MOVE_KIT_SL_DONE: the slicing
+ *    left (the host may forget the take) */
+#define RFM_MOVE_ACT_KIT_MERGE 73
+#define RFM_MOVE_ACT_KIT_EDIT 74
+#define RFM_MOVE_ACT_KIT_SLICE 75
+enum { RFM_MOVE_KIT_MG_COPY, RFM_MOVE_KIT_MG_MIX, RFM_MOVE_KIT_MG_JOIN, RFM_MOVE_KIT_MG_N };
+enum { RFM_MOVE_KIT_ED_TRIM = 1, RFM_MOVE_KIT_ED_NORMALIZE, RFM_MOVE_KIT_ED_REVERSE };
+enum { RFM_MOVE_KIT_SL_ASK, RFM_MOVE_KIT_SL_PLAY, RFM_MOVE_KIT_SL_DONE };
+enum { RFM_MOVE_KIT_SM_HITS, RFM_MOVE_KIT_SM_EQ16, RFM_MOVE_KIT_SM_EQ8, RFM_MOVE_KIT_SM_EQ4, RFM_MOVE_KIT_SM_STEPS,
+       RFM_MOVE_KIT_SM_N };
+#define RFM_MOVE_KIT_SLICES 16                          /* slices a take gives at most */
 enum { RFM_MOVE_SMP_OP_DELETE = 1, RFM_MOVE_SMP_OP_TRIM, RFM_MOVE_SMP_OP_NORMALIZE, RFM_MOVE_SMP_OP_REVERSE,
        RFM_MOVE_SMP_OP_FADE_IN, RFM_MOVE_SMP_OP_FADE_OUT, RFM_MOVE_SMP_OP_UNDO };   /* SMP_EDIT's index; _UNDO: answers */
 enum { RFM_MOVE_EP_SET = 1, RFM_MOVE_EP_LOCK = 2, RFM_MOVE_EP_FREE = 3, RFM_MOVE_EP_FREE_ALL = 4 };   /* (EP's op; only
@@ -1297,6 +1319,10 @@ typedef struct {                                        /* a pad */
     uint8_t st;                                         /* RFM_MOVE_KIT_OK .. _EMPTY */
     uint8_t fresh;                                      /* a new sound asked for: its region whole once it comes */
     uint8_t npk, pk[RFM_MOVE_KIT_PEAKS];                /* its wave */
+    /* (stage 3c, RAM) */
+    uint8_t keep;                                       /* a new file asked for: 0 its region whole, 1 kept (normalize,
+                                                         * a slice), 2 mirrored (reverse), 3 whole with the join's seam */
+    uint16_t cut;                                       /* a join's seam (of RFM_MOVE_KIT_FRAC; 0 none): drawn */
 } rfm_move_kit_pad_t;
 typedef struct {                                        /* a row of Files (rfm_move_kit_rows) */
     uint32_t id;                                        /* the host's, never 0 (a take: its take id) */
@@ -1372,6 +1398,17 @@ typedef struct {                                        /* (kit.c) */
     rfm_move_kit_pad_t undk_pad[RFM_MOVE_KIT_PADS];
     uint16_t undk_un, undk_utop;
     uint8_t saving;                                     /* KIT_SAVE sent, its answer not come */
+    /* (stage 3c) */
+    uint8_t mg_a, mg_b, mg_i;                           /* Copy held + a pad (+ 1), then another (+ 1); Copy / Mix / Join */
+    uint32_t mg_ms;                                     /* .. the first's blink from */
+    uint8_t pend_i;                                     /* a take waiting: To Pad 0, Slice 1 */
+    uint8_t pend_src;                                   /* .. its source (RFM_MOVE_SMP_SRC_*): the slices' colour */
+    uint8_t sl_on, sl_ok;                               /* the slice screen; its cuts come (1), failed (2) */
+    uint8_t sl_meth, sl_first, sl_cur, sl_n, sl_npk;    /* the method, the first pad, the chosen slice, slices, peaks */
+    uint32_t sl_take, sl_frames, sl_rate;
+    uint32_t sl_cut[RFM_MOVE_KIT_SLICES + 1];           /* slice i: [sl_cut[i], sl_cut[i + 1]) frames */
+    uint8_t sl_pk[RFM_MOVE_KIT_PEAKS];
+    char sl_path[RFM_MOVE_KIT_PATH];                    /* the take's file (the pads' sound) */
 } rfm_move_kit_t;
 
 /* ---- the state */
@@ -2068,6 +2105,16 @@ int rfm_move_kit_apply(rfm_move_t *m, const char *name, int layout, const uint8_
 /* (the sampler's To Kit) the next empty pad 0..15 (-1 none): the take that comes goes there. claim 1: the pad is marked
  * loading (the next call gives the next one) until the host's rfm_move_kit_loaded for it */
 int rfm_move_kit_next_empty(rfm_move_t *m, int claim);
+/* (stage 3c) KIT_SLICE's answer for take: its file (the pads' sound), frames and rate, n slices (0: failed, "Not
+ * Sliced") as n + 1 cuts in frames (slice i [cuts[i], cuts[i + 1])), npk peaks of the whole take. Returns 1 when shown */
+int rfm_move_kit_slices(rfm_move_t *m, uint32_t take, const char *path, uint32_t frames, uint32_t rate, int n,
+                        const uint32_t *cuts, int npk, const uint8_t *peaks);
+/* (stage 3c, the page's Kit tab) a pad played (vel 1..127) or let go (0), as a pad press (its KIT_NOTE, its glow);
+ * chosen (the Kit view's chosen pad; its track selected while the view shows); a setting set (RFM_MOVE_KIT_P_*, as
+ * the knobs clamp it: its KIT_SET, the project edited). 1 done */
+int rfm_move_kit_play(rfm_move_t *m, int pad, int vel);
+int rfm_move_kit_choose(rfm_move_t *m, int pad);
+int rfm_move_kit_set(rfm_move_t *m, int pad, int param, int value);
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */

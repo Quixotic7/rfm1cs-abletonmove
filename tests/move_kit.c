@@ -8,7 +8,8 @@
  * + Sample (the take into the pad, its screens), the sampler's To Kit, the sequencer's tracks routed to the kit (and to
  * a firmware and back), the project (version 11: saved, loaded, refused when bad; a version 10 one keeps its routing;
  * a new one routes 13..16 to the kit), the settings (version 9), the layers over it (the sampler, a Shift menu, Loop,
- * a held Track), and the screens against the mock-up's boards (move_kit_ref.h). Writes kit_*.pbm / .leds. */
+ * a held Track), and the screens against the mock-up's boards (move_kit_ref.h); (stage 3b) 18..24; (stage 3c) 25..29: a
+ * pad's own edits, mix and join, a take sliced, the page's calls, boards N, O, P and V whole. Writes kit_*.pbm / .leds. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,10 +61,11 @@ static int last_i(int kind)
     return -1;
 }
 static const rfm_move_act_t *last(int kind) { const int i = last_i(kind); return i >= 0 ? &A[i] : NULL; }
+#define TL_PLAY_T 0                                     /* (the Sound row's tools: Play first) */
 static int kit_acts(void)
 {
     int k, n = 0;
-    for (k = RFM_MOVE_ACT_KIT_NOTE; k <= RFM_MOVE_ACT_KIT_REC; k++)
+    for (k = RFM_MOVE_ACT_KIT_NOTE; k <= RFM_MOVE_ACT_KIT_SLICE; k++)
         n += count(k);
     return n;
 }
@@ -537,7 +539,7 @@ static void t_rows(void)
     CHECK(M.kit.tools && M.kit.ti == 0);
     clear(), jog_click();
     CHECK(last(RFM_MOVE_ACT_KIT_NOTE) && last(RFM_MOVE_ACT_KIT_NOTE)->down);
-    jog(1), clear(), jog_click();
+    jog(4), clear(), jog_click();                       /* (3c: Play, Trim, Normalize, Reverse, Delete) */
     CHECK(!M.kit.tools && !M.kit.pad[0].path[0] && last(RFM_MOVE_ACT_KIT_LOAD) && !last(RFM_MOVE_ACT_KIT_LOAD)->take);
     clear(), press(MR_CC_UNDO);                         /* (the pad back) */
     CHECK(M.kit.pad[0].path[0] && last_i(RFM_MOVE_ACT_KIT_LOAD) >= 0 && strstr(D[last_i(RFM_MOVE_ACT_KIT_LOAD)], "Kick.wav"));
@@ -1297,6 +1299,266 @@ static void t_project12(void)
           M2.kit.mix[0] == 100 && M2.kit.mix[1] == 64 && M2.kit.route == 0xD000 && strstr(M2.kit.pad[3].path, "Rim"));
 }
 
+
+/* ================================================================ (stage 3c) === */
+static int said3c(const char *w)                        /* the kit's message now (its two rows) */
+{
+    return strstr(M.kit.msg, w) || strstr(M.kit.msg2, w) || (strstr(w, "+") && strstr(M.kit.msg2, w));
+}
+static int slice_n(void)                                /* the slices that fit from the first pad */
+{
+    const int room = RFM_MOVE_KIT_PADS - M.kit.sl_first;
+    return M.kit.sl_n < room ? M.kit.sl_n : room;
+}
+/* a sound with a path of its own on pad k (the host's answer to its load) */
+static void sound_at(int k, const char *path, uint32_t frames, uint32_t rate)
+{
+    const char *b = strrchr(path, '/');
+    char nm[32];
+    snprintf(nm, sizeof nm, "%s", b ? b + 1 : path);
+    if (strrchr(nm, '.'))
+        *strrchr(nm, '.') = 0;
+    rfm_move_kit_loaded(&M, k, RFM_MOVE_KIT_OK, nm, path, frames, rate, 0, NULL);
+}
+/* 25. a pad's own edits (board V): the Sound row's tools Play, Trim, Normalize, Reverse, Delete; an edit asks the host
+ * for a new file (KIT_EDIT), its answer the pad's own copy (Trim: the region whole; Normalize: kept; Reverse:
+ * mirrored); Undo brings the pad back as it was; a refused one keeps the sound; the knobs and the right half dark */
+static void t_tools3c(void)
+{
+    const rfm_move_act_t *a;
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    kit_view();
+    sound_at(0, "/s/Kick.wav", 48000, 48000);
+    M.kit.pad[0].v[RFM_MOVE_KIT_P_START] = 1000, M.kit.pad[0].v[RFM_MOVE_KIT_P_END] = 9000;
+    M.kit.pad[0].v[RFM_MOVE_KIT_P_PITCH] = 200;
+    jog_click();                                        /* (the Sound row's click: the tools) */
+    CHECK(M.kit.tools && M.kit.ti == TL_PLAY_T);
+    leds(w);
+    CHECK(!lit(w[L_RING0]) && !lit(w[L_PAD0 + rp(0)]));
+    clear(), knob(0, 3);
+    CHECK(M.kit.pad[0].v[RFM_MOVE_KIT_P_PITCH] == 200 && !count(RFM_MOVE_ACT_KIT_SET));   /* (dead) */
+    hit(rp(0));
+    CHECK(!count(RFM_MOVE_ACT_KIT_NOTE));               /* (the right half dead) */
+    /* Trim: a new file, the region whole */
+    jog(1), clear(), jog_click();
+    CHECK(!M.kit.tools && (a = last(RFM_MOVE_ACT_KIT_EDIT)) && a->index == 0 && a->value == RFM_MOVE_KIT_ED_TRIM);
+    CHECK(M.kit.pad[0].st == RFM_MOVE_KIT_LOADING && said3c("Trimmed"));
+    sound_at(0, "/s/Kits/Edits/Kick trim.wav", 8000, 48000);
+    CHECK(!strcmp(M.kit.pad[0].path, "/s/Kits/Edits/Kick trim.wav") && M.kit.pad[0].v[RFM_MOVE_KIT_P_START] == 0 &&
+          M.kit.pad[0].v[RFM_MOVE_KIT_P_END] == RFM_MOVE_KIT_FRAC && M.kit.pad[0].v[RFM_MOVE_KIT_P_PITCH] == 200);
+    clear(), press(MR_CC_UNDO);                         /* (the pad back: its file, its region) */
+    CHECK(!strcmp(M.kit.pad[0].path, "/s/Kick.wav") && M.kit.pad[0].v[RFM_MOVE_KIT_P_START] == 1000 &&
+          M.kit.pad[0].v[RFM_MOVE_KIT_P_END] == 9000 && last_i(RFM_MOVE_ACT_KIT_LOAD) >= 0 &&
+          !strcmp(D[last_i(RFM_MOVE_ACT_KIT_LOAD)], "/s/Kick.wav"));
+    sound_at(0, "/s/Kick.wav", 48000, 48000);
+    CHECK(M.kit.pad[0].v[RFM_MOVE_KIT_P_START] == 1000);
+    /* Normalize: the region kept */
+    rest(), jog_click(), jog(2), clear(), jog_click();
+    CHECK((a = last(RFM_MOVE_ACT_KIT_EDIT)) && a->value == RFM_MOVE_KIT_ED_NORMALIZE);
+    sound_at(0, "/s/Kits/Edits/Kick norm.wav", 48000, 48000);
+    CHECK(M.kit.pad[0].v[RFM_MOVE_KIT_P_START] == 1000 && M.kit.pad[0].v[RFM_MOVE_KIT_P_END] == 9000 &&
+          !strcmp(M.kit.pad[0].path, "/s/Kits/Edits/Kick norm.wav"));
+    /* Reverse: the region mirrored */
+    rest(), jog_click(), jog(3), clear(), jog_click();
+    CHECK((a = last(RFM_MOVE_ACT_KIT_EDIT)) && a->value == RFM_MOVE_KIT_ED_REVERSE);
+    sound_at(0, "/s/Kits/Edits/Kick norm rev.wav", 48000, 48000);
+    CHECK(M.kit.pad[0].v[RFM_MOVE_KIT_P_START] == RFM_MOVE_KIT_FRAC - 9000 &&
+          M.kit.pad[0].v[RFM_MOVE_KIT_P_END] == RFM_MOVE_KIT_FRAC - 1000);
+    /* a refused one: the pad keeps its sound */
+    rest(), jog_click(), jog(2), jog_click();
+    rfm_move_kit_loaded(&M, 0, RFM_MOVE_KIT_FAILED, NULL, NULL, 0, 0, 0, NULL);
+    CHECK(M.kit.pad[0].st == RFM_MOVE_KIT_OK && M.kit.pad[0].frames == 48000 &&
+          !strcmp(M.kit.pad[0].path, "/s/Kits/Edits/Kick norm rev.wav") && said3c("Not Loaded"));
+    /* an empty pad: nothing asked */
+    rest(), button(MR_CC_SHIFT, 1), hit(kp(3)), button(MR_CC_SHIFT, 0);
+    jog_click(), jog(1), clear(), jog_click();
+    CHECK(!count(RFM_MOVE_ACT_KIT_EDIT));
+}
+/* 26. mix and join (board N): Copy held, a pad, then another: Copy / Mix / Join, the jog chooses, the click does it
+ * (Copy: the first's sound and settings onto the second; Mix, Join: KIT_MERGE, the host's new file on the second pad,
+ * a join's seam); Undo brings the pad back; Copy let go before a choice, or Back: nothing done */
+static void t_merge(void)
+{
+    const rfm_move_act_t *a;
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    kit_view();
+    sound_at(1, "/s/Hat.wav", 24000, 48000);
+    sound_at(4, "/s/Snare.wav", 48000, 48000);
+    M.kit.pad[1].v[RFM_MOVE_KIT_P_PITCH] = 500, M.kit.pad[1].v[RFM_MOVE_KIT_P_END] = RFM_MOVE_KIT_FRAC / 2;
+    /* Copy let go before a choice: nothing */
+    clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4));
+    CHECK(M.kit.mg_a == 2 && M.kit.mg_b == 5 && !count(RFM_MOVE_ACT_KIT_NOTE) && rfmv_kit_back_has(&M));
+    leds(w);
+    CHECK(is_rgb(w[L_PAD0 + kp(4)], 255, 255, 255) && !lit(w[L_RING0]) && !lit(w[L_PAD0 + rp(0)]));
+    button(MR_CC_COPY, 0), adv_ms(20);
+    CHECK(!M.kit.mg_a && !count(RFM_MOVE_ACT_KIT_MERGE) && !count(RFM_MOVE_ACT_KIT_LOAD) &&
+          !strcmp(M.kit.pad[4].path, "/s/Snare.wav"));
+    /* Back: closed, nothing */
+    button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4)), back();
+    CHECK(!M.kit.mg_a && !count(RFM_MOVE_ACT_KIT_MERGE));
+    button(MR_CC_COPY, 0);
+    /* Copy: pad 2's sound and settings onto pad 5 */
+    rest(), clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4)), jog_click(), button(MR_CC_COPY, 0);
+    CHECK(!strcmp(M.kit.pad[4].path, "/s/Hat.wav") && M.kit.pad[4].v[RFM_MOVE_KIT_P_PITCH] == 500 &&
+          M.kit.pad[4].v[RFM_MOVE_KIT_P_END] == RFM_MOVE_KIT_FRAC / 2 && last_i(RFM_MOVE_ACT_KIT_LOAD) >= 0 &&
+          last(RFM_MOVE_ACT_KIT_LOAD)->index == 4 && !strcmp(D[last_i(RFM_MOVE_ACT_KIT_LOAD)], "/s/Hat.wav") &&
+          !count(RFM_MOVE_ACT_KIT_MERGE) && M.kit.cur == 4);
+    sound_at(4, "/s/Hat.wav", 24000, 48000);
+    CHECK(M.kit.pad[4].v[RFM_MOVE_KIT_P_END] == RFM_MOVE_KIT_FRAC / 2);   /* (its region kept) */
+    clear(), press(MR_CC_UNDO);
+    CHECK(!strcmp(M.kit.pad[4].path, "/s/Snare.wav") && M.kit.pad[4].v[RFM_MOVE_KIT_P_PITCH] == 0);
+    sound_at(4, "/s/Snare.wav", 48000, 48000);
+    /* Mix: KIT_MERGE (pad 5 the result's, pad 2 the first) */
+    rest(), clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4)), jog(1), jog_click(), button(MR_CC_COPY, 0);
+    CHECK((a = last(RFM_MOVE_ACT_KIT_MERGE)) && a->index == 4 && a->take == 1 && a->value == RFM_MOVE_KIT_MG_MIX &&
+          M.kit.pad[4].st == RFM_MOVE_KIT_LOADING && !strcmp(M.kit.msg, "Mix") && said3c("2+5"));
+    sound_at(4, "/s/Kits/Edits/Mix 2+5.wav", 48000, 48000);
+    CHECK(!strcmp(M.kit.pad[4].name, "Mix 2+5") && !M.kit.pad[4].cut);
+    press(MR_CC_UNDO);
+    CHECK(!strcmp(M.kit.pad[4].path, "/s/Snare.wav"));
+    sound_at(4, "/s/Snare.wav", 48000, 48000);
+    /* Join: the seam where the first's region ends (12000 of 60000 frames) */
+    rest(), clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4)), jog(2), jog_click(), button(MR_CC_COPY, 0);
+    CHECK((a = last(RFM_MOVE_ACT_KIT_MERGE)) && a->value == RFM_MOVE_KIT_MG_JOIN);
+    sound_at(4, "/s/Kits/Edits/Join 2+5.wav", 60000, 48000);
+    CHECK(M.kit.pad[4].cut > 6550 && M.kit.pad[4].cut < 6560 && M.kit.pad[4].v[RFM_MOVE_KIT_P_END] == RFM_MOVE_KIT_FRAC);
+    /* Mix onto an empty pad: nothing asked ("Empty") */
+    rest(), clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(9)), jog(1), jog_click(), button(MR_CC_COPY, 0);
+    CHECK(!count(RFM_MOVE_ACT_KIT_MERGE) && said3c("Empty") && !M.kit.pad[9].path[0]);
+}
+/* 27. a take sliced (board P): To Kit, then Slice: KIT_SLICE asks its cuts (Hits), the pads play the slices and
+ * choose one, the jog the method (asked again), knobs 1 and 2 its cut, Shift + a pad the first pad; the click puts
+ * them onto the pads (one file, a region each); Undo brings the kit back; Back leaves (DONE) */
+static void t_slice(void)
+{
+    static const uint32_t CUT[5] = { 0, 12000, 24000, 30000, 48000 };
+    const rfm_move_act_t *a;
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    int k, n;
+    kit_view();
+    M.seq.bpm10 = 1200;
+    sound_at(5, "/s/Old.wav", 4800, 48000);
+    rfmv_kit_to(&M, 42), rest();
+    CHECK(M.kit.pend_take == 42 && M.kit.pend_i == 0);
+    jog(1), clear(), jog_click();
+    CHECK(M.kit.sl_on && !M.kit.pend_take && (a = last(RFM_MOVE_ACT_KIT_SLICE)) && a->param == RFM_MOVE_KIT_SL_ASK &&
+          a->take == 42 && a->value == RFM_MOVE_KIT_SM_HITS);
+    CHECK(rfm_move_kit_slices(&M, 41, "/t/x.wav", 48000, 48000, 4, CUT, 0, NULL) == 0);   /* (another take's) */
+    rfm_move_kit_slices(&M, 42, "/t/1125-1200 Master 1b.wav", 48000, 48000, 4, CUT, 0, NULL);
+    CHECK(M.kit.sl_ok == 1 && M.kit.sl_n == 4);
+    leds(w);
+    CHECK(lit(w[L_PAD0 + kp(3)]) && !lit(w[L_PAD0 + kp(4)]) && is_rgb(w[L_PAD0 + kp(0)], 255, 255, 255) &&
+          lit(w[L_RING0]) && lit(w[L_RING0 + 1]) && !lit(w[L_RING0 + 2]));
+    clear(), hit(kp(2));                                /* (slice 3 heard and chosen) */
+    CHECK(M.kit.sl_cur == 2 && (a = last(RFM_MOVE_ACT_KIT_SLICE)) && a->param == RFM_MOVE_KIT_SL_PLAY && a->from == 24000 &&
+          a->count == 6000 && !count(RFM_MOVE_ACT_KIT_NOTE));
+    knob(0, 2);                                         /* (its cut: two columns, 375 frames each) */
+    CHECK(M.kit.sl_cut[2] == 24750);
+    knob(1, -10);                                       /* (fine: 10 ms) */
+    CHECK(M.kit.sl_cut[2] == 24270);
+    knob(0, -60), knob(0, -60);                         /* (never past the cut before: 10 ms short of it) */
+    CHECK(M.kit.sl_cut[2] == 12480);
+    clear(), jog(1);                                    /* (Equal 16: asked again) */
+    CHECK(M.kit.sl_meth == RFM_MOVE_KIT_SM_EQ16 && (a = last(RFM_MOVE_ACT_KIT_SLICE)) && a->param == RFM_MOVE_KIT_SL_ASK &&
+          a->value == RFM_MOVE_KIT_SM_EQ16);
+    clear(), jog(3), jog(1);                            /* (Steps: a step's microseconds at the tempo; past it nothing) */
+    CHECKF((a = last(RFM_MOVE_ACT_KIT_SLICE)) && a->value == RFM_MOVE_KIT_SM_STEPS && a->from == 125000, "steps: %u",
+           a ? (unsigned)a->from : 0u);
+    rfm_move_kit_slices(&M, 42, "/t/1125-1200 Master 1b.wav", 48000, 48000, 4, CUT, 0, NULL);
+    button(MR_CC_SHIFT, 1), hit(kp(13)), button(MR_CC_SHIFT, 0);   /* (the first pad: 14; three fit) */
+    CHECK(M.kit.sl_first == 13 && slice_n() == 3);
+    clear(), jog_click();
+    CHECK(!M.kit.sl_on && count(RFM_MOVE_ACT_KIT_LOAD) == 3 && said3c("Pads 14-16") && M.kit.cur == 13);
+    for (k = 13, n = 0; k < 16; k++, n++) {
+        CHECK(!strcmp(M.kit.pad[k].path, "/t/1125-1200 Master 1b.wav"));
+        CHECK(M.kit.pad[k].v[RFM_MOVE_KIT_P_START] == (int)((uint64_t)CUT[n] * RFM_MOVE_KIT_FRAC / 48000) &&
+              M.kit.pad[k].v[RFM_MOVE_KIT_P_END] == (int)((uint64_t)CUT[n + 1] * RFM_MOVE_KIT_FRAC / 48000));
+        sound_at(k, "/t/1125-1200 Master 1b.wav", 48000, 48000);
+    }
+    CHECK(M.kit.pad[14].v[RFM_MOVE_KIT_P_START] == 8191);   /* (the answer keeps the region) */
+    press(MR_CC_UNDO);                                  /* (the kit back) */
+    CHECK(!M.kit.pad[13].path[0] && !strcmp(M.kit.pad[5].path, "/s/Old.wav"));
+    /* Back leaves (DONE); To Pad: onto the chosen pad */
+    rfmv_kit_to(&M, 43), jog(1), jog_click(), clear(), back();
+    CHECK(!M.kit.sl_on && (a = last(RFM_MOVE_ACT_KIT_SLICE)) && a->param == RFM_MOVE_KIT_SL_DONE);
+    rfmv_kit_to(&M, 44), clear(), jog_click();
+    CHECK((a = last(RFM_MOVE_ACT_KIT_LOAD)) && a->take == 44 && a->index == M.kit.cur && !M.kit.pend_take);
+    /* a failed answer: "Not Sliced" */
+    rfmv_kit_to(&M, 45), jog(1), jog_click();
+    rfm_move_kit_slices(&M, 45, "/t/y.wav", 0, 48000, 0, CUT, 0, NULL);
+    CHECK(M.kit.sl_ok == 2 && said3c("Not Sliced"));
+    back();
+}
+/* 28. the page's Kit tab: a pad played, chosen, a setting set (clamped as the knobs) */
+static void t_page3c(void)
+{
+    const rfm_move_act_t *a;
+    kit_view();
+    sound_at(2, "/s/Clap.wav", 4800, 48000);
+    clear();
+    CHECK(rfm_move_kit_play(&M, 2, 90) && (a = last(RFM_MOVE_ACT_KIT_NOTE)) && a->index == 2 && a->vel == 90 && a->down);
+    CHECK(!rfm_move_kit_play(&M, 3, 90) && rfm_move_kit_play(&M, 2, 0) && !last(RFM_MOVE_ACT_KIT_NOTE)->down);
+    CHECK(rfm_move_kit_choose(&M, 6) && M.kit.cur == 6 && M.seq.sel_track == 13);
+    clear();
+    CHECK(rfm_move_kit_set(&M, 2, RFM_MOVE_KIT_P_PITCH, 9999) && M.kit.pad[2].v[RFM_MOVE_KIT_P_PITCH] == 2400 &&
+          (a = last(RFM_MOVE_ACT_KIT_SET)) && a->index == 2 && a->param == RFM_MOVE_KIT_P_PITCH && a->value == 2400);
+    CHECK(rfm_move_kit_set(&M, 2, RFM_MOVE_KIT_P_ATTACK, 18) && M.kit.pad[2].v[RFM_MOVE_KIT_P_ATTACK] == 20);
+    CHECK(rfm_move_kit_set(&M, 2, RFM_MOVE_KIT_P_START, 40000) &&
+          M.kit.pad[2].v[RFM_MOVE_KIT_P_START] == RFM_MOVE_KIT_FRAC - 16);
+    CHECK(!rfm_move_kit_set(&M, 2, RFM_MOVE_KIT_P_N, 1) && !rfm_move_kit_set(&M, 16, 0, 1));
+}
+/* 29. the boards N (merge), O (joined), P (slice) and V (padact, whole) */
+static void t_mock3c(void)
+{
+    static const int CUT[17] = { 0, 9, 16, 24, 31, 40, 48, 55, 63, 72, 80, 87, 95, 104, 111, 119, 127 };
+    static const box_t COL62 = { 62, 28, 1, 1 };
+    uint8_t pk[64], p2[64];
+    uint32_t cuts[17];
+    int out, n, i;
+    kit_view();
+    M.seq.bpm10 = 1200;
+    /* N: Copy held, pad 2 then pad 5, Join chosen */
+    rfm_move_kit_loaded(&M, 1, RFM_MOVE_KIT_OK, "Hat", "/s/Hat.wav", 127, 48000, 0, NULL);
+    rfm_move_kit_loaded(&M, 4, RFM_MOVE_KIT_OK, "Snare", "/s/Snare.wav", 129, 48000, 0, NULL);
+    button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4)), jog(2);
+    out = vs_ref("merge", NULL, 0);
+    CHECKF(out == 0, "merge: %d differ", out);
+    dump("merge");
+    /* O: the join on pad 5, its seam; the Pad tab at rest */
+    jog_click(), button(MR_CC_COPY, 0);
+    n = mock_peaks(62, 11, 12u, 1, pk);
+    pk[n++] = 0;
+    n += mock_peaks(64, 11, 55u, 1, pk + n);
+    rfm_move_kit_loaded(&M, 4, RFM_MOVE_KIT_OK, "Join 2+5", "/s/Kits/Edits/Join 2+5.wav", 48000, 48000, n, pk);
+    rest();
+    out = vs_ref("joined", &COL62, 1);
+    CHECKF(out == 0, "joined: %d differ", out);
+    dump("joined");
+    /* V: the Sound row's tools, Trim chosen (the whole board) */
+    n = mock_peaks(128, 10, 55u, 1, p2);
+    rfm_move_kit_loaded(&M, 4, RFM_MOVE_KIT_OK, "Snare Rim", "/s/Snare Rim.wav", 28541, 48000, n, p2);
+    jog_click(), jog(1), rest();
+    CHECK(M.kit.tools && M.kit.ti == 1);
+    out = vs_ref("padact", NULL, 0);
+    CHECKF(out == 0, "padact: %d differ", out);
+    dump("padact");
+    back();
+    /* P: 16 slices by the hits, slice 6 chosen, onto pads 1-16 */
+    button(MR_CC_SHIFT, 1), hit(kp(0)), button(MR_CC_SHIFT, 0);
+    rfmv_kit_to(&M, 77), jog(1), jog_click();
+    for (i = 0; i < 17; i++)
+        cuts[i] = (uint32_t)CUT[i] * 100u;
+    cuts[16] = 12800;
+    n = mock_peaks(128, 12, 77u, 0, pk);
+    rfm_move_kit_slices(&M, 77, "/t/take.wav", 12800, 48000, 16, cuts, n, pk);
+    hit(kp(5)), rest();
+    out = vs_ref("slice", NULL, 0);
+    CHECKF(out == 0, "slice: %d differ", out);
+    dump("slice");
+    back();
+    printf("mock boards (3c): merge, joined, padact, slice\n");
+}
+
 int main(void)
 {
     t_encoding();
@@ -1324,5 +1586,10 @@ int main(void)
     t_smp_kit();
     t_project12();
     printf("mock boards (3b): stretch, send, folder, saved, sampler\n");
+    t_tools3c();
+    t_merge();
+    t_slice();
+    t_page3c();
+    t_mock3c();
     return check_done("move_kit");
 }
