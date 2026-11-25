@@ -280,7 +280,6 @@ int rfmv_fw_switch(rfm_move_t *m, int slot);           /* (0.4.3) Back held + Tr
 void rfmv_fw_slot_name(const rfm_move_t *m, int slot, char *o, int cap);
 void rfmv_latch_drop_all(rfm_move_t *m);               /* (0.5.3) every latched note let go */
 void rfmv_fw_view_pop(rfm_move_t *m);                 /* (0.5.2) the view named: Back's flip in, Menu */
-int rfmv_fw_cycle(rfm_move_t *m);                       /* (0.4.4) Down in FM-1 mode: the next loaded slot; 1 done */
 int rfmv_fw_loaded(const rfm_move_t *m);                /* loaded slots (0 with no host list) */
 int rfmv_seq_layer_open(const rfm_move_t *m);          /* (0.4.3) a layer Back closes is open (any mode) */
 /* (tests, 0.4.2) the filter popup's words for a step (0: none): its name, its state, what the list shows (lines) */

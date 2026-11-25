@@ -8,6 +8,9 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 The sampler app (the owner's 2026-11-24: "pull up the sampler as an app"; README "The sampler"). New fields at the end
 of `rfm_move_t` and `rfm_move_settings_t`: rebuild everything.
 
+- **Down in FM-1 mode does nothing** (the owner's 2026-11-25: "Get rid of this, it's confusing and the track buttons
+  work fine for switching firmwares"): no slot change, no popup, unlit; `rfmv_fw_cycle` removed. A takeover with its
+  buttons free no longer loses the screen to Down. The note layouts keep Down (the octave).
 - `RFM_MOVE_CAP_SAMPLER` (8, not in `RFM_MOVE_CAPS_ALL`): Sample is the host recorder's app, the audio loop off.
   Without it nothing changes. The app takes the screen, the jog and Back (and Sample, its record key); pads, steps,
   knobs and arrows stay the layer's under it. Sample opens it (the FM-1 layout: SEL while it is closed and no take

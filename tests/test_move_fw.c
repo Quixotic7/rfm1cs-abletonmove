@@ -1733,38 +1733,28 @@ static void test_back(void)
     CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_SEQ && m->pop == POP_LAYOUT && m->pop_i == 1);
 }
 
-/* (0.4.4) Down in FM-1 mode: the next loaded firmware (1 -> 2 -> 3 -> 1, empty slots skipped), its popup; lit with
- * another to go to. The MIDI modes and Sequencer mode keep Down */
+/* (0.15.0, the owner's 2026-11-25) Down in FM-1 mode: nothing (0.4.4 .. 0.14.0: the next loaded firmware; the Track
+ * buttons switch firmwares): no slot change, no FM-1 button, no popup, unlit. The MIDI modes and Sequencer mode keep
+ * Down */
 static void test_down(void)
 {
     rfm_move_t *m = &M;
-    const act_t *a;
     uint8_t rgb[3];
     fixture(m);
     press(m, MR_CC_BACK);
     rfm_move_set_mode(m, RFM_MOVE_MODE_FM1);
     CHECK(!m->seq.projects && m->fw.active == 0);
-    CHECK(led_of(m, 1, MR_CC_DOWN, rgb) && rgb[0] == 127);
+    CHECK(led_of(m, 1, MR_CC_DOWN, rgb) && rgb[0] == 0);
     rest_pop(m), clear();
     button(m, MR_CC_DOWN, 1);
-    CHECK(m->fw.active == 1 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && a->a.slot == 1 && !strcmp(a->id, "choralroot") &&
-          m->pop == POP_LAYOUT && m->pop_i == 1 && !m->seq.projects && m->s.mode == RFM_MOVE_MODE_FM1 &&
-          count(RFM_MOVE_ACT_BTN) == 0);                /* (0.8.0: named as a Track tap names it) */
-    adv_ms(m, 1500);                                    /* (held: no repeat) */
+    adv_ms(m, 1500);
     button(m, MR_CC_DOWN, 0);
-    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 1 && m->s.octave == 0);
-    screen(m), write_pbm("down_cycle_firmware");
-    press(m, MR_CC_DOWN);                               /* slot 3 empty: back to 1 */
-    CHECK(m->fw.active == 0 && (a = last(RFM_MOVE_ACT_FW_ACTIVE)) && a->a.slot == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 2);
+    CHECK(m->fw.active == 0 && count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && count(RFM_MOVE_ACT_BTN) == 0 &&
+          !rfmv_pop_up(m, POP_LAYOUT) && m->s.mode == RFM_MOVE_MODE_FM1 && m->s.octave == 0);
     three(m);
     clear();
     press(m, MR_CC_DOWN), press(m, MR_CC_DOWN), press(m, MR_CC_DOWN);
-    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 3 && m->fw.active == 0);
-    /* one loaded slot: its name only, nothing played; unlit */
-    rfm_move_fw_slots(m, (const char *const[3]){ "sloop", NULL, NULL });
-    rest_pop(m), clear();
-    press(m, MR_CC_DOWN);
-    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.active == 0 && m->pop == POP_LAYOUT && m->pop_i == 0);
+    CHECK(count(RFM_MOVE_ACT_FW_ACTIVE) == 0 && m->fw.active == 0);
     CHECK(led_of(m, 1, MR_CC_DOWN, rgb) && rgb[0] == 0);
     /* (0.9.0) a note layout (= the sequencer): the octave, no firmware */
     rfm_move_fw_slots(m, (const char *const[3]){ "sloop", "choralroot", NULL });

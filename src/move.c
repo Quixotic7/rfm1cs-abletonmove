@@ -1445,11 +1445,11 @@ static void on_button(rfm_move_t *m, int cc, int down, uint32_t now)
             play_toggle(m);                             /* (Play: the sequencer's transport) */
         return;
     }
-    if (cc == MR_CC_DOWN) {
-        if (down)                                       /* (0.4.4) the FM-1 layout: the next loaded firmware (no repeat) */
-            rfmv_fw_cycle(m);
+    if (cc == MR_CC_DOWN)                               /* the FM-1 layout: nothing ((0.15.0, the owner's 2026-11-25: "Get
+                                                         * rid of this, it's confusing and the track buttons work fine
+                                                         * for switching firmwares"; 0.4.4 .. 0.14.0: the next loaded
+                                                         * firmware). Dark and dead: no FM-1 button either */
         return;
-    }
     if (cc < 0 || cc > 127 || (b = rfm_move_button_of(cc)) < 0)
         return;
     h = &m->btn[cc];
@@ -2440,7 +2440,7 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
             v = cc == MR_CC_UP ? (m->s.octave > 0 ? 127 : 24) : cc == MR_CC_DOWN ? (m->s.octave < 0 ? 127 : 24)
               : cc == MR_CC_BACK ? 40 : cc == MR_CC_SHIFT ? (m->shift_down ? 127 : 24) : 0;
         else if (cc == MR_CC_DOWN)
-            v = rfmv_fw_loaded(m) > 1 ? 127 : 0;       /* (0.4.4: lit with another firmware to cycle to) */
+            v = 0;                                      /* (0.15.0: no job in the FM-1 layout, so unlit) */
         else if (cc == MR_CC_UP)
             v = clampi(alpha(level_of(m, b)) * 127 / 256, 6, 127);
         else if (cc == MR_CC_BACK)

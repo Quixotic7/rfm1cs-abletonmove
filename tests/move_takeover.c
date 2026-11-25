@@ -375,12 +375,12 @@ static void test_memory(void)
     button(MR_CC_BACK, 0), touch(8, 0);
     rest_pop();
     CHECK(!M.seq.projects && rfm_move_mode(&M) == RFM_MOVE_MODE_FM1);
-    /* Down (the FM-1 layout's slot cycle, BUTTONS free) leaves the takeover too */
+    /* Down (BUTTONS free): nothing since 0.15.0 (it was the FM-1 layout's slot cycle and left the takeover) */
     tk_enter(1);
     clear();
     press(MR_CC_DOWN);
-    CHECK(rfm_move_fw_active(&M) == 2 && rfm_move_tk_shown(&M) == -1);
-    CHECK(!strncmp(logb, "S1:-|", 5));
+    CHECK(rfm_move_fw_active(&M) == 1 && rfm_move_tk_shown(&M) == 1);
+    CHECKF(strncmp(logb, "S1:-|", 5) != 0, "%s", logb);
 }
 
 /* 4. BUTTONS without TRACKS: Back held back */

@@ -240,7 +240,7 @@ settings' Popup size: the whole screen, or the left half with the firmware's scr
 | jog wheel turn, click | (0.8.0) turns SELECT, PRESETS or ALGO, a detent a tick; the click cycles them, SELECT -> PRESET -> ALGO (a popup "Jog / PRESET", three dashes, a second) |
 | volume knob | MASTER, 16 a detent, 0..1023 |
 | Up | SEQ (0.4.4; FM-1 mode only: the MIDI modes' octave there), its LED SEQ's level |
-| Down | the next loaded firmware (0.4.4; FM-1 mode only): see [Up and Down in FM-1 mode](#up-and-down-in-fm-1-mode-044) |
+| Down | nothing in FM-1 mode (0.15.0, the owner's: the Track buttons switch firmwares; 0.4.4 .. 0.14.0 it was the next loaded firmware): see [Up and Down in FM-1 mode](#up-and-down-in-fm-1-mode-044) |
 
 Pads glow white (white keys) or pink `#ff7aa8` (black keys) at the FM-1's own LED level for that key (panel.js's
 `ledAlpha` curve, as the OMX-27's `leds(keyLevel)`), never below a faint floor so the keyboard stays visible; a
@@ -757,12 +757,12 @@ Shift + step 1 and Track 4 held + step 1 open the sequencer's projects (0.8.0; a
 
 ## Up and Down in FM-1 mode (0.4.4)
 
-The owner's layout: Back flips, Up is the FM-1's SEQ, Down cycles the firmwares.
+The owner's layout: Back flips, Up is the FM-1's SEQ. (0.15.0, the owner's 2026-11-25: "Get rid of this, it's confusing and the track buttons work fine for switching firmwares") Down does nothing in FM-1 mode: dark and dead.
 
 | Button | FM-1 mode | MIDI modes (2, 3) | Sequencer mode | projects view |
 |---|---|---|---|---|
 | Up | the FM-1's SEQ (press and release; its LED SEQ's level) | octave up | as before (its own) | as before (its own) |
-| Down | the next loaded firmware slot after the playing one, 1 → 2 → 3 → 1, empty slots skipped (`FW_ACTIVE`, the slot named with its layout, as a Track tap); with only one loaded, its name and nothing played; no firmware list: nothing. On the press; held: no repeat. Lit when another firmware is loaded to go to | octave down | as before | as before |
+| Down | nothing: dark and dead (0.15.0; 0.4.4 .. 0.14.0: the next loaded firmware slot) | octave down | as before | as before |
 
 (0.8.0) In the Sequencer, a firmware Track held + Up / Down is the selected track's rate.
 
@@ -1444,7 +1444,7 @@ play notes (0.6.5: heard, never said).
 | jog click | the FM-1 layout | "Jog: Preset" |
 | Shift + knob | a note layout | "Knob 2: CC 19" |
 | Track 1..3 held + step (tap, hold, double), Up / Down, jog | Sequencer | shown "ChoralRoot, lock, Track 3"; "Track 6, locked", "Track 7, not routed", "Track 3, solo", "Rate: 1/16", "Channel: 2"; + Copy / Delete "Copied track 2" |
-| Up / Down; Down | MIDI, Control; FM-1 | "Octave 1"; "Playing, Slot 2, Melodee" (the next firmware) |
+| Up / Down | MIDI, Control | "Octave 1" (0.15.0: Down in FM-1 mode does nothing, so says nothing) |
 | jog | Control | "Bank 2" |
 | knob | Control, Sequencer | "CC 16: 65"; a held step's lock; the TRIG page "Chance: 50%", "Ratchet: 3" |
 | Back | anywhere | what it changed: the view ("Firmwares, Slot 1, Felucca", "FM-1 mode"), a layer ("Loop edit off", "Done"), a selection gone (the view named); nothing changed: where you are |

@@ -3230,21 +3230,6 @@ int rfmv_fw_switch(rfm_move_t *m, int t)
         rfmv_pop(m, rfmv_tk_mode(m) ? POP_TK : POP_LAYOUT, t);   /* (0.8.0: the slot and its layout named) */
     return 1;
 }
-/* (0.4.4) Down in FM-1 mode: the next loaded slot after the active one (1 -> 2 -> 3 -> 1, empty ones skipped); with
- * only one loaded, its name again. 1 done */
-int rfmv_fw_cycle(rfm_move_t *m)
-{
-    const rfm_move_fw_state_t *f = F(m);
-    int i;
-    if (!f->host || nslots(m) < 2)
-        return 0;                                       /* (0.5.10: one slot: Down switches nothing) */
-    for (i = 1; i <= RFM_MOVE_FW_SLOTS; i++) {
-        const int s = (f->active + i) % RFM_MOVE_FW_SLOTS;
-        if (slot_loaded(m, s))
-            return rfmv_fw_switch(m, s);
-    }
-    return 0;
-}
 int rfmv_fw_loaded(const rfm_move_t *m)             /* loaded slots, 0 with no host list */
 {
     int s, n = 0;
