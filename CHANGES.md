@@ -11,6 +11,19 @@ of `rfm_move_t` and `rfm_move_settings_t`: rebuild everything.
 - **Down in FM-1 mode does nothing** (the owner's 2026-11-25: "Get rid of this, it's confusing and the track buttons
   work fine for switching firmwares"): no slot change, no popup, unlit; `rfmv_fw_cycle` removed. A takeover with its
   buttons free no longer loses the screen to Down. The note layouts keep Down (the octave).
+- **The sampler, stage 2: the takes** (README "The takes (stage 2)"; only for a host that offers the Takes or Tools
+  tab). Tabs Record, Takes, Tools (`RFM_MOVE_SMP_TABS_BUILT` 0x7). Takes: three rows of a day, the newest on top (the
+  sign, the length, a picture), the days on Left, Delete held + the click deletes; a take's click: its actions Play,
+  Trim, Delete (stems: Play, Delete), a line over its wave while it plays. Trim: knobs 1 and 2 the markers (the others
+  dark and dead), the jog's icons, Shift fine, zoomed while a marker moves, Play the part kept, Keep the cut. Tools:
+  Trim, Normalize, Reverse, Fade In / Out (a popup, its length). Undo (the host's one step) in those screens. After a
+  save with the app open: a Capture's preview (played once when the song is stopped), Trim after Manual or Threshold.
+  The core asks a window of rows and the peaks of a view, never waits, draws what came.
+- API: `RFM_MOVE_ACT_SMP_ROWS` (50), `_PEAKS` (51), `_PLAY` (52), `_EDIT` (53, `RFM_MOVE_SMP_OP_*`), `_UNDO` (54);
+  `rfm_move_act_t` grows by `take`, `from`, `count`; `rfm_move_smp_status_t` by `play_take`, `play_pos`, `undo`;
+  `rfm_move_smp_row_t`; `rfm_move_smp_rows`, `rfm_move_smp_peaks`, `rfm_move_smp_done`, `rfm_move_smp_changed`,
+  `rfm_move_smp_saved`. Three icons drawn for it (normalize, reverse, the fades). Tests `move_sampler` 22..30 against
+  the mock's takes, days, act, trim (`move_smp_ref2.h`).
 - `RFM_MOVE_CAP_SAMPLER` (8, not in `RFM_MOVE_CAPS_ALL`): Sample is the host recorder's app, the audio loop off.
   Without it nothing changes. The app takes the screen, the jog and Back (and Sample, its record key); pads, steps,
   knobs and arrows stay the layer's under it. Sample opens it (the FM-1 layout: SEL while it is closed and no take

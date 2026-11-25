@@ -2065,7 +2065,8 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
     rfmv_proj_poll(m);
     rfmv_fw_poll(m);                                    /* (0.4.0: the library's FW_LIBRARY, debounced) */
     rfmv_ep_sync(m, 1);                                 /* (0.14.0: the ENGINE page after the host's ep1 calls) */
-    rfmv_say_tick(m);                                   /* (0.6.0: speech: the transport, popups the clock brings up) */
+    rfmv_smp_poll(m);                                   /* (0.15.0, stage 2: the sampler's Trim zoom, timed) */
+    rfmv_say_tick(m);                                  /* (0.6.0: speech: the transport, popups the clock brings up) */
 }
 
 /* ================================================================ recording, capture, tap === */

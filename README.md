@@ -1071,7 +1071,7 @@ under a Shift menu: its unclaimed parts are the FM-1 layout's). Tabs and the row
 | Back | a popup or the tab choice ends; else the app closes. A take goes on (Sample red); Sample brings the app back and, when the take is recording, is the record key at that same press (the owner's 2026-11-24: one press ends it; armed and waiting: only shown) |
 | the jog | a row a detent (no wrap); three rows for 1 s after the last detent (the chosen in the middle where it can be), then one. Up past the first row: the tabs (board "tabs"), down again: the first row. A take running: nothing |
 | the jog's click, a row | its popup (board "popup"): the name (2x), the value (4x, 2x when wider), under Threshold and Input level the level now as a line and the threshold's mark. The jog changes the value: `SMP_SET` at once, the settings saved (`SETTINGS`). A click or Back ends it |
-| the jog's click, the tabs | the jog picks a tab (offered and built: Record only now), a click or Back ends it |
+| the jog's click, the tabs | the jog picks a tab (offered and built: Record, Takes, Tools), a click or Back ends it |
 
 **The screens** (128 x 64). At rest (board one): the tabs as icons (the shown one underlined; the jog on them: a white
 block), the source's sign top right (M, 1, 2, 3, the input's icon, S; L, K), the source's live wave (58 columns 2 px
@@ -1123,6 +1123,79 @@ own first frame.
 
 `rfm_move_t` grows by `rfm_move_smp_t`, `rfm_move_settings_t` by 7 bytes. Tests: `move_sampler` (dumps
 `sampler_*.pbm` / `.leds`; the boards against the mock-up's, `tests/move_smp_ref.h`).
+
+### The takes (stage 2)
+
+The owner's 2026-11-24 decisions: "better to keep as minimal text as possible, use icons. Use text popups while
+adjusting values." Tabs Record, Takes, Tools (Loops later), remembered open or closed; a tab "can take over knobs and
+arrows". Only for a host that offers the Takes or Tools tab (`rfm_move_smp_offer`, tabs 0x7); a host that offers only
+Record sees stage 1 unchanged. The boards are mock_recorder_v4.c's takes, days, act, trim.
+
+| Screen | What shows | What it takes (else the layer's under it) |
+|---|---|---|
+| Takes | the tabs line; three rows of the day, the newest on top: the source's sign (M, 1, 2, 3, the input's icon, S; "?" not known), the length ("4 Bars", "7.25 s"), the take's picture (14 peaks); the chosen row inverted. No takes: "No takes" | the jog, Left (the days), Right (the days: into the chosen one; else dark, dead), Delete (held: the next click deletes; the days: dark, dead), Undo |
+| the days (Left) | a folder icon and "Today" or "23 Nov", newest first | as Takes; the click (or Right) opens the day, Back: the day's takes again |
+| a take's actions (the click) | its whole wave on top, a row of icons Play, Trim, Delete (a stems take: Play, Delete), the chosen one's name the only word | the jog, Undo |
+| Trim | the chosen marker's time top left ("1.84 s", to the ms with Shift), the wave with the part kept a white block, icons start, end, play, keep; while a marker moves the view zooms on it | the jog, knobs 1 (start) and 2 (end) with their touch, the other knobs dark and dead (R3), Shift (fine), Undo |
+| Tools | the chosen take's wave, icons Trim, Normalize, Reverse, Fade In, Fade Out, the chosen one's name; the jog on the tabs: the tabs line in the wave's place; a stems take: "Stems", no tools | the jog, Undo |
+| a Fade's popup | "Fade In" / "100 ms" (5, 10, 20, 50, 100, 200, 500 ms, 1, 2, 5 s; remembered) | the jog |
+
+The pads and steps play under all of them; the knobs too but in Trim. A held Track, step or modifier the app did not
+take covers it as before (R3).
+
+| Gesture | What |
+|---|---|
+| the jog in Takes | a row a detent (no wrap); the chosen in the middle of three where it can be; up past the first: the tabs |
+| the click on a take | its actions, Play chosen (two clicks play a take) |
+| Delete held + the click | the take deleted (`SMP_EDIT` DELETE), "Deleted"; Undo brings it back |
+| Play (the click) | `SMP_PLAY` value 1, the whole take (a stems take: its Master); again: value 0 (stop). A line moves over the wave at the host's `play_pos`. Leaving the screen (Back, the app closed): stopped |
+| Trim (the click) | Trim on it: the start 0, the end the take's length, Start chosen |
+| Delete (the click) | as Delete held + the click; the list again |
+| Trim: the jog | the icon; its click on Start / End: the jog moves that marker (zoomed, the icon underlined) until a click or Back |
+| Trim: knob 1 / 2 | the start / the end, a detent a step; touched or turned: End / Start chosen, zoomed until a second after |
+| Trim: steps | 1/256 of the take a detent; Shift held: 1/16 of that. The zoomed view is 64 steps (the wave's 64 columns), centred on the marker (at the take's ends: against them). The markers keep 64 frames between them |
+| Trim: Play | the part kept, once (`SMP_PLAY` from the start, its frames); again: stop |
+| Trim: Keep | `SMP_EDIT` TRIM (from the start, the frames kept), "Trimmed", back where Trim came from; nothing cut: back, nothing sent |
+| Trim: Back | a marker moving: it stops; else the take as it was (nothing sent), back where Trim came from |
+| Tools: Trim | Trim on the take; Back: Tools |
+| Tools: Normalize, Reverse | `SMP_EDIT` at the click, "Normalized" / "Reversed" |
+| Tools: Fade In / Out | the popup; the jog its length; the click `SMP_EDIT` FADE_IN / FADE_OUT (value ms), "Faded In"; Back: not done |
+| Undo | `SMP_UNDO` when the host's status says there is one (lit), "Undo"; else dark, dead. The Record tab: the layer's |
+
+**The take Tools works on** is the take chosen in Takes: the last whose actions opened (a click, a preview, Trim);
+none yet (or it was deleted): the day's newest. (The jog reaches the tabs only from the list's first row, so the row
+the jog is on cannot be the measure.)
+
+**After a take is saved** (`rfm_move_smp_saved(m, &row, mode)`, after `rfm_move_smp_event`'s SAVED), with the app
+open: Capture shows the take's actions with Play chosen and plays it once by itself (`SMP_PLAY`) only when the song
+is stopped (owner: "should launch to a preview afterwards since I don't know what it recorded"); Manual and Threshold
+open Trim on it (a stems take: nothing, it has no Trim in this stage); Bars nothing. A new take armed or recording
+by then: nothing comes over it (a status still saying SAVING does not stop it). They come over the tab shown (the save's message a second first): Back (or Keep) goes
+back to it, not to the list. The list moves to the take (its day, the newest chosen). The app closed: nothing (the
+list follows). Track 1..3 / 4 held + Sample shows the Record tab (the source is its row).
+
+**The host's part.** The core asks and never waits; what has not come is drawn empty (a row's block, no wave) and
+filled as it arrives:
+
+| Action | Fields | Answer |
+|---|---|---|
+| `RFM_MOVE_ACT_SMP_ROWS` (50) | `take` the folder (0 the days, `RFM_MOVE_SMP_NEWEST` the newest day with takes, a day's id), `from` the first row, `count` (3) | `rfm_move_smp_rows(m, asked, folder, total, from, n, rows)`: `asked` the act's `take`, `folder` the day answered (0 and `total` 0: no takes) |
+| `RFM_MOVE_ACT_SMP_PEAKS` (51) | `take`, frames `from`, `count`, `value` the columns (64) | `rfm_move_smp_peaks(m, take, from, count, n, peaks)`; a later ask may replace one not answered (the core draws an older view's peaks where they cover a column until its own come) |
+| `RFM_MOVE_ACT_SMP_PLAY` (52) | `take`, `value` 1 / 0, `from`, `count` (0: to its end) | `rfm_move_smp_status`'s `play_take` / `play_pos` (0: none) |
+| `RFM_MOVE_ACT_SMP_EDIT` (53) | `take`, `index` `RFM_MOVE_SMP_OP_DELETE` / `_TRIM` (`from`, `count` kept) / `_NORMALIZE` / `_REVERSE` / `_FADE_IN` / `_FADE_OUT` (`value` ms) | `rfm_move_smp_done(m, op, ok, row)`: the take as it is now (NULL after a delete); not ok: "Not done" |
+| `RFM_MOVE_ACT_SMP_UNDO` (54) | (nothing) | `rfm_move_smp_done(m, RFM_MOVE_SMP_OP_UNDO, ok, row)`; status `undo` says when there is one |
+
+A row (`rfm_move_smp_row_t`): `id` (the host's, never 0, the same while the file is: an edit keeps it), `kind`
+(`RFM_MOVE_SMP_ROW_DAY`, `_TAKE`, `_STEMS`), a day's `day` / `month` / `today` / `takes`, a take's `src`
+(`RFM_MOVE_SMP_SRC_*`, `_NONE`), `bars`, `bpm10`, `frames`, `rate`, `folder` (its day's id), `thumb[14]`. The core keeps
+8 rows (`RFM_MOVE_SMP_CACHE`), asks a window once until it is answered or the list changes; `rfm_move_smp_changed`
+(the list changed outside: a take saved, a file changed) and every `_done` forget them and ask again. The new act
+fields `take`, `from`, `count` are at the end of `rfm_move_act_t`; the status grows by `play_take`, `play_pos`, `undo`.
+Words: the row ("Slot 2, 4 bars", "Today", "23 November"), the icon's name, "Start, 1.840 seconds", "Fade in: 100
+ms", the messages. Tests: `move_sampler` 22..30 (dumps `sampler_takes*`, `days`, `act*`, `trim*`, `tools`, `fade`,
+`preview`, `auto_trim`, `no_takes`, `deleted`, `normalized`, `tabs3`; the boards against `tests/move_smp_ref2.h`: takes
+and days but the third tab's icon (the mock draws two tabs), act but the row's last three places (the mock's five
+icons: "to a kit pad", "to the looper" come between Trim and Delete when they are built), trim exactly).
 
 ## FX parameter pages (0.5.0)
 

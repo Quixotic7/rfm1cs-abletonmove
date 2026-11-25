@@ -428,6 +428,7 @@ void rfmv_smp_leds(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3]);   /* Samp
 int rfmv_smp_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* 1 drawn */
 int rfmv_smp_timed(const rfm_move_t *m);
 int rfmv_smp_tick(rfm_move_t *m);                       /* (speech) a message's second over: 1 once (words due) */
+void rfmv_smp_poll(rfm_move_t *m);                      /* (stage 2, the clock) Trim's zoom after a knob's turn ends */
 int rfmv_smp_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);   /* 1 up */
 int rfmv_smp_lvpx(int level, int w);                    /* (tests) a level 0..32767 as pixels of a -60..0 dB scale */
 int rfmv_st_on(const rfm_move_t *m);                    /* the States layer open: its slot + 1, 0 */

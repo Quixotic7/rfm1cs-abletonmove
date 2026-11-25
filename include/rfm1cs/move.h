@@ -236,6 +236,30 @@ enum {
  *    recording: the host's choice, as a stop). The core times nothing: it shows rfm_move_smp_status */
 #define RFM_MOVE_ACT_SMP_SET 48
 #define RFM_MOVE_ACT_SMP_PRESS 49
+/* (0.15.0, stage 2, the owner's 2026-11-24) the sampler's takes: the Takes and Tools tabs, a take's actions, Trim (README
+ * "The sampler: the takes"; only for a host that offers the Takes or Tools tab, rfm_move_smp_offer). The host owns the
+ * files; the core asks, never waits, and draws what has come (a row not answered yet: empty). Each carries the new act
+ * fields take, from, count (below):
+ *  - SMP_ROWS: take the folder (0: the days; RFM_MOVE_SMP_NEWEST: the newest day that has takes; else a day's id), from
+ *    the first row, count the rows wanted (a window of the list, newest first). Answer: rfm_move_smp_rows.
+ *  - SMP_PEAKS: take a take's id, frames [from, from + count), value the columns (1..RFM_MOVE_SMP_WPEAKS): each column's
+ *    peak 0..255 (linear). Answer: rfm_move_smp_peaks (a newer ask may replace an older one not yet answered).
+ *  - SMP_PLAY: take, value 1: play frames [from, from + count) once (count 0: to its end; a stems take: its Master)
+ *    through the Move's output, after the recorder's tap (never recorded); value 0: stop. One plays at a time (a new
+ *    play replaces it). Where it is: rfm_move_smp_status's play_take / play_pos.
+ *  - SMP_EDIT: take, index the op (RFM_MOVE_SMP_OP_*): DELETE (into the host's trash; a stems take: its folder), TRIM
+ *    (keep frames [from, from + count) only, sample-exact, a few ms of fade at a cut end), NORMALIZE (its peak to
+ *    -0.3 dBFS), REVERSE, FADE_IN / FADE_OUT (value: ms). Each one atomic on the file, the file before it kept as the
+ *    one undo (a new edit replaces it). Answer: rfm_move_smp_done.
+ *  - SMP_UNDO: the last DELETE or edit undone (one step; status undo 1 while there is one). Answer: rfm_move_smp_done
+ *    (RFM_MOVE_SMP_OP_UNDO). */
+#define RFM_MOVE_ACT_SMP_ROWS 50
+#define RFM_MOVE_ACT_SMP_PEAKS 51
+#define RFM_MOVE_ACT_SMP_PLAY 52
+#define RFM_MOVE_ACT_SMP_EDIT 53
+#define RFM_MOVE_ACT_SMP_UNDO 54
+enum { RFM_MOVE_SMP_OP_DELETE = 1, RFM_MOVE_SMP_OP_TRIM, RFM_MOVE_SMP_OP_NORMALIZE, RFM_MOVE_SMP_OP_REVERSE,
+       RFM_MOVE_SMP_OP_FADE_IN, RFM_MOVE_SMP_OP_FADE_OUT, RFM_MOVE_SMP_OP_UNDO };   /* SMP_EDIT's index; _UNDO: answers */
 enum { RFM_MOVE_EP_SET = 1, RFM_MOVE_EP_LOCK = 2, RFM_MOVE_EP_FREE = 3, RFM_MOVE_EP_FREE_ALL = 4 };   /* (EP's op; only
                                                          * SET is sent before the engine locks) */
 typedef struct {
@@ -274,6 +298,9 @@ typedef struct {
     /* (0.14.0) engine parameters (EP, EP_WATCH; slot: the firmware slot) */
     uint16_t pid;                                       /* EP: the parameter's id (1..0xFFFE) */
     uint8_t layer, op;                                  /* EP, EP_WATCH: the layer 0..7; EP: RFM_MOVE_EP_* */
+    /* (0.15.0, stage 2) the sampler's takes (SMP_ROWS .. SMP_EDIT) */
+    uint32_t take;                                      /* a take's id (SMP_ROWS: the folder's) */
+    uint32_t from, count;                               /* frames (SMP_ROWS: rows) */
 } rfm_move_act_t;
 typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
@@ -1030,7 +1057,8 @@ enum { RFM_MOVE_SMP_M_CAPTURE, RFM_MOVE_SMP_M_BARS, RFM_MOVE_SMP_M_THRESHOLD, RF
 enum { RFM_MOVE_SMP_TO_FILES, RFM_MOVE_SMP_TO_LOOPER, RFM_MOVE_SMP_TO_KIT, RFM_MOVE_SMP_TO_N };   /* To's */
 enum { RFM_MOVE_SMP_TAB_RECORD, RFM_MOVE_SMP_TAB_TAKES, RFM_MOVE_SMP_TAB_TOOLS, RFM_MOVE_SMP_TAB_LOOPS,
        RFM_MOVE_SMP_TAB_N };                            /* the tabs (rfm_move_smp_offer's tabs: bit each) */
-#define RFM_MOVE_SMP_TABS_BUILT 0x1                     /* the tabs this core has (an offered tab it has not: not shown) */
+#define RFM_MOVE_SMP_TABS_BUILT 0x7                     /* the tabs this core has (an offered tab it has not: not shown):
+                                                         * Record, (stage 2) Takes, Tools */
 #define RFM_MOVE_SMP_LENGTHS 7                          /* Length's: Open, 1, 2, 4, 8, 16, 32 bars */
 #define RFM_MOVE_SMP_THR_MIN (-60)                      /* Threshold, dB (1 a detent) */
 #define RFM_MOVE_SMP_IN_MIN (-24)                       /* Input level, dB (1 a detent) */
@@ -1052,8 +1080,33 @@ typedef struct {                                        /* the host's recorder n
                                                          * right); n: a take with bars runs and its whole length is n
                                                          * peaks, peaks[0] its start (the screen shows npeaks / n done) */
     uint8_t peaks[RFM_MOVE_SMP_PEAKS];
+    /* (stage 2) the takes */
+    uint32_t play_take;                                 /* the take SMP_PLAY plays now (0: none) .. */
+    uint32_t play_pos;                                  /* .. the frame it is at (from the file's start) */
+    uint8_t undo;                                       /* 1: SMP_UNDO has something to undo */
 } rfm_move_smp_status_t;
 enum { RFM_MOVE_SMP_EV_SAVED = 1, RFM_MOVE_SMP_EV_NOTHING = 2, RFM_MOVE_SMP_EV_ERROR = 3 };   /* rfm_move_smp_event */
+/* (stage 2) a row of the takes' list (rfm_move_smp_rows): a day (a folder of takes) or a take */
+enum { RFM_MOVE_SMP_ROW_DAY = 1, RFM_MOVE_SMP_ROW_TAKE = 2, RFM_MOVE_SMP_ROW_STEMS = 3 };
+#define RFM_MOVE_SMP_THUMB 14                           /* a take row's picture: its whole length in 14 peaks */
+#define RFM_MOVE_SMP_WPEAKS 64                          /* a wave's columns on the screen, at most (2 px apart) */
+#define RFM_MOVE_SMP_NEWEST 0xFFFFFFFFu                 /* SMP_ROWS: the newest day that has takes */
+#define RFM_MOVE_SMP_SRC_NONE 255                       /* a take whose source is not known (its sign: "?") */
+typedef struct {
+    uint32_t id;                                        /* the host's, never 0, the same while the file is (an edit
+                                                         * keeps it) */
+    uint8_t kind;                                       /* RFM_MOVE_SMP_ROW_* */
+    uint8_t src;                                        /* a take: RFM_MOVE_SMP_SRC_* (STEMS for a stems take), or _NONE */
+    uint8_t day, month;                                 /* a day: 1..31, 1..12 */
+    uint8_t today;                                      /* a day: 1 it is today ("Today") */
+    uint8_t bars;                                       /* a take: its bars (0: none, its seconds show) */
+    uint16_t bpm10;                                     /* .. its tempo x 10 (0: none) */
+    uint16_t takes;                                     /* a day: its takes */
+    uint32_t frames, rate;                              /* a take: its length (a stems take: its Master's) */
+    uint32_t folder;                                    /* a take: its day's id */
+    uint8_t thumb[RFM_MOVE_SMP_THUMB];                  /* a take: its picture, peaks 0..255 */
+} rfm_move_smp_row_t;
+#define RFM_MOVE_SMP_CACHE 8                            /* rows the core keeps (a window of the list) */
 typedef struct {                                        /* (RAM, sampler.c) */
     uint8_t open;                                       /* the app is open (shown when nothing above it hides it) */
     uint8_t tab;                                        /* the tab shown (remembered) */
@@ -1076,6 +1129,30 @@ typedef struct {                                        /* (RAM, sampler.c) */
     uint32_t flash_ms;
     int16_t ev_bars, ev_bpm10;                          /* the last take saved: its bars, tempo, length */
     int32_t ev_ms;
+    /* (stage 2) the takes: the list, a take's actions, Trim, Tools */
+    uint8_t scr;                                        /* over the tab: 0 nothing, 1 a take's actions, 2 Trim */
+    uint8_t trim_ret;                                   /* Trim's Back / Keep: 1 the take's actions, 0 the tab */
+    uint8_t days;                                       /* Takes: the days shown (the left arrow) */
+    uint8_t known, dknown;                              /* .. an answer came for the day's takes / the days */
+    uint32_t folder;                                    /* .. the day shown (0: none yet, the newest is asked) */
+    int16_t sel, dsel;                                  /* .. the take / the day chosen */
+    uint16_t total, dtotal;                             /* .. the rows there (as last answered) */
+    struct { rfm_move_smp_row_t r; uint32_t f; int16_t i; uint8_t ok; } rc[RFM_MOVE_SMP_CACHE];   /* rows come */
+    uint32_t ask_f;                                     /* the last SMP_ROWS asked (folder, first row), 0xFFFF none */
+    uint16_t ask_i;
+    rfm_move_smp_row_t cur;                             /* the take the actions, Trim and Tools work on (id 0: none) */
+    uint8_t ai, ti, fade;                               /* the actions' / Tools' chosen icon; a Fade's popup (1 in, 2
+                                                         * out, 0 none) */
+    uint8_t fade_v[2];                                  /* .. their lengths (an index of the steps; remembered) */
+    struct { uint32_t take, from, count; uint8_t n; uint8_t pk[RFM_MOVE_SMP_WPEAKS]; } pk[2];   /* peaks come */
+    uint32_t pa_take, pa_from, pa_count;                /* the last SMP_PEAKS asked */
+    uint32_t play_id;                                   /* the take playing as last asked or said (0 none) */
+    uint32_t t_start, t_end;                            /* Trim: the part kept (frames) */
+    uint8_t t_i, t_move, t_knob;                        /* .. the chosen icon (start, end, play, keep); the marker the
+                                                         * jog moves (1 start, 2 end); a knob touched (1, 2) */
+    uint32_t t_turn_ms;                                 /* .. a knob turned: zoomed on its marker until + 1 s */
+    uint8_t t_turned;
+    uint8_t ddown, udown, ldown, rdown, shdown, kdown;  /* Delete, Undo, Left, Right, Shift, the knobs: taken presses */
 } rfm_move_smp_t;
 
 /* ---- the state */
@@ -1702,6 +1779,30 @@ int rfm_move_smp_event(rfm_move_t *m, int kind, int bars, int bpm10, int ms, con
 void rfm_move_smp_sync(rfm_move_t *m);                 /* every setting's SMP_SET again (with the capability) */
 int rfm_move_smp_shown(const rfm_move_t *m);           /* 1: the app is on the screen now */
 int rfm_move_smp_value(const rfm_move_t *m, int setting);   /* a setting's value as SMP_SET sends it */
+/* (stage 2, the owner's 2026-11-24) the takes (README "The sampler: the takes"; the actions SMP_ROWS .. SMP_UNDO above).
+ * Offer the Takes and Tools tabs (rfm_move_smp_offer, tabs 0x7) and answer these; a host that offers only Record sees
+ * none of it. The tabs: Record, Takes (three rows, the newest on top: the source's sign, the length, the wave; the left
+ * arrow the days; Delete held + the jog's click deletes; the click: the take's actions Play, Trim, Delete), Tools (the
+ * chosen take: Trim, Normalize, Reverse, Fade in, Fade out); Trim takes knobs 1 (start) and 2 (end) and Shift (fine);
+ * Undo (the host's one step) in Takes and Tools. Every answer may come late or not at all. */
+/* SMP_ROWS' answer: asked the folder the act asked for (its take), folder the one answered (the newest day's id when
+ * RFM_MOVE_SMP_NEWEST was asked; 0 with total 0: no takes at all), total its rows, rows[0..n) its rows from `from`.
+ * Returns 1 when the screen shows them (draw again) */
+int rfm_move_smp_rows(rfm_move_t *m, uint32_t asked, uint32_t folder, int total, int from, int n,
+                      const rfm_move_smp_row_t *rows);
+/* SMP_PEAKS' answer: n peaks of the take's frames [from, from + count). Returns 1 when shown */
+int rfm_move_smp_peaks(rfm_move_t *m, uint32_t take, uint32_t from, uint32_t count, int n, const uint8_t *peaks);
+/* SMP_EDIT's / SMP_UNDO's answer: op (RFM_MOVE_SMP_OP_*), ok 1 done (0: a short message "Not done"), row the take as it
+ * is now (an edit: its new length; UNDO: the take brought back or restored; NULL: none, as after DELETE). The list is
+ * asked again. Returns 1 when shown */
+int rfm_move_smp_done(rfm_move_t *m, int op, int ok, const rfm_move_smp_row_t *row);
+/* the list changed (a take saved, a file changed outside): the rows shown are asked again */
+void rfm_move_smp_changed(rfm_move_t *m);
+/* a take was saved (after rfm_move_smp_event's SAVED): its row and the mode it was recorded in (RFM_MOVE_SMP_M_*). With
+ * the app open and Takes offered: Capture shows its actions with Play chosen and plays it once (SMP_PLAY) when the song
+ * is stopped; Manual and Threshold open Trim on it; Bars nothing. Back from them: the tab they came over. The list asked
+ * again. Returns 1 when shown */
+int rfm_move_smp_saved(rfm_move_t *m, const rfm_move_smp_row_t *take, int mode);
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */
