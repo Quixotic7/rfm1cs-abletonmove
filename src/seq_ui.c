@@ -186,7 +186,8 @@ int rfmv_seq_mod_over(const rfm_move_t *m)              /* Copy, Delete or Mute 
 int rfmv_back_has(const rfm_move_t *m)
 {
     return m->seq.smenu || m->seq.projects || rfmv_seq_layer_open(m) || rfmv_st_on(m) ||   /* (0.13.0: States) */
-           rfmv_fwp_locked(m) || rfmv_smp_shown(m);     /* (0.14.0: the FM-1 page's lock; 0.15.0: the sampler) */
+           rfmv_fwp_locked(m) || rfmv_smp_shown(m) ||   /* (0.14.0: the FM-1 page's lock; 0.15.0: the sampler) */
+           rfmv_kit_back_has(m);                        /* (stage 3a: the kit's popup, tools, folders, tabs) */
 }
 int rfmv_seq_layer_open(const rfm_move_t *m)
 {
@@ -800,6 +801,19 @@ int rfmv_seq_loop_steps(const rfm_move_t *m)
  * (0.13.0, the owner's: "If a bar is like 5 steps, then pressing and adding a step outsite that should not make the
  * loop length of the page become a bar") Not within the loop's own last bar: a loop that ends inside a bar keeps its
  * length when a step goes in after its end there (the note is outside the loop, its step dim) */
+static void grow_to(rfm_move_t *m, int clip, int abs);
+/* (stage 3a, kit.c) a note entered at a step as a tap enters one: the TRIG defaults on an empty step, the loop grown to
+ * its page, the clip playing with the transport (the caller's undo group) */
+void rfmv_seq_step_enter(rfm_move_t *m, int clip, int abs, int note, int vel)
+{
+    const int was = rfmv_seq_clip_used(m, clip), e = step_empty(m, clip, abs);
+    if (rfmv_seq_note_put(m, clip, abs, note, vel_of(m, vel), RFM_MOVE_SEQ_TPS, 0) != 0)
+        return;
+    if (e)
+        rfmv_seq_tdef_apply(m, clip, abs, 1);
+    grow_to(m, clip, abs);
+    entered(m, was);
+}
 static void grow_to(rfm_move_t *m, int clip, int abs)
 {
     const int lo = rfmv_seq_loop_lo(m, clip), hi = rfmv_seq_loop_hi(m, clip);
@@ -955,7 +969,8 @@ static void tk_act(rfm_move_t *m, int fw, int track, int what)
         m->lk_word = LK_LOCKED;
         break;
     case 1:
-        rfmv_route_toggle(m, fw, track);
+        if (!rfmv_kit_route_flip(m, fw, track))         /* (stage 3a: a kit track goes to the firmware and back) */
+            rfmv_route_toggle(m, fw, track);
         m->lk_word = (uint8_t)(q->fx.ffilt[fw] >> track & 1 ? LK_ON : LK_OFF);
         break;
     default: m->lk_word = (uint8_t)(rfmv_fw_solo(m, fw, track) ? LK_SOLO : LK_UNSOLO); break;
@@ -1563,7 +1578,9 @@ void rfmv_seq_ui_poll(rfm_move_t *m)
                 if (fw >= 0 && (q->tstep_rt0 >> s & 1))
                     tk_act(m, fw, s, 1);                /* (routed before the press: not routed now) */
                 else if (fw >= 0) {                     /* (0.12.x) not routed before: the press routed it, the hold
-                                                         * leaves it so (named) */
+                                                         * leaves it so (named); (stage 3a) a kit track: the kit's no more */
+                    if (rfmv_kit_routed(m, s))
+                        rfmv_kit_route_flip(m, fw, s);
                     rfmv_menu(m, MENU_LOCK, s);
                     m->lk_word = LK_ON;
                 }
@@ -3103,6 +3120,8 @@ static rgb_t route_rgb(const rfm_move_t *m, int fw, int i)
         return sel && !ph ? sc(blue, 70) : blue;
     if (sel)
         return on ? sc(fc, ph ? 256 : 50) : sc(fc, ph ? 60 : 0);
+    if (!on && rfmv_kit_routed(m, i))                   /* (stage 3a, board T: a track the kit plays, its row's colour) */
+        return sc(rfmv_kit_row_rgb(i), 200);
     return !on ? RFMV_OFF : sc(fc, rfmv_seq_track_used(m, i) ? 170 : 100);   /* (plainly lit: dark means not routed) */
 }
 /* (0.12.x, the owner's 2026-11-22: "once you switch, I think we should do a flash on the steps briefly to show which
@@ -4580,6 +4599,7 @@ void rfmv_seq_screen(const rfm_move_t *m, mr_canvas_t *cv)
                                                          * cuts or copies its row) */
             for (r = 0; r < 4; r++)
                 held_icon(cv, hi == 1 ? IC_CUT : IC_COPY, RFM_MOVE_SV_COLS * 16 + 3, 4 + r * 15 + 1);
+    } else if (rfmv_kit_screen(m, cv)) {             /* (stage 3a) the Kit view */
     } else if (!(rfmv_ep_list_shown(m) && rfmv_ep_list_screen(m, cv))) {   /* (0.14.0: the ENGINE page's list) */
         track_screen(m, cv);
         if (hi)                                         /* (the roll's top right) */

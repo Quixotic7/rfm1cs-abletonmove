@@ -1377,8 +1377,8 @@ static void test_sv_launch_q(void)
     {                                                   /* a version 7 blob: loads, with the defaults */
         uint32_t h = 2166136261u;
         n = rfm_move_project_save(&M, blob, sizeof blob);
-        memmove(blob + n - 4 - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES, blob + n - 4, 4);
-        n -= 1 + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_PFW_BYTES, blob[4] = 7;
+        memmove(blob + n - 4 - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES, blob + n - 4, 4);
+        n -= 1 + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_PFW_BYTES + RFM_MOVE_KIT_BYTES, blob[4] = 7;
         for (k = 0; k < n - 4; k++)
             h = (h ^ blob[k]) * 16777619u;
         for (k = 0; k < 4; k++)
@@ -2690,7 +2690,7 @@ static void ps_store(int slot)                          /* M's project as it is 
     rfm_move_project_dir(&M, used);
     rfm_move_project_info(&M, slot, PS_BLOB[slot], PS_N[slot]);
 }
-static const uint8_t *ps_part(int slot) { return PS_BLOB[slot] + PS_N[slot] - 4 - RFM_MOVE_PFW_BYTES; }
+static const uint8_t *ps_part(int slot) { return PS_BLOB[slot] + PS_N[slot] - 4 - RFM_MOVE_KIT_BYTES - RFM_MOVE_PFW_BYTES; }
 static void refnv32(uint8_t *b, uint32_t n)
 {
     uint32_t h = 2166136261u, k;
@@ -2722,11 +2722,11 @@ static void test_ps_blob(void)
     M.s.drum[0] = 41, M.s.vel_mode = RFM_MOVE_VEL_FIXED, M.s.vel_level = 90;
     n = rfm_move_project_save(&M, b9, sizeof b9);
     CHECK(n == RFM_MOVE_PROJECT_FIXED && b9[4] == RFM_MOVE_PROJECT_VERSION && rfm_move_project_check(b9, (uint32_t)n) == 0);
-    part = b9 + n - 4 - RFM_MOVE_PFW_BYTES;
+    part = b9 + n - 4 - RFM_MOVE_KIT_BYTES - RFM_MOVE_PFW_BYTES;
     CHECK(!strcmp((const char *)part, "choralroot") && !strcmp((const char *)part + RFM_MOVE_PFW_SLOT_BYTES, "sloop"));
     CHECK(part[RFM_MOVE_PFW_SLOT_BYTES + RFM_MOVE_FW_ID_MAX] == 77);
     /* a value out of range in it: refused */
-    memcpy(b8, b9, (size_t)n), b8[n - 4 - RFM_MOVE_PFW_BYTES + 2 * RFM_MOVE_PFW_SLOT_BYTES + RFM_MOVE_FW_ID_MAX + 1] = 9;
+    memcpy(b8, b9, (size_t)n), b8[n - 4 - RFM_MOVE_KIT_BYTES - RFM_MOVE_PFW_BYTES + 2 * RFM_MOVE_PFW_SLOT_BYTES + RFM_MOVE_FW_ID_MAX + 1] = 9;
     refnv32(b8, (uint32_t)n);
     CHECK(rfm_move_project_check(b8, (uint32_t)n) == -9);
     /* loaded on another Move: everything set, the firmwares asked for (one PROJECT_FW a slot, the project's slot) */
@@ -2745,7 +2745,7 @@ static void test_ps_blob(void)
     CHECK(!M2.seq.dirty);                               /* (the load's own settings: no edit) */
     /* a version 8 blob (no firmwares): the slots, the levels and the settings as they are; saved again as 9 with what
      * is loaded */
-    n8 = n - RFM_MOVE_PFW_BYTES;
+    n8 = n - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES;
     memcpy(b8, b9, (size_t)n8 - 4), b8[4] = 8;
     refnv32(b8, (uint32_t)n8);
     CHECK(rfm_move_project_check(b8, (uint32_t)n8) == 0);
@@ -2757,7 +2757,7 @@ static void test_ps_blob(void)
     CHECK(ps_count(RFM_MOVE_ACT_PROJECT_FW) == 0 && !rfm_move_proj_fw_loading(&M) && !strcmp(M.fw.slot_id[0], "dub"));
     CHECK(M.fw.level[0] == 50 && M.s.drum[0] != 41 && M.s.vel_mode != RFM_MOVE_VEL_FIXED);
     n = rfm_move_project_save(&M, b9, sizeof b9);
-    CHECK(b9[4] == RFM_MOVE_PROJECT_VERSION && !strcmp((const char *)b9 + n - 4 - RFM_MOVE_PFW_BYTES, "dub"));
+    CHECK(b9[4] == RFM_MOVE_PROJECT_VERSION && !strcmp((const char *)b9 + n - 4 - RFM_MOVE_KIT_BYTES - RFM_MOVE_PFW_BYTES, "dub"));
     {                                                   /* the grid's info of a version 8 project: no firmwares */
         rfm_move_proj_info_t in;
         CHECK(rfm_move_project_info(&M, 9, b8, (uint32_t)n8) == 0);
@@ -2959,7 +2959,7 @@ static void test_ps_held(void)
     /* a version 8 project held: three dotted lines */
     {
         static uint8_t b8[RFM_MOVE_PROJECT_MAX];
-        const int n8 = (int)PS_N[6] - RFM_MOVE_PFW_BYTES;
+        const int n8 = (int)PS_N[6] - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES;
         memcpy(b8, PS_BLOB[6], (size_t)n8 - 4), b8[4] = 8;
         refnv32(b8, (uint32_t)n8);
         memcpy(PS_BLOB[3], b8, (size_t)n8), PS_N[3] = (uint32_t)n8;

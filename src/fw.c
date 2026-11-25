@@ -742,9 +742,11 @@ void rfm_move_fw_caps(rfm_move_t *m, int caps)
     rfm_move_fw_state_t *f = F(m);
     int s;
     const int smp = rfmv_smp_cap(m);
-    f->caps = (uint8_t)(caps & (RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW | RFM_MOVE_CAP_SAMPLER));   /* (0.13.0: PROJFW;
-                                                         * 0.15.0: SAMPLER) */
+    const int kit = rfmv_kit_cap(m);
+    f->caps = (uint8_t)(caps & (RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW | RFM_MOVE_CAP_SAMPLER | RFM_MOVE_CAP_KIT));
+                                                        /* (0.13.0: PROJFW; 0.15.0: SAMPLER; stage 3a: KIT) */
     rfmv_smp_caps(m, smp);
+    rfmv_kit_caps(m, kit);
     if (!(f->caps & RFM_MOVE_CAP_PROJFW))
         rfmv_st_close(m), m->pfw_on = 0, m->pfw_msg = 0;
     if (!(f->caps & RFM_MOVE_CAP_SLOTS)) {             /* one slot: the others emptied, slot 0 played */
@@ -2200,7 +2202,8 @@ void rfmv_track_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
 {
     const rfm_move_fw_state_t *f = &m->fw;
     const int snd = rfm_move_fw_sounding(m), slow = rfmv_now_ms(m) % 1000u < 500u, ns = rfmv_fw_nslots(m);
-    const int t4pg = m->seq.projects && (f->fx || f->track == 3);
+    const int t4pg = (m->seq.projects && (f->fx || f->track == 3)) || rfmv_kit_active(m);   /* (stage 3a: the Kit view
+                                                         * is Track 4's too) */
     /* (0.14.0, the owner's "Track Button LEDs should stay lit to show which Firmware/Mode I'm on") the played firmware's
      * Track is lit at rest in every mode and view: steady full in the FM-1 layout (and a takeover), breathing in the
      * sequencer (a note layout, its Knobs / Knobs+Keys page, session view; RFMV_ACTIVE_ON_MS full, then
@@ -3307,7 +3310,12 @@ int rfmv_fw_pick_installed(rfm_move_t *m, char ids[RFM_MOVE_FW_SLOTS][RFM_MOVE_F
     }
     return n < RFM_MOVE_FW_SLOTS ? n : RFM_MOVE_FW_SLOTS;
 }
-int rfmv_t4_page(const rfm_move_t *m) { return m->s.fx_page == PG_MIX ? 0 : 1; }
+int rfmv_t4_page(const rfm_move_t *m)                  /* (stage 3a: 2 the Kit view, a host with the kit) */
+{
+    if (!(m->seq.projects && m->fw.fx) && rfmv_kit_cap(m) && m->s.t4_kit)
+        return 2;
+    return m->s.fx_page == PG_MIX ? 0 : 1;
+}
 int rfmv_fw_activate(rfm_move_t *m, int t)
 {
     rfm_move_fw_state_t *f = F(m);
@@ -3364,6 +3372,8 @@ void rfmv_view_open(rfm_move_t *m, int what)
             m->fx_route = (uint8_t)fx_page(m);
         set_pg(m, pg);
         f->fx = 1, f->fx_pages = 0;
+        if (m->s.t4_kit)                                /* (stage 3a: Track 4 left on the Mixer / Routing) */
+            m->s.t4_kit = 0, rfmv_changed(m);
         rfmv_pop(m, POP_T4, what == VIEW_ROUTING);
     }
 }

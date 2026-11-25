@@ -835,7 +835,8 @@ static void t_blob(void)
           s.smp[4] == 0 && s.smp[5] == 0 && s.smp[6] == RFM_MOVE_SMP_TO_FILES);
     s.smp[0] = RFM_MOVE_SMP_SRC_INPUT, s.smp[1] = RFM_MOVE_SMP_M_CAPTURE, s.smp[2] = 6, s.smp[3] = -60, s.smp[4] = 24;
     s.smp[5] = 1, s.smp[6] = RFM_MOVE_SMP_TO_LOOPER, s.vel_mode = RFM_MOVE_VEL_HARD;
-    CHECK(rfm_move_save(&s, b) == RFM_MOVE_SETTINGS_BYTES && RFM_MOVE_SETTINGS_BYTES == 137 && b[3] == 8);
+    CHECK(rfm_move_save(&s, b) == RFM_MOVE_SETTINGS_BYTES && RFM_MOVE_SETTINGS_BYTES == 138 && b[3] == 9);   /* (stage 3a:
+                                                         * version 9, the kit's byte) */
     CHECK(rfm_move_load(&t, b, sizeof b) == 0 && !memcmp(&s, &t, sizeof s));
     b[3] = 7, b[4] = RFM_MOVE_SETTINGS_BYTES_V7 & 0xFF, b[5] = RFM_MOVE_SETTINGS_BYTES_V7 >> 8;   /* (an older image) */
     CHECK(rfm_move_load(&t, b, RFM_MOVE_SETTINGS_BYTES_V7) == 0 && t.vel_mode == RFM_MOVE_VEL_HARD &&

@@ -100,11 +100,16 @@ static void ic(mr_canvas_t *cv, icon_t i, int x, int y, int v)
 enum { SCR_TAB, SCR_ACT, SCR_TRIM };
 /* (the owner, 2026-11-25: "in the second tab where I can select takes I should be able to use the full sound editor")
  * a take's actions are Play, the Tools tab's five, Delete */
-enum { A_PLAY, A_TRIM, A_NORM, A_REV, A_FIN, A_FOUT, A_DEL };
+/* (stage 3a, a host with the kit) To Kit (I_KIT) before Delete: the app closes on the Kit view, the take waits for a
+ * pad */
+static icon_t I_KIT = { "...........", "####..####.", "####..####.", "####..####.", "####..####.", "...........",
+                        "####..####.", "####..####.", "####..####.", "####..####.", "..........." };
+enum { A_PLAY, A_TRIM, A_NORM, A_REV, A_FIN, A_FOUT, A_DEL, A_KIT };
 static const uint8_t ACT_TAKE[] = { A_PLAY, A_TRIM, A_NORM, A_REV, A_FIN, A_FOUT, A_DEL }, ACT_STEMS[] = { A_PLAY, A_DEL };
-static icon_t *const ACT_ICON[] = { &I_PLAY, &I_TRIM, &I_NORM, &I_REV, &I_FIN, &I_FOUT, &I_X };
-static const char *const ACT_NAME[] = { "Play", "Trim", "Normalize", "Reverse", "Fade In", "Fade Out", "Delete" };
-static const char *const ACT_SAY[] = { "Play", "Trim", "Normalize", "Reverse", "Fade in", "Fade out", "Delete" };
+static const uint8_t ACT_TAKE_KIT[] = { A_PLAY, A_TRIM, A_NORM, A_REV, A_FIN, A_FOUT, A_KIT, A_DEL };
+static icon_t *const ACT_ICON[] = { &I_PLAY, &I_TRIM, &I_NORM, &I_REV, &I_FIN, &I_FOUT, &I_X, &I_KIT };
+static const char *const ACT_NAME[] = { "Play", "Trim", "Normalize", "Reverse", "Fade In", "Fade Out", "Delete", "To Kit" };
+static const char *const ACT_SAY[] = { "Play", "Trim", "Normalize", "Reverse", "Fade in", "Fade out", "Delete", "To kit" };
 enum { T_TRIM, T_NORM, T_REV, T_FIN, T_FOUT, T_N };
 static icon_t *const TOOL_ICON[T_N] = { &I_TRIM, &I_NORM, &I_REV, &I_FIN, &I_FOUT };
 static const char *const TOOL_NAME[T_N] = { "Trim", "Normalize", "Reverse", "Fade In", "Fade Out" };
@@ -553,6 +558,10 @@ static int act_ops(const rfm_move_t *m, const uint8_t **ops)   /* the actions' r
         *ops = ACT_STEMS;
         return (int)sizeof ACT_STEMS;
     }
+    if (rfmv_kit_cap(m)) {
+        *ops = ACT_TAKE_KIT;
+        return (int)sizeof ACT_TAKE_KIT;
+    }
     *ops = ACT_TAKE;
     return (int)sizeof ACT_TAKE;
 }
@@ -696,6 +705,7 @@ static void act_open(rfm_move_t *m, const rfm_move_smp_row_t *r, int ai)
         play_stop(m);
     p->cur = *r, p->scr = SCR_ACT, p->ai = (uint8_t)ai;
 }
+static void app_close(rfm_move_t *m);
 static void click(rfm_move_t *m)
 {
     rfm_move_smp_t *p = S(m);
@@ -736,6 +746,13 @@ static void click(rfm_move_t *m)
         case A_REV: edit(m, RFM_MOVE_SMP_OP_REVERSE, 0, 0, 0), info(m, "Reversed", NULL); break;
         case A_FIN:
         case A_FOUT: p->fade = (uint8_t)(op == A_FIN ? 1 : 2); break;
+        case A_KIT: {                                   /* (stage 3a) the take onto a kit pad: the Kit view */
+            const uint32_t id = p->cur.id;
+            app_close(m);
+            p->scr = SCR_TAB;
+            rfmv_kit_to(m, id);
+            return;
+        }
         default:
             del(m, &p->cur);
             p->scr = SCR_TAB;
@@ -1596,7 +1613,7 @@ static void icon_row(mr_canvas_t *cv, icon_t *const *icons, int n, int chosen, c
 {
     int i;
     for (i = 0; i < n; i++) {
-        const int x = n > 5 ? 5 + i * 17 : 10 + i * 25;
+        const int x = n > 7 ? 4 + i * 15 : n > 5 ? 5 + i * 17 : 10 + i * 25;   /* (eight with To Kit) */
         if (i == chosen)
             v2_R(cv, x - 2, 26, 15, 15, 1);
         ic(cv, *icons[i], x, 28, i != chosen);

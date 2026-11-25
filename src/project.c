@@ -30,6 +30,9 @@
  *      (version 10, 0.14.0: no new bytes) a track's rate byte is its base rate (bits 0..3, RFM_MOVE_SEQ_RATES) and its
  *      feel (bits 4..5, RFM_MOVE_FEEL_*); before, one of 10 rates 1/32T 1/32 1/16T .. 1/2T 1/2 (OLD_RATES), read as
  *      the same timing (old_rate)
+ *      (version 11, stage 3a) the kit (kit.c, RFM_MOVE_KIT_BYTES): { the right half's layout, the tracks routed to it
+ *      u16 (bits 12..15 only), the chosen pad, 4 zero }, 16 pads x { path 160 NUL padded, 12 settings i16 in range,
+ *      start < end }
  *      FNV-1a (32 bit) of everything before it */
 #include <stdio.h>
 #include <string.h>
@@ -111,6 +114,7 @@ int rfm_move_project_save(rfm_move_t *m, uint8_t *out, uint32_t cap)
     *p++ = q->launch_q;                                 /* (version 8: the launch quantization, the clips' own) */
     memcpy(p, q->cset, RFM_MOVE_SEQ_CLIPS), p += RFM_MOVE_SEQ_CLIPS;
     rfmv_pfw_write(m, p), p += RFM_MOVE_PFW_BYTES;      /* (version 9: the firmwares) */
+    rfmv_kit_write(m, p), p += RFM_MOVE_KIT_BYTES;      /* (version 11: the kit) */
     w32(p, fnv(out, (uint32_t)(p - out)));
     p += 4;
     return (int)(p - out);
@@ -196,7 +200,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
     ver = b[4];
     if (ver < 1 || ver > RFM_MOVE_PROJECT_VERSION)
         return -2;
-    ext = ver >= 9 ? RFM_MOVE_PROJECT_EXT : ver == 8 ? RFM_MOVE_PROJECT_EXT_V8 : ver == 7 ? RFM_MOVE_PROJECT_EXT_V7 : ver == 6 ? RFM_MOVE_PROJECT_EXT_V6 : ver == 5 ? RFM_MOVE_PROJECT_EXT_V5 : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
+    ext = ver >= 11 ? RFM_MOVE_PROJECT_EXT : ver >= 9 ? RFM_MOVE_PROJECT_EXT_V10 : ver == 8 ? RFM_MOVE_PROJECT_EXT_V8 : ver == 7 ? RFM_MOVE_PROJECT_EXT_V7 : ver == 6 ? RFM_MOVE_PROJECT_EXT_V6 : ver == 5 ? RFM_MOVE_PROJECT_EXT_V5 : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
           ver == 2 ? RFM_MOVE_PROJECT_EXT_V2 : 0;
     ab = ver >= 3 ? RFM_MOVE_ARP_BYTES : RFM_MOVE_ARP_BYTES_V2;   /* (an arp's bytes) */
     fixed = RFM_MOVE_PROJECT_FIXED - RFM_MOVE_PROJECT_EXT + ext;
@@ -297,6 +301,8 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
         }
         if (ver >= 9 && rfmv_pfw_check(x + RFM_MOVE_PROJECT_EXT_V8) != 0)
             return -9;                                  /* (0.13.0: the firmwares) */
+        if (ver >= 11 && rfmv_kit_check(x + RFM_MOVE_PROJECT_EXT_V10) != 0)
+            return -9;                                  /* (stage 3a: the kit) */
         for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++) {      /* (each track's layout and CC numbers) */
             const uint8_t *l = x + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_SEQ_CLIPS / 8 + RFM_MOVE_SEQ_TRACKS * (2 + ab) +
                                i * (1 + RFM_MOVE_NBANKS * RFM_MOVE_NKNOBS);
@@ -398,6 +404,12 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
 }
 
 int rfm_move_project_check(const uint8_t *b, uint32_t n) { return parse(b, n, NULL); }
+/* a checked blob's firmware part (version 9..11; NULL before), its kit part (version 11; NULL before) */
+static const uint8_t *pfw_part(const uint8_t *b, uint32_t n)
+{
+    return b[4] >= 9 ? b + n - 4 - (b[4] >= 11 ? RFM_MOVE_KIT_BYTES : 0) - RFM_MOVE_PFW_BYTES : NULL;
+}
+static const uint8_t *kit_part(const uint8_t *b, uint32_t n) { return b[4] >= 11 ? b + n - 4 - RFM_MOVE_KIT_BYTES : NULL; }
 
 /* ---- a project in brief, for the grid and its popup */
 static void info_count(rfm_move_proj_info_t *o, uint8_t seen[RFM_MOVE_SEQ_CLIPS], int clip, int note)
@@ -447,7 +459,7 @@ int rfm_move_project_info(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
     memset(seen, 0, sizeof seen);
     o->ok = 1, o->bpm10 = (uint16_t)r16(b + 6), o->color = b[18];
     if (b[4] >= 9)                                      /* (0.13.0) its firmwares */
-        o->has_fw = 1, rfmv_pfw_ids(b + n - 4 - RFM_MOVE_PFW_BYTES, o->fw);
+        o->has_fw = 1, rfmv_pfw_ids(pfw_part(b, n), o->fw);
     nn = r16(b + OFF_NOTES);
     for (i = 0, p = b + OFF_NOTES + 2; i < nn; i++, p += 7)
         info_count(o, seen, p[0], 1);
@@ -492,7 +504,11 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
     q->bank = (uint8_t)(q->sel_track / 4);
     rfmv_seq_load_track(m);                             /* (the selected track's layout, CC numbers, key) */
     q->proj_cur = (int8_t)slot, q->proj_pending = -1;   /* (projects mode stays: the owner's, left with Back / Menu) */
-    rfmv_pfw_loaded(m, slot, b && n && b[4] >= 9 ? b + n - 4 - RFM_MOVE_PFW_BYTES : NULL);   /* (0.13.0: its
+    if (b && n && kit_part(b, n))                       /* (stage 3a) its kit (an older project: none, its routing kept) */
+        rfmv_kit_read(m, kit_part(b, n));
+    else if (b && n)
+        rfmv_kit_clear(m);
+    rfmv_pfw_loaded(m, slot, b && n ? pfw_part(b, n) : NULL);   /* (0.13.0: its
                                                          * firmwares asked for; the loading screen) */
     if ((q->play_after_load && pend) || was) {          /* (Play pressed while it loaded, or it was playing; 0.13.0:
                                                          * once its firmwares are in. 0.14.0: only the load that Play
@@ -511,7 +527,8 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
                                                          * buttons' tracks, together. (The clear above put the channels
                                                          * and filters back to the old defaults while the settings kept
                                                          * the new tracks: slot 2's pads then played channel 5) */
-        rfmv_pfw_defaults(m);
+        rfmv_pfw_defaults(m), rfmv_kit_new(m);         /* (stage 3a: tracks 13..16 routed to an empty kit) */
+    rfmv_kit_loaded_project(m);                         /* (stage 3a: its sounds asked for, its settings sent) */
     q->dirty = 0;
     info_live(m, &q->info[slot]);
     rfmv_fx_loaded(m);                                  /* (0.4.0: its FX setup to the host) */
@@ -522,6 +539,8 @@ void rfm_move_project_dir(rfm_move_t *m, uint32_t used)
 {
     m->seq.proj_used = used;
     rfmv_pfw_first(m, used);                            /* (0.13.0: a fresh install: a new project's routing) */
+    if (!used && !m->seq.nnotes && !m->seq.nlocks && !rfmv_kit_used(m))
+        rfmv_kit_new(m);                                /* (stage 3a: a fresh install's kit: tracks 13..16 to it) */
 }
 int rfm_move_project_slot(const rfm_move_t *m) { return m->seq.proj_cur; }
 
@@ -652,6 +671,7 @@ void rfmv_proj_delete(rfm_move_t *m, int slot)
         rfmv_seq_stop(m);
         rfmv_seq_ui_release(m);
         rfmv_seq_project_clear(m);
+        rfmv_kit_new(m), rfmv_kit_loaded_project(m);   /* (stage 3a: the kit emptied too, a new project's) */
         if (was)
             rfmv_seq_start(m);
     }

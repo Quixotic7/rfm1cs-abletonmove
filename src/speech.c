@@ -103,6 +103,8 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
         snprintf(o, (size_t)cap, "Sampler");
         return S_SAMPLER;
     }
+    if (rfmv_kit_base_words(m, o, cap))                 /* (stage 3a) the Kit view */
+        return S_SAMPLER + 1;
     if (m->seq.smenu && !m->seq.projects) {             /* (0.6.1) a Shift menu open: its name */
         if (m->seq.smenu == RFM_MOVE_SM_GLOBAL) {       /* (0.6.10: its header, the battery; the rows as they move) */
             char r[64];
@@ -355,7 +357,7 @@ static void menu_words(const rfm_move_t *m, int t, char *o, int cap)
         return;                                         /* (a shortcut, a level: their own words) */
     if (m->menu_what == MENU_NONE) {                    /* (0.8.0) the menu shown, nothing changed yet */
         if (t == 3)
-            snprintf(o, (size_t)cap, "Track 4, %s", !rfmv_fx_ok(m) ? "Shift" : rfmv_t4_page(m) ? "Routing" : "Mixer");
+            snprintf(o, (size_t)cap, "Track 4, %s", !rfmv_fx_ok(m) ? "Shift" : rfmv_t4_page(m) == 2 ? "Kit" : rfmv_t4_page(m) ? "Routing" : "Mixer");
         else {                                          /* (0.9.0) one menu: the layout and the track */
             slot_words(m, sl, o, cap);
             snprintf(o + strlen(o), (size_t)cap - strlen(o), "layouts, %s, Track %d",
@@ -556,7 +558,7 @@ static void pop_kind_words(const rfm_move_t *m, char *o, int cap)
         return;
     }
     case POP_JOG: rfmv_tcase(rfmv_jog_name(i), l, sizeof l), snprintf(o, (size_t)cap, "Jog: %s", l); return;
-    case POP_T4: snprintf(o, (size_t)cap, "%s", i ? "Routing" : "Mixer"); return;
+    case POP_T4: snprintf(o, (size_t)cap, "%s", i == 2 ? "Kit" : i ? "Routing" : "Mixer"); return;
     case POP_CCNUM: snprintf(o, (size_t)cap, "Knob %d: CC %d", (i & 7) + 1, m->s.slot[m->fw.active % 3].cc[i & 7]); return;
     case POP_LOCK:
         slot_words(m, i % 3, o, cap);
@@ -618,6 +620,9 @@ static int pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint
     if (rfmv_smp_shown(m) && !rfmv_smp_covered(m))     /* (0.15.0) the sampler app: its row, popup, tabs, take,
                                                          * message (a newer popup under it: that, below) */
         return rfmv_smp_pop_words(m, o, cap, subj, stamp);
+    if (rfmv_kit_shown(m) && !(m->pop && rfmv_pop_up(m, m->pop) && (int32_t)(m->pop_ms - m->kit.chg_ms) > 0) &&
+        rfmv_kit_pop_words(m, o, cap, subj, stamp))     /* (stage 3a) the Kit view: its row, popup, file, message */
+        return 1;
     up = m->pop && (m->pop != POP_SELECT || rfmv_half(m)) && rfmv_pop_up(m, m->pop) &&
          !(m->pop == POP_MODE && m->pop_i < 4 && rfmv_hold_shown(m, m->pop_i));
     if (up && m->pop == POP_STEP && (q->view || q->projects || m->s.mode != RFM_MOVE_MODE_SEQ))

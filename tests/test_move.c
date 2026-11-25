@@ -2302,7 +2302,7 @@ static void test_popup_width(void)
     rfm_move_settings_default(&st);
     CHECK(st.pop_half == 0 && st.speech == 0);
     st.pop_half = 1, st.speech = 1 + RFM_MOVE_SPEECH_JOG;
-    CHECK(rfm_move_save(&st, img) == RFM_MOVE_SETTINGS_BYTES && img[3] == 8 && img[RFM_MOVE_SETTINGS_BYTES_V6 - 2] == 1 &&
+    CHECK(rfm_move_save(&st, img) == RFM_MOVE_SETTINGS_BYTES && img[3] == 9 && img[RFM_MOVE_SETTINGS_BYTES_V6 - 2] == 1 &&
           img[RFM_MOVE_SETTINGS_BYTES_V6 - 1] == 3);   /* (0.8.0: version 7, the slots after them; 0.15.0: 8, the sampler) */
     CHECK(rfm_move_load(&st, img, sizeof img) == 0 && st.pop_half == 1 && st.speech == 3);
     img[3] = 6, img[4] = (uint8_t)RFM_MOVE_SETTINGS_BYTES_V6;   /* (a version 6 image: 88 bytes) */

@@ -431,6 +431,40 @@ int rfmv_smp_tick(rfm_move_t *m);                       /* (speech) a message's 
 void rfmv_smp_poll(rfm_move_t *m);                      /* (stage 2, the clock) Trim's zoom after a knob's turn ends */
 int rfmv_smp_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);   /* 1 up */
 int rfmv_smp_lvpx(int level, int w);                    /* (tests) a level 0..32767 as pixels of a -60..0 dB scale */
+/* ---- kit.c: (stage 3a) the kit (RFM_MOVE_CAP_KIT) */
+int rfmv_kit_cap(const rfm_move_t *m);
+void rfmv_kit_init(rfm_move_t *m);                      /* (rfm_move_init) an empty kit */
+void rfmv_kit_caps(rfm_move_t *m, int was);             /* the caps set (was: the kit's before) */
+int rfmv_kit_active(const rfm_move_t *m);               /* the Kit view is the view (the sequencer's track view) */
+int rfmv_kit_shown(const rfm_move_t *m);                /* .. and its screen shows (no menu, States, sampler over it) */
+void rfmv_kit_open(rfm_move_t *m);                      /* Track 4's Kit view */
+void rfmv_kit_close(rfm_move_t *m, int restore);        /* .. left (restore: what it was opened over) */
+void rfmv_kit_to(rfm_move_t *m, uint32_t take);         /* the sampler's To Kit: the take waits for its pad */
+int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev);   /* 1 taken */
+int rfmv_kit_back(rfm_move_t *m);                       /* Back's click: 1 taken (the view shown) */
+int rfmv_kit_back_has(const rfm_move_t *m);             /* .. it has something to close */
+void rfmv_kit_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0], uint8_t wv[13]);   /* pads, steps, knobs */
+void rfmv_kit_leds_w(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3]);   /* Sample, Track 4 */
+int rfmv_kit_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* 1 drawn */
+int rfmv_kit_timed(const rfm_move_t *m);
+void rfmv_kit_poll(rfm_move_t *m);                      /* (advance) */
+void rfmv_kit_seq_note(rfm_move_t *m, int track, int note, int vel);   /* (seq.c) a note of a track (vel 0: off) */
+int rfmv_kit_route_flip(rfm_move_t *m, int fw, int track);   /* a held Track's hold on 13..16: kit <-> firmware; 1 done */
+int rfmv_kit_routed(const rfm_move_t *m, int track);
+rfmv_rgb_t rfmv_kit_row_rgb(int track);                 /* a kit track's colour (13 pink .. 16 violet) */
+int rfmv_kit_right_semis(const rfm_move_t *m, int n);   /* the right half's pad n: semitones, -1 dead */
+void rfmv_kit_clear(rfm_move_t *m);                     /* (project.c) an empty kit, unrouted */
+void rfmv_kit_new(rfm_move_t *m);                       /* .. a new project's: empty, tracks 13..16 routed to it */
+int rfmv_kit_used(const rfm_move_t *m);                 /* .. anything to save (version 11) */
+void rfmv_kit_write(const rfm_move_t *m, uint8_t *p);   /* .. RFM_MOVE_KIT_BYTES */
+int rfmv_kit_check(const uint8_t *p);                   /* .. 0 valid */
+void rfmv_kit_read(rfm_move_t *m, const uint8_t *p);
+void rfmv_kit_loaded_project(rfm_move_t *m);            /* .. loaded or made: the host told */
+int rfmv_kit_base_words(const rfm_move_t *m, char *o, int cap);   /* (speech) */
+int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);
+void rfmv_mode_set(rfm_move_t *m, int mode);            /* (move.c) the mode (FM-1 / Sequencer) as a layout change */
+void rfmv_seq_step_enter(rfm_move_t *m, int clip, int abs, int note, int vel);   /* (seq_ui.c) a note into a step as a
+                                                         * tap enters it (the TRIG defaults, the loop grown) */
 int rfmv_st_on(const rfm_move_t *m);                    /* the States layer open: its slot + 1, 0 */
 int rfmv_st_pad7(const rfm_move_t *m, int t);           /* Track t held: its pad 7 (States) has a job */
 void rfmv_st_open(rfm_move_t *m, int t, int from);      /* from 0 a held Track's pad 7, 1 the browser's Loop */

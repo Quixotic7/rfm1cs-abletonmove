@@ -1196,7 +1196,8 @@ static void test_blob(void)
     CHECK(rfm_move_project_save(m, a, sizeof a) == RFM_MOVE_PROJECT_FIXED);   /* an empty project: 608 bytes */
     rich_project(m, 7);
     n = rfm_move_project_save(m, a, sizeof a);
-    CHECK(n == RFM_MOVE_PROJECT_FIXED + m->seq.nnotes * 7 + m->seq.nlocks * 4 && n < 8000 + 720);   /* (0.5.0: 720 more FX values) */
+    CHECK(n == RFM_MOVE_PROJECT_FIXED + m->seq.nnotes * 7 + m->seq.nlocks * 4 && n < 8000 + 720 + RFM_MOVE_KIT_BYTES);   /* (0.5.0: 720 more FX values;
+                                                         * stage 3a: the kit) */
     printf("blob: empty %d bytes, %d notes + %d locks %d bytes, worst case %d\n", RFM_MOVE_PROJECT_FIXED,
            m->seq.nnotes, m->seq.nlocks, n, RFM_MOVE_PROJECT_MAX);
     CHECK(rfm_move_project_save(m, a, (uint32_t)n - 1) == -1);
@@ -1960,7 +1961,8 @@ static void test_trig(void)
         rfm_move_init(&M2, NULL, on_act, NULL);
         CHECK(rfm_move_project_load(&M2, 1, blob, (uint32_t)nb) == 0 && M2.seq.tr[0].tdef[1] == 2 && M2.seq.tr[0].tdef[2] == 75);
         {                                               /* a version 3 blob (no defaults) still loads: the plain ones */
-            const int n3 = nb - RFM_MOVE_SEQ_TRACKS * 8 - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES;   /* (0.4.0:
+            const int n3 = nb - RFM_MOVE_SEQ_TRACKS * 8 - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES -
+                           RFM_MOVE_KIT_BYTES;   /* (0.4.0:
                                                          * and no FX setup; 0.6.6: no MIDI routes; 0.12.0: no launch
                                                          * settings) */
             uint32_t h = 2166136261u;
@@ -3277,7 +3279,7 @@ static void test_rates_feel(void)
     rfm_move_seq_play(m, 0);
     /* the blob: version 10 keeps the base rate and the feel */
     n = rfm_move_project_save(m, a, sizeof a);
-    CHECK(a[4] == 10 && a[RATE_BYTE(n, 0)] == (2 | RFM_MOVE_FEEL_DOTTED << 4) && a[RATE_BYTE(n, 2)] == 7);
+    CHECK(a[4] == RFM_MOVE_PROJECT_VERSION && a[RATE_BYTE(n, 0)] == (2 | RFM_MOVE_FEEL_DOTTED << 4) && a[RATE_BYTE(n, 2)] == 7);
     rfm_move_init(m2, NULL, on_act, NULL);
     CHECK(rfm_move_project_load(m2, 1, a, (uint32_t)n) == 0 && m2->seq.tr[0].rate == 2 &&
           m2->seq.tr[0].feel == RFM_MOVE_FEEL_DOTTED && m2->seq.tr[2].rate == 7 && m2->seq.tr[3].rate == RFM_MOVE_SEQ_RATE_16 &&
@@ -3286,18 +3288,18 @@ static void test_rates_feel(void)
     CHECK(rfm_move_project_check(b, (uint32_t)n) == -9);
     memcpy(b, a, (size_t)n), b[RATE_BYTE(n, 0)] = 3 << 4, refnv(b, (uint32_t)n);   /* (no such feel) */
     CHECK(rfm_move_project_check(b, (uint32_t)n) == -9);
-    /* version 9 (0.13.0, the same bytes): tracks 1..10 with the ten old rates load with their timing */
+    /* version 9 (0.13.0, the same bytes but the kit's): tracks 1..10 with the ten old rates load with their timing */
     memcpy(b, a, (size_t)n), b[4] = 9;
     for (i = 0; i < 10; i++)
         b[RATE_BYTE(n, i)] = (uint8_t)i;
-    refnv(b, (uint32_t)n);
+    refnv(b, (uint32_t)(n - RFM_MOVE_KIT_BYTES));
     rfm_move_init(m2, NULL, on_act, NULL);
-    CHECK(rfm_move_project_load(m2, 1, b, (uint32_t)n) == 0);
+    CHECK(rfm_move_project_load(m2, 1, b, (uint32_t)(n - RFM_MOVE_KIT_BYTES)) == 0);
     for (i = 0; i < 10; i++)
         CHECKF(rfmv_seq_tps(m2->seq.tr[i].rate, m2->seq.tr[i].feel) == OLD[i] &&
                m2->seq.tr[i].feel == (i & 1 ? RFM_MOVE_FEEL_STRAIGHT : RFM_MOVE_FEEL_TRIPLET), "old rate %d", i);
-    b[RATE_BYTE(n, 0)] = 10, refnv(b, (uint32_t)n);     /* (version 9 had ten) */
-    CHECK(rfm_move_project_check(b, (uint32_t)n) == -9);
+    b[RATE_BYTE(n, 0)] = 10, refnv(b, (uint32_t)(n - RFM_MOVE_KIT_BYTES));     /* (version 9 had ten) */
+    CHECK(rfm_move_project_check(b, (uint32_t)(n - RFM_MOVE_KIT_BYTES)) == -9);
 }
 
 /* (0.14.0, the owner's: "add a layout for triplets which disables to 4th step in each group of 4 steps, So each group
@@ -3467,7 +3469,7 @@ static void test_triplet_layout(void)
     rfmv_seq_lock_set(m, 0, 2, RFM_MOVE_TRIG_JUMP, 3);
     rfmv_seq_loop_set(m, 0, 1, 5);
     n = rfm_move_project_save(m, a, sizeof a);
-    a[4] = 9, a[RATE_BYTE(n, 0)] = 2, refnv(a, (uint32_t)n);
+    a[4] = 9, a[RATE_BYTE(n, 0)] = 2, n -= RFM_MOVE_KIT_BYTES, refnv(a, (uint32_t)n);   /* (stage 3a: no kit) */
     rfm_move_init(m2, NULL, on_act, NULL);
     CHECK(rfm_move_project_load(m2, 1, a, (uint32_t)n) == 0);
     CHECK(m2->seq.tr[0].rate == 1 && m2->seq.tr[0].feel == RFM_MOVE_FEEL_TRIPLET);

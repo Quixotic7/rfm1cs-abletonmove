@@ -756,6 +756,7 @@ static void snd_off(rfm_move_t *m, int i)
 {
     rfm_move_seq_t *q = &m->seq;
     rfmv_emit_midi_t(m, q->snd[i].track + 1, 0x80 | q->snd[i].ch, q->snd[i].note, 0);
+    rfmv_kit_seq_note(m, q->snd[i].track, q->snd[i].note, 0);   /* (stage 3a: a track routed to the kit) */
     q->snd[i] = q->snd[--q->nsnd];
 }
 static void arp_clip_drop(rfm_move_t *m, int tr);
@@ -789,6 +790,7 @@ static void note_on(rfm_move_t *m, int track, int note, int vel, int len)
         snd_off(m, old);
     }
     rfmv_emit_midi_t(m, track + 1, 0x90 | ch, note, vel);
+    rfmv_kit_seq_note(m, track, note, vel);             /* (stage 3a: a track routed to the kit plays its pad) */
     q->snd[q->nsnd].ch = (uint8_t)ch, q->snd[q->nsnd].note = (uint8_t)note, q->snd[q->nsnd].track = (uint8_t)track;
     q->snd[q->nsnd].off = q->tl + (len < 1 ? 1 : len);
     q->nsnd++;
@@ -2066,6 +2068,7 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
     rfmv_fw_poll(m);                                    /* (0.4.0: the library's FW_LIBRARY, debounced) */
     rfmv_ep_sync(m, 1);                                 /* (0.14.0: the ENGINE page after the host's ep1 calls) */
     rfmv_smp_poll(m);                                   /* (0.15.0, stage 2: the sampler's Trim zoom, timed) */
+    rfmv_kit_poll(m);                                   /* (stage 3a: the kit's timed parts) */
     rfmv_say_tick(m);                                  /* (0.6.0: speech: the transport, popups the clock brings up) */
 }
 

@@ -216,6 +216,7 @@ uint32_t rfm_move_save(const rfm_move_settings_t *s, uint8_t o[RFM_MOVE_SETTINGS
         for (i = 0; i < RFM_MOVE_SMP_N; i++)            /* (version 8, 0.15.0) the sampler's */
             *p++ = (uint8_t)s->smp[i];
     }
+    *p++ = s->t4_kit;                                   /* (version 9, the kit: Track 4 left on the Kit view) */
     return (uint32_t)(p - o);
 }
 
@@ -227,6 +228,7 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
     rfm_move_settings_default(s);
     if (!b || n < 6 || b[0] != 'R' || b[1] != 'M' || b[2] != 'V' ||
         !((b[3] == RFM_MOVE_SETTINGS_VERSION && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES && n >= RFM_MOVE_SETTINGS_BYTES) ||
+          (b[3] == 8 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V8 && n >= RFM_MOVE_SETTINGS_BYTES_V8) ||
           (b[3] == 7 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V7 && n >= RFM_MOVE_SETTINGS_BYTES_V7) ||
           (b[3] == 6 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V6 && n >= RFM_MOVE_SETTINGS_BYTES_V6) ||
           (b[3] == 5 && (b[4] | b[5] << 8) == RFM_MOVE_SETTINGS_BYTES_V6 - 1 && n >= RFM_MOVE_SETTINGS_BYTES_V6 - 1) ||
@@ -297,6 +299,8 @@ int rfm_move_load(rfm_move_settings_t *s, const uint8_t *b, uint32_t n)
             s->lock[i] = q[i] < RFM_MOVE_SEQ_TRACKS ? q[i] : (uint8_t)i;
         if (b[3] >= 8)                                  /* (0.15.0) the sampler's (each checked; older: the defaults) */
             rfmv_smp_load(s->smp, q + RFM_MOVE_FW_SLOTS);
+        if (b[3] >= 9)                                  /* (the kit) Track 4 on the Kit view */
+            s->t4_kit = q[RFM_MOVE_FW_SLOTS + RFM_MOVE_SMP_N] == 1;
     } else                                              /* (older: every slot as the one mode was, its bank's CCs) */
         for (i = 0; i < RFM_MOVE_FW_SLOTS; i++) {
             rfm_move_slotset_t *ss = &s->slot[i];
@@ -524,6 +528,8 @@ static void set_mode(rfm_move_t *m, int mode)
     m->pop = POP_NONE;
     changed(m);
 }
+
+void rfmv_mode_set(rfm_move_t *m, int mode) { set_mode(m, mode); }   /* (stage 3a: the Kit view's way in and out) */
 
 /* ---- (0.8.0) the slots' own settings (proposal 2): s.slot[] is each slot's record; s.layout .. s.octave are the
  * active slot's mirror while a layout is played (outside the Sequencer, whose track has them then) */
@@ -875,6 +881,7 @@ void rfm_move_init(rfm_move_t *m, const rfm_move_settings_t *settings, rfm_move_
     rfmv_fw_init(m);
     rfmv_seq_init(m);
     rfmv_ep_init(m);                                    /* (0.14.0: no firmware's ep1 yet) */
+    rfmv_kit_init(m);                                   /* (stage 3a: an empty kit) */
     if (m->s.slot[0].lay >= RFM_MOVE_LAY_SCALE) {       /* (0.8.0, 0.9.0) the active slot's layout (slot 0 until the
                                                          * library names another): a note layout is the sequencer */
         m->s.mode = RFM_MOVE_MODE_SEQ;
@@ -1106,11 +1113,18 @@ static void on_pad(rfm_move_t *m, int p, int vel, uint32_t now)
     vel = rfm_move_vel(&m->s, vel);                     /* (the velocity setting: every pad that plays, any mode) */
     m->vel_last = (uint8_t)vel;
     h->kind = H_NONE;
-    if (rfmv_t4_menu(m)) {                              /* (0.8.0) Track 4 held: pad 1 the Mixer, pad 2 Routing */
+    if (rfmv_t4_menu(m)) {                              /* (0.8.0) Track 4 held: pad 1 the Mixer, pad 2 Routing;
+                                                         * (stage 3a, a host with the kit) pad 3 the Kit, pad 4 the
+                                                         * Looper (not built: dark, dead), pad 5 the projects */
         h->kind = H_MENU;
-        rfmv_menu(m, MENU_T4, rfmv_t4_page(m));
-        if ((p == 24 || p == 25) && rfmv_fx_ok(m))
+        if ((p == 24 || p == 25) && rfmv_fx_ok(m)) {
+            rfmv_kit_close(m, 1);
             rfmv_view_open(m, p == 24 ? VIEW_MIXER : VIEW_ROUTING);
+        } else if (p == 26 && rfmv_kit_cap(m))
+            rfmv_kit_open(m);
+        else if (p == 28 && rfmv_kit_cap(m))
+            rfmv_view_open(m, VIEW_PROJECTS);
+        rfmv_menu(m, MENU_T4, rfmv_t4_page(m));
         return;
     }
     if ((t = rfmv_lay_menu(m)) != 0) {                  /* (0.8.0) a firmware Track held: its layout menu; (0.11.0,
@@ -1855,7 +1869,10 @@ void rfmv_sv_toggle(rfm_move_t *m)
     q->pad_tap = -1;
     if (rfmv_sess_on(m)) {
         q->view = 0;
-        if (m->s.slot[act_slot(m)].lay < RFM_MOVE_LAY_SCALE) {
+        if (rfmv_kit_cap(m) && m->kit.on) {             /* (stage 3a) the Kit view it came from */
+            rfmv_seq_select(m, RFM_MOVE_KIT_TRACK0 + m->kit.cur / 4);
+            rfmv_pop(m, POP_T4, 2);
+        } else if (m->s.slot[act_slot(m)].lay < RFM_MOVE_LAY_SCALE) {
             slot_mode_fresh(m, 1);                      /* (the FM-1 layout, the takeover) */
             name_layout(m);
         } else
@@ -1877,6 +1894,21 @@ static void track_tap(rfm_move_t *m, int t)
         }
         rfmv_st_close(m);
     }
+    if (t == 3 && rfmv_kit_cap(m) && rfmv_fx_ok(m)) {   /* (stage 3a) the round: Mixer, Routing, Kit (the one
+                                                         * left on first, from elsewhere) */
+        if (rfmv_kit_active(m)) {
+            rfmv_kit_close(m, 1);
+            rfmv_view_open(m, VIEW_MIXER);
+        } else if (m->seq.projects && m->fw.fx && rfmv_t4_page(m) == 1)
+            rfmv_kit_open(m);                           /* (Routing: the Kit) */
+        else if (m->seq.projects && m->fw.fx)
+            rfmv_view_open(m, VIEW_ROUTING);            /* (the Mixer: Routing) */
+        else if (m->s.t4_kit)
+            rfmv_kit_open(m);
+        else
+            rfmv_view_open(m, rfmv_t4_page(m) ? VIEW_ROUTING : VIEW_MIXER);
+        return;
+    }
     if (t == 3) {                                       /* the sequencer side: the Mixer <-> Routing (remembered); no
                                                          * FX setup (one firmware, no FX): the projects */
         if (!rfmv_fx_ok(m)) {
@@ -1893,6 +1925,7 @@ static void track_tap(rfm_move_t *m, int t)
         return;                                         /* (one slot: Tracks 2, 3 dark, nothing) */
     if (m->seq.projects)
         rfmv_view_close(m);                             /* (out of the view to where it came from, then the tap) */
+    rfmv_kit_close(m, 0);                               /* (stage 3a: the Kit view left; the slot's layout follows) */
     if (rfmv_sess_on(m)) {                              /* (0.11.0, the owner's) session view is its own layer: the
                                                          * firmware played changes, the view stays; its summary (the
                                                          * tracks that reach it) a second, the knobs' lights after */
@@ -2027,7 +2060,8 @@ static void back_click(rfm_move_t *m, uint32_t now)
         return;
     if (rfmv_seq_layer_open(m))
         rfmv_seq_button(m, MR_CC_BACK, 1, now);
-    else if (rfmv_fwp_locked(m)) {                      /* (0.14.0, the owner's own exception to "Back never changes
+    else if (rfmv_kit_back(m)) {                        /* (stage 3a) the Kit view: its popup, tools, folder, tabs */
+    } else if (rfmv_fwp_locked(m)) {                      /* (0.14.0, the owner's own exception to "Back never changes
                                                          * the mode or the view") the FM-1 page's lock: Knobs, the jog
                                                          * its pages */
         rfmv_fwp_unlock(m);
@@ -2105,6 +2139,9 @@ static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
     if (m->track_held && ev->value && ev->type != MR_EV_TOUCH && ev->type != MR_EV_PAD_PRESSURE &&
         m->menu_what == MENU_NONE)
         m->tbtn_used = m->track_held;                   /* (anything pressed with a Track held: its release no tap) */
+    if (rfmv_kit_input(m, ev))                          /* (stage 3a) the Kit view: its pads, steps, knobs, jog (a pad
+                                                         * held + Sample records into it) */
+        return;
     if (rfmv_smp_input(m, ev))                          /* (0.15.0) the sampler app: Sample (Track held + Sample), the
                                                          * jog while it shows */
         return;
@@ -2341,6 +2378,10 @@ static void t4_menu_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
     if (rfmv_fx_ok(m)) {
         c[L_PAD0 + 24] = sc((rgb_t){ 255, 42, 42 }, rfmv_t4_page(m) == 0 ? 256 : 77);
         c[L_PAD0 + 25] = sc((rgb_t){ 255, 120, 0 }, rfmv_t4_page(m) == 1 ? 256 : 77);
+        if (rfmv_kit_cap(m))                            /* (stage 3a) pad 3 the Kit, pad 5 the projects (pad 4 the
+                                                         * Looper: not built, dark) */
+            c[L_PAD0 + 26] = sc((rgb_t){ 255, 60, 160 }, rfmv_t4_page(m) == 2 ? 256 : 77),
+            c[L_PAD0 + 28] = sc(WHITE, 77);
     }
     rfmv_shift_icons(m, ic);
     for (i = 0; i < RFM_MOVE_NSTEPS; i++)               /* (0.12.0: a pressed step white, R1) */
@@ -2456,6 +2497,7 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         rfmv_seq_leds(m, c, wv);
         fwp_leds(m, c, wv);                             /* (0.12.x) the FM-1 page's */
         rfmv_ep_leds(m, c);                             /* (0.14.0) the ENGINE page's */
+        rfmv_kit_leds(m, c, wv);                        /* (stage 3a) the Kit view's pads, steps, knobs */
         if (rfmv_seq_tflash_on(m))
             rfmv_seq_tflash_leds(m, c);                 /* (0.12.x) a Track's tap: the tracks a moment */
     }
@@ -2490,6 +2532,7 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
             w[L_ICON0 + i][0] = ic[i], w[L_ICON0 + i][1] = 0, w[L_ICON0 + i][2] = 0;
     }
     rfmv_smp_leds(m, w);                                /* (0.15.0) the sampler: Sample's light */
+    rfmv_kit_leds_w(m, w);                              /* (stage 3a) the kit: Sample (a take into a pad), Track 4 */
     if (m->back_down)                                   /* (0.12.0, a13) Back: full at its press; else lit only with a
                                                          * layer for its click to close */
         w[L_WHITE0 + W_BACK][0] = 127;
