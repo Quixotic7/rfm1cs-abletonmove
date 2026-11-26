@@ -2466,6 +2466,68 @@ static void t_lock_popup(void)
     }
 }
 
+/* 48b. (2026-11-26, the owner's: a pad page's clears work on that pad, a kit page's on all 16) Delete + Play on Pad
+ * Sample: the chosen pad's hits, ghosts and locks, the other pads of its track kept; on Sample Kit: all four kit tracks'
+ * clips; Delete + a knob on Sample Kit or Kit Mix (both orders): every pad's locks, the hits kept; each one undo step */
+static void t_scoped_clear(void)
+{
+    static rfm_move_note_t n0[RFM_MOVE_SEQ_NOTES];
+    static rfm_move_lock_t l0[RFM_MOVE_SEQ_LOCKS];
+    const int c12 = SEQ_CLIP(12, 0), c13 = SEQ_CLIP(13, 0);
+    int nn, nl, i, other = 0;
+    kit_view();
+    sound(1, "Snare", 4800, NULL, 0), sound(2, "Hat", 4800, NULL, 0), sound(4, "Kick", 4800, NULL, 0);
+    hit(kp(2)), tap_step(1), rest();
+    hit(kp(4)), tap_step(2), rest();
+    hit(kp(1)), tap_step(0), rest();
+    M.kit.page = RFM_MOVE_KIT_PG_PADMIX;
+    step(0, 1), touch(4, 1), knob(4, 20), touch(4, 0), step(0, 0), rest();   /* (pad 2: a Send 1 lock on its hit) */
+    step(3, 1), touch(4, 1), knob(4, 20), touch(4, 0), step(3, 0), rest();   /* (.. and a ghost on step 4) */
+    hit(kp(2)), rest();
+    step(1, 1), touch(4, 1), knob(4, 10), touch(4, 0), step(1, 0), rest();   /* (pad 3: a lock on its hit) */
+    hit(kp(1)), rest();
+    nn = M.seq.nnotes, nl = M.seq.nlocks;
+    memcpy(n0, M.seq.notes, sizeof n0), memcpy(l0, M.seq.locks, sizeof l0);
+    CHECK(nn == 3 && nl >= 6);
+    /* a pad page: pad 2's only */
+    M.kit.page = RFM_MOVE_KIT_PG_SAMPLE;
+    button(MR_CC_DELETE, 1), press(MR_CC_PLAY), button(MR_CC_DELETE, 0), rest();
+    CHECKF(rfmv_seq_find(&M, c12, 0, 37) < 0 && rfmv_seq_find(&M, c12, 1, 38) >= 0 && rfmv_seq_find(&M, c13, 2, 40) >= 0 &&
+           M.seq.nnotes == 2, "notes %d", M.seq.nnotes);
+    for (i = 0; i < M.seq.nlocks; i++)
+        other += M.seq.locks[i].clip == c12 && (M.seq.locks[i].step == 0 || M.seq.locks[i].step == 3);
+    CHECKF(!other && M.seq.nlocks == 2 && !M.seq.playing, "locks %d (pad 2's left %d)", M.seq.nlocks, other);
+    CHECKF(!strcmp(M.kit.msg, "Cleared") && !strcmp(M.kit.msg2, "Pad 2"), "msg %s %s", M.kit.msg, M.kit.msg2);
+    press(MR_CC_UNDO), rest();
+    CHECK(M.seq.nnotes == nn && M.seq.nlocks == nl && !memcmp(M.seq.notes, n0, sizeof n0[0] * (size_t)nn) &&
+          !memcmp(M.seq.locks, l0, sizeof l0[0] * (size_t)nl));
+    /* a kit page: every pad */
+    M.kit.page = RFM_MOVE_KIT_PG_KIT;
+    button(MR_CC_DELETE, 1), press(MR_CC_PLAY), button(MR_CC_DELETE, 0), rest();
+    CHECKF(M.seq.nnotes == 0 && M.seq.nlocks == 0 && !strcmp(M.kit.msg, "Cleared") && !strcmp(M.kit.msg2, "Kit"),
+           "notes %d locks %d msg %s %s", M.seq.nnotes, M.seq.nlocks, M.kit.msg, M.kit.msg2);
+    press(MR_CC_UNDO), rest();
+    CHECK(M.seq.nnotes == nn && M.seq.nlocks == nl && !memcmp(M.seq.locks, l0, sizeof l0[0] * (size_t)nl));
+    /* Delete held + a knob on Kit Mix: every pad's locks, the hits kept */
+    M.kit.page = RFM_MOVE_KIT_PG_KITMIX;
+    button(MR_CC_DELETE, 1), touch(0, 1), touch(0, 0), button(MR_CC_DELETE, 0), rest();
+    CHECKF(M.seq.nlocks == 0 && M.seq.nnotes == nn && !strcmp(M.kit.msg, "Cleared All") && !strcmp(M.kit.msg2, "Locks"),
+           "locks %d notes %d msg %s %s", M.seq.nlocks, M.seq.nnotes, M.kit.msg, M.kit.msg2);
+    press(MR_CC_UNDO), rest();
+    CHECK(M.seq.nlocks == nl && !memcmp(M.seq.locks, l0, sizeof l0[0] * (size_t)nl));
+    /* .. a knob touched, then Delete, on Sample Kit */
+    M.kit.page = RFM_MOVE_KIT_PG_KIT;
+    touch(1, 1), press(MR_CC_DELETE), touch(1, 0), rest();
+    CHECKF(M.seq.nlocks == 0 && M.seq.nnotes == nn, "locks %d", M.seq.nlocks);
+    press(MR_CC_UNDO), rest();
+    CHECK(M.seq.nlocks == nl);
+    /* a pad page's Delete + a knob: still the chosen pad's only (pad 3's lock kept) */
+    M.kit.page = RFM_MOVE_KIT_PG_PADMIX;
+    button(MR_CC_DELETE, 1), touch(4, 1), touch(4, 0), button(MR_CC_DELETE, 0), rest();
+    CHECKF(M.seq.nlocks == 2, "locks %d", M.seq.nlocks);
+    press(MR_CC_UNDO), rest();
+    CHECK(M.seq.nlocks == nl);
+}
 /* 49. (2026-11-26, the owner's: "the up and down arrows should adjust the pitch range since a sample can go +- 24
  * semitones") Up / Down an octave on the right half (lit where it moves; Chop: dark, dead), "Pitch -24"; a pitch under
  * the pad's (kw -32) heard, entered at a step, recorded, played back and kept through a version 16 save; past +24 dead */
@@ -2727,6 +2789,7 @@ int main(void)
     t_auto_clear();
     t_auto_clear_cutoff();
     t_lock_popup();
+    t_scoped_clear();
     t_pitch_range();
     t_project_old();
     t_chop_seq();

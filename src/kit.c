@@ -2843,6 +2843,64 @@ static void vel_turn(rfm_move_t *m, int d)
  * + a knob touched, no step held: the chosen pad's locks of the knob's setting on every step of its clip (its LK lock,
  * or the XLOCK slot pairs that hold it, freed), one undo step; a ghost trigger left with no locks is gone with them,
  * the hits stay. The Trig page: the knob's trig on the pad's track. "Cleared" and the setting, or "No Automation" */
+/* (2026-11-26, the owner's: a pad page works on the chosen pad, a kit page on all 16) the kit tracks' edited clips:
+ * notes too (1) or only the locks (0, every kit and trig lock: the ghosts go with them); how many removed. The caller's
+ * undo group */
+static int kit_clear_all(rfm_move_t *m, int notes)
+{
+    int tr, c = 0, lo, hi;
+    for (tr = RFM_MOVE_KIT_TRACK0; tr < RFM_MOVE_KIT_TRACK0 + 4; tr++) {
+        const int clip = edit_clip_of(m, tr);
+        if (notes && (hi = rfmv_seq_clip_range(m, clip, &lo)) > lo) {
+            if (!c)
+                rfmv_seq_group(m);
+            rfmv_seq_release(m, tr);
+            while (hi-- > lo)
+                rfmv_seq_note_del(m, clip, m->seq.notes[hi].step, m->seq.notes[hi].note), c++;
+        }
+        if ((hi = rfmv_seq_clip_lock_range(m, clip, &lo)) > lo) {
+            if (!c)
+                rfmv_seq_group(m);
+            while (hi-- > lo)
+                rfmv_seq_lock_set(m, clip, m->seq.locks[hi].step, m->seq.locks[hi].cc, -1), c++;
+        }
+    }
+    return c;
+}
+/* .. the chosen pad's hits, ghosts and locks over its clip (the other pads of its track keep theirs) */
+static int pad_clear_all(rfm_move_t *m, int k)
+{
+    int abs, c = 0;
+    for (abs = 0; abs < RFM_MOVE_SEQ_MAXLEN; abs++)
+        if (step_has(m, k, abs) || step_locks(m, k, abs)) {
+            if (!c++)
+                rfmv_seq_group(m), rfmv_seq_release(m, trk(k));
+            step_clear(m, k, abs);
+        }
+    return c;
+}
+/* Delete + Play in the Kit view: a pad page the chosen pad's steps, a kit page every pad's; one undo step */
+static void kit_delete_play(rfm_move_t *m)
+{
+    rfm_move_kit_t *t = K(m);
+    const int all = kit_page(cur_page(m));
+    char w[24];
+    m->seq.mods_used |= SEQ_M_DELETE;
+    if (all)
+        snprintf(w, sizeof w, "Kit");
+    else
+        snprintf(w, sizeof w, "Pad %d", t->cur % RFM_MOVE_KIT_PADS + 1);
+    if (all ? kit_clear_all(m, 1) : pad_clear_all(m, t->cur)) {
+        rfmv_seq_group(m), rfmv_seq_dirty(m);
+        msg(m, "Cleared", w);
+    } else
+        msg(m, w, "Empty");
+    {
+        char sw[40];
+        snprintf(sw, sizeof sw, "%s %s", t->msg, t->msg2);
+        rfmv_say_text(m, sw);
+    }
+}
 static void auto_clear(rfm_move_t *m, int k)
 {
     rfm_move_kit_t *t = K(m);
@@ -2851,6 +2909,16 @@ static void auto_clear(rfm_move_t *m, int k)
     int c = 0;
     m->seq.mods_used |= SEQ_M_DELETE;
     t->kdown = (uint8_t)(t->kdown | 1u << k);
+    if (kit_page(cur_page(m))) {                        /* (2026-11-26, the owner's) a kit page: its knobs lock
+                                                         * nothing; every pad's locks go (kit and trig locks) */
+        t->kpop = -1, t->vpop = 0, t->lpop = 0, t->lvl = 0;
+        if (kit_clear_all(m, 0)) {
+            rfmv_seq_group(m), rfmv_seq_dirty(m);
+            msg(m, "Cleared All", "Locks");
+        } else
+            msg(m, "No", "Automation");
+        return;
+    }
     if (knob_dead(m, k))
         return;                                         /* (dark and dead) */
     if (trig_page(m)) {
@@ -3294,6 +3362,12 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
         need(m);
         return 1;
     case MR_EV_BUTTON:
+        if (i == MR_CC_PLAY && (q->mods & SEQ_M_DELETE) && !q->projects && rfmv_kit_shown(m) && !t->sl_on &&
+            !q->smenu && !(q->mods & (SEQ_M_SHIFT | SEQ_M_COPY))) {   /* (2026-11-26, the owner's) Delete + Play: the
+                                                         * chosen pad's steps (a pad page), every pad's (a kit page) */
+            kit_delete_play(m);
+            return 1;
+        }
         if (i == MR_CC_SAMPLE && !rfmv_smp_shown(m)) { /* a pad held + Sample: it records into that pad */
             const int k = held_kit_pad(m);
             if (k < 0 || !rfmv_smp_cap(m) || rec_running(m))

@@ -1254,6 +1254,13 @@ load; the sequencer's notes of a track routed to the kit come to the host as `KI
 gets an empty kit. A firmware Track held shows a track the kit plays in its row's colour (13 pink, 14 orange, 15 light
 blue, 16 violet); a hold there routes it to the firmware, again back to the kit.
 
+**Clearing in the Kit view (2026-11-26, the owner's).** A pad page (Pad Sample, Pad Sample 2, Trig, Warp, Filter,
+Pad Mix) works on the chosen pad, a kit page (Sample Kit, Kit Mix) on all 16: Delete + Play clears the chosen pad's
+hits, ghosts and locks over its clip (the other pads of its track keep theirs; "Cleared" "Pad 5"), or every kit
+track's clip ("Cleared" "Kit"); Delete + a knob (held then touched, or touched then pressed) clears that setting's
+locks of the chosen pad, or on a kit page every pad's locks, kit and trig ("Cleared All" "Locks"). Each is one undo
+step and said; firmware tracks unchanged (Delete + Play: the clip, its loop one bar).
+
 **The lights.** Each kit row its track's colour: a pad with a sound dim, bright while it sounds, the chosen one white,
 empty dark, muted grey, recorded into red. The chosen pad's steps (2026-11-26): an empty step dim white, a hit the
 row's colour by its velocity, a locked hit blinking slowly, a ghost trigger (locks, no hit) the row's colour as a
