@@ -1106,8 +1106,21 @@ static void vtext(const rfm_move_t *m, int k, int p, int v, int row, char *o, in
         else
             snprintf(o, (size_t)cap, "Off");
         break;
-    case RFM_MOVE_KIT_P_LOOPS:
-    case RFM_MOVE_KIT_P_LOOPE: vtext(m, k, RFM_MOVE_KIT_P_START, loop_pt(d, p), row, o, cap); break;
+    case RFM_MOVE_KIT_P_LOOPS:                          /* (2026-11-26, the owner's) a percentage of the region (stored
+                                                         * as ever: of the whole sound), its ends "START" / "END" */
+    case RFM_MOVE_KIT_P_LOOPE: {
+        const int s0 = d->v[RFM_MOVE_KIT_P_START], e0 = d->v[RFM_MOVE_KIT_P_END], r = e0 - s0 > 0 ? e0 - s0 : 1;
+        const int lp = clampi(v, s0, e0), t = (int)(((int64_t)(lp - s0) * 1000 + r / 2) / r);   /* (tenths of a %) */
+        if (p == RFM_MOVE_KIT_P_LOOPS && lp <= s0)
+            snprintf(o, (size_t)cap, "START");
+        else if (p == RFM_MOVE_KIT_P_LOOPE && lp >= e0)
+            snprintf(o, (size_t)cap, "END");
+        else if (64 * 100 < r)                          /* (a detent under 1 %: a decimal) */
+            snprintf(o, (size_t)cap, "%d.%d%%", t / 10, t % 10);
+        else
+            snprintf(o, (size_t)cap, "%d%%", (t + 5) / 10);
+        break;
+    }
     case RFM_MOVE_KIT_P_SPEED: speed_text(d, v, o, cap); break;
     case RFM_MOVE_KIT_P_MORPH: morph_text(v, o, cap); break;
     case RFM_MOVE_KIT_P_FENV: snprintf(o, (size_t)cap, v ? "%+d" : "0", v); break;
@@ -4840,6 +4853,13 @@ int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
         else
             snprintf(o, (size_t)cap, "%s page", PG_NAME[cur_page(m)]);
         *subj = (uint16_t)(0xA60 | cur_page(m)), *stamp = t->turn_ms;
+    }
+    {                                                   /* (2026-11-26) the loop's ends said as words: "Loop Start: Start" */
+        const size_t n = strlen(o);
+        if (n >= 7 && !strcmp(o + n - 7, ": START"))
+            snprintf(o + n - 4, (size_t)cap - (n - 4), "tart");
+        else if (n >= 5 && !strcmp(o + n - 5, ": END"))
+            snprintf(o + n - 2, (size_t)cap - (n - 2), "nd");
     }
     return o[0] != 0;
 }

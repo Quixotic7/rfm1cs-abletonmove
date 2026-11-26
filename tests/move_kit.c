@@ -2064,6 +2064,30 @@ static void t_bits(void)
     b[13] = 1, b[at] = 5;                               /* (tenths: 0.5 bits is out of range) */
     CHECK(rfmv_kit_check(b, 16) != 0);
 }
+/* 41c. (2026-11-26, the owner's) Loop Start / End as a percentage of the region, its ends START / END (screen and
+ * words: "Loop Start: Start") */
+static void t_loop_pct(void)
+{
+    char w[96];
+    uint16_t subj;
+    uint32_t stamp;
+    kit_view();
+    sound(1, "Snare", 48000, NULL, 0);
+    hit(kp(1)), rest();
+    rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_MODE, RFM_MOVE_KIT_M_LOOP);
+    rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_START, RFM_MOVE_KIT_FRAC / 4);   /* (the region: its second quarter on) */
+    rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_LOOPS, 0), rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_LOOPE, RFM_MOVE_KIT_FRAC);
+    touch(4, 1);
+    CHECKF(rfmv_kit_pop_words(&M, w, sizeof w, &subj, &stamp) && !strcmp(w, "Loop Start: Start"), "words %s", w);
+    screen();
+    touch(4, 0), rest(), touch(5, 1);
+    CHECKF(rfmv_kit_pop_words(&M, w, sizeof w, &subj, &stamp) && !strcmp(w, "Loop End: End"), "words %s", w);
+    touch(5, 0), rest();
+    rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_LOOPS, RFM_MOVE_KIT_FRAC / 4 + (RFM_MOVE_KIT_FRAC - RFM_MOVE_KIT_FRAC / 4) / 2);
+    touch(4, 1);
+    CHECKF(rfmv_kit_pop_words(&M, w, sizeof w, &subj, &stamp) && !strcmp(w, "Loop Start: 50.0%"), "words %s", w);
+    touch(4, 0), rest();
+}
 /* 42. the Kit view's Layout menu (Shift + step 8): the jog's turn sets the right half's mode, not the note layout */
 static void t_kit_layout(void)
 {
@@ -2785,6 +2809,7 @@ int main(void)
     t_pitch_step();
     t_xlock();
     t_bits();
+    t_loop_pct();
     t_kit_layout();
     t_kit_level();
     t_pad_level();
