@@ -4033,11 +4033,22 @@ static void mj_open(int sm)
         shift_step(sm == RFM_MOVE_SM_WORKFLOW ? 2 : sm == RFM_MOVE_SM_TEMPO ? 4 : sm == RFM_MOVE_SM_GROOVE ? 6 :
                    sm == RFM_MOVE_SM_LAYOUT ? 7 : sm == RFM_MOVE_SM_KEYS ? 8 : 9);
 }
+static void test_mj_layout_turn(void)                  /* (2026-11-26, the owner's) a menu of one setting: the turn changes it */
+{
+    int l0;
+    track_view();
+    mj_open(RFM_MOVE_SM_LAYOUT), rest(), clear();
+    l0 = M.s.layout;
+    jog(1);
+    CHECKF(M.s.layout != l0 && !rfmv_seq_menu_editing(&M), "layout: the turn changes it at once (%d to %d)", l0, M.s.layout);
+    jog(-1);
+    CHECKF(M.s.layout == l0, "layout: back (%d)", M.s.layout);
+}
 static void test_mj_menus(void)
 {
     static const struct { int sm, bits; const char *name; } MN[] = {
         { RFM_MOVE_SM_WORKFLOW, 0x0F, "workflow" }, { RFM_MOVE_SM_TEMPO, 0x03, "tempo" },
-        { RFM_MOVE_SM_GROOVE, 0x03, "groove" },     { RFM_MOVE_SM_LAYOUT, 0x01, "layout" },
+        { RFM_MOVE_SM_GROOVE, 0x03, "groove" },     /* (2026-11-26: Layout, one setting, the turn changes it: below) */
         { RFM_MOVE_SM_KEYS, 0x0F, "keys" },         { RFM_MOVE_SM_VEL, 0x03, "velocity" },
         { RFM_MOVE_SM_REC, 0x03, "record" },
     };
@@ -6304,6 +6315,7 @@ int main(void)
     test_x_gone_dbl_stop();
     test_loop_steps();
     test_mj_menus();
+    test_mj_layout_turn();
     test_mj_places();
     test_mj_page_len();
     test_loop_dbl();

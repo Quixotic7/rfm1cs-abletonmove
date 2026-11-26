@@ -2764,7 +2764,8 @@ static void smenu_jog_turn(rfm_move_t *m, int d)
     char w[64];
     if (k < 0 || !d)
         return;
-    if (q->sm_edit) {
+    if (q->sm_edit || !(mk & (mk - 1))) {               /* (2026-11-26, the owner's: a menu of one setting, as Layout:
+                                                         * the turn changes it, no click first) */
         smenu_turn(m, k, d, 1);
         return;
     }
