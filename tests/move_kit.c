@@ -632,6 +632,36 @@ static void t_rows(void)
 }
 
 /* 9. Files: the places, a folder, the preview, a load and its answer, Back up */
+/* 65. (the owner's, 2026-11-26) a folder opened: its top row a sound, loaded onto the pad as if the jog had rested
+ * there; the rows coming late: loaded when they come */
+static void t_folder_top(void)
+{
+    const rfm_move_act_t *a;
+    rfm_move_kit_row_t r[2];
+    kit_view();
+    hit(kp(3));
+    jog_click(), jog(1), clear(), jog_click();          /* Files, Samples */
+    memset(r, 0, sizeof r);
+    r[0].id = 7, r[0].kind = RFM_MOVE_KIT_ROW_DIR, snprintf(r[0].name, sizeof r[0].name, "Drums");
+    r[1].id = 8, r[1].kind = RFM_MOVE_KIT_ROW_FILE, snprintf(r[1].name, sizeof r[1].name, "Clap");
+    CHECK(rfm_move_kit_rows(&M, 2, 0, 2, 0, 2, r) == 1);
+    adv_ms(RFM_MOVE_KIT_LAND_MS + 20);
+    CHECK(!count(RFM_MOVE_ACT_KIT_LOAD) && M.kit.fsel[0] == 0);   /* (the folder: nothing) */
+    clear(), jog_click();                               /* into Drums: its rows not come yet */
+    CHECK(M.kit.depth == 1 && M.kit.fsel[1] == 0);
+    adv_ms(RFM_MOVE_KIT_LAND_MS + 20);
+    CHECK(!count(RFM_MOVE_ACT_KIT_LOAD));
+    r[0].id = 21, r[0].kind = RFM_MOVE_KIT_ROW_FILE, snprintf(r[0].name, sizeof r[0].name, "Kick");
+    r[1].id = 22, r[1].kind = RFM_MOVE_KIT_ROW_FILE, snprintf(r[1].name, sizeof r[1].name, "Snare");
+    CHECK(rfm_move_kit_rows(&M, 2, 7, 2, 0, 2, r) == 1);
+    adv_ms(40);
+    CHECKF(count(RFM_MOVE_ACT_KIT_LOAD) == 1 && (a = last(RFM_MOVE_ACT_KIT_LOAD)) && a->index == 3 && a->take == 21 &&
+           !count(RFM_MOVE_ACT_KIT_PREVIEW) && !count(RFM_MOVE_ACT_KIT_NOTE), "loads %d", count(RFM_MOVE_ACT_KIT_LOAD));
+    adv_ms(500);
+    CHECK(count(RFM_MOVE_ACT_KIT_LOAD) == 1);
+    printf("  ok    a folder opened: its top sound onto pad 4 (once its rows come), not heard\n");
+}
+
 static void t_files(void)
 {
     const rfm_move_act_t *a;
@@ -3129,6 +3159,7 @@ int main(void)
     t_knobs();
     t_rows();
     t_files();
+    t_folder_top();
     t_delete();
     t_rec();
     t_to_kit();

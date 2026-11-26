@@ -2676,6 +2676,7 @@ static void click(rfm_move_t *m)
             t->depth++, t->folder[t->depth] = t->fact_id, t->fsel[t->depth] = 0;
             rows_forget(m);
             need(m);
+            land_mark(m);                               /* (2026-11-26, the owner's: the top row a sound: loaded) */
         }
         return;
     }
@@ -2715,6 +2716,7 @@ static void click(rfm_move_t *m)
         t->place = (uint8_t)root_pl(clampi(t->psel, 0, root_n(m) - 1)), t->depth = 0, t->folder[0] = 0, t->fsel[0] = 0;
         rows_forget(m);
         need(m);
+        land_mark(m);                                   /* (as a folder's: the top row a sound: loaded) */
         return;
     }
     if (t->fsel[t->depth] < 0) {                        /* (the owner's browser) the Back row: a folder up, the root */
@@ -2751,6 +2753,7 @@ static void click(rfm_move_t *m)
             t->depth++, t->folder[t->depth] = r->id, t->fsel[t->depth] = 0;
             rows_forget(m);
             need(m);
+            land_mark(m);                               /* (2026-11-26, the owner's: the top row a sound: loaded) */
             return;
         }
         {                                               /* a sound: kept on the chosen pad (round A: loaded as the
