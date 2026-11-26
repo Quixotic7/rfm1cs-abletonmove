@@ -231,8 +231,12 @@ void rfmv_level_popup(mr_canvas_t *cv, const char *title, int db10, const char *
     ctext(cv, 1, a, 1);
     rfmv_db_text(v, sizeof v, db10, 0);                 /* (the number at 3x, "dB" at 2x on its baseline) */
     k = v2_tw(v, 3) + 6 + v2_tw("dB", 2);
-    i = v2_T(cv, 64 - k / 2, 12, v, 3, 1);
-    v2_T(cv, i + 3, 19, "dB", 2, 1);
+    {                                                   /* (2026-11-26, the owner's: no name under it, the value in the
+                                                         * middle between the title and the bar) */
+        const int y = name && name[0] ? 12 : 24;
+        i = v2_T(cv, 64 - k / 2, y, v, 3, 1);
+        v2_T(cv, i + 3, y + 7, "dB", 2, 1);
+    }
     if (name && name[0]) {
         snprintf(a, sizeof a, "%s", name);
         fit_row(a, 1);

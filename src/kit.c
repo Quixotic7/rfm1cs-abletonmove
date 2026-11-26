@@ -4305,7 +4305,7 @@ static void popup_t(const rfm_move_t *m, mr_canvas_t *cv, int p, const char *ttl
         const int sib = pad_db10(d->v[p]);
         char tt[20];
         if (!ttl)
-            snprintf(tt, sizeof tt, "Pad %d Level", k % RFM_MOVE_KIT_PADS + 1), ttl = tt;
+            snprintf(tt, sizeof tt, "Pad %d", k % RFM_MOVE_KIT_PADS + 1), ttl = tt;   /* (the owner's: "Pad 2") */
         rfmv_level_popup(cv, ttl, sib, NULL, &sib, 1, 0);
         return;
     }
@@ -4625,7 +4625,7 @@ int rfmv_kit_level_screen(const rfm_move_t *m, mr_canvas_t *cv)
     if (t->lvl == 2)
         popup(m, cv, KP_KLEVEL);
     else {
-        snprintf(ttl, sizeof ttl, "Pad %d Level", t->cur + 1);
+        snprintf(ttl, sizeof ttl, "Pad %d", t->cur + 1);
         popup_t(m, cv, RFM_MOVE_KIT_P_LEVEL, ttl);
     }
     return 1;
