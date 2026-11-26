@@ -2841,6 +2841,21 @@ static void auto_clear(rfm_move_t *m, int k)
     } else
         msg(m, "No", "Automation");
 }
+/* (2026-11-26, the owner's) a knob touched, then Delete pressed (no step held): its parameter's locks on every step,
+ * as Delete held + a touch. 1: done */
+int rfmv_kit_auto_clear_touched(rfm_move_t *m)
+{
+    rfm_move_kit_t *t = K(m);
+    int k;
+    if (!rfmv_kit_cap(m) || !rfmv_kit_active(m) || t->st_down || m->seq.smenu || t->sl_on)
+        return 0;
+    for (k = 0; k < 8; k++)
+        if (t->kdown >> k & 1) {
+            auto_clear(m, k);
+            return 1;
+        }
+    return 0;
+}
 /* (2026-11-26, the owner's: a step held, a knob touched, then Delete) the Kit view's: that knob's lock of the chosen
  * pad on the held steps (Trig: its trig there), its own undo step; the knob's lock popup at the pad's own value with a
  * "Lock Cleared" tag ("No Lock" when none was there); a ghost left with no locks: gone. 1: done (Delete's release

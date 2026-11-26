@@ -2237,6 +2237,26 @@ static void t_ghost(void)
  * left gone, one with another lock kept; "Cleared" "Send 1", said; again: "No" "Automation"; Undo: as before, at once;
  * (the owner's) a step held, a knob touched, then Delete: that step's lock only, Undo brings it back; a plain Delete with
  * a step held and no knob touched: nothing (the hit stays) */
+/* (the owner's 2026-11-26 report) a Cutoff lock on step 2 from the Filter page: Delete held + knob 1 touched clears it;
+ * so does knob 1 touched, then Delete pressed (no step held) */
+static void t_auto_clear_cutoff(void)
+{
+    const int clip = SEQ_CLIP(12, 0), lc = RFM_MOVE_KIT_LOCK0 + RFM_MOVE_KIT_LK_CUTOFF * 4 + 1;
+    kit_view();
+    sound(1, "Snare", 4800, NULL, 0);
+    hit(kp(1)), tap_step(0), tap_step(1), rest();
+    M.kit.page = RFM_MOVE_KIT_PG_FILTER;
+    step(1, 1), knob(0, -20), step(1, 0), rest();
+    CHECKF(rfmv_seq_lock_get(&M, clip, 1, lc) >= 0, "the cutoff lock on step 2: %d", rfmv_seq_lock_get(&M, clip, 1, lc));
+    clear();
+    button(MR_CC_DELETE, 1), touch(0, 1), touch(0, 0), button(MR_CC_DELETE, 0), rest();
+    CHECKF(rfmv_seq_lock_get(&M, clip, 1, lc) < 0, "Delete + knob 1: cleared (%d; msg %s %s)",
+           rfmv_seq_lock_get(&M, clip, 1, lc), M.kit.msg, M.kit.msg2);
+    press(MR_CC_UNDO), rest();
+    CHECK(rfmv_seq_lock_get(&M, clip, 1, lc) >= 0);
+    touch(0, 1), press(MR_CC_DELETE), touch(0, 0), rest();   /* (the other order: the knob touched, then Delete) */
+    CHECKF(rfmv_seq_lock_get(&M, clip, 1, lc) < 0, "knob 1 then Delete: cleared (%d)", rfmv_seq_lock_get(&M, clip, 1, lc));
+}
 static void t_auto_clear(void)
 {
     static rfm_move_lock_t before[RFM_MOVE_SEQ_LOCKS];
@@ -2637,6 +2657,7 @@ int main(void)
     t_step_preview();
     t_ghost();
     t_auto_clear();
+    t_auto_clear_cutoff();
     t_lock_popup();
     t_pitch_range();
     t_project_old();

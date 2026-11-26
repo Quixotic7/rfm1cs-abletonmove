@@ -1174,6 +1174,16 @@ static void test_auto_clear(void)
     CHECK(m->seq.nnotes == nn && rfmv_seq_range(m, 0, 4, &lo) > lo);   /* (the step's release: its notes kept) */
     press(m, MR_CC_UNDO);
     CHECK(m->seq.nlocks == nb && !memcmp(m->seq.locks, before, (size_t)nb * sizeof before[0]));
+    /* (the owner's 2026-11-26) the other order for the whole clip: the knob touched, then Delete pressed (no step) */
+    raw(m, 0x90, 2, 127), press(m, MR_CC_DELETE), raw(m, 0x80, 2, 0), adv(m, 256);
+    {
+        int s, left = 0;
+        for (s = 0; s < 16; s++)
+            left += rfmv_seq_lock_get(m, 0, s, cc) >= 0;
+        CHECKF(!left && m->seq.nnotes == nn, "knob then Delete: %d locks of cc %d left", left, cc);
+    }
+    press(m, MR_CC_UNDO);
+    CHECK(m->seq.nlocks == nb && !memcmp(m->seq.locks, before, (size_t)nb * sizeof before[0]));
     /* (the owner's 2026-11-26: the knob still touched when Delete is pressed, no turn) */
     step(m, 4, 1), raw(m, 0x90, 2, 127), press(m, MR_CC_DELETE), raw(m, 0x80, 2, 0), step(m, 4, 0), adv(m, 256);
     CHECKF(rfmv_seq_lock_get(m, 0, 4, cc) < 0 && rfmv_seq_lock_get(m, 0, 0, cc) >= 0, "still touched: lock %d",

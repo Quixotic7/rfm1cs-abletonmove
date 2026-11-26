@@ -260,6 +260,7 @@ void rfmv_seq_msg(rfm_move_t *m, int msg);
 int rfmv_seq_auto_clear(rfm_move_t *m, int k);
 int rfmv_seq_trig_ids(int k, int ids[4], const char **name);
 int rfmv_seq_locks_clear(rfm_move_t *m, int clip, const int *ids, int n);
+int rfmv_kit_auto_clear_touched(rfm_move_t *m);          /* (2026-11-26) a kit knob touched, then Delete: clear all */
 const char *rfmv_seq_lkc_tag(const rfm_move_t *m, int k);   /* (a step held, a knob, Delete) "Lock Cleared", NULL */
 int rfmv_kit_lock_delete(rfm_move_t *m);                /* (kit.c) the Kit view's: a step held, a knob, Delete: 1 done */
 const char *rfmv_seq_msg_text(const rfm_move_t *m);    /* the message up now, NULL none */

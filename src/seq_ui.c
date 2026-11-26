@@ -1831,6 +1831,11 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
             if (mb == SEQ_M_DELETE && (rfmv_kit_lock_delete(m) || held_lock_delete(m)))
                 q->mods_used |= SEQ_M_DELETE;           /* (2026-11-26) a step held, a knob touched, then Delete: that
                                                          * knob's lock on the held steps (its release: nothing more) */
+            else if (mb == SEQ_M_DELETE && (rfmv_kit_auto_clear_touched(m) ||
+                                            (!q->step_held && m->touched >= 0 && m->touched < RFM_MOVE_NKNOBS &&
+                                             rfmv_seq_auto_clear(m, m->touched))))
+                q->mods_used |= SEQ_M_DELETE;           /* (2026-11-26, the owner's) a knob touched, then Delete: that
+                                                         * parameter's locks on every step, as Delete held + a touch */
         } else if (mb == SEQ_M_SHIFT && q->shift_lock) {
             ;                                           /* (latched: it stays down) */
         } else if (mb == SEQ_M_LOOP && q->loop_end) {
@@ -3009,11 +3014,12 @@ int rfmv_seq_auto_clear(rfm_move_t *m, int k)
         rfmv_seq_mute_on(m) || rfmv_seq_loop_over(m))
         return 0;
     q->mods_used |= SEQ_M_DELETE;
-    if (q->trig) {
+    if (q->trig || q->fwp || q->eng) {                  /* (2026-11-26: on the FM-1 and ENGINE pages a held step's knobs
+                                                         * are its trigs, rfmv_seq_trig_on: those are what is cleared) */
         if (k > 6)
             return 1;                                   /* (knob 8: dark, dead) */
         n = rfmv_seq_trig_ids(k, ids, &name);
-    } else if (!q->fwp && !q->eng) {
+    } else {
         ids[n++] = m->s.cc[m->s.bank][k];
         snprintf(nm, sizeof nm, "CC %d", ids[0]);
         name = nm;
