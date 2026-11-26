@@ -19,8 +19,9 @@
  * board K), kits saved and loaded (the Kit tab's Load, Save; Files' Kits; boards Q, R), the sampler's To Kit (the next
  * empty pad lit white, board U). One Undo brings back the kit a folder or a kit replaced.
  *
- * (stage 3c, making sounds; README "The kit (stage 3c)") Copy held, a pad, then another: Copy / Mix / Join (board N;
- * Mix and Join the host's new file, KIT_MERGE; board O the join's seam), Copy let go first: nothing; the Sound row's
+ * (stage 3c, making sounds; README "The kit (stage 3c)") Copy held: Copy / Mix / Join on the jog (board N; 2026-11-26:
+ * the source pad, then each target done at once; Mix and Join the host's new file, KIT_MERGE; board O the join's
+ * seam); the Sound row's
  * tools Play, Trim, Normalize, Reverse, Delete (board V; an edit the pad's own new file, KIT_EDIT); a take's To Kit
  * then Slice (board P: KIT_SLICE's cuts, the pads the slices, knobs 1 and 2 the chosen cut, the click the slices onto
  * the pads from the chosen one, a region each of the one file); Undo brings a pad or the kit back. The page's Kit tab
@@ -1733,30 +1734,61 @@ static uint32_t region_frames(const rfm_move_kit_pad_t *d)
     return d->frames && span > 0 ? (uint32_t)((uint64_t)d->frames * (uint32_t)span / RFM_MOVE_KIT_FRAC) : 0;
 }
 static int ready(const rfm_move_kit_pad_t *d) { return d->path[0] && d->st == RFM_MOVE_KIT_OK && d->frames; }
-/* Copy held + a pad, then another: the menu (board N) while Copy stays held */
-static int merge_up(const rfm_move_t *m) { return m->kit.mg_a && (m->seq.mods & SEQ_M_COPY); }
-static void merge_off(rfm_move_t *m) { K(m)->mg_a = 0, K(m)->mg_b = 0, K(m)->mg_i = 0; }
-/* the chosen one done: Copy (the first's sound and settings onto the second), Mix or Join (a new file from the host,
- * KIT_MERGE); the second pad shows on the Pad tab; Undo brings it back */
+/* (2026-11-26, the owner's: "while holding copy just turn the jogwheel to change the mode, it should default to Copy
+ * whenever you release copy and press again") Copy held in the Kit view: the modes' screen (Copy, Mix, Join; board N's
+ * icons), the jog's turn the mode (no click; no pages), the first pad the source (blinking), each further pad a target
+ * done at once in the mode (Move's Copy: the clipboard stays while Copy is held, so every pad pressed then gets the
+ * same source's); Copy let go: over, its next press on Copy. Not while the sequencer's Copy has a step source, nor
+ * after Back (until Copy is let go) */
+static int merge_up(const rfm_move_t *m)
+{
+    return (m->seq.mods & SEQ_M_COPY) && !m->seq.copy_src && m->kit.mg_held != 2 && rfmv_kit_shown(m);
+}
+static void merge_off(rfm_move_t *m) { K(m)->mg_a = 0, K(m)->mg_b = 0, K(m)->mg_i = 0, K(m)->mg_n = 0, K(m)->mg_first = 0; }
+/* Copy's hold followed: a new press starts on Copy with no source; its release ends it */
+static void merge_sync(rfm_move_t *m)
+{
+    rfm_move_kit_t *t = K(m);
+    if (!(m->seq.mods & SEQ_M_COPY)) {
+        if (t->mg_held || t->mg_a || t->mg_i)
+            merge_off(m), t->mg_held = 0;
+    } else if (!t->mg_held)
+        merge_off(m), t->mg_held = 1;
+}
+/* a target pressed: Copy (the source's sound and settings onto it), Mix or Join (a new file from the host, KIT_MERGE;
+ * onto an empty pad: a Copy); the target shows on the Pad tab; one Undo brings it back; "Copied 2>5", "Mixed 2+5",
+ * "Joined 2+5" */
 static void merge_do(rfm_move_t *m)
 {
     rfm_move_kit_t *t = K(m);
-    const int a = t->mg_a - 1, b = t->mg_b - 1, op = t->mg_i;
+    const int a = t->mg_a - 1, b = t->mg_b - 1;
     const rfm_move_kit_pad_t *s = CPAD(m, a);
     rfm_move_kit_pad_t *d = PAD(m, b);
+    int op = t->mg_i;
     char w[16];
-    merge_off(m);
     if (a < 0 || b < 0 || a == b)
         return;
-    if (!ready(s) || (op != RFM_MOVE_KIT_MG_COPY && !ready(d))) {
-        msg(m, "Empty", NULL);                          /* (Copy wants a sound on the first; Mix, Join on both) */
+    if (!ready(s)) {
+        msg(m, "Empty", NULL);                          /* (the source has no sound) */
         return;
     }
-    und_keep(m, b);
-    snprintf(w, sizeof w, "%d+%d", a + 1, b + 1);
+    if (op != RFM_MOVE_KIT_MG_COPY && !ready(d))
+        op = RFM_MOVE_KIT_MG_COPY;                      /* (the owner's: an empty target: Mix and Join just copy) */
+    if (!t->mg_n)
+        und_keep(m, b), t->mg_first = (uint8_t)(b + 1);
+    else if (t->mg_n == 1 && t->und == t->mg_first) {   /* (a second target in the hold: the whole kit's undo, as it
+                                                         * was before the first, so one Undo brings back the hold's) */
+        const int f = t->mg_first - 1;
+        const rfm_move_kit_pad_t now_f = t->pad[f];
+        t->pad[f] = t->und_pad;
+        undk_keep(m);
+        t->pad[f] = now_f;
+    }
+    t->mg_n++;
     if (op == RFM_MOVE_KIT_MG_COPY) {
         *d = *s;
         send_pad(m, b);                                 /* (its path again: the region and settings as the first's) */
+        snprintf(w, sizeof w, "%d>%d", a + 1, b + 1);
         msg(m, "Copied", w);
     } else {
         const uint32_t la = region_frames(s);
@@ -1765,7 +1797,8 @@ static void merge_do(rfm_move_t *m)
         d->keep = op == RFM_MOVE_KIT_MG_JOIN ? 3 : 0;
         d->cut = op == RFM_MOVE_KIT_MG_JOIN && la + lb ? (uint16_t)((uint64_t)la * RFM_MOVE_KIT_FRAC / (la + lb)) : 0;
         act(m, RFM_MOVE_ACT_KIT_MERGE, b, 0, 0, op, (uint32_t)a, 0, 0, NULL);
-        msg(m, MG_NAME[op], w);
+        snprintf(w, sizeof w, "%d+%d", a + 1, b + 1);
+        msg(m, op == RFM_MOVE_KIT_MG_JOIN ? "Joined" : "Mixed", w);
     }
     choose(m, b);
     t->tab = 0, t->tools = 0, t->turned = 0;
@@ -2056,16 +2089,20 @@ static void pad_down(rfm_move_t *m, int p, int vel)
         rfmv_seq_dirty(m);
         return;
     }
-    if (q->mods & SEQ_M_COPY) {                         /* (3c, board N) Copy + a pad, then another: Copy / Mix /
-                                                         * Join (the jog chooses, the click does it) */
+    if (merge_up(m)) {                                  /* (2026-11-26) Copy held: the first pad the source, each
+                                                         * further one a target, done at once in the jog's mode */
         q->mods_used |= SEQ_M_COPY;
         if (kp < 0)
             return;
-        if (!t->mg_a || kp + 1 == t->mg_a)
-            t->mg_a = (uint8_t)(kp + 1), t->mg_b = 0, t->mg_ms = now(m);
-        else
-            t->mg_b = (uint8_t)(kp + 1);
         t->tools = 0, t->kpop = -1;
+        if (!t->mg_a)
+            t->mg_a = (uint8_t)(kp + 1), t->mg_b = 0, t->mg_ms = now(m);
+        else if (kp + 1 != t->mg_a)
+            t->mg_b = (uint8_t)(kp + 1), merge_do(m);
+        return;
+    }
+    if (q->mods & SEQ_M_COPY) {                         /* (Copy held with a step source, or after Back: nothing) */
+        q->mods_used |= SEQ_M_COPY;
         return;
     }
     if (kp < 0 && t->tools)
@@ -2456,6 +2493,9 @@ static void files_turn(rfm_move_t *m, int d)
         land_mark(m);                                   /* (round A: at rest, the sound onto the pad) */
     }
 }
+static void len_turn(rfm_move_t *m, int d);
+static void len_pop_off(rfm_move_t *m);
+static void nudge_turn(rfm_move_t *m, int d);
 static void turn(rfm_move_t *m, int d)
 {
     rfm_move_kit_t *t = K(m);
@@ -2464,9 +2504,14 @@ static void turn(rfm_move_t *m, int d)
     t->kpop = -1;
     if (rec_running(m))
         return;
-    if (merge_up(m)) {                                  /* (3c, board N) Copy, Mix, Join */
-        if (t->mg_b)
-            t->mg_i = (uint8_t)clampi(t->mg_i + d, 0, RFM_MOVE_KIT_MG_N - 1);
+    if (merge_up(m)) {                                  /* (2026-11-26) Copy held: the mode (Copy, Mix, Join) */
+        t->mg_i = (uint8_t)clampi(t->mg_i + d, 0, RFM_MOVE_KIT_MG_N - 1);
+        m->seq.mods_used |= SEQ_M_COPY;
+        return;
+    }
+    if (t->st_down && !t->sl_on) {                      /* (2026-11-26, the owner's) a step held: its length, never
+                                                         * the pages */
+        len_turn(m, d);
         return;
     }
     if (t->sl_on) {                                     /* (3c, board P) the method: the cuts asked again at once */
@@ -2523,11 +2568,8 @@ static void click(rfm_move_t *m)
     touched(m);
     if (rec_running(m))
         return;
-    if (merge_up(m)) {                                  /* (3c) the chosen one done (no second pad yet: nothing) */
-        if (t->mg_b)
-            merge_do(m);
+    if (merge_up(m))                                    /* (2026-11-26: no click; a target does it) */
         return;
-    }
     if (t->sl_on) {
         slice_apply(m);
         return;
@@ -2671,7 +2713,7 @@ int rfmv_kit_back(rfm_move_t *m)
     touched(m);
     t->msg_ms = 0, t->kpop = -1;
     if (merge_up(m))                                    /* (3c) the Copy menu, the slices: closed, nothing done */
-        merge_off(m);
+        merge_off(m), t->mg_held = 2;                   /* (until Copy is let go) */
     else if (t->sl_on)
         slice_leave(m);
     else if (t->pend_take)
@@ -2766,6 +2808,7 @@ static void knob_touch(rfm_move_t *m, int k, int on)
     t->kdown = (uint8_t)(t->kdown | 1u << k);
     if (knob_dead(m, k))
         return;                                         /* (dark and dead) */
+    len_pop_off(m);                                     /* (a held step's length popup: the knob's now) */
     if (t->st_down)
         t->lk_knob = (uint8_t)(k + 1);                  /* (2026-11-26: a later Delete press clears its lock there) */
     if (trig_page(m)) {                                 /* (pages v2) the TRIG page's popup while touched */
@@ -2842,6 +2885,7 @@ static void vel_turn(rfm_move_t *m, int d)
     const int pad = t->cur, tr = trk(pad), clip = edit_clip_of(m, tr);
     int s, lo, hi, i;
     t->vpop = 1, t->vpop_ms = now(m), t->kpop = -1, t->lpop = 0, t->msg_ms = 0, t->lvl = 0;
+    len_pop_off(m);
     touched(m);
     for (s = 0; s < 16; s++)
         if (t->st_down >> s & 1) {
@@ -2859,6 +2903,106 @@ static void vel_turn(rfm_move_t *m, int d)
             }
         }
     t->st_used |= t->st_down;
+}
+/* (the owner's 2026-11-26: "Holding a step + turning the jogwheel should always change the step length") a step held +
+ * the jog: the chosen pad's hits there, their length, as a firmware track's held step (seq_ui.c: RFMV_LEN_FINE ticks a
+ * detent, Shift whole steps, at most the clip's length); the TRIG page's LENGTH popup (pop_val 1: the kit's, its value
+ * the chosen pad's hit on t->len_abs); one undo step a hold; on a ghost (no hit of the pad) nothing. Pages never turn */
+static void len_turn(rfm_move_t *m, int d)
+{
+    rfm_move_kit_t *t = K(m);
+    const int pad = t->cur, tr = trk(pad), clip = edit_clip_of(m, tr), whole = (m->seq.mods & SEQ_M_SHIFT) != 0;
+    const int max = m->seq.len[clip] * RFM_MOVE_SEQ_TPS;
+    int s, lo, hi, i, first = -1;
+    t->st_used |= t->st_down;
+    touched(m);
+    if (!d)
+        return;
+    for (s = 0; s < 16; s++)
+        if (t->st_down >> s & 1) {
+            const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
+            hi = rfmv_seq_range(m, clip, abs, &lo);
+            for (i = lo; i < hi; i++) {
+                const rfm_move_note_t n = m->seq.notes[i];
+                const int len = whole ? (n.len / RFM_MOVE_SEQ_TPS + d) * RFM_MOVE_SEQ_TPS : n.len + d * RFMV_LEN_FINE;
+                if (rfm_move_kit_pad_of(tr, n.note, NULL) != pad)
+                    continue;
+                if (!t->len_grp)
+                    rfmv_seq_group(m), t->len_grp = 1;
+                rfmv_seq_note_put(m, clip, abs, n.note, n.vel, clampi(len, whole ? RFM_MOVE_SEQ_TPS : 1, max > 0 ? max : 1),
+                                  n.micro);
+                hi = rfmv_seq_range(m, clip, abs, &lo); /* (the same notes, put back in place) */
+                if (first < 0)
+                    first = abs;
+            }
+        }
+    if (first < 0)
+        return;                                         /* (a ghost, an empty step: nothing) */
+    if (whole)
+        m->seq.mods_used |= SEQ_M_SHIFT;
+    rfmv_seq_dirty(m);
+    t->len_abs = (uint16_t)first;
+    t->kpop = -1, t->vpop = 0, t->lpop = 0, t->msg_ms = 0, t->lvl = 0;
+    rfmv_pop(m, POP_TRIG, 6);
+    m->pop_val = 1;                                     /* (the kit's held step: the chosen pad's hit) */
+}
+/* (the owner's 2026-11-26: "holding a step plus using the left and right arrow keys should be a shortcut to always
+ * adjust the microtiming") a step held + Left / Right: the chosen pad's hits there nudged, as a firmware track's held
+ * step (seq_ui.c held_nudge: 2 ticks a press, ~10 % of a step; Shift 1; the note's micro clamped -12..+11); the TRIG
+ * page's Nudge popup; one undo step a hold; a ghost (no hit: no timing of its own) nothing */
+static void nudge_turn(rfm_move_t *m, int d)
+{
+    rfm_move_kit_t *t = K(m);
+    const int pad = t->cur, tr = trk(pad), clip = edit_clip_of(m, tr);
+    int s, lo, hi, i, first = -1;
+    t->st_used |= t->st_down;
+    touched(m);
+    for (s = 0; s < 16; s++)
+        if (t->st_down >> s & 1) {
+            const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
+            hi = rfmv_seq_range(m, clip, abs, &lo);
+            for (i = lo; i < hi; i++) {
+                const rfm_move_note_t n = m->seq.notes[i];
+                if (rfm_move_kit_pad_of(tr, n.note, NULL) != pad)
+                    continue;
+                if (!t->nud_grp)
+                    rfmv_seq_group(m), t->nud_grp = 1;
+                rfmv_seq_note_put(m, clip, abs, n.note, n.vel, n.len, n.micro + d);   /* (clamped) */
+                hi = rfmv_seq_range(m, clip, abs, &lo);
+                if (first < 0)
+                    first = abs;
+            }
+        }
+    if (first < 0)
+        return;
+    rfmv_seq_dirty(m);
+    t->len_abs = (uint16_t)first;
+    t->kpop = -1, t->vpop = 0, t->lpop = 0, t->msg_ms = 0, t->lvl = 0;
+    rfmv_pop(m, POP_TRIG, 0);
+    m->pop_val = 1;
+}
+/* its popup gone at once (another popup of the held step: the velocity, a knob) */
+static void len_pop_off(rfm_move_t *m)
+{
+    if (m->pop == POP_TRIG && (m->pop_i == 6 || m->pop_i == 0) && m->pop_val == 1)
+        m->pop = POP_NONE;
+}
+/* (screen.c, speech.c) the kit's held-step popup is up (the jog's Length, pop_i 6; the arrows' Nudge, 0): the step it
+ * shows (*abs) and the chosen pad's hit there, its length or micro (*v; *has 0: no hit left) */
+int rfmv_kit_held_pop(const rfm_move_t *m, int *abs, int *v, int *has)
+{
+    const int pad = m->kit.cur, tr = trk(pad), clip = edit_clip_of(m, tr);
+    int lo, hi, i;
+    if (!rfmv_kit_shown(m) || m->pop != POP_TRIG || (m->pop_i != 6 && m->pop_i != 0) || m->pop_val != 1)
+        return 0;
+    *abs = m->kit.len_abs, *v = 0, *has = 0;
+    hi = rfmv_seq_range(m, clip, *abs, &lo);
+    for (i = lo; i < hi; i++)
+        if (rfm_move_kit_pad_of(tr, m->seq.notes[i].note, NULL) == pad) {
+            *v = m->pop_i == 6 ? m->seq.notes[i].len : m->seq.notes[i].micro, *has = 1;
+            break;
+        }
+    return 1;
 }
 /* (2026-11-26, Move's 14.2.3 "Deleting Automation": "hold the Delete button and tap the respective encoder") Delete held
  * + a knob touched, no step held: the chosen pad's locks of the knob's setting on every step of its clip (its LK lock,
@@ -3263,6 +3407,7 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
     const int i = ev->index;
     if (!rfmv_kit_cap(m))
         return 0;
+    merge_sync(m);                                      /* (2026-11-26: before the seq sees a Copy press) */
     /* the releases of what the kit took, wherever it is now */
     if (ev->type == MR_EV_PAD && !ev->value && i >= 0 && i < 32 && (t->down >> i & 1)) {
         pad_up(m, i);
@@ -3279,7 +3424,7 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
         if (!t->st_down) {                              /* (round B: the next hold its own undo; its popups gone) */
             if (t->lpop)
                 t->kpop = -1;
-            t->lk_grp = 0, t->vel_grp = 0, t->lpop = 0, t->vpop = 0, t->lk_knob = 0;
+            t->lk_grp = 0, t->vel_grp = 0, t->len_grp = 0, t->nud_grp = 0, t->lpop = 0, t->vpop = 0, t->lk_knob = 0;
         }
         if (!(t->st_used & bit) && now(m) - t->st_ms[i] < RFM_MOVE_SEQ_HOLD_MS && rfmv_kit_active(m))
             step_click(m, i);                           /* (a click: at its release; 2026-11-26: a hold, gated as
@@ -3294,7 +3439,8 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
         return 1;
     }
     if (ev->type == MR_EV_BUTTON && !ev->value) {
-        uint8_t *b = i == MR_CC_SAMPLE ? &t->sdown : i == MR_CC_UNDO ? &t->udown : i == MR_CC_UP || i == MR_CC_DOWN ? &t->ud_down : NULL;
+        uint8_t *b = i == MR_CC_SAMPLE ? &t->sdown : i == MR_CC_UNDO ? &t->udown : i == MR_CC_UP || i == MR_CC_DOWN ? &t->ud_down
+                   : i == MR_CC_LEFT || i == MR_CC_RIGHT ? &t->lr_down : NULL;
         if (b && *b) {
             *b = 0;
             return 1;
@@ -3417,6 +3563,15 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
                 undo_pad(m);
             return 1;
         }
+        if ((i == MR_CC_LEFT || i == MR_CC_RIGHT) && t->st_down && !t->sl_on && !q->step_held && !q->smenu &&
+            rfmv_kit_shown(m)) {                        /* (2026-11-26, the owner's) a step held: its hits' timing */
+            const int fine = (q->mods & SEQ_M_SHIFT) != 0;
+            t->lr_down = 1;
+            if (fine)
+                q->mods_used |= SEQ_M_SHIFT;
+            nudge_turn(m, (i == MR_CC_RIGHT ? 1 : -1) * (fine ? 1 : RFMV_NUDGE));
+            return 1;
+        }
         if ((i == MR_CC_UP || i == MR_CC_DOWN) && !q->step_held) {   /* (2026-11-26) the right half's pitches an
                                                          * octave up / down (Chop: dark, dead) */
             t->ud_down = 1;
@@ -3498,8 +3653,7 @@ int rfm_move_kit_peaks(rfm_move_t *m, int pad, uint32_t from, uint32_t count, in
 void rfmv_kit_poll(rfm_move_t *m)
 {
     rfm_move_kit_t *t = K(m);
-    if (t->mg_a && !(m->seq.mods & SEQ_M_COPY))
-        merge_off(m);                                   /* (3c) Copy let go before a choice: nothing done */
+    merge_sync(m);                                      /* (Copy let go: over; pressed again: on Copy) */
     if (t->tool_note && now(m) - t->tool_ms >= 400) {
         const int k = t->tool_note - 1;
         note_out(m, k, 0, 0, trk(k));
@@ -4598,18 +4752,17 @@ static void rec_screen(const rfm_move_t *m, mr_canvas_t *cv)   /* (boards L, M) 
             v2_R(cv, c * 2, 34, 1, 1, 1);
     }
 }
-/* (3c, board N) Copy held: the first pad's number, the arrow onto the second's, Copy / Mix / Join */
+/* (2026-11-26) Copy held: the three modes (board N's icons), the jog's marked and named; the source's number and an
+ * arrow once a pad is pressed */
 static void merge_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_kit_t *t = &m->kit;
     char n[8];
-    snprintf(n, sizeof n, "%d", t->mg_a);
-    v2_T(cv, 0, 0, n, 2, 1);
-    v2_L(cv, 18, 7, 108, 7), v2_L(cv, 104, 3, 108, 7), v2_L(cv, 104, 11, 108, 7);
-    if (!t->mg_b)
-        return;
-    snprintf(n, sizeof n, "%d", t->mg_b);
-    v2_T(cv, 128 - v2_tw(n, 2), 0, n, 2, 1);
+    if (t->mg_a) {
+        snprintf(n, sizeof n, "%d", t->mg_a);
+        v2_T(cv, 0, 0, n, 2, 1);
+        v2_L(cv, 18, 7, 108, 7), v2_L(cv, 104, 3, 108, 7), v2_L(cv, 104, 11, 108, 7);
+    }
     icon_row(cv, MG_ICON, RFM_MOVE_KIT_MG_N, t->mg_i, MG_NAME[t->mg_i % RFM_MOVE_KIT_MG_N], 26);
 }
 static int slice_x(const rfm_move_kit_t *t, uint32_t f)
@@ -4814,10 +4967,10 @@ int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
         snprintf(o, (size_t)cap, "%s pad %d", m->smp.st.state == RFM_MOVE_SMP_ST_ARMED ? "Armed," : "Recording,", t->rec_pad);
         *subj = 0xA01, *stamp = 0;
     } else if (merge_up(m)) {                           /* (3c) */
-        if (t->mg_b)
-            snprintf(o, (size_t)cap, "%s pad %d to %d", MG_NAME[t->mg_i % RFM_MOVE_KIT_MG_N], t->mg_a, t->mg_b);
+        if (t->mg_a)
+            snprintf(o, (size_t)cap, "%s from pad %d", MG_NAME[t->mg_i % RFM_MOVE_KIT_MG_N], t->mg_a);
         else
-            snprintf(o, (size_t)cap, "Copy from pad %d", t->mg_a);
+            snprintf(o, (size_t)cap, "%s", MG_NAME[t->mg_i % RFM_MOVE_KIT_MG_N]);
         *subj = (uint16_t)(0xA70 | t->mg_i), *stamp = 0;
     } else if (t->sl_on) {
         slice_text(m, v, sizeof v);

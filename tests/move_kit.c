@@ -1492,44 +1492,65 @@ static void t_tools3c(void)
     clear(), tools();
     CHECK(!M.kit.tools && !rfm_move_kit_edit(&M, 0, RFM_MOVE_KIT_ED_FREEZE) && !count(RFM_MOVE_ACT_KIT_EDIT));
 }
-/* 26. mix and join (board N): Copy held, a pad, then another: Copy / Mix / Join, the jog chooses, the click does it
- * (Copy: the first's sound and settings onto the second; Mix, Join: KIT_MERGE, the host's new file on the second pad,
- * a join's seam); Undo brings the pad back; Copy let go before a choice, or Back: nothing done */
+/* 26. mix and join (board N; the owner's 2026-11-26 rework): Copy held shows the three modes, Copy marked; the jog's
+ * turn the mode (no page turned); the first pad the source (blinking), each further pad a target done at once (Copy:
+ * the source's sound and settings, "Copied 2>5"; Mix, Join: KIT_MERGE, the host's new file on the target, "Mixed 2+5";
+ * onto an empty pad: a Copy); one Undo each; Copy let go: over, its next press on Copy again; Back: nothing more until
+ * it is let go; the jog's click does nothing */
 static void t_merge(void)
 {
     const rfm_move_act_t *a;
     uint8_t w[RFM_MOVE_NLEDS][3];
+    int pg;
     kit_view();
     sound_at(1, "/s/Hat.wav", 24000, 48000);
     sound_at(4, "/s/Snare.wav", 48000, 48000);
     M.kit.pad[1].v[RFM_MOVE_KIT_P_PITCH] = 500, M.kit.pad[1].v[RFM_MOVE_KIT_P_END] = RFM_MOVE_KIT_FRAC / 2;
-    /* Copy let go before a choice: nothing */
-    clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4));
-    CHECK(M.kit.mg_a == 2 && M.kit.mg_b == 5 && !count(RFM_MOVE_ACT_KIT_NOTE) && rfmv_kit_back_has(&M));
+    /* Copy held: the modes, Copy marked; the jog the mode, not the page; the source blinks, nothing done yet */
+    pg = M.kit.page;
+    clear(), button(MR_CC_COPY, 1);
+    CHECK(rfmv_kit_back_has(&M) && M.kit.mg_i == RFM_MOVE_KIT_MG_COPY && !M.kit.mg_a);
+    jog(1);
+    CHECK(M.kit.mg_i == RFM_MOVE_KIT_MG_MIX && M.kit.page == pg);
+    jog(5);
+    CHECK(M.kit.mg_i == RFM_MOVE_KIT_MG_JOIN && M.kit.page == pg);   /* (clamped) */
+    hit(kp(1));
+    CHECK(M.kit.mg_a == 2 && !count(RFM_MOVE_ACT_KIT_NOTE) && !count(RFM_MOVE_ACT_KIT_MERGE));
+    jog_click();
+    CHECK(!count(RFM_MOVE_ACT_KIT_MERGE) && M.kit.mg_a == 2);   /* (the click: nothing) */
     leds(w);
-    CHECK(is_rgb(w[L_PAD0 + kp(4)], 255, 255, 255) && !lit(w[L_RING0]) && !lit(w[L_PAD0 + rp(0)]));
+    CHECK(!lit(w[L_RING0]) && !lit(w[L_PAD0 + rp(0)]));
     button(MR_CC_COPY, 0), adv_ms(20);
-    CHECK(!M.kit.mg_a && !count(RFM_MOVE_ACT_KIT_MERGE) && !count(RFM_MOVE_ACT_KIT_LOAD) &&
+    CHECK(!M.kit.mg_a && !M.kit.mg_i && !count(RFM_MOVE_ACT_KIT_MERGE) && !count(RFM_MOVE_ACT_KIT_LOAD) &&
           !strcmp(M.kit.pad[4].path, "/s/Snare.wav"));
-    /* Back: closed, nothing */
-    button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4)), back();
-    CHECK(!M.kit.mg_a && !count(RFM_MOVE_ACT_KIT_MERGE));
+    /* the next press: on Copy again */
+    button(MR_CC_COPY, 1);
+    CHECK(M.kit.mg_i == RFM_MOVE_KIT_MG_COPY && rfmv_kit_back_has(&M));
+    /* Back: closed, nothing more until Copy is let go */
+    hit(kp(1)), back();
+    CHECK(!M.kit.mg_a && !rfmv_kit_back_has(&M));
+    hit(kp(4));
+    CHECK(!count(RFM_MOVE_ACT_KIT_MERGE) && !strcmp(M.kit.pad[4].path, "/s/Snare.wav"));
     button(MR_CC_COPY, 0);
-    /* Copy: pad 2's sound and settings onto pad 5 */
-    rest(), clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4)), jog_click(), button(MR_CC_COPY, 0);
+    /* Copy: pad 2's sound and settings onto pad 5 at the target's press */
+    rest(), clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4));
     CHECK(!strcmp(M.kit.pad[4].path, "/s/Hat.wav") && M.kit.pad[4].v[RFM_MOVE_KIT_P_PITCH] == 500 &&
           M.kit.pad[4].v[RFM_MOVE_KIT_P_END] == RFM_MOVE_KIT_FRAC / 2 && last_i(RFM_MOVE_ACT_KIT_LOAD) >= 0 &&
           last(RFM_MOVE_ACT_KIT_LOAD)->index == 4 && !strcmp(D[last_i(RFM_MOVE_ACT_KIT_LOAD)], "/s/Hat.wav") &&
-          !count(RFM_MOVE_ACT_KIT_MERGE) && M.kit.cur == 4);
+          !count(RFM_MOVE_ACT_KIT_MERGE) && M.kit.cur == 4 && !strcmp(M.kit.msg, "Copied") && said3c("2>5"));
+    leds(w);
+    CHECK(is_rgb(w[L_PAD0 + kp(4)], 255, 255, 255));
+    button(MR_CC_COPY, 0);
     sound_at(4, "/s/Hat.wav", 24000, 48000);
     CHECK(M.kit.pad[4].v[RFM_MOVE_KIT_P_END] == RFM_MOVE_KIT_FRAC / 2);   /* (its region kept) */
     clear(), press(MR_CC_UNDO);
     CHECK(!strcmp(M.kit.pad[4].path, "/s/Snare.wav") && M.kit.pad[4].v[RFM_MOVE_KIT_P_PITCH] == 0);
     sound_at(4, "/s/Snare.wav", 48000, 48000);
-    /* Mix: KIT_MERGE (pad 5 the result's, pad 2 the first) */
-    rest(), clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4)), jog(1), jog_click(), button(MR_CC_COPY, 0);
+    /* Mix: KIT_MERGE (pad 5 the result's, pad 2 the source) */
+    rest(), clear(), button(MR_CC_COPY, 1), jog(1), hit(kp(1)), hit(kp(4)), button(MR_CC_COPY, 0);
     CHECK((a = last(RFM_MOVE_ACT_KIT_MERGE)) && a->index == 4 && a->take == 1 && a->value == RFM_MOVE_KIT_MG_MIX &&
-          M.kit.pad[4].st == RFM_MOVE_KIT_LOADING && !strcmp(M.kit.msg, "Mix") && said3c("2+5"));
+          M.kit.pad[4].st == RFM_MOVE_KIT_LOADING && !strcmp(M.kit.msg, "Mixed") && said3c("2+5") &&
+          count(RFM_MOVE_ACT_KIT_MERGE) == 1);
     sound_at(4, "/s/Kits/Edits/Mix 2+5.wav", 48000, 48000);
     CHECK(!strcmp(M.kit.pad[4].name, "Mix 2+5") && !M.kit.pad[4].cut);
     {   /* (a path shorter than the one before it: the project's kit still valid, NUL padded) */
@@ -1548,14 +1569,29 @@ static void t_merge(void)
     press(MR_CC_UNDO);
     CHECK(!strcmp(M.kit.pad[4].path, "/s/Snare.wav"));
     sound_at(4, "/s/Snare.wav", 48000, 48000);
-    /* Join: the seam where the first's region ends (12000 of 60000 frames) */
-    rest(), clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4)), jog(2), jog_click(), button(MR_CC_COPY, 0);
-    CHECK((a = last(RFM_MOVE_ACT_KIT_MERGE)) && a->value == RFM_MOVE_KIT_MG_JOIN);
+    /* Join: the seam where the source's region ends (12000 of 60000 frames) */
+    rest(), clear(), button(MR_CC_COPY, 1), jog(2), hit(kp(1)), hit(kp(4)), button(MR_CC_COPY, 0);
+    CHECK((a = last(RFM_MOVE_ACT_KIT_MERGE)) && a->value == RFM_MOVE_KIT_MG_JOIN && !strcmp(M.kit.msg, "Joined"));
     sound_at(4, "/s/Kits/Edits/Join 2+5.wav", 60000, 48000);
     CHECK(M.kit.pad[4].cut > 6550 && M.kit.pad[4].cut < 6560 && M.kit.pad[4].v[RFM_MOVE_KIT_P_END] == RFM_MOVE_KIT_FRAC);
-    /* Mix onto an empty pad: nothing asked ("Empty") */
-    rest(), clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(9)), jog(1), jog_click(), button(MR_CC_COPY, 0);
-    CHECK(!count(RFM_MOVE_ACT_KIT_MERGE) && said3c("Empty") && !M.kit.pad[9].path[0]);
+    press(MR_CC_UNDO);
+    sound_at(4, "/s/Snare.wav", 48000, 48000);
+    /* Mix onto an empty pad: a Copy (no KIT_MERGE, the source's sound there, "Copied") */
+    rest(), clear(), button(MR_CC_COPY, 1), jog(1), hit(kp(1)), hit(kp(9)), button(MR_CC_COPY, 0);
+    CHECK(!count(RFM_MOVE_ACT_KIT_MERGE) && !strcmp(M.kit.pad[9].path, "/s/Hat.wav") && said3c("2>10"));
+    press(MR_CC_UNDO);
+    CHECK(!M.kit.pad[9].path[0]);
+    /* repeated targets, Copy still held: each the same source's (Move's clipboard stays while Copy is held); one
+     * Undo brings back the hold's pads */
+    rest(), clear(), button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(10)), hit(kp(11)), hit(kp(12)), button(MR_CC_COPY, 0);
+    CHECK(!strcmp(M.kit.pad[10].path, "/s/Hat.wav") && !strcmp(M.kit.pad[11].path, "/s/Hat.wav") &&
+          !strcmp(M.kit.pad[12].path, "/s/Hat.wav") && said3c("2>13"));
+    press(MR_CC_UNDO);
+    CHECK(!M.kit.pad[10].path[0] && !M.kit.pad[11].path[0] && !M.kit.pad[12].path[0] &&
+          !strcmp(M.kit.pad[1].path, "/s/Hat.wav") && !strcmp(M.kit.pad[4].path, "/s/Snare.wav"));
+    /* an empty source: "Empty", nothing */
+    rest(), clear(), button(MR_CC_COPY, 1), hit(kp(13)), hit(kp(4)), button(MR_CC_COPY, 0);
+    CHECK(!count(RFM_MOVE_ACT_KIT_MERGE) && said3c("Empty") && !strcmp(M.kit.pad[4].path, "/s/Snare.wav"));
 }
 /* 27. a take sliced (board P): To Kit, then Slice: KIT_SLICE asks its cuts (Hits), the pads play the slices and
  * choose one, the jog the method (asked again), knobs 1 and 2 its cut, Shift + a pad the first pad; the click puts
@@ -1649,15 +1685,19 @@ static void t_mock3c(void)
     int out, n, i;
     kit_view();
     M.seq.bpm10 = 1200;
-    /* N: Copy held, pad 2 then pad 5, Join chosen */
+    /* N (2026-11-26: the jog's mode before the target; the target is done at once, so its number is not drawn):
+     * Copy held, Join chosen, pad 2 the source */
     rfm_move_kit_loaded(&M, 1, RFM_MOVE_KIT_OK, "Hat", "/s/Hat.wav", 127, 48000, 0, NULL);
     rfm_move_kit_loaded(&M, 4, RFM_MOVE_KIT_OK, "Snare", "/s/Snare.wav", 129, 48000, 0, NULL);
-    button(MR_CC_COPY, 1), hit(kp(1)), hit(kp(4)), jog(2);
-    out = vs_ref("merge", NULL, 0);
+    button(MR_CC_COPY, 1), jog(2), hit(kp(1));
+    {
+        static const box_t TGT = { 108, 0, 20, 16 };    /* (the board's target number) */
+        out = vs_ref("merge", &TGT, 1);
+    }
     CHECKF(out == 0, "merge: %d differ", out);
     dump("merge");
     /* O: the join on pad 5, its seam (pages: the SOUND page drawn, the Pad tab's board no longer applies) */
-    jog_click(), button(MR_CC_COPY, 0);
+    hit(kp(4)), button(MR_CC_COPY, 0);
     n = mock_peaks(62, 11, 12u, 1, pk);
     pk[n++] = 0;
     n += mock_peaks(64, 11, 55u, 1, pk + n);
@@ -2815,6 +2855,129 @@ static void t_project_v2(void)
     CHECK(rfm_move_kit_bus(&M2, RFM_MOVE_KIT_BUS_CUTOFF) == 45 && rfm_move_kit_bus(&M2, RFM_MOVE_KIT_BUS_RESO) == 20);
 }
 
+/* 63. (the owner's 2026-11-26: "I sequenced a pattern on one pad and then another pad with triggers on same steps and
+ * only one pad plays") the kit is polyphonic between pads: two pads' hits on one step each send their own KIT_NOTE
+ * there, whether they share a kit track (pads 1, 2: track 13) or not (pad 5: track 14); entered by the steps (stopped
+ * or playing), by a held step + the pads, by Record; a lock on one pad's hit stays its own (none on the other's) */
+static void ons_of(int *c)
+{
+    int i;
+    memset(c, 0, 16 * sizeof *c);
+    for (i = 0; i < nact; i++)
+        if (A[i].kind == RFM_MOVE_ACT_KIT_NOTE && A[i].down && A[i].index < 16)
+            c[A[i].index]++;
+}
+static void three_pads(void)
+{
+    kit_view();
+    sound(0, "Kick", 4800, NULL, 0), sound(1, "Snare", 4800, NULL, 0), sound(4, "Hat", 4800, NULL, 0);
+}
+static void t_poly(void)
+{
+    int c[16], i, lockB = 0;
+    /* the steps, stopped (steps 1 and 5: two passes each in 600 ms) */
+    three_pads();
+    hit(kp(0)), tap_step(0), tap_step(4), rest();
+    hit(kp(1)), tap_step(0), tap_step(4), rest();
+    hit(kp(4)), tap_step(0), tap_step(4), rest();
+    clear(), rfm_move_seq_play(&M, 1), adv_ms(600), rfm_move_seq_play(&M, 0);
+    ons_of(c);
+    CHECKF(c[0] == 2 && c[1] == 2 && c[4] == 2, "steps: %d %d %d", c[0], c[1], c[4]);
+    /* the steps, playing */
+    three_pads();
+    rfm_move_seq_play(&M, 1), adv_ms(100);
+    hit(kp(0)), tap_step(0), tap_step(4), adv_ms(400);
+    hit(kp(1)), tap_step(0), tap_step(4), adv_ms(400);
+    hit(kp(4)), tap_step(0), tap_step(4), adv_ms(2400);
+    clear(), adv_ms(2000);
+    ons_of(c);
+    rfm_move_seq_play(&M, 0);
+    CHECKF(c[0] == 2 && c[1] == 2 && c[4] == 2, "playing: %d %d %d", c[0], c[1], c[4]);
+    /* a held step + pads 2 and 5, pad 1 chosen */
+    three_pads();
+    hit(kp(0)), tap_step(0), rest();
+    step(0, 1), hit(kp(1)), hit(kp(4)), step(0, 0), rest();
+    clear(), rfm_move_seq_play(&M, 1), adv_ms(300), rfm_move_seq_play(&M, 0);
+    ons_of(c);
+    CHECKF(c[0] == 1 && c[1] == 1 && c[4] == 1, "held step: %d %d %d", c[0], c[1], c[4]);
+    /* Record: the pads played live, a bar apart, onto the same step */
+    three_pads();
+    rfm_move_seq_play(&M, 1), press(MR_CC_REC), adv_ms(10);
+    pad(kp(0), 100), adv_ms(30), pad(kp(0), 0), adv_ms(2000 - 40);
+    pad(kp(1), 100), adv_ms(30), pad(kp(1), 0), adv_ms(2000 - 40);
+    pad(kp(4), 100), adv_ms(30), pad(kp(4), 0), adv_ms(2000 - 40);
+    press(MR_CC_REC);
+    clear(), adv_ms(2000);
+    ons_of(c);
+    rfm_move_seq_play(&M, 0);
+    CHECKF(c[0] == 1 && c[1] == 1 && c[4] == 1, "recorded: %d %d %d", c[0], c[1], c[4]);
+    /* pad 1's hit locked (Level, Send 1), pad 2's beside it: both, pad 2's without locks */
+    three_pads();
+    hit(kp(0)), tap_step(0), hit(kp(1)), tap_step(0), hit(kp(0)), rest();
+    M.kit.page = RFM_MOVE_KIT_PG_PADMIX;
+    step(0, 1), knob(0, -20), knob(4, 30), step(0, 0), rest();
+    clear(), rfm_move_seq_play(&M, 1), adv_ms(300), rfm_move_seq_play(&M, 0);
+    ons_of(c);
+    for (i = 0; i < nact; i++)
+        if (A[i].kind == RFM_MOVE_ACT_KIT_NOTE && A[i].down && A[i].index == 1)
+            lockB |= A[i].kp_mask != 0 || A[i].klk_mask != 0;
+    CHECKF(c[0] == 1 && c[1] == 1 && !lockB, "locks: %d %d, pad 2 locked %d", c[0], c[1], lockB);
+}
+/* 64. (the owner's 2026-11-26: "Holding a step + turning the jogwheel should always change the step length"; "holding
+ * a step plus using the left and right arrow keys should be a shortcut to always adjust the microtiming") a held step
+ * + the jog: the chosen pad's hit's length there (2 ticks a detent, Shift a whole step), the other pad's untouched, no
+ * page turned, the Length popup; Left / Right: its micro (2 ticks, Shift 1), the Nudge popup; one undo step a hold
+ * each; on a ghost or an empty step nothing (no hit made, no page) */
+static void t_held_len_nudge(void)
+{
+    const int clip = SEQ_CLIP(12, 0);
+    int pg, sp, i0, i1, abs, v, has;
+    kit_view();
+    sound(0, "Kick", 4800, NULL, 0), sound(1, "Snare", 4800, NULL, 0);
+    hit(kp(0)), tap_step(2), hit(kp(1)), tap_step(2), rest();
+    pg = M.kit.page, sp = M.seq.page;
+    step(2, 1), jog(3);
+    i0 = rfmv_seq_find(&M, clip, 2, 36), i1 = rfmv_seq_find(&M, clip, 2, 37);
+    CHECKF(i1 >= 0 && M.seq.notes[i1].len == RFM_MOVE_SEQ_TPS + 3 * RFMV_LEN_FINE && i0 >= 0 &&
+           M.seq.notes[i0].len == RFM_MOVE_SEQ_TPS && M.kit.page == pg, "len %d / %d page %d", i1 >= 0 ? M.seq.notes[i1].len : -1,
+           i0 >= 0 ? M.seq.notes[i0].len : -1, M.kit.page);
+    CHECK(rfmv_kit_held_pop(&M, &abs, &v, &has) && abs == 2 && has && v == RFM_MOVE_SEQ_TPS + 6 && M.pop_i == 6);
+    dump("held_len");
+    button(MR_CC_SHIFT, 1), jog(1), button(MR_CC_SHIFT, 0);
+    i1 = rfmv_seq_find(&M, clip, 2, 37);
+    CHECK(M.seq.notes[i1].len == 2 * RFM_MOVE_SEQ_TPS);
+    jog(-5);                                            /* (Shift let go: fine again, at least a tick) */
+    i1 = rfmv_seq_find(&M, clip, 2, 37);
+    CHECK(M.seq.notes[i1].len == 2 * RFM_MOVE_SEQ_TPS - 10);
+    step(2, 0), rest();
+    CHECK(rfmv_seq_find(&M, clip, 2, 37) >= 0);          /* (the hold: nothing toggled) */
+    press(MR_CC_UNDO);
+    i1 = rfmv_seq_find(&M, clip, 2, 37);
+    CHECKF(i1 >= 0 && M.seq.notes[i1].len == RFM_MOVE_SEQ_TPS, "one undo: len %d", i1 >= 0 ? M.seq.notes[i1].len : -1);
+    /* the arrows: the micro */
+    rest(), step(2, 1), press(MR_CC_RIGHT), press(MR_CC_RIGHT);
+    i0 = rfmv_seq_find(&M, clip, 2, 36), i1 = rfmv_seq_find(&M, clip, 2, 37);
+    CHECK(M.seq.notes[i1].micro == 2 * RFMV_NUDGE && M.seq.notes[i0].micro == 0 && M.seq.page == sp && M.pop_i == 0);
+    CHECK(rfmv_kit_held_pop(&M, &abs, &v, &has) && has && v == 4);
+    dump("held_nudge");
+    button(MR_CC_SHIFT, 1), press(MR_CC_LEFT), button(MR_CC_SHIFT, 0);
+    i1 = rfmv_seq_find(&M, clip, 2, 37);
+    CHECK(M.seq.notes[i1].micro == 2 * RFMV_NUDGE - 1);
+    step(2, 0), rest(), press(MR_CC_UNDO);
+    i1 = rfmv_seq_find(&M, clip, 2, 37);
+    CHECK(i1 >= 0 && M.seq.notes[i1].micro == 0 && M.seq.notes[i1].len == RFM_MOVE_SEQ_TPS);
+    /* an empty step: nothing (no page, no hit, no popup) */
+    M.pop = 0;
+    step(7, 1), jog(2), press(MR_CC_RIGHT), step(7, 0), rest();
+    CHECK(rfmv_seq_find(&M, clip, 7, 37) < 0 && M.kit.page == pg && M.seq.page == sp && !M.pop);
+    /* a ghost (a lock, no hit): nothing either */
+    M.kit.page = RFM_MOVE_KIT_PG_PADMIX;
+    step(9, 1), knob(0, -10), step(9, 0), rest();
+    M.pop = 0;
+    step(9, 1), jog(2), press(MR_CC_LEFT), step(9, 0), rest();
+    CHECK(rfmv_seq_find(&M, clip, 9, 37) < 0 && M.kit.page == RFM_MOVE_KIT_PG_PADMIX && !M.pop);
+}
+
 int main(void)
 {
     t_encoding();
@@ -2874,5 +3037,7 @@ int main(void)
     t_project_old();
     t_chop_seq();
     t_project_v2();
+    t_poly();
+    t_held_len_nudge();
     return check_done("move_kit");
 }

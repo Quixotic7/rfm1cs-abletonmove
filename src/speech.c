@@ -285,6 +285,16 @@ static void trig_words(const rfm_move_t *m, char *o, int cap)
         abs = hi > lo ? q->notes[lo].step : abs;
     }
     v = (kf > -2 || q->trig) && first < 0 ? rfmv_seq_tdef_val(m, k) : rfmv_seq_trig_val(m, clip, abs, k);
+    {
+        int has;
+        if (rfmv_kit_held_pop(m, &abs, &v, &has)) {     /* (2026-11-26) the Kit view's held step + the jog, the arrows */
+            if (k == 6)
+                len_words(v, b, sizeof b), snprintf(o, (size_t)cap, "Length: %s", b);
+            else
+                snprintf(o, (size_t)cap, "Nudge: %+d%%", v * 100 / RFM_MOVE_SEQ_TPS);
+            return;
+        }
+    }
     if (k == 8) {                                       /* (0.12.0) a held step transposed: its notes */
         rfmv_seq_held_names(m, b, sizeof b, 0);
         snprintf(o, (size_t)cap, "Transposed: %s", b);

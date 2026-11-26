@@ -13,10 +13,10 @@
 #define sc rfmv_sc
 typedef rfmv_rgb_t rgb_t;
 
-#define NUDGE 2                                         /* ticks a Left / Right with a step held (~10 % of a step) */
+#define NUDGE RFMV_NUDGE                                /* ticks a Left / Right with a step held (~10 % of a step) */
 #define OCT_FRAME 50                                    /* (0.12.0) the octave sweep's frame, ms (4 rows: 200 ms) */
 #define HELD_MODS (SEQ_M_SHIFT | SEQ_M_LOOP | SEQ_M_COPY | SEQ_M_DELETE | SEQ_M_MUTE)   /* (0.12.0: over an arp lane) */
-#define LEN_FINE 2                                    /* ticks a jog detent with a step held (~10 % of a step) */
+#define LEN_FINE RFMV_LEN_FINE                         /* ticks a jog detent with a step held (~10 % of a step) */
 
 /* the tracks' colours */
 static const rgb_t TRACK_RGB[RFM_MOVE_SEQ_TRACKS] = {

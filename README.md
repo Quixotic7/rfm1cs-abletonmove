@@ -1352,13 +1352,27 @@ and its Undo, Save / Load / apply / Undo, the sampler's To Kit, the version 12 a
 Making sounds, from the same round's picks (KIT-SPEC.md "Stage 3c"; boards N, O, P, V). Every new file is the host's,
 written on its file thread; the core asks and draws what comes.
 
-**Mix and join.** Copy held, a pad, then another: the first blinks, the second is white and the screen offers Copy
-(I_COPY), Mix (I_MIX), Join (I_JOIN) with the two pads' numbers and an arrow (board N); the jog chooses, the click
-does it. Copy puts the first pad's sound and settings on the second (its `KIT_LOAD` and `KIT_SET`s, no new file). Mix
-and Join send `KIT_MERGE`: the host makes a new file of the two regions (Mix summed and normalized not to clip, Join
-the first then the second) and answers with `rfm_move_kit_loaded` on the second pad; the Pad tab shows it with its
-Sound row ("Join 2+5") and a join's seam dotted (board O). Mix and Join want a sound on both pads, Copy on the first
-("Empty" else). Copy let go before the click, or Back: nothing done. Undo brings the second pad back.
+**Mix and join** (reworked 2026-11-26, the owner's: "while holding copy just turn the jogwheel to change the mode").
+Copy held in the Kit view shows the three modes, Copy (I_COPY), Mix (I_MIX), Join (I_JOIN), the current one marked and
+named (board N's row); the jog's turn changes it (no click; the pages stay); every Copy press starts on Copy. The first
+pad pressed is the source (it blinks, its number and an arrow on the screen); each further pad is a target, done at
+once in the mode. Copy puts the source's sound and settings on the target (its `KIT_LOAD` and `KIT_SET`s, no new
+file; "Copied 2>5"). Mix and Join send `KIT_MERGE`: the host makes a new file of the two regions (Mix summed and
+normalized not to clip, Join the source then the target) and answers with `rfm_move_kit_loaded` on the target
+("Mixed 2+5", "Joined 2+5"; board O the join's seam). An empty target: Mix and Join just copy. An empty source:
+"Empty", nothing. While Copy stays held every further pad is another target from the same source (Move's own Copy:
+the clipboard stays until Copy is let go); one Undo brings back the hold's targets (a single target: that pad, as
+before; two or more: the whole kit as it was before the first). The jog's click does nothing; Copy let go or Back
+ends it (after Back nothing more until Copy is let go). Not while the sequencer's Copy has a step source (Copy + a
+step: its own copy).
+
+**A held step's length and timing** (2026-11-26, the owner's: "Holding a step + turning the jogwheel should always
+change the step length"; "holding a step plus using the left and right arrow keys should be a shortcut to always
+adjust the microtiming"). With a step held in the Kit view the jog sets the chosen pad's hits' length there as a
+firmware track's held step does (2 ticks a detent, about a tenth of a step; Shift a whole step; at most the clip's
+length; the LENGTH popup) and never turns the pages; Left / Right nudge their timing (2 ticks a press, Shift 1; the
+Nudge popup). The other pads' hits on the step are untouched. One undo step a hold for each. A ghost or an empty step:
+nothing (a ghost has no timing of its own). Firmware tracks already do both (track view's held step).
 
 **A pad's own edits.** The Sound row's click: Play, Trim, Normalize, Reverse, Delete (board V; the knobs and the right
 half dark and dead meanwhile). Trim, Normalize and Reverse send `KIT_EDIT`; the host's new file is the pad's own copy,

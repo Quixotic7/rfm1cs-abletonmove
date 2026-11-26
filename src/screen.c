@@ -773,6 +773,22 @@ static void trig_popup(const rfm_move_t *m, mr_canvas_t *cv)
                                                          * defaults for new steps) */
     mr_gfx_clear(cv, 0);
     g_full = 1;
+    {
+        int has;
+        if (rfmv_kit_held_pop(m, &abs, &v, &has)) {     /* (2026-11-26) the Kit view's held step + the jog (Length) or
+                                                         * the arrows (Nudge): the chosen pad's hit, as a firmware
+                                                         * track's held step */
+            if (!has)
+                snprintf(b, sizeof b, "-");
+            else if (k == 6)
+                len_text(v, b, sizeof b);
+            else
+                snprintf(b, sizeof b, v ? "%+d%%" : "0%%", v * 100 / RFM_MOVE_SEQ_TPS);
+            v2_titleBox(cv, k == 6 ? "Length" : "Nudge", b, 64, 124);
+            rfmv_seq_page_strip(m, cv, abs);
+            return;
+        }
+    }
     if (k == 8) {                                       /* (0.12.0) a held step transposed (Up / Down): its notes now */
         char nm[48];
         rfmv_seq_held_names(m, nm, sizeof nm, 124);

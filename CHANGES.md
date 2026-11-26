@@ -5,6 +5,22 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## 0.16.0 (prepared 2026-11-26, not yet tagged): the kit, stages 3a, 3b and 3c, pages, engines, Warp; Exit; one-setting Shift menus
 
+### The kit: Copy's modes on the jog, a held step's length and timing, polyphony checked (2026-11-26, the owner's)
+
+- **Copy / Mix / Join on the jog** ("while holding copy just turn the jogwheel to change the mode, it should default to
+  Copy whenever you release copy and press again ... If the other pad is empty, then for mix and join it just does a
+  copy"): Copy held shows the three modes, the jog's turn picks one (no click, no page turned), the first pad is the
+  source, each further pad a target done at once ("Copied 2>5", "Mixed 2+5", "Joined 2+5"); Mix and Join onto an
+  empty pad copy; repeated targets in one hold all from the same source, one Undo for the hold; every press starts on
+  Copy. The click-to-confirm step is gone. README "The kit (stage 3c)".
+- **A held step + the jog: its length** (the chosen pad's hits, as a firmware track's: 2 ticks a detent, Shift a step;
+  the LENGTH popup), never the pages; **+ Left / Right: its timing** (2 ticks, Shift 1; the Nudge popup). One undo step
+  a hold each; a ghost or an empty step: nothing. `rfmv_kit_held_pop` gives screen.c and speech.c the chosen pad's
+  value.
+- **Polyphony between pads** ("only one pad plays"): not reproduced in the core (this commit or 1958869): two pads'
+  hits on a step each send their KIT_NOTE (a shared track or not; steps stopped or playing, a held step + pads, Record,
+  a locked hit beside a plain one). move_kit 63 keeps it so; 64 the length and timing; 26 rewritten for the new Copy.
+
 ### The power button: "Shut Down?" (2026-11-26, the owner's)
 
 "We should have a power feature that matches default Move software. Push power button, screen says "Shut Down?"

@@ -57,6 +57,8 @@ int rfmv_level(const rfm_move_t *m, int id);           /* the FM-1 LED level 0..
 enum { POP_NONE = 0, POP_ENC, POP_MASTER, POP_CC, POP_SELECT, POP_DRUM, POP_TEMPO, POP_LOOP, POP_BANK, POP_STEP,
        POP_PROJ, POP_TRIG, POP_BAR, POP_TRACK, POP_MODE, POP_FW,
        POP_HOST, POP_LABEL, POP_READ, POP_TK, POP_TRKINFO };   /* (POP_TRKINFO 0.10.0: session view, a knob touched: its track) */   /* (POP_TK 0.7.0: a takeover's name, pop_i its slot) */   /* (POP_READ 0.5.7: a readout of its own, rd_pop) */   /* (POP_LABEL 0.5.6: a button's or key's label, pop_i its slot) */   /* (POP_HOST 0.5.4: rfm_move_popup's words) */   /* (POP_FW 0.4.3: Back + Track, a firmware) */
+#define RFMV_NUDGE 2                                    /* ticks a Left / Right with a step held (~10 % of a step) */
+#define RFMV_LEN_FINE 2                                 /* ticks a jog detent with a step held (~10 % of a step) */
 #define RFM_MOVE_TAP_MS 300                             /* a Track button released this soon: a tap (not its menu) */
 enum { MENU_NONE = 0, MENU_LAYOUT, MENU_SCALE, MENU_ROOT, MENU_CHANNEL, MENU_CC, MENU_TRACK, MENU_TCH, MENU_RATE, MENU_SHIFT,
        MENU_T4, MENU_OCT, MENU_LOCK };   /* (0.8.0: MENU_T4 Track 4 held's page, MENU_OCT a slot's octave, MENU_LOCK) */
@@ -508,6 +510,8 @@ int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
 /* (pages v2) the Kit view's Trig page shows (the sequencer's TRIG page for the chosen pad's track): its first held
  * step 0..15, -1 none held; -2 not on it (screen.c's TRIG popup) */
 int rfmv_kit_trig_first(const rfm_move_t *m);
+int rfmv_kit_held_pop(const rfm_move_t *m, int *abs, int *v, int *has);   /* (2026-11-26) a held step + the jog / the
+                                                         * arrows: its Length / Nudge popup */
 void rfmv_kit_page_cells(const rfm_move_t *m, int *n, int *cur);   /* .. its pages shown, the one shown */
 /* (seq_ui.c) the TRIG page's knob k turned d on the held steps (bits of the page shown) of clip, or (none held) the
  * selected track's defaults for new steps: its popup, as a firmware track's */

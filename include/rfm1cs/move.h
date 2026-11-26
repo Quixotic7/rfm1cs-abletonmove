@@ -1599,7 +1599,11 @@ typedef struct {                                        /* (kit.c) */
     uint16_t undk_un, undk_utop;
     uint8_t saving;                                     /* KIT_SAVE sent, its answer not come */
     /* (stage 3c) */
-    uint8_t mg_a, mg_b, mg_i;                           /* Copy held + a pad (+ 1), then another (+ 1); Copy / Mix / Join */
+    uint8_t mg_a, mg_b, mg_i;                           /* Copy held + a pad (+ 1), then another (+ 1); Copy / Mix / Join
+                                                         * (2026-11-26: the mode, the jog's while Copy is held) */
+    uint8_t mg_held;                                    /* (2026-11-26) Copy seen held (2: closed by Back): its next
+                                                         * press starts on Copy */
+    uint8_t mg_n, mg_first;                             /* .. the targets done in this hold, the first one (+ 1) */
     uint32_t mg_ms;                                     /* .. the first's blink from */
     uint8_t pend_i;                                     /* a take waiting: To Pad 0, Slice 1 */
     uint8_t pend_src;                                   /* .. its source (RFM_MOVE_SMP_SRC_*): the slices' colour */
@@ -1646,6 +1650,10 @@ typedef struct {                                        /* (kit.c) */
     uint32_t sl_ms;
     /* (round B) */
     uint8_t lk_grp, vel_grp;                            /* a held step's locks / velocity edited: its undo group made */
+    uint8_t len_grp, nud_grp;                           /* (2026-11-26) .. its length (the jog), its timing (Left /
+                                                         * Right): the same */
+    uint16_t len_abs;                                   /* .. the step whose length / timing the popup shows */
+    uint8_t lr_down;                                    /* (2026-11-26) Left / Right pressed by the kit: its release ours */
     uint8_t lpop, vpop;                                 /* a lock's popup (the knob + 1), the velocity's (1) */
     uint32_t vpop_ms;
     uint8_t lvl, lvl_touch;                             /* (2026-11-26) the volume knob's level popup: 1 a held pad's
