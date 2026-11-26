@@ -2304,9 +2304,9 @@ static void click(rfm_move_t *m)
     }
     if (t->tab == 0) {                                  /* (pages) the pages' click: Shift, the pad's tools; the KIT
                                                          * page, Kits; else Files for the chosen pad */
-        if (m->seq.mods & SEQ_M_SHIFT) {
+        if (m->seq.mods & SEQ_M_SHIFT) {               /* (the owner's follow-up: the pad's tools gone; the sampler
+                                                         * keeps its take tools) */
             m->seq.mods_used |= SEQ_M_SHIFT;
-            t->tools = 1, t->ti = 0;
         } else if (kit_page(cur_page(m)))
             t->tab = 1, t->kitrow = 0;
         else {
@@ -4428,6 +4428,9 @@ int rfm_move_kit_refs(const rfm_move_t *m, const char **out, int cap)
 }
 int rfm_move_kit_edit(rfm_move_t *m, int pad, int op)
 {
+    if (m)                                              /* (the owner's follow-up: the kit's sound tools, Freeze too,
+                                                         * gone from the UI: nothing sends KIT_EDIT) */
+        return 0;
     static const uint8_t TOOL[] = { 0, TL_TRIM, TL_NORM, TL_REV, TL_FREEZE };
     if (!rfmv_kit_cap(m) || pad < 0 || pad >= RFM_MOVE_KIT_PADS || op < RFM_MOVE_KIT_ED_TRIM ||
         op > RFM_MOVE_KIT_ED_FREEZE || !ready(CPAD(m, pad)))
