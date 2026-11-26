@@ -1481,6 +1481,28 @@ rows are gone; the knobs always follow the page. `rfm_move_kit_t`: `page` (RAM, 
 | Shift + jog click | the pad's tools: Play, Trim, Normalize, Reverse, Freeze, Delete |
 | a step held + a knob | that hit's lock, for the lockable settings on the page shown (lit yellow, their cells shown; the rest dark, a dash) |
 
+## The kit (pages v2)
+
+The owner's 2026-11-26 revision (remoteFM14Move-kit KIT-SPEC.md "Pages v2, 2026-11-26": the tables of pages, engines,
+Warp and the right half are there). Project version 15 (45 settings a pad, the kit bus).
+
+| Page (`RFM_MOVE_KIT_PG_*`) | Knobs 1..8 |
+|---|---|
+| Sample Kit (`_KIT`) | Right half (`RFM_MOVE_KIT_RH_*`: Pitches, In Key, Chromatic, In Key 4ths, Chop), Trim silence |
+| Pad Sample (`_SAMPLE`) | Start, End, Transpose (Shift: cents), Engine (`RFM_MOVE_KIT_M_*`), Attack, Decay, Sustain, Release |
+| Trig (`_TRIG`) | the sequencer's TRIG page on the pad's track (`rfmv_seq_trig_knob`; its popups are screen.c's, `rfmv_kit_trig_first`) |
+| Pad Sample 2 (`_SAMPLE2`) | the engine's own on 1..6 (Loop: Loop Start, Loop End, Loop Fade; Pitch Env: Depth, Attack, Release; LoFi: Bits, Downsample; Granular: Position, Size, Density, Spray, Spread), 7 Choke, 8 Reverse |
+| Warp (`_WARP`) | Algorithm (`RFM_MOVE_KIT_W_*`: Off, Repitch, Grains, Beats), Sync (`_P_STRETCH`), Speed, Pitch, Grain, Jitter / Search (dark: Granular; Off past 1; Repitch past 3) |
+| Filter (`_FILTER`) | Cutoff, Res, Morph, Env Amount, F Attack, F Decay, F Sustain, F Release |
+| Pad Mix (`_PADMIX`) | Level, Pan, Cutoff, -, Send 1, 2, 3, - |
+| Kit Mix (`_KITMIX`) | Level, Pan, Cutoff, Res (the kit bus: KIT_SET index `RFM_MOVE_KIT_BUS`), Send 1, 2, 3, - |
+
+The pages draw only their picture (no cells); a knob's value is its full-screen popup while touched (the Filter
+page's knobs: a line at the top, the page stays). The jog's turn shows the page switcher (the icons, the name at 1x),
+as does a page with nothing to draw. The browser's chosen row is fixed in the middle, the list sliding under it.
+Chop: the hit is the pad's own note with the Chop locks (`RFM_MOVE_KIT_LK_CHOP`, `_CHOPE`); KIT_NOTE carries them.
+`rfm_move_kit_live` (the host's: the pad's newest voice) feeds the Filter page's live bars and envelope dot.
+
 ## FX parameter pages (0.5.0)
 
 A module's own parameter pages, as Schwung's `ui_hierarchy` lays them out: each level's 8 knobs a page, its overflow

@@ -5,6 +5,16 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## Unreleased: the kit, stages 3a, 3b and 3c
 
+### Pages v2 (2026-11-26): engines, Warp, Trig, the filter's morph and envelope, the kit bus, the right half
+
+README "The kit (pages v2)". Project version 15: 45 settings a pad (`RFM_MOVE_KIT_P_LOOPS` .. `_FRELEASE` after
+`_RESO`), the kit bus's low-pass in the kit header's bytes 10, 11; older ones load with Toggle as Loop, Stretch N as
+Warp Repitch + Sync N, the right half's In Key as In Key 4ths and Off as Pitches. `RFM_MOVE_KIT_M_*` are engines now
+(Toggle gone); `RFM_MOVE_KIT_W_*`; `RFM_MOVE_KIT_PG_*` gains TRIG, STRETCH becomes WARP; `RFM_MOVE_KIT_RH_*` five
+layouts; locks `RFM_MOVE_KIT_LK_MORPH`, `_FENV`, `_CHOP`, `_CHOPE` (`klk_mask` u16, `klk[11]`); KIT_SET index
+`RFM_MOVE_KIT_BUS`; `rfm_move_kit_bus`, `rfm_move_kit_set_bus`, `rfm_move_kit_live`. `rfmv_seq_trig_knob` (seq_ui.c)
+shared with the kit's Trig page. move_kit adapted; boards pitch, mode, stretch drawn, not compared.
+
 ### Pages (2026-11-26): the jog turns the knob pages
 
 README "The kit (pages)". `rfm_move_kit_t`: `page` (RAM) replaces `row`, `on_tabs`, `picking`, `edit`, `kshift`:
