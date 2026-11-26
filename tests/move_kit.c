@@ -474,8 +474,9 @@ static void t_seq(void)
 }
 
 /* 7. the knobs (pages v2, the owner's 2026-11-26 design): the page's. Sample Kit 1 Right half, 2 Trim; Pad Sample 1
- * Start, 2 End, 3 Transpose (Shift: cents), 4 Engine, 5..8 A D S R; Trig the sequencer's (8 dark); Pad Sample 2 the
- * engine's own (Loop: 1 Loop Start, 2 Loop End, 3 Loop Fade), 7 Choke, 8 Reverse; Warp 1 the algorithm, 2 Sync, 3
+ * Start, 2 End, 3 Transpose (Shift: cents), 4 Engine, 5..8 the engine's first four (2026-11-26; Loop: 5 Loop Start, 6
+ * Loop End, 7 Loop Fade); Trig the sequencer's (8 dark); Pad Sample 2 1..4 A D S R, 5, 6 the engine's further, 7 Choke,
+ * 8 Reverse; Warp 1 the algorithm, 2 Sync, 3
  * Speed, 4 Pitch, 5, 6 its own; Filter 1 Cutoff, 2 Res, 3 Morph, 4 Env Amount, 5..8 its ADSR; Pad Mix 1 Level, 2 Pan, 3 Cutoff, 5..7
  * Sends; Kit Mix 1 Level, 2 Pan, 3 Cutoff, 4 Res, 5..7 Sends; Shift: fine; the rest dark */
 static void t_knobs(void)
@@ -488,7 +489,8 @@ static void t_knobs(void)
     leds(w);
     for (k = 0; k < 8; k++)
         lit_n += lit(w[L_RING0 + k]);
-    CHECK(lit_n == 8 && is_rgb(w[L_RING0 + 2], 149, 35, 93));   /* (Pad Sample: all eight) */
+    CHECK(lit_n == 4 && is_rgb(w[L_RING0 + 2], 149, 35, 93) && !lit(w[L_RING0 + 4]));   /* (Pad Sample, One Shot: 1..4;
+                                                         * 5..8 the engine's, none) */
     clear();
     touch(2, 1), knob(2, 6), touch(2, 0);
     CHECK((a = last(RFM_MOVE_ACT_KIT_SET)) && a->index == 4 && a->param == RFM_MOVE_KIT_P_PITCH && a->value == 300);
@@ -501,11 +503,13 @@ static void t_knobs(void)
     CHECK(M.kit.pad[4].v[RFM_MOVE_KIT_P_MODE] == RFM_MOVE_KIT_M_MOMENTARY);   /* (a list: 5 ticks a step) */
     knob(0, 10);                                        /* (1 Start: never past the end) */
     CHECK(M.kit.pad[4].v[RFM_MOVE_KIT_P_START] == 640);
-    knob(1, -3), knob(4, 2), knob(7, 4);                /* (2 End, 5 Attack, 8 Release) */
-    CHECK(M.kit.pad[4].v[RFM_MOVE_KIT_P_END] == RFM_MOVE_KIT_FRAC - 192 && M.kit.pad[4].v[RFM_MOVE_KIT_P_ATTACK] == 1 &&
-          M.kit.pad[4].v[RFM_MOVE_KIT_P_RELEASE] == 2);
+    knob(1, -3);                                        /* (2 End) */
+    CHECK(M.kit.pad[4].v[RFM_MOVE_KIT_P_END] == RFM_MOVE_KIT_FRAC - 192);
     knob(3, 5);                                         /* (Loop) */
     CHECK(M.kit.pad[4].v[RFM_MOVE_KIT_P_MODE] == RFM_MOVE_KIT_M_LOOP);
+    knob(4, 10), knob(6, 30);                           /* (2026-11-26: the engine's on 5..8: 5 Loop Start (from the
+                                                         * region's start), 7 Loop Fade) */
+    CHECK(M.kit.pad[4].v[RFM_MOVE_KIT_P_LOOPS] == 1280 && M.kit.pad[4].v[RFM_MOVE_KIT_P_LOOPXF] == 30);
     /* Trig: the sequencer's TRIG knobs, 8 dark */
     jog(1);
     CHECK(M.kit.page == RFM_MOVE_KIT_PG_TRIG);
@@ -513,11 +517,13 @@ static void t_knobs(void)
     for (k = 0, lit_n = 0; k < 8; k++)
         lit_n += lit(w[L_RING0 + k]);
     CHECK(lit_n == 7 && !lit(w[L_RING0 + 7]));
-    /* Pad Sample 2 (Loop): 1 Loop Start (from the region's start), 3 Loop Fade, 7 Choke, 8 Reverse */
+    /* Pad Sample 2 (2026-11-26): 1 Attack, 4 Release, 5, 6 the engine's further (Loop: none), 7 Choke, 8 Reverse */
     jog(1);
     CHECK(M.kit.page == RFM_MOVE_KIT_PG_SAMPLE2);
-    knob(0, 10), knob(2, 30), knob(6, 10), knob(7, 5);
-    CHECK(M.kit.pad[4].v[RFM_MOVE_KIT_P_LOOPS] == 1280 && M.kit.pad[4].v[RFM_MOVE_KIT_P_LOOPXF] == 30 &&
+    leds(w);
+    CHECK(lit(w[L_RING0 + 0]) && lit(w[L_RING0 + 3]) && !lit(w[L_RING0 + 4]) && !lit(w[L_RING0 + 5]) && lit(w[L_RING0 + 6]));
+    knob(0, 2), knob(3, 4), knob(6, 10), knob(7, 5);
+    CHECK(M.kit.pad[4].v[RFM_MOVE_KIT_P_ATTACK] == 1 && M.kit.pad[4].v[RFM_MOVE_KIT_P_RELEASE] == 2 &&
           M.kit.pad[4].v[RFM_MOVE_KIT_P_CHOKE] == 2 && M.kit.pad[4].v[RFM_MOVE_KIT_P_REVERSE] == 1);
     knob(7, -5);
     /* Warp: 1 the algorithm (Off: the rest dark), 2 Sync, 3 Speed, 4 Pitch (not Repitch's), 5, 6 its own */
@@ -995,11 +1001,11 @@ static void t_mock(void)
     touch(3, 1);                                        /* (pages v2: Pad Sample's knob 4) */
     (void)AHR_E;
     dump("mode");
-    touch(3, 0), rest(), touch(4, 1);                   /* (pages v2: Pad Sample's knob 5) */
+    touch(3, 0), rest(), M.kit.page = RFM_MOVE_KIT_PG_SAMPLE2, touch(0, 1);   /* (2026-11-26: Pad Sample 2's knob 1) */
     out = vs_ref("attack", &AHR_F, 1);
     CHECKF(out == 0, "attack: %d differ", out);
     dump("attack");
-    touch(4, 0), rest();
+    touch(0, 0), rest(), M.kit.page = RFM_MOVE_KIT_PG_SAMPLE;
     dump("envelope");
     /* G, Choke: group 2, pads 9 and 10 in it (pad 11 chosen) */
     sound(8, "Hat", 4800, NULL, 0), sound(9, "Hat2", 4800, NULL, 0), sound(10, "Hat3", 4800, NULL, 0);
@@ -2034,17 +2040,16 @@ static void t_bits(void)
     hit(kp(1)), rest();
     CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS] == 160);  /* (16.0 bits, as before) */
     rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_MODE, RFM_MOVE_KIT_M_LOFI);
-    jog(RFM_MOVE_KIT_PG_SAMPLE2 - M.kit.page), rest();
-    CHECK(M.kit.page == RFM_MOVE_KIT_PG_SAMPLE2);
-    knob(0, 125);                                       /* (3 detents down) */
+    CHECK(M.kit.page == RFM_MOVE_KIT_PG_SAMPLE);        /* (2026-11-26: the engine's on Pad Sample's 5..8) */
+    knob(4, 125);                                       /* (3 detents down) */
     CHECKF(M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS] == 157, "bits %d", M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS]);
     rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_BITS, 125);
-    knob(0, 1), knob(0, 127);
+    knob(4, 1), knob(4, 127);
     CHECK(rfmv_kit_pop_words(&M, w, sizeof w, &subj, &stamp) && strstr(w, "12.5 bit"));
     rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_BITS, 999);
     CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS] == 240);   /* (24 bits at most) */
     rest(), tap_step(0), rest();
-    step(0, 1), knob(0, 127), step(0, 0), rest();       /* (a lock: 23.9 bits) */
+    step(0, 1), knob(4, 127), step(0, 0), rest();       /* (a lock: 23.9 bits) */
     CHECKF(rfmv_seq_lock_get(&M, clip, 0, xs) == RFM_MOVE_KIT_P_BITS && rfmv_seq_lock_get(&M, clip, 0, xs + 1) == 239 - 10,
            "lock %d = %d", rfmv_seq_lock_get(&M, clip, 0, xs), rfmv_seq_lock_get(&M, clip, 0, xs + 1));
     /* a kit part saved before the tenths: the flag off, whole bits (12), a whole-bit lock (7 bits: 6) */

@@ -183,10 +183,11 @@ static const char *const PG_NAME[RFM_MOVE_KIT_PG_N] = { "Sample Kit", "Pad Sampl
                                                         "Filter", "Pad Mix", "Kit Mix" };
 static const int8_t PAGE_K[RFM_MOVE_KIT_PG_N][8] = {
     { KP_RH, KP_TRIM, -1, -1, -1, -1, -1, -1 },
-    { RFM_MOVE_KIT_P_START, RFM_MOVE_KIT_P_END, RFM_MOVE_KIT_P_PITCH, RFM_MOVE_KIT_P_MODE, RFM_MOVE_KIT_P_ATTACK,
-      RFM_MOVE_KIT_P_DECAY, RFM_MOVE_KIT_P_SUSTAIN, RFM_MOVE_KIT_P_RELEASE },
+    { RFM_MOVE_KIT_P_START, RFM_MOVE_KIT_P_END, RFM_MOVE_KIT_P_PITCH, RFM_MOVE_KIT_P_MODE, -1, -1, -1, -1 },   /* (5..8:
+                                                         * the engine's first four, ENG_K) */
     { -1, -1, -1, -1, -1, -1, -1, -1 },                 /* (Trig: the sequencer's TRIG page, trig_page) */
-    { -1, -1, -1, -1, -1, -1, RFM_MOVE_KIT_P_CHOKE, RFM_MOVE_KIT_P_REVERSE },   /* (the engine's own: ENG_K) */
+    { RFM_MOVE_KIT_P_ATTACK, RFM_MOVE_KIT_P_DECAY, RFM_MOVE_KIT_P_SUSTAIN, RFM_MOVE_KIT_P_RELEASE, -1, -1,
+      RFM_MOVE_KIT_P_CHOKE, RFM_MOVE_KIT_P_REVERSE },   /* (5, 6: the engine's further two, ENG_K) */
     { RFM_MOVE_KIT_P_WARP, RFM_MOVE_KIT_P_STRETCH, RFM_MOVE_KIT_P_SPEED, RFM_MOVE_KIT_P_WPITCH, RFM_MOVE_KIT_P_WGRAIN,
       RFM_MOVE_KIT_P_WJITTER, -1, -1 },                 /* (Beats: 6 Search; warp_dead) */
     { RFM_MOVE_KIT_P_CUTOFF, RFM_MOVE_KIT_P_RESO, RFM_MOVE_KIT_P_MORPH, RFM_MOVE_KIT_P_FENV, RFM_MOVE_KIT_P_FATTACK,
@@ -194,7 +195,8 @@ static const int8_t PAGE_K[RFM_MOVE_KIT_PG_N][8] = {
     { RFM_MOVE_KIT_P_LEVEL, RFM_MOVE_KIT_P_PAN, RFM_MOVE_KIT_P_CUTOFF, -1, RFM_MOVE_KIT_P_SEND1, RFM_MOVE_KIT_P_SEND2,
       RFM_MOVE_KIT_P_SEND3, -1 },
     { KP_KLEVEL, KP_KPAN, KP_KCUT, KP_KRES, KP_KSEND1, KP_KSEND2, KP_KSEND3, -1 } };
-/* Pad Sample 2's knobs 1..6: the engine's own (One Shot, Momentary: none) */
+/* the engine's own (One Shot, Momentary: none): (the owner's 2026-11-26) the first four on Pad Sample's knobs 5..8,
+ * the rest on Pad Sample 2's 5 and 6 */
 static const int8_t ENG_K[RFM_MOVE_KIT_M_N][6] = {
     { -1, -1, -1, -1, -1, -1 },
     { -1, -1, -1, -1, -1, -1 },
@@ -219,7 +221,9 @@ static int knob_p(const rfm_move_t *m, int k)
     const int pg = cur_page(m);
     const rfm_move_kit_pad_t *d = &m->kit.pad[m->kit.cur & 15];
     k &= 7;
-    if (pg == RFM_MOVE_KIT_PG_SAMPLE2 && k < 6)
+    if (pg == RFM_MOVE_KIT_PG_SAMPLE && k >= 4)
+        return ENG_K[mode_of(d)][k - 4];
+    if (pg == RFM_MOVE_KIT_PG_SAMPLE2 && (k == 4 || k == 5))
         return ENG_K[mode_of(d)][k];
     if (pg == RFM_MOVE_KIT_PG_WARP) {                   /* (dark: Granular; Off past knob 1; Repitch past Speed) */
         const int w = warp_of(d);
@@ -4215,72 +4219,36 @@ static int page_pic(const rfm_move_t *m, mr_canvas_t *cv)
     switch (cur_page(m)) {
     case RFM_MOVE_KIT_PG_TRIG: trig_pic(m, cv); return 1;
     case RFM_MOVE_KIT_PG_SAMPLE:                        /* the wave over the region (a join's seam) above the pad's
-                                                         * steps (the owner's: no text) */
+                                                         * steps (the owner's: no text); (2026-11-26: the engine's
+                                                         * knobs here) Loop its loop and fade, Granular its position
+                                                         * and spray marked under it */
         if (ready(d)) {
             const int a = d->v[RFM_MOVE_KIT_P_START], b = d->v[RFM_MOVE_KIT_P_END];
-            pad_wave(m, cv, k, 21, 19, 0);
+            const int md = mode_of(d), mk = md == RFM_MOVE_KIT_M_LOOP || md == RFM_MOVE_KIT_M_GRANULAR;
+            pad_wave(m, cv, k, mk ? 18 : 21, mk ? 16 : 19, 0);
             if (d->cut && d->cut > a && d->cut < b)
-                v2_dotV(cv, (int)((int64_t)(d->cut - a) * 127 / (b - a)), 0, 42);
+                v2_dotV(cv, (int)((int64_t)(d->cut - a) * 127 / (b - a)), 0, mk ? 34 : 42);
+            if (md == RFM_MOVE_KIT_M_LOOP) {
+                const int ls = loop_pt(d, RFM_MOVE_KIT_P_LOOPS), le = loop_pt(d, RFM_MOVE_KIT_P_LOOPE);
+                region_mark(d, cv, ls, le, 37, 3);
+                region_mark(d, cv, le - (le - ls) * d->v[RFM_MOVE_KIT_P_LOOPXF] / 200, le, 41, 1);
+            } else if (md == RFM_MOVE_KIT_M_GRANULAR) {
+                const int at = a + (int)((int64_t)(b - a) * d->v[RFM_MOVE_KIT_P_GPOS] / 100);
+                const int sp = (int)((int64_t)(b - a) * d->v[RFM_MOVE_KIT_P_GSPRAY] / 200);
+                region_mark(d, cv, at - sp, at + sp, 39, 2);
+                region_mark(d, cv, at, at + 1, 34, 9);
+            }
         }
         pad_steps(m, cv);
         return 1;
-    case RFM_MOVE_KIT_PG_SAMPLE2:                       /* (pages v2) the engine's own: Loop its loop and fade, Pitch
-                                                         * Env its curve, LoFi its steps, Granular its position and
-                                                         * spray; One Shot, Momentary: nothing */
-        switch (mode_of(d)) {                           /* (above the pad's steps, as Pad Sample) */
-        case RFM_MOVE_KIT_M_LOOP:
-        case RFM_MOVE_KIT_M_GRANULAR:
-            if (ready(d)) {
-                pad_wave(m, cv, k, 18, 16, 0);
-                if (mode_of(d) == RFM_MOVE_KIT_M_LOOP) {
-                    const int ls = loop_pt(d, RFM_MOVE_KIT_P_LOOPS), le = loop_pt(d, RFM_MOVE_KIT_P_LOOPE);
-                    region_mark(d, cv, ls, le, 37, 3);
-                    region_mark(d, cv, le - (le - ls) * d->v[RFM_MOVE_KIT_P_LOOPXF] / 200, le, 41, 1);
-                } else {
-                    const int s0 = d->v[RFM_MOVE_KIT_P_START], e0 = d->v[RFM_MOVE_KIT_P_END];
-                    const int at = s0 + (int)((int64_t)(e0 - s0) * d->v[RFM_MOVE_KIT_P_GPOS] / 100);
-                    const int sp = (int)((int64_t)(e0 - s0) * d->v[RFM_MOVE_KIT_P_GSPRAY] / 200);
-                    region_mark(d, cv, at - sp, at + sp, 39, 2);
-                    region_mark(d, cv, at, at + 1, 34, 9);
-                }
-            }
-            pad_steps(m, cv);
-            return 1;
-        case RFM_MOVE_KIT_M_PITCHENV: {                 /* the pitch over time: up (or down) by the depth, back */
-            const int dp = d->v[RFM_MOVE_KIT_P_PDEPTH], ya = 21 - dp * 18 / 48;
-            const int wa = isqrt(d->v[RFM_MOVE_KIT_P_PATTACK]), wr = isqrt(d->v[RFM_MOVE_KIT_P_PRELEASE]);
-            const int xa = 4 + 120 * wa / (wa + wr + 1), xr = 4 + 120 * (wa + wr) / (wa + wr + 1);
-            v2_dotH(cv, 0, 21, 128);
-            v2_L(cv, 4, 21, xa, ya), v2_L(cv, xa, ya, xr, 21), v2_L(cv, xr, 21, 124, 21);
-            v2_L(cv, 4, 22, xa, ya + 1), v2_L(cv, xa, ya + 1, xr, 22);
-            pad_steps(m, cv);
-            return 1;
-        }
-        case RFM_MOVE_KIT_M_LOFI: {                     /* a wave as it comes out: held, in steps */
-            const int bits = clampi((d->v[RFM_MOVE_KIT_P_BITS] + 5) / 10, 1, 24), ds = clampi(d->v[RFM_MOVE_KIT_P_DOWNS], 1, 32);
-            const int lv = bits >= 5 ? 0 : 1 << bits;   /* (fewer than 5 bits: its levels shown) */
-            int x, py = -1;
-            for (x = 0; x < 128; x++) {
-                const int xs = x - x % (ds > 1 ? ds * 2 : 1);
-                const uint32_t ph = (uint32_t)(xs * 65536 / 64) & 0xFFFF;
-                int y = ph < 32768 ? (int)(ph * 36 / 32768) - 18 : 18 - (int)((ph - 32768) * 36 / 32768);   /* (a
-                                                         * triangle: no libm) */
-                if (lv)
-                    y = (y + 18) * lv / 37 * 36 / (lv > 1 ? lv - 1 : 1) - 18;
-                y = 21 - y;
-                if (py >= 0)
-                    v2_L(cv, x - 1, py, x, y);
-                py = y;
-            }
-            pad_steps(m, cv);
-            return 1;
-        }
-        default:                                        /* (One Shot, Momentary: none of their own: the wave) */
-            if (ready(d))
-                pad_wave(m, cv, k, 21, 19, 0);
-            pad_steps(m, cv);
-            return 1;
-        }
+    case RFM_MOVE_KIT_PG_SAMPLE2: {                     /* (2026-11-26, the owner's: the envelope's knobs here) the amp
+                                                         * envelope above the pad's steps */
+        int pt[5];
+        env_parts(m, k, pt);
+        ahdsr(cv, 4, 40, 120, 34, pt, d->v[RFM_MOVE_KIT_P_SUSTAIN], 0);
+        pad_steps(m, cv);
+        return 1;
+    }
     case RFM_MOVE_KIT_PG_WARP: {                        /* (pages v2) the wave, the steps it lasts */
         const int n = region_steps(m, k);
         if (!warp_of(d) || !ready(d))
