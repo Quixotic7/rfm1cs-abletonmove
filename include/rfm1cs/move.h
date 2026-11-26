@@ -1334,8 +1334,10 @@ enum { RFM_MOVE_KIT_P_PITCH,                            /* cents -2400..2400 (a 
 /* (round A) Toggle: a tap (or a step's note) starts it, the next stops it (a short release); it loops while on */
 enum { RFM_MOVE_KIT_M_ONESHOT, RFM_MOVE_KIT_M_MOMENTARY, RFM_MOVE_KIT_M_LOOP, RFM_MOVE_KIT_M_TOGGLE, RFM_MOVE_KIT_M_N };
 enum { RFM_MOVE_KIT_RH_PITCHES, RFM_MOVE_KIT_RH_INKEY, RFM_MOVE_KIT_RH_OFF, RFM_MOVE_KIT_RH_N };   /* the right half */
-/* (pages, 2026-11-26) the Kit view's knob pages, the jog's turn: SOUND, ENVELOPE, FILTER & FX, KIT */
-enum { RFM_MOVE_KIT_PG_SOUND, RFM_MOVE_KIT_PG_ENV, RFM_MOVE_KIT_PG_FILTER, RFM_MOVE_KIT_PG_KIT, RFM_MOVE_KIT_PG_N };
+/* (pages, the owner's 2026-11-26 design) the Kit view's knob pages, the jog's turn: Sample Kit, Pad Sample, Pad
+ * Sample 2 (the envelope), Stretch, Filter, Pad Mix, Kit Mix */
+enum { RFM_MOVE_KIT_PG_KIT, RFM_MOVE_KIT_PG_SAMPLE, RFM_MOVE_KIT_PG_ENV, RFM_MOVE_KIT_PG_STRETCH, RFM_MOVE_KIT_PG_FILTER,
+       RFM_MOVE_KIT_PG_PADMIX, RFM_MOVE_KIT_PG_KITMIX, RFM_MOVE_KIT_PG_N };
 enum { RFM_MOVE_KIT_PL_TAKES = 1, RFM_MOVE_KIT_PL_SAMPLES = 2, RFM_MOVE_KIT_PL_KITS = 3 };   /* Files' places */
 enum { RFM_MOVE_KIT_ROW_DIR = 1, RFM_MOVE_KIT_ROW_FILE = 2, RFM_MOVE_KIT_ROW_KIT = 3 };   /* (KIT: a saved kit, Kits') */
 #define RFM_MOVE_KIT_SLOT 3                             /* (stage 3b) MIX's slot for the kit's own strip */

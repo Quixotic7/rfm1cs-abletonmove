@@ -35,11 +35,13 @@
  * line with a notch, what does not play dithered; heard at rest RFM_MOVE_KIT_AUD_MS (KIT_AUDITION). Slice's Hits: knob 3
  * the sensitivity (the cuts asked again). The Kit tab's Trim silence (KIT_REC's param). Play mode Toggle.
  *
- * (pages, the owner's 2026-11-26; README "The kit (pages)") no rows and no tabs: the jog turns the knob pages SOUND,
- * ENVELOPE, FILTER & FX, KIT as the sequencer's knob pages turn (a detent a page, stopping at the ends; the page's name
- * and the page marks for RFM_MOVE_POPUP_MS, v2_modeName as the ENGINE page's arrival), the knobs always the page's
- * (PAGE_K), drawn as the FX pages' 8 cells under the page's picture. The click: Files for the chosen pad (KIT: Kits,
- * Load and Save), a layer with the jog, Back closing it; Shift + the click: the pad's tools. Shift is fine adjust. */
+ * (pages, the owner's 2026-11-26; README "The kit (pages)") no rows and no tabs: the jog turns the knob pages Sample
+ * Kit, Pad Sample, Pad Sample 2, Stretch, Filter, Pad Mix, Kit Mix as the sequencer's knob pages turn (a detent a
+ * page, stopping at the ends; the page's name and the page marks for RFM_MOVE_POPUP_MS, v2_modeName as the ENGINE
+ * page's arrival), the knobs always the page's (PAGE_K), drawn as the FX pages' 8 cells under the page's picture
+ * (Sample Kit: the 16 lanes). The click: the browser for the chosen pad, as Move's (Back, folders, sounds; Sample Kit
+ * and Kit Mix: Kits, Load and Save), a layer with the jog, Back leaving it; Shift + the click: the pad's tools. Shift
+ * is fine adjust. */
 #include <stdio.h>
 #include <string.h>
 
@@ -57,8 +59,6 @@ static const rgb_t ROWC[4] = { { 255, 60, 160 }, { 255, 140, 40 }, { 120, 220, 2
 
 /* ---- the icons (mock_kit_v1.c's, 11 x 11) */
 typedef const char *const icon_t[11];
-static icon_t I_LIST = { "...........", "##..#######", "##..#######", "...........", "##..#######", "##..#######",
-                         "...........", "##..#######", "##..#######", "...........", "..........." };
 static icon_t I_DOT = { "...........", "...#####...", "..#######..", ".#########.", ".#########.", ".#########.",
                         ".#########.", ".#########.", "..#######..", "...#####...", "..........." };
 static icon_t I_PLAY = { "...........", "..##.......", "..####.....", "..######...", "..########.", "..########.",
@@ -101,6 +101,13 @@ static icon_t I_FREEZE = { ".....#.....", "..#.###.#..", "...#.#.#...", "#...###
 static icon_t I_TOGGLE = { "...........", "#.....####.", "##....####.", "###...####.", "####..####.", "#####.####.",
                            "####..####.", "###...####.", "##....####.", "#.....####.", "..........." };
 /* (round B) the pad's filter: Filter (a low-pass slope), Resonance (its peak) */
+/* (pages, the owner's browser, as Move's) Back a left arrow, a folder a right arrow, a sample a small wave */
+static icon_t I_UP = { "...........", "....#......", "...##......", "..###......", ".#########.", "##########.",
+                       ".#########.", "..###......", "...##......", "....#......", "..........." };
+static icon_t I_IN = { "...........", "......#....", "......##...", "......###..", ".#########.", ".##########",
+                       ".#########.", "......###..", "......##...", "......#....", "..........." };
+static icon_t I_SND = { "...........", "....#......", "....#...#..", "..#.#...#..", "..#.##..#..", "#.#.##.##.#",
+                        "..#.##..#..", "..#.#...#..", "....#...#..", "....#......", "..........." };
 static void ic(mr_canvas_t *cv, icon_t i, int x, int y, int v)
 {
     int r, c;
@@ -126,15 +133,20 @@ static const char *const SCALE_SHORT[RFM_MOVE_NSCALES] = { "Major", "Minor", "Do
                                                            "Hirajo", "Iwato", "Pelog", "DblHarm", "Span 8", "Bebop" };
 /* (pages, the owner's 2026-11-26: "I want the Jogwheel behaviour to function like it does on the sequencer pages")
  * the jog turns the page, the knobs always follow it (-1 dark and dead); Shift is fine adjust, no page of its own */
-static const char *const PG_NAME[RFM_MOVE_KIT_PG_N] = { "Sound", "Envelope", "Filter FX", "Kit" };
+static const char *const PG_NAME[RFM_MOVE_KIT_PG_N] = { "Sample Kit", "Pad Sample", "Pad Sample 2", "Stretch",
+                                                        "Filter", "Pad Mix", "Kit Mix" };
 static const int8_t PAGE_K[RFM_MOVE_KIT_PG_N][8] = {
-    { RFM_MOVE_KIT_P_PITCH, RFM_MOVE_KIT_P_START, RFM_MOVE_KIT_P_END, RFM_MOVE_KIT_P_MODE, RFM_MOVE_KIT_P_REVERSE,
-      RFM_MOVE_KIT_P_STRETCH, RFM_MOVE_KIT_P_LEVEL, RFM_MOVE_KIT_P_PAN },
+    { KP_RH, KP_TRIM, -1, -1, -1, -1, -1, -1 },
+    { RFM_MOVE_KIT_P_PITCH, KP_FINE, RFM_MOVE_KIT_P_START, RFM_MOVE_KIT_P_END, RFM_MOVE_KIT_P_MODE,
+      RFM_MOVE_KIT_P_REVERSE, RFM_MOVE_KIT_P_CHOKE, -1 },
     { RFM_MOVE_KIT_P_ATTACK, RFM_MOVE_KIT_P_HOLD, RFM_MOVE_KIT_P_DECAY, RFM_MOVE_KIT_P_SUSTAIN, RFM_MOVE_KIT_P_RELEASE,
-      RFM_MOVE_KIT_P_CHOKE, KP_FINE, -1 },
-    { RFM_MOVE_KIT_P_CUTOFF, RFM_MOVE_KIT_P_RESO, RFM_MOVE_KIT_P_SEND1, RFM_MOVE_KIT_P_SEND2, RFM_MOVE_KIT_P_SEND3,
+      -1, -1, -1 },
+    { RFM_MOVE_KIT_P_STRETCH, -1, -1, -1, -1, -1, -1, -1 },
+    { RFM_MOVE_KIT_P_CUTOFF, RFM_MOVE_KIT_P_RESO, -1, -1, -1, -1, -1, -1 },
+    { RFM_MOVE_KIT_P_LEVEL, RFM_MOVE_KIT_P_PAN, RFM_MOVE_KIT_P_SEND1, RFM_MOVE_KIT_P_SEND2, RFM_MOVE_KIT_P_SEND3,
       RFM_MOVE_KIT_P_MUTE, -1, -1 },
-    { KP_KLEVEL, KP_KPAN, KP_KSEND1, KP_KSEND2, KP_KSEND3, KP_RH, KP_TRIM, -1 } };
+    { KP_KLEVEL, KP_KPAN, KP_KSEND1, KP_KSEND2, KP_KSEND3, -1, -1, -1 } };
+static int kit_page(int pg) { return pg == RFM_MOVE_KIT_PG_KIT || pg == RFM_MOVE_KIT_PG_KITMIX; }   /* (the click: Kits) */
 static const rgb_t LOCKC = { 255, 209, 102 };           /* (round B) a step held: the knobs it locks */
 static int knob_p(const rfm_move_t *m, int k) { return PAGE_K[m->kit.page % RFM_MOVE_KIT_PG_N][k & 7]; }
 static int real_p(int p) { return p == KP_FINE ? RFM_MOVE_KIT_P_PITCH : p; }
@@ -1622,6 +1634,13 @@ static int rec_running(const rfm_move_t *m)
 
 /* ================================================================ Files' rows === */
 static int first_of(int sel, int total) { return total <= 3 ? 0 : clampi(sel - 1, 0, total - 3); }
+/* (pages, the owner's browser) a folder's rows: Back (row -1, drawn first) then its own; the first shown (visual: 0 Back)
+ * and the first of its own shown */
+static int list_vfirst(const rfm_move_kit_t *t)
+{
+    return first_of(t->fsel[t->depth] + 1, (t->known ? t->total : 0x7FFE) + 1);
+}
+static int list_first(const rfm_move_kit_t *t) { const int v = list_vfirst(t); return v ? v - 1 : 0; }
 static const rfm_move_kit_row_t *row_get(const rfm_move_t *m, int pl, uint32_t f, int i)
 {
     int k;
@@ -1648,8 +1667,9 @@ static void need(rfm_move_t *m)
         return;
     if (t->known && !t->total)
         return;
-    first = t->known ? first_of(sel, t->total) : clampi(sel - 1, 0, 0x7FFF);
-    for (i = first; i < first + 3 && (!t->known || i < t->total); i++)
+    (void)sel;
+    first = list_first(t);
+    for (i = first; i < first + (list_vfirst(t) ? 3 : 2) && (!t->known || i < t->total); i++)
         miss |= !row_get(m, t->place, f, i);
     if (!miss || (t->ask_pl == t->place && t->ask_f == f && t->ask_i == first))
         return;
@@ -1667,7 +1687,7 @@ int rfm_move_kit_rows(rfm_move_t *m, int place, uint32_t folder, int total, int 
     if (place != t->place || folder != t->folder[t->depth])
         return 0;                                       /* (an older ask's) */
     t->total = (uint16_t)clampi(total, 0, 0x7FFF), t->known = 1;
-    t->fsel[t->depth] = (int16_t)clampi(t->fsel[t->depth], 0, t->total ? t->total - 1 : 0);
+    t->fsel[t->depth] = (int16_t)clampi(t->fsel[t->depth], -1, t->total ? t->total - 1 : -1);   /* (-1: Back) */
     for (i = 0; rows && i < n && from + i < t->total; i++) {
         int k, v = -1;
         for (k = 0; k < RFM_MOVE_KIT_CACHE && v < 0; k++)
@@ -1677,7 +1697,7 @@ int rfm_move_kit_rows(rfm_move_t *m, int place, uint32_t folder, int total, int 
             if (!t->rc[k].ok)
                 v = k;
         if (v < 0) {                                    /* (one the screen does not show) */
-            const int c0 = first_of(t->fsel[t->depth], t->total);
+            const int c0 = list_first(t);
             for (k = 0; k < RFM_MOVE_KIT_CACHE && v < 0; k++)
                 if (!(t->rc[k].pl == place && t->rc[k].f == folder && t->rc[k].i >= c0 && t->rc[k].i < c0 + 3))
                     v = k;
@@ -1751,6 +1771,10 @@ static void land_poll(rfm_move_t *m)
         return;
     if (!in_list(m) || !rfmv_kit_active(m)) {
         t->land = 0;
+        return;
+    }
+    if (t->fsel[t->depth] < 0) {
+        t->land = 0;                                    /* (the Back row: nothing) */
         return;
     }
     if (!(r = row_get(m, t->place, t->folder[t->depth], t->fsel[t->depth])))
@@ -1888,7 +1912,7 @@ static void files_turn(rfm_move_t *m, int d)
     }
     {
         int16_t *sel = &t->fsel[t->depth];
-        *sel = (int16_t)clampi(*sel + d, 0, t->total > 0 ? t->total - 1 : 0);
+        *sel = (int16_t)clampi(*sel + d, -1, t->known ? t->total - 1 : 0x7FFE);   /* (-1: the Back row) */
         need(m);
         land_mark(m);                                   /* (round A: at rest, the sound onto the pad) */
     }
@@ -2003,7 +2027,7 @@ static void click(rfm_move_t *m)
         if (m->seq.mods & SEQ_M_SHIFT) {
             m->seq.mods_used |= SEQ_M_SHIFT;
             t->tools = 1, t->ti = 0;
-        } else if (t->page == RFM_MOVE_KIT_PG_KIT)
+        } else if (kit_page(t->page))
             t->tab = 1, t->kitrow = 0;
         else {
             preview_stop(m);
@@ -2034,6 +2058,14 @@ static void click(rfm_move_t *m)
         t->place = (uint8_t)(t->psel + 1), t->depth = 0, t->folder[0] = 0, t->fsel[0] = 0;
         rows_forget(m);
         need(m);
+        return;
+    }
+    if (t->fsel[t->depth] < 0) {                        /* (the owner's browser) the Back row: a folder up, the root */
+        preview_stop(m);
+        if (t->depth)
+            t->depth--, rows_forget(m), need(m);
+        else
+            t->psel = (uint8_t)(t->place - 1), t->place = 0, rows_forget(m);
         return;
     }
     {
@@ -2858,52 +2890,47 @@ static void filter_curve(mr_canvas_t *cv, int x0, int w, int yb, int ylo, int yh
     if (mark)
         v2_dotV(cv, clampi(xc, 0, 127), ylo, yhi - ylo);
 }
-static void file_row(mr_canvas_t *cv, int y, const rfm_move_kit_row_t *r, int chosen)
+/* (pages, the owner's browser) a row: its icon on the left (Back, a folder, a sample, a saved kit), its name */
+static void brow(mr_canvas_t *cv, int y, icon_t i, const char *name, int chosen)
 {
     char nm[RFM_MOVE_KIT_NAME];
-    int c, maxc;
-    if (chosen)
-        v2_R(cv, 0, y, 128, 15, 1);
-    if (!r)
-        return;
-    snprintf(nm, sizeof nm, "%s", r->name);
-    if (r->kind == RFM_MOVE_KIT_ROW_DIR || r->kind == RFM_MOVE_KIT_ROW_KIT) {   /* (3b: a saved kit, I_KIT) */
-        ic(cv, r->kind == RFM_MOVE_KIT_ROW_KIT ? I_KIT : I_DIR, 3, y + 2, !chosen);
-        maxc = (128 - 20) / 12;
-        if ((int)strlen(nm) > maxc)
-            nm[maxc] = 0;
-        v2_T(cv, 20, y + 1, nm, 2, !chosen);
-        return;
-    }
-    maxc = (99 - 3) / 12;
+    const int maxc = (128 - 20) / 12;
+    snprintf(nm, sizeof nm, "%s", name);
     if ((int)strlen(nm) > maxc)
         nm[maxc] = 0;
-    v2_T(cv, 3, y + 1, nm, 2, !chosen);
-    for (c = 0; c < RFM_MOVE_SMP_THUMB; c++) {
-        const int a = (r->thumb[c] * 5 + 127) / 255;
-        v2_R(cv, 99 + c * 2, y + 7 - a, 1, a ? a * 2 : 1, !chosen);
+    rowi(cv, y, i, nm, chosen);
+}
+static void file_row(mr_canvas_t *cv, int y, const rfm_move_kit_row_t *r, int chosen)
+{
+    if (!r) {
+        if (chosen)
+            v2_R(cv, 0, y, 128, 15, 1);
+        return;
     }
+    brow(cv, y, r->kind == RFM_MOVE_KIT_ROW_KIT ? I_KIT : r->kind == RFM_MOVE_KIT_ROW_DIR ? I_IN : I_SND, r->name, chosen);
 }
 static void files_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_kit_t *t = &m->kit;
     int i;
     header(cv, I_DIR, t->cur + 1);
-    if (!t->place) {
-        static icon_t *const PI[PL_N] = { &I_LIST, &I_DIR, &I_KIT };
+    if (!t->place) {                                    /* the root: Takes, Samples, Kits (folders) */
         static const char *const PN[PL_N] = { "Takes", "Samples", "Kits" };
         for (i = 0; i < PL_N; i++)
-            rowi(cv, 16 + i * 16, *PI[i], PN[i], i == t->psel);
+            brow(cv, 16 + i * 16, I_IN, PN[i], i == t->psel);
         return;
     }
-    if (t->known && !t->total) {
-        v2_TC(cv, 64, 32, "Empty", 2, 1);
-        return;
-    }
-    {
-        const int sel = t->fsel[t->depth], first = t->known ? first_of(sel, t->total) : clampi(sel - 1, 0, 0x7FFF);
-        for (i = 0; i < 3 && (!t->known || first + i < t->total); i++)
-            file_row(cv, 16 + i * 16, row_get(m, t->place, t->folder[t->depth], first + i), first + i == sel);
+    {                                                   /* Back first, then the folder's own */
+        const int sel = t->fsel[t->depth], v0 = list_vfirst(t);
+        for (i = 0; i < 3; i++) {
+            const int v = v0 + i, r = v - 1;
+            if (t->known && r >= t->total)
+                break;
+            if (v == 0)
+                brow(cv, 16, I_UP, "Back", sel < 0);
+            else
+                file_row(cv, 16 + i * 16, row_get(m, t->place, t->folder[t->depth], r), r == sel);
+        }
     }
 }
 /* ---- (pages) a knob's cell, as the FX pages' 8 cells (fw.c, 0.5.0): its short name, its value under it, both at 1x
@@ -2936,6 +2963,31 @@ static void cells(const rfm_move_t *m, mr_canvas_t *cv)
         v2_TC(cv, x + 16, y + 10, v, 1, 1);
     }
 }
+/* (Sample Kit) the whole kit's steps: 16 lanes of 4 px, pad 1 at the bottom, each its pad's hits over the 16 steps
+ * shown (8 px a step); a pad with no sound: empty; the chosen pad's lane underlined; while playing, each lane's
+ * playhead a tick */
+static void lanes(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    int k, s;
+    for (k = 0; k < RFM_MOVE_KIT_PADS; k++) {
+        const int y = (15 - k) * 4, tr = trk(k);
+        const int pos = (q->playing || q->start_pending) && q->tr[tr].active == q->tr[tr].sel ? rfmv_seq_clip_pos(m, tr) : -1;
+        if (!has_sound(CPAD(m, k)))
+            continue;
+        for (s = 0; s < 16; s++) {
+            const int abs = q->page * RFM_MOVE_SEQ_PAGE + s;
+            if (step_has(m, k, abs))
+                v2_R(cv, s * 8 + 1, y, 6, 3, 1);
+            else
+                v2_px(cv, s * 8 + 4, y + 1, 1);
+            if (pos == abs)
+                v2_R(cv, s * 8, y, 1, 3, 1);
+        }
+        if (k == m->kit.cur)
+            v2_R(cv, 0, y + 3, 128, 1, 1);
+    }
+}
 /* the page's picture, compact, in x 0..101, y 0..22 (the pad's number top right) */
 static void page_pic(const rfm_move_t *m, mr_canvas_t *cv)
 {
@@ -2945,15 +2997,23 @@ static void page_pic(const rfm_move_t *m, mr_canvas_t *cv)
     char nm[24];
     int pt[5], i;
     switch (t->page) {
-    case RFM_MOVE_KIT_PG_SOUND:                         /* the sound's name, its wave over the region (a join's seam) */
-        sound_text(m, k, nm, sizeof nm);
-        nm[16] = 0;
-        v2_T(cv, 0, 0, nm, 1, 1);
-        pad_wave_n(m, cv, k, 16, 6, 0, 50);
+    case RFM_MOVE_KIT_PG_SAMPLE:                        /* the wave over the region (a join's seam); no name (the
+                                                         * click's browser opens on it) */
+    case RFM_MOVE_KIT_PG_STRETCH:                       /* .. Stretch: and the steps it lasts */
+        if (t->page == RFM_MOVE_KIT_PG_SAMPLE)
+            pad_wave_n(m, cv, k, 11, 10, 0, 50);
+        else
+            pad_wave_n(m, cv, k, 8, 7, 0, 50);
         {
             const int a = d->v[RFM_MOVE_KIT_P_START], b = d->v[RFM_MOVE_KIT_P_END];
             if (d->cut && d->st == RFM_MOVE_KIT_OK && d->cut > a && d->cut < b)
-                v2_dotV(cv, (int)((int64_t)(d->cut - a) * 100 / (b - a)), 9, 14);
+                v2_dotV(cv, (int)((int64_t)(d->cut - a) * 100 / (b - a)), 0, 22);
+        }
+        if (t->page == RFM_MOVE_KIT_PG_STRETCH) {
+            const int n = region_steps(m, k);
+            for (i = 0; i <= 16; i++)
+                v2_R(cv, i * 99 / 16, 17, 1, i % 4 == 0 ? 4 : 2, 1);
+            v2_R(cv, 0, 21, n * 99 / 16, 2, 1);
         }
         break;
     case RFM_MOVE_KIT_PG_ENV:                           /* (round B) the AHDSR */
@@ -2963,7 +3023,17 @@ static void page_pic(const rfm_move_t *m, mr_canvas_t *cv)
     case RFM_MOVE_KIT_PG_FILTER:                        /* (round B) the filter's curve */
         filter_curve(cv, 0, 98, 12, 1, 22, d->v[RFM_MOVE_KIT_P_CUTOFF], d->v[RFM_MOVE_KIT_P_RESO], 0);
         break;
-    default:                                            /* the kit: its name, the 16 pads (a sound filled, empty a
+    case RFM_MOVE_KIT_PG_PADMIX:                        /* the pad's level as a bar, its pan a mark on it */
+        {
+            const int lv = d->v[RFM_MOVE_KIT_P_LEVEL], w = lv <= LEVEL_MIN ? 0 : (lv - LEVEL_MIN) * 98 / (6 - LEVEL_MIN);
+            v2_R(cv, 0, 12, 98, 1, 1);
+            v2_R(cv, 0, 9, w, 7, 1);
+            v2_R(cv, 49 + d->v[RFM_MOVE_KIT_P_PAN] * 48 / 50, 4, 1, 17, 1);
+            if (d->v[RFM_MOVE_KIT_P_MUTE])              /* (muted: the bar hollow) */
+                v2_R(cv, 1, 10, w > 2 ? w - 2 : 0, 5, 0);
+        }
+        break;
+    default:                                            /* Kit Mix: the kit's name, its 16 pads (a sound filled, empty a
                                                          * line, muted dithered, the chosen underlined) */
         snprintf(nm, sizeof nm, "%s", t->name[0] ? t->name : "Kit");
         nm[16] = 0;
@@ -2989,6 +3059,10 @@ static void page_pic(const rfm_move_t *m, mr_canvas_t *cv)
 }
 static void page_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
+    if (m->kit.page == RFM_MOVE_KIT_PG_KIT) {            /* (Sample Kit: the lanes, the whole screen) */
+        lanes(m, cv);
+        return;
+    }
     page_pic(m, cv);
     pad_no(cv, m->kit.cur + 1);
     cells(m, cv);
@@ -3328,6 +3402,7 @@ int rfmv_kit_timed(const rfm_move_t *m)
         if (step_locks(m, t->cur, m->seq.page * RFM_MOVE_SEQ_PAGE + i) && step_has(m, t->cur, m->seq.page * RFM_MOVE_SEQ_PAGE + i))
             return 1;
     if (t->land || t->aud || t->sl_ask || msg_up(m) || rec_running(m) || t->pend_take || merge_up(m) || t->sl_on || t->tab == 2 || t->tool_note || to_kit(m) ||
+        (t->tab == 0 && t->page == RFM_MOVE_KIT_PG_KIT && (m->seq.playing || m->seq.start_pending)) ||
         (t->turned && now(m) - t->turn_ms < RFM_MOVE_POPUP_MS) || (t->kpop >= 0 && now(m) - t->kpop_ms < RFM_MOVE_POPUP_MS))
         return 1;
     for (i = 0; i < 16; i++)
@@ -3409,7 +3484,10 @@ int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
         snprintf(o, (size_t)cap, "%s", t->kitrow == KT_LOAD ? "Load" : "Save");
         *subj = (uint16_t)(0xA50 | t->kitrow);
     } else {                                            /* (pages) the page */
-        snprintf(o, (size_t)cap, "%s page", PG_NAME[t->page % RFM_MOVE_KIT_PG_N]);
+        if (t->page == RFM_MOVE_KIT_PG_SAMPLE)          /* (the screen draws no name: said) */
+            sound_text(m, t->cur, v, sizeof v), snprintf(o, (size_t)cap, "%s page, %s", PG_NAME[t->page], v);
+        else
+            snprintf(o, (size_t)cap, "%s page", PG_NAME[t->page % RFM_MOVE_KIT_PG_N]);
         *subj = (uint16_t)(0xA60 | t->page), *stamp = t->turn_ms;
     }
     return o[0] != 0;

@@ -10,11 +10,13 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 README "The kit (pages)". `rfm_move_kit_t`: `page` (RAM) replaces `row`, `on_tabs`, `picking`, `edit`, `kshift`:
 rebuild everything. `RFM_MOVE_KIT_PG_*`. Nothing saved changes (project version 14).
 
-- The jog turns SOUND, ENVELOPE, FILTER & FX, KIT (the sequencer's way: the name and the page marks a second); the
-  knobs follow the page, 8 cells on the screen under the page's picture. No tabs, no rows, no Shift knob page.
-- The click: Files for the chosen pad (KIT: Kits, Load and Save); Shift + the click: the pad's tools.
-- move_kit: boards A, B (rest, three), O (joined) and Q (kittab) no longer compared (drawn); the places and files
-  boards with their header masked.
+- The jog turns Sample Kit, Pad Sample, Pad Sample 2, Stretch, Filter, Pad Mix, Kit Mix (the sequencer's way: the
+  name and the page marks a second); the knobs follow the page, 8 cells under the page's picture (Sample Kit: the 16
+  pads' lanes of steps). No tabs, no rows, no Shift knob page.
+- The click: the browser for the chosen pad, as Move's (a Back row, arrows for folders, a wave for sounds); on Sample
+  Kit and Kit Mix: Kits, Load and Save. Shift + the click: the pad's tools.
+- move_kit adapted (the view opens tests on Pad Sample); boards A, B (rest, three), I, J (places, files), O (joined)
+  and Q (kittab) no longer compared (drawn).
 
 ### Round C (2026-11-26): the project's own sounds, Freeze
 

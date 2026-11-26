@@ -1458,22 +1458,26 @@ there. No new bytes: project version 14 still.
 ## The kit (pages)
 
 The owner's 2026-11-26 round (remoteFM14Move-kit KIT-SPEC.md "Pages, 2026-11-26"): "I want the Jogwheel behaviour to
-function like it does on the sequencer pages." The Pad / Kit / Files tabs and the jog's rows are gone; the knobs
-always follow the page. `rfm_move_kit_t`: `page` (RAM, the view's, not a pad's) replaces `row`, `on_tabs`, `picking`,
-`edit`, `kshift`: rebuild everything. Nothing new saved: project version 14 still.
+function like it does on the sequencer pages", then their own page design. The Pad / Kit / Files tabs and the jog's
+rows are gone; the knobs always follow the page. `rfm_move_kit_t`: `page` (RAM, the view's, not a pad's) replaces
+`row`, `on_tabs`, `picking`, `edit`, `kshift`: rebuild everything. Nothing new saved: project version 14 still.
 
-| Page | Picture | Knobs 1..8 |
+| Page (`RFM_MOVE_KIT_PG_*`) | Picture | Knobs 1..8 (- dark and dead) |
 |---|---|---|
-| SOUND | the sound's name, its wave over the region | Pitch, Start, End, Play, Reverse, Stretch, Level, Pan |
-| ENVELOPE | the AHDSR | Attack, Hold, Decay, Sustain, Release, Choke, Fine (cents), - |
-| FILTER & FX | the filter's curve | Filter, Resonance, Send 1, Send 2, Send 3, Mute, -, - |
-| KIT | the kit's name, its 16 pads (the chosen underlined) | the kit's Level, Pan, Send 1, 2, 3 (the Mixer's Kit strip), Right half, Trim silence, - |
+| Sample Kit (`_KIT`) | the whole screen: 16 lanes (pad 1 at the bottom), each pad's hits over the 16 steps shown, a pad with no sound empty, the chosen lane underlined, each lane's playhead while playing | Right half, Trim silence, - x 6 |
+| Pad Sample (`_SAMPLE`) | the wave over the region (no name: the click's browser opens on it) | Pitch, Fine, Start, End, Play, Reverse, Choke, - |
+| Pad Sample 2 (`_ENV`) | the AHDSR | Attack, Hold, Decay, Sustain, Release, - x 3 |
+| Stretch (`_STRETCH`) | the wave, the steps it lasts | Stretch, - x 7 |
+| Filter (`_FILTER`) | the filter's curve | Filter, Resonance, - x 6 |
+| Pad Mix (`_PADMIX`) | the level as a bar, the pan a mark (muted: hollow) | Level, Pan, Send 1, 2, 3, Mute, - x 2 |
+| Kit Mix (`_KITMIX`) | the kit's name, its 16 pads (the chosen underlined) | the kit's Level, Pan, Send 1, 2, 3 (the Mixer's Kit strip), - x 3 |
 
 | Control | What |
 |---|---|
-| jog | a page a detent, stopping at the ends (as the sequencer's knob pages): the page's name big and the four page marks (`v2_modeName`, the ENGINE page's arrival) for `RFM_MOVE_POPUP_MS` after the last detent, then the page: its picture (top, x 0..101), the chosen pad's number (2x, top right), 8 cells (two rows of four, 32 px: a short name and the value at 1x, as the FX pages; a knob with none: a dash, its light dark) |
+| jog | a page a detent, stopping at the ends (as the sequencer's knob pages): the page's name big and the seven page marks (`v2_modeName`, the ENGINE page's arrival) for `RFM_MOVE_POPUP_MS` after the last detent, then the page: its picture (top, x 0..101), the chosen pad's number (2x, top right), 8 cells (two rows of four, 32 px: a short name and the value at 1x, as the FX pages; a knob with none: a dash, its light dark) |
 | knobs | the page's (pink); touch: the popup (Start / End: the close-up, Shift 32x and fine; the envelope's stage thick; the filter's curve; the right half's layout and key); Shift: fine |
-| jog click | Files for the chosen pad (round A's pad-first browser), a layer with the jog; Back a folder up, the places, then closed. On KIT: Kits (Load: Files' Kits; Save) |
+| jog click | the browser for the chosen pad (round A's pad-first loading), a layer with the jog. On Sample Kit and Kit Mix: Kits (Load: the browser's Kits; Save) |
+| the browser | as Move's: three rows, an icon each on the left; the root Takes, Samples, Kits (folders: a right arrow); in a folder **Back** first (a left arrow; its click a folder up, at a place's top the root), folders (right arrow), sounds (a small wave), saved kits. The jog on a sound puts it on the pad at rest (`RFM_MOVE_KIT_LAND_MS`); the click on a sound keeps it and leaves; Back (the button) a folder up, the root, then leaves, the sound kept (`KIT_KEEP`); a pad pressed: the target, the list on its sound |
 | Shift + jog click | the pad's tools: Play, Trim, Normalize, Reverse, Freeze, Delete |
 | a step held + a knob | that hit's lock, for the lockable settings on the page shown (lit yellow, their cells shown; the rest dark, a dash) |
 
