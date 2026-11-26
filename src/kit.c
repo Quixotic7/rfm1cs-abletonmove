@@ -2628,7 +2628,7 @@ static void knob_touch(rfm_move_t *m, int k, int on)
         touched(m);
         return;
     }
-    t->kpop = (int8_t)k, t->kpop_ms = now(m), t->msg_ms = 0, t->vpop = 0;
+    t->kpop = (int8_t)k, t->kpop_ms = now(m), t->msg_ms = 0, t->vpop = 0, t->lvl = 0;
     t->lpop = (uint8_t)(lock_layer(m) ? k + 1 : 0);
     if (t->lpop)
         t->st_used |= t->st_down;                       /* (a lock looked at: the step's release toggles nothing) */
@@ -2678,7 +2678,7 @@ static void vel_turn(rfm_move_t *m, int d)
     rfm_move_kit_t *t = K(m);
     const int pad = t->cur, tr = trk(pad), clip = edit_clip_of(m, tr);
     int s, lo, hi, i;
-    t->vpop = 1, t->vpop_ms = now(m), t->kpop = -1, t->lpop = 0, t->msg_ms = 0;
+    t->vpop = 1, t->vpop_ms = now(m), t->kpop = -1, t->lpop = 0, t->msg_ms = 0, t->lvl = 0;
     touched(m);
     for (s = 0; s < 16; s++)
         if (t->st_down >> s & 1) {
@@ -2786,7 +2786,7 @@ static void knob_turn(rfm_move_t *m, int k, int d)
         cut_move(m, d, k == 1 || fine);
         return;
     }
-    t->kpop = (int8_t)k, t->kpop_ms = now(m), t->msg_ms = 0, t->vpop = 0;
+    t->kpop = (int8_t)k, t->kpop_ms = now(m), t->msg_ms = 0, t->vpop = 0, t->lvl = 0;
     t->lpop = (uint8_t)(lock_layer(m) ? k + 1 : 0);
     touched(m);
     if (p == KP_FINE)
@@ -2811,6 +2811,54 @@ static void knob_turn(rfm_move_t *m, int k, int d)
         kit_turn(m, p, n);
     else
         turn_p(m, real_p(p), n, fine);
+}
+
+/* ---- (2026-11-26, the owner's: "A popup showing the levels needs to happen while adjusting levels") the volume knob
+ * on a level: 1 the held pads' Level ("Holding a pad and adjusting the level should adjust that pad's level"), 2 the
+ * kit's (Track 4 held); its popup up while the knob is touched and RFM_MOVE_POPUP_MS after a turn */
+static int lvl_up(const rfm_move_t *m)
+{
+    const rfm_move_kit_t *t = &m->kit;
+    return t->lvl && (t->lvl_touch || now(m) - t->lvl_ms < RFM_MOVE_POPUP_MS);
+}
+static void lvl_show(rfm_move_t *m, int which, int touch)
+{
+    rfm_move_kit_t *t = K(m);
+    if (t->lvl != which)
+        t->lvl_acc = 0;
+    t->lvl = (uint8_t)which, t->lvl_ms = now(m);
+    if (touch)
+        t->lvl_touch = 1;
+    t->kpop = -1, t->vpop = 0, t->lpop = 0, t->msg_ms = 0;
+    touched(m);
+}
+/* the held left-half pads' Level, in its knob's steps (dB, two ticks a step); every held pad the same steps */
+static void pad_level_turn(rfm_move_t *m, int d)
+{
+    rfm_move_kit_t *t = K(m);
+    const int dv = div_of(RFM_MOVE_KIT_P_LEVEL);
+    int a, n, p;
+    lvl_show(m, 1, 0);
+    if (!d)
+        return;
+    a = t->lvl_acc;
+    if ((a > 0 && d < 0) || (a < 0 && d > 0))
+        a = 0;
+    a += d, n = a / dv, t->lvl_acc = (int8_t)(a - n * dv);
+    for (p = 0; p < 32 && n; p++)
+        if ((t->down >> p & 1) && kit_of(p) >= 0)
+            put(m, kit_of(p), RFM_MOVE_KIT_P_LEVEL, step_val(m, kit_of(p), RFM_MOVE_KIT_P_LEVEL, n, 0));
+}
+/* (fw.c) Track 4 held + the volume knob (d 0: touched): the kit's level, wherever Track 4's views include the kit.
+ * 1 taken */
+int rfmv_kit_volume(rfm_move_t *m, int d)
+{
+    if (!rfmv_kit_cap(m) || !(rfmv_kit_active(m) || rfmv_fx_ok(m)))
+        return 0;
+    if (d)
+        rfmv_kit_mix_turn(m, RFM_MOVE_KIT_MIX_LEVEL, d);
+    lvl_show(m, 2, !d);
+    return 1;
 }
 
 /* ---- (round B) Tap: the take plays from its start at the first step pressed (a cut at 0), each further press a cut
@@ -2891,6 +2939,8 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
         t->st_used &= (uint16_t)~bit;
         return 1;
     }
+    if (ev->type == MR_EV_TOUCH && !ev->value && i == 8 && t->lvl_touch)
+        t->lvl_touch = 0, t->lvl_ms = now(m);           /* (the level popup a second more; on_touch lets go too) */
     if (ev->type == MR_EV_TOUCH && !ev->value && i >= 0 && i < 8 && (t->kdown >> i & 1)) {
         knob_touch(m, i, 0);
         return 1;
@@ -2945,6 +2995,10 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
             vel_turn(m, ev->value);                     /* (round B) a step held + the volume knob: its velocity */
             return 1;
         }
+        if (i == 8 && held_kit_pad(m) >= 0 && !t->st_down && !q->smenu && !t->sl_on && ev->value) {
+            pad_level_turn(m, ev->value);               /* (2026-11-26) a pad held + the volume knob: its Level */
+            return 1;
+        }
         if (i < 0 || i > 7 || q->smenu)
             return 0;
         knob_turn(m, i, ev->value);
@@ -2952,6 +3006,10 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
     case MR_EV_TOUCH:
         if (i >= 0 && i < 9 && t->st_down)
             t->st_used |= t->st_down;                   /* (2026-11-26: a knob touched while a step is held: a hold) */
+        if (i == 8 && ev->value && held_kit_pad(m) >= 0 && !t->st_down && !q->smenu && !t->sl_on) {
+            lvl_show(m, 1, 1);                          /* (R5) a pad held, the volume knob touched: its Level shows */
+            return 1;
+        }
         if (i >= 0 && i < 8 && !q->smenu) {
             knob_touch(m, i, 1);
             return 1;
@@ -3016,7 +3074,7 @@ static int zoom_p(const rfm_move_t *m)
     if (!rfmv_kit_shown(m) || msg_up(m) || rec_running(m) || merge_up(m) || t->sl_on || t->pend_take)
         return -1;
     if (kpop_up(m))
-        p = t->lpop ? -1 : knob_p(m, t->kpop);
+        p = knob_p(m, t->kpop);                         /* (2026-11-26: a lock's too, at its value) */
     return p == RFM_MOVE_KIT_P_START || p == RFM_MOVE_KIT_P_END ? p : -1;
 }
 static int zoom_of(const rfm_move_t *m) { return (m->seq.mods & SEQ_M_SHIFT) ? RFM_MOVE_KIT_ZOOM_FINE : RFM_MOVE_KIT_ZOOM; }
@@ -3030,7 +3088,12 @@ static int zoom_win(const rfm_move_t *m, int p, int64_t *lo, uint32_t *span)
     sp = d->frames / (uint32_t)zoom_of(m);
     if (sp < 64)
         sp = 64;
-    *lo = (int64_t)((uint64_t)d->frames * (uint32_t)d->v[p] / RFM_MOVE_KIT_FRAC) - sp / 2, *span = sp;
+    {
+        int v = d->v[p];
+        if (m->kit.lpop)
+            lock_val(m, p, &v);                         /* (a held step's lock: round its value) */
+        *lo = (int64_t)((uint64_t)d->frames * (uint32_t)v / RFM_MOVE_KIT_FRAC) - sp / 2, *span = sp;
+    }
     return 1;
 }
 /* its peaks asked (the part of the window in the sound), again when it has moved a sixteenth or its zoom changed */
@@ -3962,8 +4025,8 @@ static void zoom_screen(const rfm_move_t *m, mr_canvas_t *cv, int p)
     v2_R(cv, 64, 24, 1, 40, 1);                         /* the point */
     v2_R(cv, 61, 24, 7, 1, 1), v2_R(cv, 62, 25, 5, 1, 1), v2_R(cv, 63, 26, 3, 1, 1);   /* .. its notch */
 }
-/* a setting's popup (a row's click, a knob touched or turned) */
-static void popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
+/* a setting's popup (a row's click, a knob touched or turned; ttl: another name, NULL its own) */
+static void popup_t(const rfm_move_t *m, mr_canvas_t *cv, int p, const char *ttl)
 {
     const int k = m->kit.cur;
     const rfm_move_kit_pad_t *d = CPAD(m, k);
@@ -4006,6 +4069,12 @@ static void popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
         v2_R(cv, 4 + d->v[p] * 118 / 100, 55, 2, 2, 1);
         return;
     }
+    if (p == RFM_MOVE_KIT_P_LEVEL) {                    /* (2026-11-26) the level as a bar (-inf .. +6 dB) */
+        const int lv = d->v[p];
+        v2_titleBox(cv, ttl ? ttl : P_NAME[p], v, 64, 124);
+        v2_vbar(cv, lv <= LEVEL_MIN ? 0.0 : (double)(lv - LEVEL_MIN) / (6 - LEVEL_MIN), 0, 4, 120, 52);
+        return;
+    }
     if (p == RFM_MOVE_KIT_P_FENV) {                     /* (pages v2) up or down from the middle */
         v2_titleBox(cv, P_NAME[p], v, 64, 124);
         v2_vbar(cv, d->v[p] / 100.0, 1, 4, 120, 52);
@@ -4046,7 +4115,7 @@ static void popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
     }
     if (p >= KP_KLEVEL && p <= KP_KSEND3) {             /* (the Kit strip's values: a bar, pan from the middle) */
         const int x = kval(m, k, p);
-        v2_titleBox(cv, P_NAME[p], v, 64, 124);
+        v2_titleBox(cv, ttl ? ttl : P_NAME[p], v, 64, 124);
         v2_vbar(cv, p == KP_KPAN ? (x - 64) / 63.0 : x / 127.0, p == KP_KPAN, 4, 120, 52);
         return;
     }
@@ -4066,22 +4135,40 @@ static void popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
             v2_R(cv, 8, 56, 112 * d->v[p] / 100, 5, 1);
     }
 }
-/* (round B) a held step's lock: "Step 5", the setting, its value for that hit (the pad's own until locked) */
+static void popup(const rfm_move_t *m, mr_canvas_t *cv, int p) { popup_t(m, cv, p, NULL); }
+/* a knob's popup at rest: the Filter page keeps its picture (a line says the knob), the rest their own popup */
+static void knob_popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
+{
+    if (cur_page(m) == RFM_MOVE_KIT_PG_FILTER && filter_knob(p))
+        filter_page(m, cv, p);                          /* (pages v2: the Filter page stays, a line says the knob) */
+    else
+        popup(m, cv, p);
+}
+/* (round B; 2026-11-26, the owner's: "the popup displays completely differently while holding a step") a held step's
+ * lock: the knob's own popup, drawn by the same code with the setting at the hit's value (its lock, else the pad's
+ * own), and a small tag in the top-left corner naming the step ("S5"). No hit of the pad there: "No Hit" */
 static void lock_popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
 {
-    char t[24], v[32];
+    char t[8];
     int lv;
-    snprintf(t, sizeof t, "Step %d %s", held_step(m) + 1, P_NAME[p]);
-    if (v2_tw(t, 2) > 128)
-        snprintf(t, sizeof t, "Step %d", held_step(m) + 1), v2_TC(cv, 64, 21, P_NAME[p], 1, 1);
-    v2_TC(cv, 64, 3, t, 2, 1);
     if (!lock_val(m, p, &lv)) {
+        snprintf(t, sizeof t, "Step %d", held_step(m) + 1);
+        v2_TC(cv, 64, 3, t, 2, 1);
         v2_TC(cv, 64, 34, "No Hit", 2, 1);
         return;
     }
-    vtext(m, m->kit.cur, p, lv, 0, v, sizeof v);
-    v2_TC(cv, 64, v2_tw(v, 3) <= 128 ? 32 : 36, v, v2_tw(v, 3) <= 128 ? 3 : 2, 1);
-    ic(cv, I_DOT, 0, 52, 1);                            /* (a lock: the dot, as a step key's blink) */
+    {                                                   /* (the screen is drawn on the core's one thread: the pad's
+                                                         * value stands in for the lock while its popup draws) */
+        rfm_move_kit_pad_t *d = &((rfm_move_t *)m)->kit.pad[m->kit.cur & 15];
+        const int rp = real_p(p);
+        const int16_t was = d->v[rp];
+        d->v[rp] = (int16_t)lv;
+        knob_popup(m, cv, p);
+        d->v[rp] = was;
+    }
+    snprintf(t, sizeof t, "S%d", held_step(m) + 1);
+    v2_R(cv, 0, 0, v2_tw(t, 1) + 3, 9, 1);
+    v2_T(cv, 2, 1, t, 1, 0);
 }
 static int held_vel(const rfm_move_t *m)
 {
@@ -4248,11 +4335,9 @@ int rfmv_kit_screen(const rfm_move_t *m, mr_canvas_t *cv)
     }
     if (kpop_up(m)) {
         if (t->lpop)
-            lock_popup(m, cv, knob_p(m, t->kpop));
-        else if (cur_page(m) == RFM_MOVE_KIT_PG_FILTER && filter_knob(knob_p(m, t->kpop)))
-            filter_page(m, cv, knob_p(m, t->kpop));     /* (pages v2: the Filter page stays, a line says the knob) */
+            lock_popup(m, cv, knob_p(m, t->kpop));      /* (the knob's own popup at the lock's value) */
         else
-            popup(m, cv, knob_p(m, t->kpop));
+            knob_popup(m, cv, knob_p(m, t->kpop));
         return 1;
     }
     if (t->tab == 2 && t->fact) {                       /* (3b, board K) a folder's actions: Open, All To Pads */
@@ -4287,10 +4372,29 @@ int rfmv_kit_screen(const rfm_move_t *m, mr_canvas_t *cv)
     page_screen(m, cv);
     return 1;
 }
+/* (screen.c, over every screen) the volume knob's level popup: the kit's (Track 4 held, anywhere), a held pad's (the
+ * Kit view). 1 drawn */
+int rfmv_kit_level_screen(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    const rfm_move_kit_t *t = &m->kit;
+    char ttl[20];
+    if (!rfmv_kit_cap(m) || !lvl_up(m) || (t->lvl == 1 && !rfmv_kit_shown(m)))
+        return 0;
+    mr_gfx_clear(cv, 0);
+    if (t->lvl == 2)
+        popup(m, cv, KP_KLEVEL);
+    else {
+        snprintf(ttl, sizeof ttl, "Pad %d Level", t->cur + 1);
+        popup_t(m, cv, RFM_MOVE_KIT_P_LEVEL, ttl);
+    }
+    return 1;
+}
 int rfmv_kit_timed(const rfm_move_t *m)
 {
     const rfm_move_kit_t *t = &m->kit;
     int i;
+    if (rfmv_kit_cap(m) && t->lvl && now(m) - t->lvl_ms < RFM_MOVE_POPUP_MS + 100)
+        return 1;                                       /* (2026-11-26: the level popup, till it goes) */
     if (!rfmv_kit_active(m))
         return 0;
     if (t->vpop || (t->st_down && t->kpop >= 0))
@@ -4485,13 +4589,6 @@ void rfmv_kit_to_text(const rfm_move_t *m, char *o, int cap)
         snprintf(o, (size_t)cap, "Kit Pad %d", k + 1);
     else
         snprintf(o, (size_t)cap, "Kit Full");
-}
-/* (fw.c, 2026-11-26) Track 4 held + the volume knob: the kit's level said on the screen */
-void rfmv_kit_level_pop(rfm_move_t *m)
-{
-    char v[16];
-    snprintf(v, sizeof v, "%d", K(m)->mix[RFM_MOVE_KIT_MIX_LEVEL]);
-    msg(m, "Kit Level", v);
 }
 /* (fw.c) the kit's strip in the Mixer: a value (RFM_MOVE_MIXP_*) d detents on */
 void rfmv_kit_mix_turn(rfm_move_t *m, int par, int d)

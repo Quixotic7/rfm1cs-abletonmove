@@ -1601,6 +1601,10 @@ typedef struct {                                        /* (kit.c) */
     uint8_t lk_grp, vel_grp;                            /* a held step's locks / velocity edited: its undo group made */
     uint8_t lpop, vpop;                                 /* a lock's popup (the knob + 1), the velocity's (1) */
     uint32_t vpop_ms;
+    uint8_t lvl, lvl_touch;                             /* (2026-11-26) the volume knob's level popup: 1 a held pad's
+                                                         * Level, 2 the kit's (Track 4 held); up while the knob is touched */
+    int8_t lvl_acc;                                     /* .. a held pad's Level: ticks short of a step */
+    uint32_t lvl_ms;
     uint8_t tap_on;                                     /* Tap: a pass playing (since tap_us0, the core's clock) */
     uint64_t tap_us0;
     uint16_t tap_down;                                  /* .. the steps it took (their releases) */

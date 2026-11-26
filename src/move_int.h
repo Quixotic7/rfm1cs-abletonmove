@@ -465,7 +465,8 @@ void rfmv_kit_new(rfm_move_t *m);                       /* .. a new project's: e
 int rfmv_kit_used(const rfm_move_t *m);                 /* .. anything to save (version 11) */
 void rfmv_kit_write(const rfm_move_t *m, uint8_t *p);   /* .. RFM_MOVE_KIT_BYTES */
 void rfmv_kit_to_text(const rfm_move_t *m, char *o, int cap);   /* (3b) the sampler's To Kit: "Kit Pad 8" */
-void rfmv_kit_level_pop(rfm_move_t *m);                 /* (2026-11-26) Track 4 + the volume knob: the kit's level shown */
+int rfmv_kit_volume(rfm_move_t *m, int d);             /* (2026-11-26) Track 4 held + the volume knob: the kit's level */
+int rfmv_kit_level_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* .. its popup, a held pad's Level's: 1 drawn */
 void rfmv_kit_mix_turn(rfm_move_t *m, int par, int d);  /* (3b) the Mixer's kit strip: a value (RFM_MOVE_MIXP_*) */
 int rfmv_kit_check(const uint8_t *p, int ver);          /* .. 0 valid (version 11 or 12's) */
 void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver);

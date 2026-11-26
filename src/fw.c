@@ -1233,20 +1233,16 @@ int rfmv_fw_volume(rfm_move_t *m, int d)
 {
     int t;
     if (!m->fw.host)
-        return 0;
+        return rfmv_track_held(m, 3) && rfmv_kit_volume(m, d);
     for (t = 0; t < nslots(m); t++)
         if (rfmv_track_held(m, t) && slot_loaded(m, t)) {
             set_level(m, t, d);
             return 1;
         }
-    if (rfmv_track_held(m, 3) && rfmv_kit_active(m)) {   /* (2026-11-26, the owner's) the kit open, Track 4 held: the
-                                                         * kit's level, as a firmware Track's slot level */
-        if (d)
-            rfmv_kit_mix_turn(m, RFM_MOVE_KIT_MIX_LEVEL, d);
-        rfmv_kit_level_pop(m);
-        return 1;
-    }
-    return 0;
+    /* (2026-11-26, the owner's: "Holding track 4 button and turning volume knob should change the drum kit level")
+     * Track 4 held: the kit's level, as a firmware Track's slot level, wherever Track 4's views include the kit; its
+     * popup while the knob is touched (kit.c) */
+    return rfmv_track_held(m, 3) && rfmv_kit_volume(m, d);
 }
 static void after_filter(rfm_move_t *m, int step)
 {

@@ -2013,25 +2013,143 @@ static void t_kit_layout(void)
     back();
 }
 
-/* 43. the kit open, Track 4 held + the volume knob: the kit's level (Kit Level N), no firmware's */
+/* 43. the kit open, Track 4 held + the volume knob: the kit's level, no firmware's, its popup (not the held Track's
+ * menu) while the knob is touched and a second after; (2026-11-26) the same from the Mixer, the kit not shown */
+static int scr_eq(const uint8_t *a, const uint8_t *b) { return !memcmp(a, b, MR_SCREEN_BYTES); }
+static mr_canvas_t CV;
 static void t_kit_level(void)
 {
-    uint8_t lv[RFM_MOVE_FW_SLOTS];
+    uint8_t lv[RFM_MOVE_FW_SLOTS], menu[MR_SCREEN_BYTES];
     int l0;
     kit_view();
     memcpy(lv, M.fw.level, sizeof lv);
     l0 = M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL];
     hold_track(3), clear();
+    screen(), memcpy(menu, SCR, sizeof menu);           /* (Track 4's menu) */
+    touch(8, 1);
+    CHECKF(M.kit.lvl == 2 && M.kit.lvl_touch, "lvl %d", M.kit.lvl);
     raw(0xB0, MR_CC_VOLUME, (uint8_t)(-3 & 127));
-    CHECKF(M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL] == l0 - 3 && !strcmp(M.kit.msg, "Kit Level"), "level %d msg %s",
-           M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL], M.kit.msg);
-    {
-        char v[8];
-        snprintf(v, sizeof v, "%d", l0 - 3);
-        CHECK(!strcmp(M.kit.msg2, v));
-    }
+    CHECKF(M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL] == l0 - 3, "level %d", M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL]);
     CHECK(!memcmp(lv, M.fw.level, sizeof lv) && !count(RFM_MOVE_ACT_FW_LEVEL) && count(RFM_MOVE_ACT_MIX) >= 1);
-    track(3, 0);
+    adv_ms(RFM_MOVE_POPUP_MS + 200);                    /* (touched: it stays) */
+    screen();
+    CHECK(!scr_eq(SCR, menu) && rfmv_kit_level_screen(&M, &CV) == 1);
+    {
+        uint8_t pop[MR_SCREEN_BYTES];
+        memcpy(pop, SCR, sizeof pop);
+        touch(8, 0), adv_ms(RFM_MOVE_POPUP_MS + 50);
+        screen();
+        CHECK(scr_eq(SCR, menu) && !scr_eq(pop, menu)); /* (let go: gone after its second, the menu again) */
+    }
+    track(3, 0), rest();
+    /* the Mixer (Track 4's round, the kit not shown): Track 4 held + the volume knob is the kit's level all the same */
+    tap_track(3), rest();
+    CHECKF(M.seq.projects && !rfmv_kit_active(&M), "projects %d", M.seq.projects);
+    l0 = M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL];
+    hold_track(3), clear();
+    raw(0xB0, MR_CC_VOLUME, 2);
+    CHECKF(M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL] == l0 + 2 && M.kit.lvl == 2 && rfmv_kit_level_screen(&M, &CV) == 1,
+           "level %d (was %d)", M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL], l0);
+    CHECK(!count(RFM_MOVE_ACT_MASTER));
+    track(3, 0), rest();
+}
+
+/* 47. (2026-11-26) the Kit view, a pad held + the volume knob: that pad's Level in its knob's steps, its popup while
+ * touched; no step, no other pad, no master */
+static void t_pad_level(void)
+{
+    const int clip = SEQ_CLIP(12, 0);
+    int l0, l2, nn;
+    kit_view();
+    sound(1, "Snare", 4800, NULL, 0);
+    sound(2, "Hat", 4800, NULL, 0);
+    hit(kp(1)), tap_step(0), rest();
+    nn = M.seq.nnotes, l0 = M.kit.pad[1].v[RFM_MOVE_KIT_P_LEVEL], l2 = M.kit.pad[2].v[RFM_MOVE_KIT_P_LEVEL];
+    pad(kp(1), 100), clear();
+    touch(8, 1);
+    CHECKF(M.kit.lvl == 1, "lvl %d", M.kit.lvl);
+    raw(0xB0, MR_CC_VOLUME, (uint8_t)(-4 & 127));       /* (two steps: two ticks a step, as its knob) */
+    CHECKF(M.kit.pad[1].v[RFM_MOVE_KIT_P_LEVEL] < l0 && M.kit.pad[2].v[RFM_MOVE_KIT_P_LEVEL] == l2,
+           "level %d (was %d)", M.kit.pad[1].v[RFM_MOVE_KIT_P_LEVEL], l0);
+    CHECK(!count(RFM_MOVE_ACT_MASTER) && count(RFM_MOVE_ACT_KIT_SET) >= 1);
+    adv_ms(RFM_MOVE_POPUP_MS + 200);
+    CHECK(rfmv_kit_level_screen(&M, &CV) == 1);   /* (touched: up) */
+    touch(8, 0), pad(kp(1), 0), adv_ms(RFM_MOVE_POPUP_MS + 50);
+    CHECK(!rfmv_kit_level_screen(&M, &CV));
+    CHECKF(M.seq.nnotes == nn && rfmv_seq_find(&M, clip, 0, 37) >= 0, "notes %d (was %d)", M.seq.nnotes, nn);
+    pad(kp(1), 100), pad(kp(2), 100);                   /* (two held: both) */
+    l0 = M.kit.pad[1].v[RFM_MOVE_KIT_P_LEVEL], l2 = M.kit.pad[2].v[RFM_MOVE_KIT_P_LEVEL];
+    raw(0xB0, MR_CC_VOLUME, (uint8_t)(-2 & 127));
+    CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_LEVEL] < l0 && M.kit.pad[2].v[RFM_MOVE_KIT_P_LEVEL] < l2);
+    pad(kp(1), 0), pad(kp(2), 0), rest();
+}
+
+/* 48. (2026-11-26, the owner's: "the popup displays completely differently while holding a step") a held step's lock
+ * popup is the knob's own popup (the S tag in the corner aside), for every lockable knob on every page and engine; a
+ * locked cutoff draws as the pad at that cutoff */
+static void tagless(uint8_t *b)                         /* (the corner tag: x < 24 on the first two rows of bytes) */
+{
+    int x;
+    for (x = 0; x < 24; x++)
+        b[x] = 0, b[128 + x] &= (uint8_t)~1u;
+}
+static void t_lock_popup(void)
+{
+    static uint8_t a[MR_SCREEN_BYTES], b[MR_SCREEN_BYTES];
+    const int clip = SEQ_CLIP(12, 0);
+    int pg, k, md, n = 0, bad = 0;
+    kit_view();
+    sound(1, "Snare", 48000, NULL, 0);
+    hit(kp(1)), tap_step(0), rest();
+    for (md = 0; md < RFM_MOVE_KIT_M_N; md++)
+        for (pg = 0; pg < RFM_MOVE_KIT_PG_N; pg++) {
+            if (pg == RFM_MOVE_KIT_PG_TRIG)
+                continue;
+            M.kit.pad[1].v[RFM_MOVE_KIT_P_MODE] = (int16_t)md;
+            M.kit.pad[1].v[RFM_MOVE_KIT_P_WARP] = (int16_t)(md % RFM_MOVE_KIT_W_N);
+            M.kit.page = (uint8_t)pg;
+            for (k = 0; k < 8; k++) {
+                touch(k, 1);
+                if (M.kit.kpop != k) {
+                    touch(k, 0), rest();
+                    continue;
+                }
+                screen(), memcpy(a, SCR, sizeof a);
+                touch(k, 0), rest();
+                step(0, 1), touch(k, 1);
+                if (M.kit.kpop == k && M.kit.lpop) {
+                    screen(), memcpy(b, SCR, sizeof b);
+                    CHECKF(b[0] & 1, "page %d knob %d: no tag", pg, k);
+                    tagless(a), tagless(b);
+                    n++;
+                    if (!scr_eq(a, b) && bad++ < 4)
+                        CHECKF(0, "mode %d page %d knob %d: the lock's popup differs", md, pg, k);
+                }
+                touch(k, 0), step(0, 0), rest();
+            }
+        }
+    CHECKF(n >= 40 && !bad, "%d compared, %d differ", n, bad);
+    /* a locked cutoff: the pad drawn at the lock's value */
+    M.kit.pad[1].v[RFM_MOVE_KIT_P_MODE] = 0, M.kit.pad[1].v[RFM_MOVE_KIT_P_WARP] = 0;
+    M.kit.page = RFM_MOVE_KIT_PG_FILTER;
+    {
+        rfm_move_act_t x;
+        int c0 = M.kit.pad[1].v[RFM_MOVE_KIT_P_CUTOFF], lk;
+        step(0, 1), touch(0, 1), knob(0, -40);
+        screen(), memcpy(b, SCR, sizeof b);
+        touch(0, 0), step(0, 0), rest();
+        CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_CUTOFF] == c0 && rfmv_seq_find(&M, clip, 0, 37) >= 0);
+        M.seq.tr[12].active = 0;
+        memset(&x, 0, sizeof x);
+        CHECK(play_ons(1, 200, &x) >= 1);
+        lk = x.kp[RFM_MOVE_KIT_P_CUTOFF];
+        CHECKF((x.kp_mask >> RFM_MOVE_KIT_P_CUTOFF & 1) && lk < c0, "cutoff lock %d (pad %d)", lk, c0);
+        M.kit.pad[1].v[RFM_MOVE_KIT_P_CUTOFF] = (int16_t)lk;
+        rest(), touch(0, 1), screen(), memcpy(a, SCR, sizeof a), touch(0, 0);
+        M.kit.pad[1].v[RFM_MOVE_KIT_P_CUTOFF] = (int16_t)c0;
+        tagless(a), tagless(b);
+        CHECK(scr_eq(a, b));
+    }
 }
 
 /* 44. versions 12, 13 and 14 into 15: Toggle as Loop, Stretch N as Warp Repitch Sync N, In Key as In Key 4ths, Off as
@@ -2211,6 +2329,8 @@ int main(void)
     t_xlock();
     t_kit_layout();
     t_kit_level();
+    t_pad_level();
+    t_lock_popup();
     t_project_old();
     t_chop_seq();
     t_project_v2();
