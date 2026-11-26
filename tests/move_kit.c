@@ -555,7 +555,7 @@ static void t_knobs(void)
     jog(1), jog(1);
     CHECK(M.kit.page == RFM_MOVE_KIT_PG_KITMIX);
     clear(), knob(0, -3);
-    CHECK(M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL] == 97 && count(RFM_MOVE_ACT_MIX) >= 1);
+    CHECK(M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL] == rfmv_lvl_step(100, -3) && count(RFM_MOVE_ACT_MIX) >= 1);
     clear(), knob(2, -20);                              /* (3: the kit bus's low-pass) */
     CHECK(M.kit.bus[RFM_MOVE_KIT_BUS_CUTOFF] == 80 && (a = last(RFM_MOVE_ACT_KIT_SET)) && a->index == RFM_MOVE_KIT_BUS &&
           a->param == RFM_MOVE_KIT_BUS_CUTOFF && a->value == 80);
@@ -1197,7 +1197,7 @@ static void t_mixer(void)
     L(-1);
     CHECK(lit(L(L_RING0 + 3)) && !lit(L(L_RING0 + 4)) && lit(L(L_PAD0 + 3)) && lit(L(L_PAD0 + 24 + 3)));   /* (knob 4; the
                                                          * kit's column at 100 of 127: four pads) */
-    clear(), touch(3, 1), knob(3, -50);
+    clear(), touch(3, 1), knob(3, -12);                /* (2026-11-26: 0.5 dB a detent: -2.1 -> -8.1 dB, 50) */
     CHECK((a = last(RFM_MOVE_ACT_MIX)) && a->slot == RFM_MOVE_KIT_SLOT && a->mix[0] == 50 && M.kit.mix[0] == 50 && M.seq.dirty);
     dump("mixer_kit_pop");
     touch(3, 0), rest();
@@ -2032,7 +2032,7 @@ static void t_kit_level(void)
     touch(8, 1);
     CHECKF(M.kit.lvl == 2 && M.kit.lvl_touch, "lvl %d", M.kit.lvl);
     raw(0xB0, MR_CC_VOLUME, (uint8_t)(-3 & 127));
-    CHECKF(M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL] == l0 - 3, "level %d", M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL]);
+    CHECKF(M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL] == rfmv_lvl_step(l0, -3), "level %d", M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL]);
     CHECK(!memcmp(lv, M.fw.level, sizeof lv) && !count(RFM_MOVE_ACT_FW_LEVEL) && count(RFM_MOVE_ACT_MIX) >= 1);
     adv_ms(RFM_MOVE_POPUP_MS + 200);                    /* (touched: it stays) */
     screen();
@@ -2051,7 +2051,7 @@ static void t_kit_level(void)
     l0 = M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL];
     hold_track(3), clear();
     raw(0xB0, MR_CC_VOLUME, 2);
-    CHECKF(M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL] == l0 + 2 && M.kit.lvl == 2 && rfmv_kit_level_screen(&M, &CV) == 1,
+    CHECKF(M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL] == rfmv_lvl_step(l0, 2) && M.kit.lvl == 2 && rfmv_kit_level_screen(&M, &CV) == 1,
            "level %d (was %d)", M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL], l0);
     CHECK(!count(RFM_MOVE_ACT_MASTER));
     track(3, 0), rest();
@@ -2085,6 +2085,52 @@ static void t_pad_level(void)
     raw(0xB0, MR_CC_VOLUME, (uint8_t)(-2 & 127));
     CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_LEVEL] < l0 && M.kit.pad[2].v[RFM_MOVE_KIT_P_LEVEL] < l2);
     pad(kp(1), 0), pad(kp(2), 0), rest();
+}
+
+/* 50. (2026-11-26, the owner's: "each volume level adjustment feels like it's all part of the whole") one level popup:
+ * a pad's level from its held pad + the volume knob is Pad Mix's knob 1's; the kit's from Track 4 + the volume knob is
+ * Kit Mix's knob 1's and the Mixer's Kit strip's; a slot's from its Track + the volume knob is the Mixer's knob's; each
+ * value in dB */
+static void t_level_popups(void)
+{
+    static uint8_t a[MR_SCREEN_BYTES], b[MR_SCREEN_BYTES];
+    char v[16];
+    kit_view();
+    sound(1, "Snare", 4800, NULL, 0);
+    hit(kp(1)), rest();
+    M.kit.page = RFM_MOVE_KIT_PG_PADMIX;
+    touch(0, 1), screen(), memcpy(a, SCR, sizeof a), touch(0, 0), rest();
+    pad(kp(1), 100), touch(8, 1), screen(), memcpy(b, SCR, sizeof b);
+    dump("level_pad");
+    touch(8, 0), pad(kp(1), 0), rest();
+    CHECK(scr_eq(a, b) && M.kit.pad[1].v[RFM_MOVE_KIT_P_LEVEL] == 0);   /* (Pad Mix's knob 1 = the held pad's) */
+    rfmv_db_text(v, sizeof v, 0, 1);
+    CHECK(!strcmp(v, "0 dB"));
+    rfmv_db_text(v, sizeof v, rfmv_lvl_db10(100), 1);
+    CHECK(!strcmp(v, "-2.1 dB"));
+    rfmv_db_text(v, sizeof v, -120, 1);
+    CHECK(!strcmp(v, "-12 dB"));
+    rfmv_db_text(v, sizeof v, 20, 1);
+    CHECK(!strcmp(v, "+2.0 dB"));
+    rfmv_db_text(v, sizeof v, rfmv_lvl_db10(0), 1);
+    CHECK(!strcmp(v, "-inf dB"));
+    CHECK(rfmv_lvl_step(127, -1) == 120 && rfmv_lvl_step(120, 1) == 127 && rfmv_lvl_step(1, -1) == 0 && rfmv_lvl_step(0, 1) == 1);
+    M.kit.page = RFM_MOVE_KIT_PG_KITMIX;               /* the kit: Kit Mix's knob 1, Track 4 + the volume knob */
+    touch(0, 1), screen(), memcpy(a, SCR, sizeof a), touch(0, 0), rest();
+    hold_track(3), touch(8, 1), screen(), memcpy(b, SCR, sizeof b);
+    dump("level_kit");
+    touch(8, 0), track(3, 0), rest();
+    CHECK(scr_eq(a, b));
+    tap_track(3), rest();                               /* .. the Mixer's Kit strip */
+    CHECK(M.seq.projects && rfmv_t4_page(&M) == 0 && M.fw.mix_par == RFM_MOVE_MIXP_LEVEL);
+    touch(3, 1), screen(), memcpy(a, SCR, sizeof a), touch(3, 0), rest();
+    CHECK(scr_eq(a, b));
+    touch(0, 1), screen(), memcpy(a, SCR, sizeof a), touch(0, 0), rest();   /* a slot: the Mixer's knob 1 */
+    hold_track(0);
+    touch(8, 1), screen(), memcpy(b, SCR, sizeof b);
+    dump("level_track");
+    touch(8, 0), track(0, 0), rest();
+    CHECKF(scr_eq(a, b), "track popups differ (level %d)", M.fw.level[0]);
 }
 
 /* 48. (2026-11-26, the owner's: "the popup displays completely differently while holding a step") a held step's lock
@@ -2408,6 +2454,7 @@ int main(void)
     t_kit_layout();
     t_kit_level();
     t_pad_level();
+    t_level_popups();
     t_lock_popup();
     t_pitch_range();
     t_project_old();

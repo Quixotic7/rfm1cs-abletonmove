@@ -1203,7 +1203,7 @@ static void show_track(rfm_move_t *m, int t)
 static void set_level(rfm_move_t *m, int t, int d)
 {
     rfm_move_fw_state_t *f = F(m);
-    const int v = clampi(f->level[t] + d, 0, 127);
+    const int v = rfmv_lvl_step(f->level[t], d);       /* (2026-11-26: 0.5 dB a detent, as every level) */
     pop(m, FP_LEVEL, t, 0);
     if (v == f->level[t])
         return;
@@ -2752,7 +2752,7 @@ static void pan_text(int v, char *o, int cap)
 static void mix_words(const rfm_move_t *m, int slot, int par, char *t, int tc, char *v, int vc, int lng)
 {
     if (par == RFM_MOVE_MIXP_LEVEL)
-        snprintf(t, (size_t)tc, "Level"), snprintf(v, (size_t)vc, "%d", mix_get(m, slot, par));
+        snprintf(t, (size_t)tc, "Level"), rfmv_db_text(v, vc, rfmv_lvl_db10(mix_get(m, slot, par)), lng);
     else if (par == RFM_MOVE_MIXP_PAN)
         snprintf(t, (size_t)tc, "Pan"), pan_text(mix_get(m, slot, par), v, vc);
     else {
@@ -2769,6 +2769,7 @@ static void mix_words(const rfm_move_t *m, int slot, int par, char *t, int tc, c
         snprintf(v, (size_t)vc, "%d", mix_get(m, slot, par));
     }
 }
+static void level_pop(B *g, const rfm_move_t *m, int tr);
 static void fx_screen(B *g, const rfm_move_t *m)
 {
     const rfm_move_fw_state_t *f = &m->fw;
@@ -2811,6 +2812,10 @@ static void fx_screen(B *g, const rfm_move_t *m)
         if (pg == PG_ROUTE || pg == PG_MIX) {           /* (0.5.0) a firmware's level, pan, sends: Routing's knobs
                                                          * 1..5 for the selected one, the Mixer's 1..3 for each */
             const int sl = pg == PG_MIX ? k : rkit(m) ? RFM_MOVE_KIT_SLOT : i;
+            if ((pg == PG_MIX ? f->mix_par : k) == RFM_MOVE_MIXP_LEVEL) {
+                level_pop(g, m, sl);                    /* (2026-11-26: a level is a level wherever it is set) */
+                return;
+            }
             if (sl == RFM_MOVE_KIT_SLOT)
                 snprintf(fn, sizeof fn, "Kit");         /* (stage 3b) the kit's strip */
             else if (pg == PG_MIX) {
@@ -2930,7 +2935,9 @@ static void fx_screen(B *g, const rfm_move_t *m)
         header(g, "Mixer", t);
         for (r = 0; r < (rfmv_kit_cap(m) ? 4 : 3); r++) {   /* (stage 3b: the kit a fourth strip, narrower) */
             const int SW = rfmv_kit_cap(m) ? 32 : 43;
-            const int x0 = r * SW, val = mix_get(m, r, f->mix_par), wfill = rnd((SW - 6) * (double)val / 127);
+            const int x0 = r * SW, val = mix_get(m, r, f->mix_par);
+            const int wfill = rnd((SW - 6) * (f->mix_par == RFM_MOVE_MIXP_LEVEL ? rfmv_db_frac(rfmv_lvl_db10(val))
+                                                                               : (double)val / 127));
             char ab[3], nm[12];
             if (r == RFM_MOVE_KIT_SLOT)
                 snprintf(nm, sizeof nm, "Kit");
@@ -2943,7 +2950,10 @@ static void fx_screen(B *g, const rfm_move_t *m)
                 snprintf(nm, sizeof nm, "- %d", r + 1);
             ctext_in(g, 12, nm, 1, x0, SW - 2);
             mix_words(m, r, f->mix_par, fn, sizeof fn, v, sizeof v, 0);
-            ctext_in(g, 26, v, 2, x0, SW - 2);
+            if (f->mix_par == RFM_MOVE_MIXP_LEVEL && tw(v, 2) > SW - 2)   /* (a level in dB: smaller) */
+                ctext_in(g, 30, v, 1, x0, SW - 2);
+            else
+                ctext_in(g, 26, v, 2, x0, SW - 2);
             rect(g, x0 + 2, 50, SW - 4, 9);
             if (f->mix_par == RFM_MOVE_MIXP_PAN) {      /* (pan: from the centre) */
                 const int c0 = x0 + (SW - 1) / 2, e = x0 + 3 + rnd((SW - 7) * (double)val / 127);
@@ -3067,32 +3077,43 @@ static void filter_pop(B *g, const rfm_move_t *m, int step)
     ctext(g, 52, t, 1);
     strip(g, nbanks_n(n), 0);
 }
+/* (2026-11-26) the slots' levels in dB, the kit's strip a fourth (the Mixer's strips) */
+int rfmv_fw_track_levels(const rfm_move_t *m, int sib[4])
+{
+    int n = nslots(m), k;
+    for (k = 0; k < n; k++)
+        sib[k] = rfmv_lvl_db10(m->fw.level[k]);
+    if (rfmv_kit_cap(m))
+        sib[n++] = rfmv_lvl_db10(rfm_move_kit_mix(m, RFM_MOVE_KIT_MIX_LEVEL));
+    return n;
+}
+/* a slot's level (tr), or the kit strip's (RFM_MOVE_KIT_SLOT): the one level popup */
+static void level_pop(B *g, const rfm_move_t *m, int tr)
+{
+    char t[24], nm[32];
+    int sib[4], n = rfmv_fw_track_levels(m, sib);
+    if (tr == RFM_MOVE_KIT_SLOT) {
+        const char *kn = rfm_move_kit_name(m);
+        snprintf(nm, sizeof nm, "%s", kn && kn[0] ? kn : "Kit");
+        rfmv_level_popup(g, "Kit Level", sib[n - 1], nm, sib, n, n - 1);
+        return;
+    }
+    if (nslots(m) < 2)
+        snprintf(t, sizeof t, "Level");                 /* (0.5.10: one slot) */
+    else
+        snprintf(t, sizeof t, "Track %d Level", tr + 1);
+    if (slot_loaded(m, tr))
+        slot_name(m, tr, nm, sizeof nm);
+    else
+        snprintf(nm, sizeof nm, "empty");
+    rfmv_level_popup(g, t, sib[tr], nm, sib, n, tr);
+}
 static int cover_popup(B *g, const rfm_move_t *m)
 {
     const rfm_move_fw_state_t *f = &m->fw;
     char t[48], nm[32];
-    int k;
     if (pop_up(m, FP_LEVEL)) {
-        const int tr = f->pop_a;
-        if (nslots(m) < 2)
-            snprintf(t, sizeof t, "Level");             /* (0.5.10: one slot) */
-        else
-            snprintf(t, sizeof t, "Track %d level", tr + 1);
-        ctext(g, 2, t, 1);
-        snprintf(t, sizeof t, "%d", f->level[tr]);
-        ctext(g, 16, t, 3);
-        if (slot_loaded(m, tr))
-            slot_name(m, tr, nm, sizeof nm), cut(nm, 21);
-        else
-            snprintf(nm, sizeof nm, "empty");
-        ctext(g, 42, nm, 1);
-        for (k = 0; k < nslots(m); k++) {
-            const int w = nslots(m) < 2 ? rnd(128.0 * f->level[k] / 127) : rnd(40.0 * f->level[k] / 127);
-            if (k == tr)
-                fill(g, k * 43, 59, w, 5, 1);
-            else
-                fill(g, k * 43, 62, w, 2, 1);
-        }
+        level_pop(g, m, f->pop_a);
         return 1;
     }
     if (!m->seq.projects || f->fx)
@@ -3629,10 +3650,12 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap)
     char nm[64], t[64], v[32];
     o[0] = 0;
     if (pop_up(m, FP_LEVEL)) {
+        char db[16];
+        rfmv_db_text(db, sizeof db, rfmv_lvl_db10(f->level[f->pop_a]), 1);
         if (nslots(m) < 2)
-            snprintf(o, (size_t)cap, "Level: %d", f->level[f->pop_a]);
+            snprintf(o, (size_t)cap, "Level: %s", db);
         else
-            snprintf(o, (size_t)cap, "Slot %d Level: %d", f->pop_a + 1, f->level[f->pop_a]);
+            snprintf(o, (size_t)cap, "Track %d Level: %s", f->pop_a + 1, db);
         return 1;
     }
     if (!m->seq.projects)
@@ -3647,7 +3670,13 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap)
             if (pg == PG_ROUTE || pg == PG_MIX) {
                 const int sl = pg == PG_MIX ? k : rkit(m) ? RFM_MOVE_KIT_SLOT : i;
                 mix_words(m, sl, pg == PG_MIX ? f->mix_par : k, t, sizeof t, v, sizeof v, 0);
-                if (sl == RFM_MOVE_KIT_SLOT)
+                if ((pg == PG_MIX ? f->mix_par : k) == RFM_MOVE_MIXP_LEVEL) {   /* (2026-11-26: as every level) */
+                    rfmv_db_text(v, sizeof v, rfmv_lvl_db10(mix_get(m, sl, RFM_MOVE_MIXP_LEVEL)), 1);
+                    if (sl == RFM_MOVE_KIT_SLOT)
+                        snprintf(o, (size_t)cap, "Kit Level: %s", v);
+                    else
+                        snprintf(o, (size_t)cap, "Track %d Level: %s", sl + 1, v);
+                } else if (sl == RFM_MOVE_KIT_SLOT)
                     snprintf(o, (size_t)cap, "Kit %s: %s", t, v);
                 else
                     snprintf(o, (size_t)cap, "Slot %d %s: %s", sl + 1, t, v);

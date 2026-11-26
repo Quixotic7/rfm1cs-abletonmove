@@ -170,6 +170,93 @@ static void pop_screen_at(mr_canvas_t *cv, const char *top, const char *big, int
     for (i = 0; i < n; i++)
         fill(cv, x0 + i * 14, i == cur ? 60 : 61, 10, i == cur ? 3 : 1, 1);
 }
+/* ---- (2026-11-26) the levels: one unit, one popup (move_int.h) */
+static const int16_t LVL_DB10[127] = {                  /* 20 log10(v / 127) in tenths, v 1..127 */
+    -421, -361, -325, -300, -281, -265, -252, -240, -230, -221, -212, -205, -198, -192, -186, -180,
+    -175, -170, -165, -161, -156, -152, -148, -145, -141, -138, -134, -131, -128, -125, -122, -120,
+    -117, -114, -112, -110, -107, -105, -103, -100, -98, -96, -94, -92, -90, -88, -86, -85,
+    -83, -81, -79, -78, -76, -74, -73, -71, -70, -68, -67, -65, -64, -62, -61, -60,
+    -58, -57, -56, -54, -53, -52, -51, -49, -48, -47, -46, -45, -43, -42, -41, -40,
+    -39, -38, -37, -36, -35, -34, -33, -32, -31, -30, -29, -28, -27, -26, -25, -24,
+    -23, -23, -22, -21, -20, -19, -18, -17, -17, -16, -15, -14, -13, -12, -12, -11,
+    -10, -9, -9, -8, -7, -6, -6, -5, -4, -3, -3, -2, -1, -1, 0,
+};
+int rfmv_lvl_db10(int v) { return v <= 0 ? RFMV_DB_INF : LVL_DB10[(v > 127 ? 127 : v) - 1]; }
+int rfmv_lvl_step(int v, int d)
+{
+    int to, i, b = 1, bd = 1 << 30;
+    v = v < 0 ? 0 : v > 127 ? 127 : v;
+    if (!d)
+        return v;
+    if (v == 0)                                         /* (from -inf: the bottom step, then dB steps) */
+        return d > 0 ? rfmv_lvl_step(1, d - 1) : 0;
+    to = LVL_DB10[v - 1] + 5 * d;
+    if (to < LVL_DB10[0] - 30)
+        return 0;
+    for (i = 1; i <= 127; i++) {                        /* the level nearest the target */
+        const int e = LVL_DB10[i - 1] > to ? LVL_DB10[i - 1] - to : to - LVL_DB10[i - 1];
+        if (e < bd)
+            bd = e, b = i;
+    }
+    if (b == v)                                         /* (low down a step is more than 0.5 dB: one step) */
+        b = v + (d > 0 ? 1 : -1);
+    return b < 0 ? 0 : b > 127 ? 127 : b;
+}
+void rfmv_db_text(char *o, int cap, int db10, int unit)
+{
+    const char *u = unit ? " dB" : "";
+    if (db10 <= RFMV_DB_INF)
+        snprintf(o, (size_t)cap, "-inf%s", u);
+    else if (db10 == 0)
+        snprintf(o, (size_t)cap, "0%s", u);
+    else if (db10 > -100 && db10 < 100)                 /* (one decimal below 10 dB) */
+        snprintf(o, (size_t)cap, "%c%d.%d%s", db10 < 0 ? '-' : '+', (db10 < 0 ? -db10 : db10) / 10,
+                 (db10 < 0 ? -db10 : db10) % 10, u);
+    else
+        snprintf(o, (size_t)cap, "%+d%s", (db10 < 0 ? db10 - 5 : db10 + 5) / 10, u);
+}
+double rfmv_db_frac(int db10)
+{
+    if (db10 <= RFMV_DB_INF || db10 <= -400)           /* (-40 .. +6 dB: a fader's useful span) */
+        return 0.0;
+    return db10 >= 60 ? 1.0 : (db10 + 400) / 460.0;
+}
+void rfmv_level_popup(mr_canvas_t *cv, const char *title, int db10, const char *name, const int *sib, int n, int cur)
+{
+    char v[24], a[40];
+    int k, i;
+    mr_gfx_clear(cv, 0);
+    snprintf(a, sizeof a, "%s", title);
+    fit_row(a, 1);
+    ctext(cv, 1, a, 1);
+    rfmv_db_text(v, sizeof v, db10, 0);                 /* (the number at 3x, "dB" at 2x on its baseline) */
+    k = v2_tw(v, 3) + 6 + v2_tw("dB", 2);
+    i = v2_T(cv, 64 - k / 2, 12, v, 3, 1);
+    v2_T(cv, i + 3, 19, "dB", 2, 1);
+    if (name && name[0]) {
+        snprintf(a, sizeof a, "%s", name);
+        fit_row(a, 1);
+        ctext(cv, 38, a, 1);
+    }
+    if (n < 1)
+        return;
+    {                                                   /* the siblings: a bar each from the bottom, the one set
+                                                         * solid, the rest outlined */
+        const int cw = 128 / n, gap = n > 8 ? 2 : 4, bw = cw - gap, x0 = (128 - cw * n) / 2 + gap / 2;
+        for (i = 0; i < n; i++) {
+            const int x = x0 + i * cw, h = (int)(rfmv_db_frac(sib[i]) * 13 + 0.5);
+            if (i == cur)
+                fill(cv, x, 63 - h, bw, h + 1, 1);
+            else {
+                fill(cv, x, 63, bw, 1, 1);
+                if (h > 0) {
+                    fill(cv, x, 63 - h, bw, 1, 1);
+                    fill(cv, x, 63 - h, 1, h + 1, 1), fill(cv, x + bw - 1, 63 - h, 1, h + 1, 1);
+                }
+            }
+        }
+    }
+}
 /* a slot's layout in words: "FM-1", its takeover's name (all capitals in Title Case: "Chords"), "Scale" .. */
 const char *rfmv_lay_name(const rfm_move_t *m, int slot, int lay)
 {

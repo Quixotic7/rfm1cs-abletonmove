@@ -5,6 +5,25 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## 0.16.0 (prepared 2026-11-26, not yet tagged): the kit, stages 3a, 3b and 3c, pages, engines, Warp; Exit; one-setting Shift menus
 
+### One level popup, every level in dB (2026-11-26, the owner's)
+
+- Every volume level shows the same full-screen popup, drawn by one function (`rfmv_level_popup`, screen.c): the title
+  ("Track 1 Level", "Kit Level", "Pad 5 Level"), the value large in dB (the number at 3x, "dB" at 2x: "-2.1 dB",
+  "0 dB", "+2.0 dB", "-12 dB", "-inf dB"; one decimal below 10 dB), the source's name (the firmware, the kit's name or
+  "Kit", the pad's sound or "empty"), and a bar per sibling along the bottom, the one set solid and the rest outlined:
+  the three slots and the kit for a track or the kit, the 16 pads for a pad. It is the popup for a Track held + the
+  volume knob, a select step held + the volume knob, session view, the Mixer's level knobs and Kit strip, Routing's
+  level knob, Track 4 held + the volume knob, Kit Mix's knob 1, a pad held + the volume knob, Pad Mix's knob 1 and a
+  held step's level lock (with its "S5" tag).
+- One law: a 0..127 level (a slot's, the kit strip's) is a linear gain with 127 unity, as the hosts mix it
+  (`pan_gains`, the kit bus), so its dB is 20 log10(v / 127) (100, the default: -2.1 dB). Saved values are unchanged.
+  A pad's level stays whole dB. `rfmv_lvl_db10`, `rfmv_db_text`, `rfmv_db_frac` (the bars: -40..+6 dB).
+- One feel: a 0..127 level moves 0.5 dB a detent (`rfmv_lvl_step`: the level nearest the target, at least one step;
+  low down, where one step is more than 0.5 dB, one step), as a pad's level moves 1 dB every two detents.
+- The Mixer's strips show a level in dB (smaller text), their bars and the Pad Mix / Kit Mix pictures on the same dB
+  scale; the spoken words say "Track 1 Level: -2.1 dB". move_kit 50 checks that the popups match; fwb
+  track_held_volume_level is redrawn (test_move_fw lists it with the other redrawn mockup screens).
+
 ### Levels, lock popups, the pitch range (2026-11-26, the owner's on-device round)
 
 - Track 4 held + the volume knob sets the kit's level wherever Track 4's views include the kit, with a full-screen

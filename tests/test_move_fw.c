@@ -466,7 +466,7 @@ static void test_slots(void)
     browser(m, 0);
     clear();
     track(m, 1, 1), knob(m, 8, -8), track(m, 1, 0);
-    CHECK((a = last(RFM_MOVE_ACT_FW_LEVEL)) && a->a.slot == 1 && a->a.value == 72 && m->fw.level[1] == 72);
+    CHECK((a = last(RFM_MOVE_ACT_FW_LEVEL)) && a->a.slot == 1 && a->a.value == rfmv_lvl_step(80, -8) && m->fw.level[1] == rfmv_lvl_step(80, -8));
     CHECK(count(RFM_MOVE_ACT_MASTER) == 0);
     /* (fixed in 0.8.0: fw.c view input, volume + a held Track): the Track was used, so its release is no tap: still in the
      * browser on Track 1, slot 0 still the active one (as outside the view, where on_knob marks it used) */
@@ -481,7 +481,7 @@ static void test_slots(void)
     CHECK(!m->seq.projects && m->s.mode == RFM_MOVE_MODE_FM1);
     clear();
     track(m, 1, 1), knob(m, 8, 5), track(m, 1, 0);
-    CHECK((a = last(RFM_MOVE_ACT_FW_LEVEL)) && a->a.value == 77 && m->s.mode == RFM_MOVE_MODE_FM1 && count(RFM_MOVE_ACT_MASTER) == 0);
+    CHECK((a = last(RFM_MOVE_ACT_FW_LEVEL)) && a->a.value == rfmv_lvl_step(rfmv_lvl_step(80, -8), 5) && m->s.mode == RFM_MOVE_MODE_FM1 && count(RFM_MOVE_ACT_MASTER) == 0);
     screen(m);
     CHECK(m->fw.pop == FP_LEVEL && lit_in(0, 59, 128, 64) > 0);
     /* voices: 1 sounds the active slot only; a loaded slot past it blinks its Track LED */
@@ -762,7 +762,7 @@ static void test_fx(void)
     CHECK(m->fw.mix_par == RFM_MOVE_MIXP_LEVEL);
     clear();
     knob(m, 2, -10);
-    CHECK((a = last(RFM_MOVE_ACT_FW_LEVEL)) && a->a.slot == 2 && a->a.value == 70);
+    CHECK((a = last(RFM_MOVE_ACT_FW_LEVEL)) && a->a.slot == 2 && a->a.value == rfmv_lvl_step(80, -10));   /* (2026-11-26: 0.5 dB a detent) */
     rest_pop(m), screen(m), write_pbm("fx_mixer_level");
     CHECK(led_of(m, 0, MR_NOTE_PAD0 + pad_of(3 * 8 + 1), c) && c[0] > 0);   /* (slot 2's meter (80): bottom lit, top dark;
                                                          * slot 3 empty: dark) */
@@ -772,7 +772,7 @@ static void test_fx(void)
     tap_pad(m, pad_of(5));                              /* Pan */
     CHECK(m->fw.mix_par == RFM_MOVE_MIXP_PAN);
     knob(m, 2, -4);
-    CHECK((a = last(RFM_MOVE_ACT_MIX)) && a->a.slot == 2 && a->a.mix[0] == 70 && a->a.mix[1] == 60 && a->a.mix[2] == 30 && a->a.mix[3] == 70);
+    CHECK((a = last(RFM_MOVE_ACT_MIX)) && a->a.slot == 2 && a->a.mix[0] == rfmv_lvl_step(80, -10) && a->a.mix[1] == 60 && a->a.mix[2] == 30 && a->a.mix[3] == 70);
     tap_pad(m, pad_of(8 + 6));                          /* Send 3 */
     knob(m, 2, 9);
     CHECK((a = last(RFM_MOVE_ACT_MIX)) && a->a.mix[4] == 9 && m->seq.fx.send[2][2] == 9);
@@ -1237,16 +1237,18 @@ static void test_screens(void)
         write_pbm(n + 4);
         if (!strcmp(n, "fwb.step_favorites_chords") || !strcmp(n, "fwb.mixer_track_4") ||
             !strcmp(n, "fwb.mixer_a_send_knob") || !strcmp(n, "fwb.capture_held") ||
-            !strcmp(n, "fwb.capture_held_step_9")) {    /* (0.4.2: the filter popup redrawn, test_filter_popup; 0.5.0:
-                                                         * the owner's Mixer, test_fx; 0.5.4: Tags' step 16 is
-                                                         * Fantasy's, always there, test_fantasy) */
+            !strcmp(n, "fwb.capture_held_step_9") || !strcmp(n, "fwb.track_held_volume_level")) {   /* (0.4.2: the
+                                                         * filter popup redrawn, test_filter_popup; 0.5.0: the owner's
+                                                         * Mixer, test_fx; 0.5.4: Tags' step 16 is Fantasy's, always
+                                                         * there, test_fantasy; 2026-11-26: the one level popup, in dB,
+                                                         * test_level_popups) */
             CHECK(h != FWB_REF[i].hash);
             continue;
         }
         same += h == FWB_REF[i].hash;
         CHECKF(h == FWB_REF[i].hash, "%s: %08x, the mockup %08x", n, h, FWB_REF[i].hash);
     }
-    printf("move_fw: %d of %d screens as the mockup's, pixel for pixel (1 redrawn in 0.4.2, 2 in 0.5.0, 2 in 0.5.4)\n", same,
+    printf("move_fw: %d of %d screens as the mockup's, pixel for pixel (1 redrawn in 0.4.2, 2 in 0.5.0, 2 in 0.5.4, 1 in 0.16)\n", same,
            (int)(sizeof FWB_REF / sizeof FWB_REF[0]));
     /* two of the core's own (not in the mockup): Track 4 in the view, States */
     fixture(m), dbl_track(m, 3), rest_pop(m), screen(m), write_pbm("track4_projects");
@@ -1308,10 +1310,10 @@ static void test_host_edits(void)
     CHECK(count(RFM_MOVE_ACT_MIX) == 1 && count(RFM_MOVE_ACT_FW_LEVEL) == 0 && (a = last(RFM_MOVE_ACT_MIX)) && a->a.slot == 2 &&
           a->a.mix[0] == 80 && a->a.mix[1] == 30 && a->a.mix[2] == 10 && a->a.mix[3] == 70 && a->a.mix[4] == 0);
     clear(), undirty(m);
-    CHECK(rfm_move_mix_set(m, 2, 70, -1, NULL) == 1);
+    CHECK(rfm_move_mix_set(m, 2, rfmv_lvl_step(80, -10), -1, NULL) == 1);
     CHECK(count(RFM_MOVE_ACT_MIX) == 0 && count(RFM_MOVE_ACT_FW_LEVEL) == 1 && m->fw.lib_dirty && !m->seq.dirty);
     clear();
-    CHECK(rfm_move_mix_set(m, 2, 70, 30, (const int[3]){ 10, 70, 0 }) == 0 && nact == 0);
+    CHECK(rfm_move_mix_set(m, 2, rfmv_lvl_step(80, -10), 30, (const int[3]){ 10, 70, 0 }) == 0 && nact == 0);
     CHECK(rfm_move_mix_set(m, 2, -2, -1, NULL) == -1 && rfm_move_mix_set(m, 0, -1, -1, (const int[3]){ 0, 128, 0 }) == -1 &&
           rfm_move_mix_set(m, 3, -1, -1, NULL) == -1 && nact == 0);
     /* .. the same as the Move's own Mixer */
@@ -2179,9 +2181,9 @@ static void test_single(void)
     track(m, 1, 1), knob(m, 8, 10), track(m, 1, 0);    /* (Track 2 held + volume: no level) */
     CHECK(count(RFM_MOVE_ACT_FW_LEVEL) == 0);
     track(m, 0, 1), knob(m, 8, -8);                     /* Track 1 held + volume: slot 0's level */
-    CHECK((a = last(RFM_MOVE_ACT_FW_LEVEL)) && a->a.slot == 0 && a->a.value == 82);
+    CHECK((a = last(RFM_MOVE_ACT_FW_LEVEL)) && a->a.slot == 0 && a->a.value == rfmv_lvl_step(90, -8));
     screen(m), write_pbm("single_level");
-    CHECK(lit_in(0, 59, 128, 64) > 0 && lit_in(110, 59, 128, 64) == 0);   /* (one bar, the screen's width at most) */
+    CHECK(lit_in(0, 50, 128, 64) > 0);                /* (2026-11-26: the one level popup; one bar, one slot) */
     track(m, 0, 0), rest_pop(m);
     CHECK(m->seq.projects && m->fw.track == 0);         /* (fixed in 0.8.0: as in test_slots: the Track used by the volume, its
                                                          * release is no tap: still in the browser) */

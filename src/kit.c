@@ -241,6 +241,7 @@ static const int16_t ENV_MS[] = { 0, 1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50, 75, 
                                   1000, 1500, 2000, 3000, 5000, 10000 };
 #define NENV ((int)(sizeof ENV_MS / sizeof ENV_MS[0]))
 #define LEVEL_MIN (-60)
+static int pad_db10(int v) { return v <= LEVEL_MIN ? RFMV_DB_INF : v * 10; }   /* a pad's level in tenths of a dB */
 #define GAP 16                                          /* START and END keep this much (of RFM_MOVE_KIT_FRAC) apart */
 #define NOASK 0xFFFFu
 #define GLOW_MS 150                                     /* a pad sounds: bright so long after its note */
@@ -1135,19 +1136,14 @@ static void vtext(const rfm_move_t *m, int k, int p, int v, int row, char *o, in
         else
             snprintf(o, (size_t)cap, "Off");
         break;
-    case RFM_MOVE_KIT_P_LEVEL:
-        if (v <= LEVEL_MIN)
-            snprintf(o, (size_t)cap, "-inf dB");
-        else
-            snprintf(o, (size_t)cap, v > 0 ? "+%d dB" : "%d dB", v);
-        break;
+    case RFM_MOVE_KIT_P_LEVEL: rfmv_db_text(o, cap, pad_db10(v), 1); break;   /* (2026-11-26: as every level) */
     case RFM_MOVE_KIT_P_PAN:
         if (v)
             snprintf(o, (size_t)cap, "%c %d", v < 0 ? 'L' : 'R', v < 0 ? -v : v);
         else
             snprintf(o, (size_t)cap, "C");
         break;
-    case KP_KLEVEL:
+    case KP_KLEVEL: rfmv_db_text(o, cap, rfmv_lvl_db10(v), 1); break;
     case KP_KSEND1:
     case KP_KSEND2:
     case KP_KSEND3: snprintf(o, (size_t)cap, "%d", v); break;   /* (the Mixer's Kit strip, as it shows them) */
@@ -3958,7 +3954,7 @@ static int page_pic(const rfm_move_t *m, mr_canvas_t *cv)
     case RFM_MOVE_KIT_PG_PADMIX: {                      /* (the owner's) the wave on the left; a level meter (muted:
                                                          * dithered), the pan a mark on a short line under it, the
                                                          * three sends as small bars right of it; no text */
-        const int lv = d->v[RFM_MOVE_KIT_P_LEVEL], h = lv <= LEVEL_MIN ? 0 : (lv - LEVEL_MIN) * 46 / (6 - LEVEL_MIN);
+        const int lv = d->v[RFM_MOVE_KIT_P_LEVEL], h = (int)(rfmv_db_frac(pad_db10(lv)) * 46 + 0.5);   /* (2026-11-26: as every level bar) */
         if (ready(d))
             pad_wave_n(m, cv, k, 32, 26, 0, 41);
         v2_O(cv, 88, 4, 12, 50, 1);
@@ -3985,7 +3981,7 @@ static int page_pic(const rfm_move_t *m, mr_canvas_t *cv)
         for (i = 0; i < RFM_MOVE_KIT_PADS; i++) {
             const rfm_move_kit_pad_t *e = CPAD(m, i);
             const int x = (i % 8) * 16 + 3, yb = i < 8 ? 60 : 28, lv = e->v[RFM_MOVE_KIT_P_LEVEL];
-            const int h = !has_sound(e) || lv <= LEVEL_MIN ? 0 : 1 + (lv - LEVEL_MIN) * 22 / (6 - LEVEL_MIN);
+            const int h = !has_sound(e) || lv <= LEVEL_MIN ? 0 : 1 + (int)(rfmv_db_frac(pad_db10(lv)) * 22 + 0.5);
             v2_R(cv, x, yb, 10, 1, 1);
             if (e->v[RFM_MOVE_KIT_P_MUTE]) {
                 int xx, yy;
@@ -4102,10 +4098,21 @@ static void popup_t(const rfm_move_t *m, mr_canvas_t *cv, int p, const char *ttl
         v2_R(cv, 4 + d->v[p] * 118 / 100, 55, 2, 2, 1);
         return;
     }
-    if (p == RFM_MOVE_KIT_P_LEVEL) {                    /* (2026-11-26) the level as a bar (-inf .. +6 dB) */
-        const int lv = d->v[p];
-        v2_titleBox(cv, ttl ? ttl : P_NAME[p], v, 64, 124);
-        v2_vbar(cv, lv <= LEVEL_MIN ? 0.0 : (double)(lv - LEVEL_MIN) / (6 - LEVEL_MIN), 0, 4, 120, 52);
+    if (p == RFM_MOVE_KIT_P_LEVEL) {                    /* (2026-11-26) the one level popup: the 16 pads' bars */
+        int sib[RFM_MOVE_KIT_PADS], i;
+        char tt[20], nm[40];
+        for (i = 0; i < RFM_MOVE_KIT_PADS; i++)
+            sib[i] = has_sound(CPAD(m, i)) ? pad_db10(i == k ? d->v[p] : CPAD(m, i)->v[p]) : RFMV_DB_INF;
+        if (!ttl)
+            snprintf(tt, sizeof tt, "Pad %d Level", k % RFM_MOVE_KIT_PADS + 1), ttl = tt;
+        snprintf(nm, sizeof nm, "%s", has_sound(d) ? (d->name[0] ? d->name : "Sound") : "empty");
+        rfmv_level_popup(cv, ttl, pad_db10(d->v[p]), nm, sib, RFM_MOVE_KIT_PADS, k % RFM_MOVE_KIT_PADS);
+        return;
+    }
+    if (p == KP_KLEVEL) {                               /* (2026-11-26) the kit's level: the tracks' one popup */
+        int sib[4];
+        const int n = rfmv_fw_track_levels(m, sib);
+        rfmv_level_popup(cv, "Kit Level", sib[n - 1], m->kit.name[0] ? m->kit.name : "Kit", sib, n, n - 1);
         return;
     }
     if (p == RFM_MOVE_KIT_P_FENV) {                     /* (pages v2) up or down from the middle */
@@ -4628,7 +4635,8 @@ void rfmv_kit_mix_turn(rfm_move_t *m, int par, int d)
 {
     rfm_move_kit_t *t = K(m);
     const int i = par < 0 ? 0 : par >= RFM_MOVE_KIT_MIX_N ? RFM_MOVE_KIT_MIX_N - 1 : par;
-    const int nv = clampi(t->mix[i] + d, 0, 127);
+    const int nv = i == RFM_MOVE_KIT_MIX_LEVEL ? rfmv_lvl_step(t->mix[i], d)   /* (2026-11-26: as a slot's level) */
+                                               : clampi(t->mix[i] + d, 0, 127);
     if (nv == t->mix[i])
         return;
     t->mix[i] = (uint8_t)nv;

@@ -513,7 +513,9 @@ static void test_fx(void)
     knob(&M, 0, -1);
     {
         char want[64];
-        snprintf(want, sizeof want, "V:Slot 1 Level: %d|", M.fw.level[0]);
+        char db[16];
+        rfmv_db_text(db, sizeof db, rfmv_lvl_db10(M.fw.level[0]), 1);   /* (2026-11-26: every level in dB) */
+        snprintf(want, sizeof want, "V:Track 1 Level: %s|", db);
         SAID(want);
     }
     rest_pop(&M);

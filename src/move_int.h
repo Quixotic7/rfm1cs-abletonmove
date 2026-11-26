@@ -384,6 +384,21 @@ enum { POP_LAYOUT = 40, POP_JOG, POP_T4, POP_CCNUM, POP_LOCK, POP_SEQ, POP_SLOT,
                                                          * view's Track tap), POP_VIEW the view named under a menu) */
 enum { LK_LOCKED, LK_SOLO, LK_UNSOLO, LK_OFF, LK_ON, LK_MUTE, LK_UNMUTE, LK_CLEARED };   /* the lock menu's word */
 void rfmv_pop_screen(mr_canvas_t *cv, const char *top, const char *big, int n, int cur, const char *bottom);
+/* ---- (2026-11-26, the owner's: "each volume level adjustment feels like it's all part of the whole") one level popup
+ * and one unit for every level (screen.c). A 0..127 level (a firmware slot's, the kit's strip) is a linear gain, 127
+ * unity (the host's pan_gains and kit_render_bus: level / 127), so its dB is 20 log10(v / 127): 100 = -2.1 dB, 0 = -inf.
+ * A pad's level is whole dB (-60 = -inf .. +6). Levels are shown in tenths of a dB (RFMV_DB_INF: -inf). */
+#define RFMV_DB_INF (-32000)
+int rfmv_lvl_db10(int v);                               /* a 0..127 level in tenths of a dB */
+int rfmv_lvl_step(int v, int d);                        /* .. d detents on: 0.5 dB a detent (at least one step) */
+void rfmv_db_text(char *o, int cap, int db10, int unit);   /* "-3.5 dB", "0 dB", "+2.0 dB", "-12 dB", "-inf dB" (unit
+                                                         * 0: no " dB") */
+double rfmv_db_frac(int db10);                          /* a level bar's length: -40 .. +6 dB as 0 .. 1 */
+/* the level popup: the title ("Track 1 Level"), the value large in dB, the source's name, a bar per sibling (n, the one
+ * set cur) along the bottom */
+void rfmv_level_popup(mr_canvas_t *cv, const char *title, int db10, const char *name, const int *sib, int n, int cur);
+int rfmv_fw_track_levels(const rfm_move_t *m, int sib[4]);   /* (fw.c) the slots' levels (dB10), the kit's a fourth:
+                                                         * how many */
 const char *rfmv_lay_name(const rfm_move_t *m, int slot, int lay);   /* "FM-1", "Chords", "Scale" .. */
 int rfmv_lay_menu(const rfm_move_t *m);                 /* the firmware Track held (its layout menu): slot + 1, 0 */
 int rfmv_t4_menu(const rfm_move_t *m);                  /* Track 4 held, its menu (not the Sequencer's tracks) */

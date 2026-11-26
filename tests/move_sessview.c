@@ -1471,18 +1471,18 @@ static void test_sv_clipset(void)
     step(2, 1);
     l1 = M.fw.level[1], l0 = M.fw.level[0];
     clear(), knob(8, -6);
-    CHECK(M.fw.level[1] == l1 - 6 && M.fw.level[0] == l0 && rfmv_seq_cs_on(&M) && find(RFM_MOVE_ACT_FW_LEVEL) && !count(RFM_MOVE_ACT_MASTER));
+    CHECK(M.fw.level[1] == rfmv_lvl_step(l1, -6) && M.fw.level[0] == l0 && rfmv_seq_cs_on(&M) && find(RFM_MOVE_ACT_FW_LEVEL) && !count(RFM_MOVE_ACT_MASTER));
     screen();
     write_pbm("clipset_level");
     M.seq.fx.ffilt[1] &= (uint16_t)~(1u << 1);
     knob(8, -3);
-    CHECK(M.fw.level[0] == l0 - 3 && M.fw.level[1] == l1 - 6);
+    CHECK(M.fw.level[0] == rfmv_lvl_step(l0, -3) && M.fw.level[1] == rfmv_lvl_step(l1, -6));
     for (i = 0; i < RFM_MOVE_FW_SLOTS; i++)
         M.seq.fx.ffilt[i] &= (uint16_t)~(1u << 1);
     clear(), knob(8, -3);
     screen();
     write_pbm("clipset_notrouted");
-    CHECKF(M.fw.level[0] == l0 - 3 && M.fw.level[1] == l1 - 6 && !count(RFM_MOVE_ACT_MASTER) && strstr(said, "Not routed"), "said \"%s\"", said);
+    CHECKF(M.fw.level[0] == rfmv_lvl_step(l0, -3) && M.fw.level[1] == rfmv_lvl_step(l1, -6) && !count(RFM_MOVE_ACT_MASTER) && strstr(said, "Not routed"), "said \"%s\"", said);
     step(2, 0);
     for (i = 0; i < RFM_MOVE_FW_SLOTS; i++)
         M.seq.fx.ffilt[i] |= (uint16_t)(1u << 1);
@@ -3515,7 +3515,7 @@ static void test_track_volume(void)
         l0 = M.fw.level[1];
         clear();
         raw(0xB0, (uint8_t)(MR_CC_KNOB1 + 8), 3);       /* the volume knob, 3 up */
-        CHECK(M.fw.level[1] == l0 + 3 && count(RFM_MOVE_ACT_FW_LEVEL) == 1 && !count(RFM_MOVE_ACT_MASTER));
+        CHECK(M.fw.level[1] == rfmv_lvl_step(l0, 3) && count(RFM_MOVE_ACT_FW_LEVEL) == 1 && !count(RFM_MOVE_ACT_MASTER));
         screen(), memcpy(POP, SCR, sizeof POP);
         CHECK(memcmp(POP, MENU, sizeof MENU) != 0 && rfmv_fw_level_shown(&M));   /* the level, not the menu */
         if (v == 0)
