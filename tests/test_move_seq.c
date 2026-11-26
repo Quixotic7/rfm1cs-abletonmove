@@ -592,8 +592,15 @@ static void test_external(void)
         CHECK(rfmv_global_rows(m) == 8);
         jog(m, 9);
         CHECK(m->gl_row == 7 && !m->gl_edit);
-        nact = 0;
-        jog_click(m);
+        {                                               /* (2026-11-26) the row's words: named, then asked */
+            char w[48];
+            rfmv_global_words(m, w, sizeof w);
+            CHECKF(!strcmp(w, "Exit RemoteFM1"), "exit row: %s", w);
+            nact = 0;
+            jog_click(m);
+            rfmv_global_words(m, w, sizeof w);
+            CHECKF(!strcmp(w, "Click again to exit"), "exit asked: %s", w);
+        }
         CHECK(m->gl_edit);
         rfm_move_screen(m, NULL, out);
         write_pbm("move_seq_global_exit.pbm", out);
@@ -611,6 +618,13 @@ static void test_external(void)
         jog(m, -9);
         rfm_move_fw_caps(m, caps);
         CHECK(rfmv_global_rows(m) == 7);
+        jog(m, 9);                                      /* (2026-11-26) without the cap: no Exit row to reach */
+        CHECK(m->gl_row == 6);
+        nact = 0, jog_click(m), jog_click(m);
+        for (i = 0, ex = 0; i < nact; i++)
+            ex += acts[i].a.kind == RFM_MOVE_ACT_EXIT;
+        CHECK(ex == 0 && !m->gl_edit);
+        jog(m, -9);
     }
     m->s.vel_mode = RFM_MOVE_VEL_DYNAMIC, m->s.vel_level = 127;
     tap_step(m, 1);                                     /* (a plain step: (0.6.2) the menu's, it stays) */

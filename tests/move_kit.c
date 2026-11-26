@@ -16,6 +16,7 @@
 
 #include "check.h"
 #include "move_int.h"
+#include "v2.h"
 #include "moveremote/client.h"
 #include "rfm1cs/move.h"
 #include "move_fwb_data.h"
@@ -1809,6 +1810,364 @@ static void t_trim(void)
     printf("  ok    Trim silence: the Kit tab's row, KIT_REC's param, saved (version 13; 12 read as On)\n");
 }
 
+
+/* ================================================================ (2026-11-26, the release's checks) === */
+/* rows [y0, y1) of the screen against a canvas, only x >= x0 */
+static int band_eq(const mr_canvas_t *cv, int x0, int y0, int y1)
+{
+    int x, y;
+    screen();
+    for (y = y0; y < y1; y++)
+        for (x = x0; x < 128; x++)
+            if (!!cv->px[y][x] != px(x, y))
+                return 0;
+    return 1;
+}
+/* 37. the page switcher: the jog's order Sample Kit, Pad Sample, Trig, Pad Sample 2, Warp, Filter, Pad Mix, Kit Mix
+ * (said by the page's name); Pad Sample 2 shown "Sample 2" under the row */
+static void t_pages_v2(void)
+{
+    static const char *const NM[RFM_MOVE_KIT_PG_N] = { "Sample Kit", "Pad Sample", "Trig", "Pad Sample 2", "Warp",
+                                                        "Filter", "Pad Mix", "Kit Mix" };
+    static mr_canvas_t cv;
+    int i;
+    kit_view();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    jog(-1), rest();
+    CHECK(M.kit.page == RFM_MOVE_KIT_PG_KIT);
+    for (i = 1; i < RFM_MOVE_KIT_PG_N; i++) {
+        char w[32];
+        clear(), jog(1);
+        snprintf(w, sizeof w, "|%s page", NM[i]);
+        CHECKF(M.kit.page == i && (strstr(said, w + 1) == said || strstr(said, w)), "page %d said %s", i, said);
+        if (i == RFM_MOVE_KIT_PG_SAMPLE2) {             /* (the name under the switcher: "Sample 2", y 41, 2x) */
+            adv_ms(150);                                /* (the slide over) */
+            memset(&cv, 0, sizeof cv);
+            v2_TC(&cv, 64, 7 + 28 + 6, "Sample 2", 2, 1);
+            CHECK(band_eq(&cv, 0, 41, 41 + 16));
+            memset(&cv, 0, sizeof cv);
+            v2_TC(&cv, 64, 7 + 28 + 6, "Pad Sample 2", 2, 1);
+            CHECK(!band_eq(&cv, 0, 41, 41 + 16));
+        }
+        if (i == RFM_MOVE_KIT_PG_WARP)
+            CHECK(M.kit.page == RFM_MOVE_KIT_PG_WARP);
+    }
+    clear(), jog(1);                                    /* (Kit Mix the last: no wrap) */
+    CHECK(M.kit.page == RFM_MOVE_KIT_PG_KITMIX);
+    rfm_move_set_speech(&M, 0);
+}
+
+/* 38. the browser's root: My Samples alone, with the Move Library after it; the chosen row's long name a ping-pong
+ * marquee: 1 s still, 25 px a second, 1 s at its end, back */
+static void mq_at(mr_canvas_t *cv, const char *name, int off)
+{
+    memset(cv, 0, sizeof *cv);
+    v2_T(cv, 16 - off, 21 + 3, name, 2, 1);
+}
+static void t_root(void)
+{
+    static mr_canvas_t cv;
+    uint32_t t0;
+    kit_view();
+    jog_click();
+    CHECK(M.kit.tab == 2 && M.kit.place == 0 && M.kit.psel == 0);
+    jog(1);
+    CHECK(M.kit.psel == 0);                             /* (My Samples alone) */
+    clear(), jog_click();
+    CHECK(M.kit.place == RFM_MOVE_KIT_PL_SAMPLES && last(RFM_MOVE_ACT_KIT_ROWS));
+    back();
+    rfm_move_kit_core_lib(&M, 1);
+    CHECK(M.kit.place == 0 && M.kit.psel == 0);
+    jog(1);
+    CHECK(M.kit.psel == 1);
+    clear(), jog_click();
+    CHECK(M.kit.place == RFM_MOVE_KIT_PL_CORE && last(RFM_MOVE_ACT_KIT_ROWS) &&
+          last(RFM_MOVE_ACT_KIT_ROWS)->value == RFM_MOVE_KIT_PL_CORE);
+    back();
+    CHECK(M.kit.place == 0 && M.kit.psel == 1);
+    /* "Move Library": 12 letters at 2x, 142 px, 30 past its 112: the marquee from the choice's time */
+    adv_ms(20);
+    t0 = M.kit.mq_ms;
+    adv_ms(900 - (rfmv_now_ms(&M) - t0));               /* (900 ms: still) */
+    mq_at(&cv, "Move Library", 0);
+    CHECK(band_eq(&cv, 16, 24, 40));
+    adv_ms(1400 - (rfmv_now_ms(&M) - t0));              /* (1.4 s: 10 px on) */
+    CHECK(!band_eq(&cv, 16, 24, 40));
+    mq_at(&cv, "Move Library", 10);
+    CHECKF(band_eq(&cv, 16, 24, 40), "marquee at %u ms", rfmv_now_ms(&M) - t0);
+    adv_ms(1000 + 1200 + 500 - (rfmv_now_ms(&M) - t0));   /* (its end shown, still) */
+    mq_at(&cv, "Move Library", 30);
+    CHECK(band_eq(&cv, 16, 24, 40));
+    adv_ms(1000 + 1200 + 1000 + 400 - (rfmv_now_ms(&M) - t0));   /* (back: 10 px of 30) */
+    mq_at(&cv, "Move Library", 20);
+    CHECK(band_eq(&cv, 16, 24, 40));
+    jog(-1), adv_ms(150);                               /* (My Samples: short, still) */
+    mq_at(&cv, "My Samples", 0);
+    CHECK(band_eq(&cv, 16, 24, 40));
+    rfm_move_kit_core_lib(&M, 0);
+    back();
+}
+
+/* 39. a step's click gated: held past RFM_MOVE_SEQ_HOLD_MS, or a knob touched meanwhile, toggles nothing (in or out);
+ * a plain tap still does */
+static void t_gated(void)
+{
+    const int clip = SEQ_CLIP(12, 0);
+    kit_view();
+    hit(kp(1));
+    step(3, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(3, 0);
+    CHECK(rfmv_seq_find(&M, clip, 3, 37) < 0);          /* (a hold: not in) */
+    tap_step(3);
+    CHECK(rfmv_seq_find(&M, clip, 3, 37) >= 0);         /* (a tap: in) */
+    step(3, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(3, 0);
+    CHECK(rfmv_seq_find(&M, clip, 3, 37) >= 0);         /* (a hold: not out) */
+    step(3, 1), touch(0, 1), touch(0, 0), step(3, 0);
+    CHECK(rfmv_seq_find(&M, clip, 3, 37) >= 0);         /* (a knob touched meanwhile: not out) */
+    step(5, 1), touch(1, 1), touch(1, 0), step(5, 0);
+    CHECK(rfmv_seq_find(&M, clip, 5, 37) < 0);          /* (.. nor in) */
+    tap_step(3);
+    CHECK(rfmv_seq_find(&M, clip, 3, 37) < 0);          /* (a tap: out) */
+}
+
+/* 40. a pitch held (Pitches) + a step's click: that pitch on the step, not the pad's own note; a held step lights the
+ * pitches on it */
+static void t_pitch_step(void)
+{
+    const int clip = SEQ_CLIP(12, 0);
+    uint8_t w[RFM_MOVE_NLEDS][3], w0[RFM_MOVE_NLEDS][3];
+    kit_view();
+    hit(kp(1));
+    CHECK(M.kit.rh == RFM_MOVE_KIT_RH_PITCHES);
+    pad(rp(3), 100), tap_step(6), pad(rp(3), 0);
+    CHECK(rfmv_seq_find(&M, clip, 6, rfm_move_kit_note(1, 3)) >= 0 && rfmv_seq_find(&M, clip, 6, 37) < 0);
+    pad(rp(3), 100), tap_step(6), pad(rp(3), 0);         /* (again: out) */
+    CHECK(rfmv_seq_find(&M, clip, 6, rfm_move_kit_note(1, 3)) < 0);
+    pad(rp(3), 100), tap_step(6), pad(rp(3), 0);
+    rest(), leds(w0);
+    step(6, 1), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20);
+    leds(w);
+    step(6, 0);
+    CHECK(!is_rgb(w[L_PAD0 + rp(3)], w0[L_PAD0 + rp(3)][0], w0[L_PAD0 + rp(3)][1], w0[L_PAD0 + rp(3)][2]) &&
+          is_rgb(w[L_PAD0 + rp(3)], 255, 60, 160));     /* (lit in its row's colour, track 13's) */
+    CHECK(is_rgb(w[L_PAD0 + rp(5)], w0[L_PAD0 + rp(5)][0], w0[L_PAD0 + rp(5)][1], w0[L_PAD0 + rp(5)][2]));
+    CHECK(rfmv_seq_find(&M, clip, 6, rfm_move_kit_note(1, 3)) >= 0);   /* (the hold: nothing toggled) */
+}
+
+/* the KIT_NOTE ons of pad k while the sequencer plays ms */
+static int play_ons(int k, int ms, rfm_move_act_t *first)
+{
+    int i, n = 0;
+    clear();
+    rfm_move_seq_play(&M, 1);
+    adv_ms((uint32_t)ms);
+    rfm_move_seq_play(&M, 0);
+    for (i = 0; i < nact; i++)
+        if (A[i].kind == RFM_MOVE_ACT_KIT_NOTE && A[i].down && A[i].index == k) {
+            if (!n && first)
+                *first = A[i];
+            n++;
+        }
+    return n;
+}
+/* 41. a step lock on a setting with no LK lock of its own (Pad Mix's Send 1: an XLOCK slot pair) reaches the hit's
+ * KIT_NOTE as kp_mask / kp[] */
+static void t_xlock(void)
+{
+    const int clip = SEQ_CLIP(12, 0);
+    rfm_move_act_t a;
+    int c, e;
+    kit_view();
+    sound(1, "Snare", 4800, NULL, 0);
+    hit(kp(1)), tap_step(0);
+    CHECK(rfmv_seq_find(&M, clip, 0, 37) >= 0);
+    jog(RFM_MOVE_KIT_PG_PADMIX - RFM_MOVE_KIT_PG_SAMPLE), rest();
+    CHECK(M.kit.page == RFM_MOVE_KIT_PG_PADMIX);
+    step(0, 1), knob(4, 30), step(0, 0);                /* (knob 5: Send 1) */
+    c = rfmv_seq_lock_get(&M, clip, 0, RFM_MOVE_KIT_XLOCK0 + (0 * 4 + 1) * 2);
+    e = rfmv_seq_lock_get(&M, clip, 0, RFM_MOVE_KIT_XLOCK0 + (0 * 4 + 1) * 2 + 1);
+    CHECKF(c == RFM_MOVE_KIT_P_SEND1 && e > 0, "slot 0: %d = %d", c, e);
+    CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_SEND1] == 0 && rfmv_seq_find(&M, clip, 0, 37) >= 0);   /* (the pad's own kept) */
+    M.seq.tr[12].active = 0;
+    memset(&a, 0, sizeof a);
+    CHECK(play_ons(1, 200, &a) >= 1);
+    CHECKF((a.kp_mask >> RFM_MOVE_KIT_P_SEND1 & 1) && a.kp[RFM_MOVE_KIT_P_SEND1] == e,
+           "kp_mask %llx send1 %d", (unsigned long long)a.kp_mask, a.kp[RFM_MOVE_KIT_P_SEND1]);
+    CHECK(!(a.kp_mask >> RFM_MOVE_KIT_P_SEND2 & 1));
+}
+
+/* 42. the Kit view's Layout menu (Shift + step 8): the jog's turn sets the right half's mode, not the note layout */
+static void t_kit_layout(void)
+{
+    int l0;
+    kit_view();
+    l0 = M.s.layout;
+    CHECK(M.kit.rh == RFM_MOVE_KIT_RH_PITCHES && rfmv_kit_rh_of(&M) == RFM_MOVE_KIT_RH_PITCHES);
+    button(MR_CC_SHIFT, 1), step(7, 1), step(7, 0), button(MR_CC_SHIFT, 0), now_ms += RFM_MOVE_DOUBLE_MS;
+    CHECKF(M.seq.smenu == RFM_MOVE_SM_LAYOUT, "smenu %d", M.seq.smenu);
+    rest(), jog(1);
+    CHECKF(M.kit.rh == RFM_MOVE_KIT_RH_INKEY && M.s.layout == l0, "rh %d layout %d", M.kit.rh, M.s.layout);
+    jog(9);
+    CHECK(M.kit.rh == RFM_MOVE_KIT_RH_CHOP && M.s.layout == l0);   /* (clamped at the last) */
+    jog(-9);
+    CHECK(M.kit.rh == RFM_MOVE_KIT_RH_PITCHES && M.s.layout == l0);
+    back();
+}
+
+/* 43. the kit open, Track 4 held + the volume knob: the kit's level (Kit Level N), no firmware's */
+static void t_kit_level(void)
+{
+    uint8_t lv[RFM_MOVE_FW_SLOTS];
+    int l0;
+    kit_view();
+    memcpy(lv, M.fw.level, sizeof lv);
+    l0 = M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL];
+    hold_track(3), clear();
+    raw(0xB0, MR_CC_VOLUME, (uint8_t)(-3 & 127));
+    CHECKF(M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL] == l0 - 3 && !strcmp(M.kit.msg, "Kit Level"), "level %d msg %s",
+           M.kit.mix[RFM_MOVE_KIT_MIX_LEVEL], M.kit.msg);
+    {
+        char v[8];
+        snprintf(v, sizeof v, "%d", l0 - 3);
+        CHECK(!strcmp(M.kit.msg2, v));
+    }
+    CHECK(!memcmp(lv, M.fw.level, sizeof lv) && !count(RFM_MOVE_ACT_FW_LEVEL) && count(RFM_MOVE_ACT_MIX) >= 1);
+    track(3, 0);
+}
+
+/* 44. versions 12, 13 and 14 into 15: Toggle as Loop, Stretch N as Warp Repitch Sync N, In Key as In Key 4ths, Off as
+ * Pitches, the new settings at their defaults */
+static int old_blob(const uint8_t *b, int n, int ver, uint8_t *c)
+{
+    const int np = ver >= 14 ? RFM_MOVE_KIT_P_N_V14 : RFM_MOVE_KIT_P_N_V12;
+    const int kb = 16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * np), base = n - 4 - RFM_MOVE_KIT_BYTES;
+    const uint8_t *x = b + base;
+    uint8_t *o = c + base;
+    int k, i, no;
+    uint32_t h;
+    memcpy(c, b, (size_t)base);
+    memset(o, 0, (size_t)kb);
+    memcpy(o, x, 16 + 24);
+    o[10] = o[11] = 0;                                  /* (no kit bus before 15) */
+    if (ver < 13)
+        o[4 + RFM_MOVE_KIT_MIX_N] = 0;                  /* (no Trim before 13) */
+    o += 40, x += 40;
+    for (k = 0; k < RFM_MOVE_KIT_PADS; k++, o += RFM_MOVE_KIT_PATH + 2 * np, x += RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N)
+        memcpy(o, x, (size_t)(RFM_MOVE_KIT_PATH + 2 * np));
+    no = base + kb + 4;
+    c[4] = (uint8_t)ver;
+    for (h = 2166136261u, i = 0; i < no - 4; i++)
+        h = (h ^ c[i]) * 16777619u;
+    for (i = 0; i < 4; i++)
+        c[no - 4 + i] = (uint8_t)(h >> (8 * i));
+    return no;
+}
+static void t_project_old(void)
+{
+    static uint8_t b[RFM_MOVE_PROJECT_MAX], c[RFM_MOVE_PROJECT_MAX];
+    static rfm_move_t D0;
+    int n, ver, i;
+    rfm_move_init(&D0, NULL, NULL, NULL);
+    kit_view();
+    sound(3, "Rim", 4800, NULL, 0);
+    sound(5, "Pad", 9600, NULL, 0);
+    M.kit.pad[3].v[RFM_MOVE_KIT_P_MODE] = 3;            /* (round A's Toggle) */
+    M.kit.pad[3].v[RFM_MOVE_KIT_P_STRETCH] = 12, M.kit.pad[3].v[RFM_MOVE_KIT_P_SEND2] = 40;
+    M.kit.pad[3].v[RFM_MOVE_KIT_P_MORPH] = 70, M.kit.pad[3].v[RFM_MOVE_KIT_P_SPEED] = 200;   /* (15's: dropped) */
+    M.kit.pad[5].v[RFM_MOVE_KIT_P_MODE] = RFM_MOVE_KIT_M_MOMENTARY;
+    for (ver = 12; ver <= 14; ver++) {
+        int rh;
+        for (rh = 1; rh <= 2; rh++) {
+            int no, bad = -1;
+            M.kit.rh = (uint8_t)rh;                     /* (an older one's 1 In Key, 2 Off) */
+            n = rfm_move_project_save(&M, b, sizeof b);
+            no = old_blob(b, n, ver, c);
+            CHECKF(rfm_move_project_check(c, (uint32_t)no) == 0, "version %d check %d", ver, rfm_move_project_check(c, (uint32_t)no));
+            rfm_move_init(&M2, NULL, on_act, NULL);
+            rfm_move_fw_caps(&M2, KCAPS);
+            CHECKF(rfm_move_project_load(&M2, 1, c, (uint32_t)no) == 0, "version %d load", ver);
+            CHECKF(M2.kit.rh == (rh == 1 ? RFM_MOVE_KIT_RH_INKEY4 : RFM_MOVE_KIT_RH_PITCHES), "version %d rh %d -> %d", ver, rh,
+                   M2.kit.rh);
+            CHECK(M2.kit.pad[3].v[RFM_MOVE_KIT_P_MODE] == RFM_MOVE_KIT_M_LOOP &&
+                  M2.kit.pad[3].v[RFM_MOVE_KIT_P_WARP] == RFM_MOVE_KIT_W_REPITCH &&
+                  M2.kit.pad[3].v[RFM_MOVE_KIT_P_STRETCH] == 12 && M2.kit.pad[3].v[RFM_MOVE_KIT_P_SEND2] == 40 &&
+                  strstr(M2.kit.pad[3].path, "Rim"));
+            CHECK(M2.kit.pad[5].v[RFM_MOVE_KIT_P_MODE] == RFM_MOVE_KIT_M_MOMENTARY &&
+                  M2.kit.pad[5].v[RFM_MOVE_KIT_P_WARP] == RFM_MOVE_KIT_W_OFF);
+            for (i = ver >= 14 ? RFM_MOVE_KIT_P_N_V14 : RFM_MOVE_KIT_P_N_V12; i < RFM_MOVE_KIT_P_N && bad < 0; i++)
+                if (i != RFM_MOVE_KIT_P_WARP && M2.kit.pad[3].v[i] != D0.kit.pad[3].v[i])
+                    bad = i;
+            CHECKF(bad < 0, "version %d: setting %d %d, not its default %d", ver, bad, bad < 0 ? 0 : M2.kit.pad[3].v[bad],
+                   bad < 0 ? 0 : D0.kit.pad[3].v[bad]);
+            CHECK(M2.kit.bus[RFM_MOVE_KIT_BUS_CUTOFF] == 100 && M2.kit.bus[RFM_MOVE_KIT_BUS_RESO] == 0);
+        }
+    }
+}
+
+/* 45. Chop: a Chop slot held + a step's click enters the chosen pad's hit with that chop; the sequencer plays it back
+ * with the chop on its KIT_NOTE; Record while playing keeps a played chop on its step */
+static void t_chop_seq(void)
+{
+    const int clip = SEQ_CLIP(12, 0);
+    rfm_move_act_t a;
+    int i, rec_ok = 0;
+    kit_view();
+    sound(1, "Loop", 48000, NULL, 0);
+    hit(kp(1));
+    M.kit.rh = RFM_MOVE_KIT_RH_CHOP;
+    pad(rp(13), 100), tap_step(0), pad(rp(13), 0);      /* (rp 13: the top row's second, chop 1) */
+    CHECK(rfmv_seq_find(&M, clip, 0, 37) >= 0 &&
+          rfmv_seq_lock_get(&M, clip, 0, RFM_MOVE_KIT_LOCK0 + RFM_MOVE_KIT_LK_CHOP * 4 + 1) == 1 &&
+          rfmv_seq_lock_get(&M, clip, 0, RFM_MOVE_KIT_LOCK0 + RFM_MOVE_KIT_LK_CHOPE * 4 + 1) == 1);
+    M.seq.tr[12].active = 0;
+    memset(&a, 0, sizeof a);
+    CHECK(play_ons(1, 200, &a) >= 1);
+    CHECKF((a.klk_mask >> RFM_MOVE_KIT_LK_CHOP & 1) && a.klk[RFM_MOVE_KIT_LK_CHOP] == 1 && a.klk[RFM_MOVE_KIT_LK_CHOPE] == 1,
+           "klk %x chop %d..%d", a.klk_mask, a.klk[RFM_MOVE_KIT_LK_CHOP], a.klk[RFM_MOVE_KIT_LK_CHOPE]);
+    /* Record, playing: chop 10 (rp 6: the second row from the bottom, its third) played lands with its chop */
+    rfmv_seq_undo(&M);
+    CHECK(rfmv_seq_find(&M, clip, 0, 37) < 0);
+    rfm_move_seq_play(&M, 1), press(MR_CC_REC);
+    adv_ms(10);
+    CHECK(M.seq.rec);
+    clear(), pad(rp(6), 100), adv_ms(50), pad(rp(6), 0);
+    adv_ms(100);
+    press(MR_CC_REC), rfm_move_seq_play(&M, 0);
+    for (i = 0; i < RFM_MOVE_SEQ_PAGE * 4; i++)
+        if (rfmv_seq_find(&M, clip, i, 37) >= 0 &&
+            rfmv_seq_lock_get(&M, clip, i, RFM_MOVE_KIT_LOCK0 + RFM_MOVE_KIT_LK_CHOP * 4 + 1) == 10)
+            rec_ok = 1;
+    CHECK(rec_ok);
+    M.kit.rh = RFM_MOVE_KIT_RH_PITCHES;
+}
+
+/* 46. a project saved and loaded keeps the pads' paths (a round C "@/" one too) and pages v2's settings: the engine, a
+ * loop point, the warp, the morph, the kit bus */
+static void t_project_v2(void)
+{
+    static uint8_t b[RFM_MOVE_PROJECT_MAX];
+    int n;
+    kit_view();
+    sound(2, "Kick", 4800, NULL, 0);
+    rfm_move_kit_loaded(&M, 7, RFM_MOVE_KIT_OK, "Take 1", RFM_MOVE_KIT_OWN "takes/t1.wav", 9600, 48000, 0, NULL);
+    CHECK(!strcmp(M.kit.pad[7].path, "@/takes/t1.wav"));
+    M.kit.pad[7].v[RFM_MOVE_KIT_P_MODE] = RFM_MOVE_KIT_M_LOOP, M.kit.pad[7].v[RFM_MOVE_KIT_P_LOOPS] = 4000;
+    M.kit.pad[7].v[RFM_MOVE_KIT_P_WARP] = RFM_MOVE_KIT_W_GRAINS, M.kit.pad[7].v[RFM_MOVE_KIT_P_MORPH] = 60;
+    M.kit.pad[7].v[RFM_MOVE_KIT_P_FENV] = -30, M.kit.pad[2].v[RFM_MOVE_KIT_P_MODE] = RFM_MOVE_KIT_M_GRANULAR;
+    M.kit.pad[2].v[RFM_MOVE_KIT_P_GSIZE] = 120;
+    rfm_move_kit_set_bus(&M, 45, 20);
+    n = rfm_move_project_save(&M, b, sizeof b);
+    CHECK(n > 0 && b[4] == 15 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    rfm_move_init(&M2, NULL, on_act, NULL);
+    rfm_move_fw_caps(&M2, KCAPS);
+    CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0);
+    CHECK(!strcmp(M2.kit.pad[7].path, "@/takes/t1.wav") && !strcmp(M2.kit.pad[2].path, M.kit.pad[2].path));
+    CHECK(M2.kit.pad[7].v[RFM_MOVE_KIT_P_MODE] == RFM_MOVE_KIT_M_LOOP && M2.kit.pad[7].v[RFM_MOVE_KIT_P_LOOPS] == 4000 &&
+          M2.kit.pad[7].v[RFM_MOVE_KIT_P_WARP] == RFM_MOVE_KIT_W_GRAINS && M2.kit.pad[7].v[RFM_MOVE_KIT_P_MORPH] == 60 &&
+          M2.kit.pad[7].v[RFM_MOVE_KIT_P_FENV] == -30);
+    CHECK(M2.kit.pad[2].v[RFM_MOVE_KIT_P_MODE] == RFM_MOVE_KIT_M_GRANULAR && M2.kit.pad[2].v[RFM_MOVE_KIT_P_GSIZE] == 120);
+    CHECK(rfm_move_kit_bus(&M2, RFM_MOVE_KIT_BUS_CUTOFF) == 45 && rfm_move_kit_bus(&M2, RFM_MOVE_KIT_BUS_RESO) == 20);
+}
+
 int main(void)
 {
     t_encoding();
@@ -1845,5 +2204,15 @@ int main(void)
     t_sens();
     t_toggle();
     t_trim();
+    t_pages_v2();
+    t_root();
+    t_gated();
+    t_pitch_step();
+    t_xlock();
+    t_kit_layout();
+    t_kit_level();
+    t_project_old();
+    t_chop_seq();
+    t_project_v2();
     return check_done("move_kit");
 }
