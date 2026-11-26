@@ -2304,6 +2304,11 @@ static void tdef_turn(rfm_move_t *m, int k, int d)
 void rfmv_seq_tdef_apply(rfm_move_t *m, int clip, int abs, int entry)
 {
     const uint8_t *t = m->seq.tr[clip / RFM_MOVE_SEQ_SCENES].tdef;
+    if (rfmv_kit_routed(m, clip / RFM_MOVE_SEQ_SCENES))
+        return;                                         /* (2026-11-26, the owner's: "When I click to add a new step, it
+                                                         * should start with default trig values, like length 1, chance
+                                                         * 100") a kit track's new hit is plain: a step long, no trig
+                                                         * locks (a kit track's defaults, set before or loaded, unused) */
     if (t[1] > 1)
         rfmv_seq_lock_set(m, clip, abs, RFM_MOVE_TRIG_RATCHET, t[1]);
     if (t[2] < 100)
@@ -2807,9 +2812,18 @@ static int smenu_jogsel(const rfm_move_seq_t *q)
 {
     return q->smenu && q->smenu != RFM_MOVE_SM_ARP && q->smenu != RFM_MOVE_SM_GLOBAL;
 }
+/* (2026-11-26, the owner's: "in the track settings, shift + S3, add a feature in which you can export the samples in
+ * the kit as a group") the rows the jog moves over: the menu's knobs; a kit track's settings (Workflow) also row 5,
+ * Export Samples (the jog's only: knob 5 stays dark; its click exports) */
+#define WF_EXPORT 4
+static int wf_export(const rfm_move_t *m)
+{
+    return m->seq.smenu == RFM_MOVE_SM_WORKFLOW && rfmv_kit_routed(m, m->seq.sel_track);
+}
+static int smenu_rows(const rfm_move_t *m) { return rfmv_seq_menu_knobs(m) | (wf_export(m) ? 1 << WF_EXPORT : 0); }
 static int smenu_sel(const rfm_move_t *m)              /* the selected knob (-1: the menu has none: Tempo following) */
 {
-    const int mk = rfmv_seq_menu_knobs(m), s = m->seq.sm_sel;
+    const int mk = smenu_rows(m), s = m->seq.sm_sel;
     int k;
     if (!smenu_jogsel(&m->seq))
         return -1;
@@ -2833,7 +2847,7 @@ static void smenu_sel_words(const rfm_move_t *m, int k, const char *pre, char *o
 static void smenu_jog_turn(rfm_move_t *m, int d)
 {
     rfm_move_seq_t *q = Q(m);
-    const int mk = rfmv_seq_menu_knobs(m);
+    const int mk = smenu_rows(m);
     int k = smenu_sel(m), i;
     char w[64];
     if (k < 0 || !d)
@@ -2869,6 +2883,11 @@ int rfmv_seq_menu_click(rfm_move_t *m)
         return 0;
     if (k < 0)
         return 1;                                       /* (Tempo following the clock: nothing to edit) */
+    if (k == WF_EXPORT && wf_export(m)) {               /* (2026-11-26) Export Samples: done at the click */
+        q->sm_sel = (int8_t)k, q->sm_edit = 0;
+        rfmv_kit_export(m);
+        return 1;
+    }
     q->sm_sel = (int8_t)k;
     q->sm_edit = (uint8_t)!q->sm_edit;
     q->sm_k = (int8_t)k, q->sm_ms = rfmv_now_ms(m);
@@ -2895,8 +2914,10 @@ void rfmv_seq_trig_knob(rfm_move_t *m, int clip, int k, int d, uint16_t held)
     if ((k == 3 || k == 4) && !(d = rfmv_list_ticks(m, k, d)))
         return;                                         /* (COND, FUNC: lists, one item a few ticks) */
     if (!held) {                                        /* none held: the track's defaults for new steps (the owner's:
-                                                         * steps already there keep theirs) */
-        tdef_turn(m, k, d);
+                                                         * steps already there keep theirs); (2026-11-26) a kit track
+                                                         * has none: nothing */
+        if (!rfmv_kit_routed(m, clip / RFM_MOVE_SEQ_SCENES))
+            tdef_turn(m, k, d);
         return;
     }
     for (s = 0; s < RFM_MOVE_NSTEPS; s++)
@@ -4367,7 +4388,9 @@ static void smenu_head(const rfm_move_t *m, int k, char *o, int cap)   /* knob k
     o[0] = 0;
     switch (q->smenu) {
     case RFM_MOVE_SM_WORKFLOW:
-        if (k == 0)
+        if (k == WF_EXPORT)
+            snprintf(o, (size_t)cap, "Export Samples");
+        else if (k == 0)
             snprintf(o, (size_t)cap, "Channel %d", t->ch + 1);
         else if (k == 1)
             snprintf(o, (size_t)cap, "Rate %s", rfm_move_seq_rate_name(t->rate));
@@ -4485,6 +4508,10 @@ static void wf_row(const rfm_move_t *m, int i, char *b, int cap, int w)
 {
     const rfm_move_track_t *t = &m->seq.tr[m->seq.sel_track];
     char v[16];
+    if (i == WF_EXPORT) {                               /* (2026-11-26, a kit track's) */
+        snprintf(b, (size_t)cap, "%s", v2_tw("Export Samples", 2) <= w ? "Export Samples" : "Export");
+        return;
+    }
     if (i == 0)
         snprintf(v, sizeof v, "%d", t->ch + 1);
     else if (i == 1)
@@ -4497,7 +4524,8 @@ static void wf_row(const rfm_move_t *m, int i, char *b, int cap, int w)
     if (v2_tw(b, 2) > w)
         snprintf(b, (size_t)cap, "%s", v);
 }
-static int wf_top(int cur) { return cur >= 3 ? 1 : 0; }   /* (three rows shown: Quant's selection scrolls one) */
+static int wf_top(int cur) { return cur >= 3 ? cur - 2 : 0; }   /* (three rows shown: Quant's selection scrolls one,
+                                                         * a kit track's Export two) */
 static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_seq_t *q = &m->seq;
@@ -4837,7 +4865,9 @@ void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap)
     o[0] = 0;
     switch (q->smenu) {
     case RFM_MOVE_SM_WORKFLOW:
-        if (k == 1)
+        if (k == WF_EXPORT)
+            snprintf(o, (size_t)cap, "Export samples");
+        else if (k == 1)
             snprintf(o, (size_t)cap, "Rate: %s", rfm_move_seq_rate_name(t->rate));
         else if (k == 2)
             snprintf(o, (size_t)cap, "Feel: %s", rfm_move_seq_feel_name(t->feel));

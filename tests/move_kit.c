@@ -42,7 +42,7 @@ static void on_act(void *ctx, const rfm_move_act_t *a)
     if (nact < (int)(sizeof A / sizeof A[0])) {
         A[nact] = *a, A[nact].data = NULL;
         D[nact][0] = 0;
-        if ((a->kind == RFM_MOVE_ACT_KIT_LOAD || a->kind == RFM_MOVE_ACT_KIT_FIND) && a->data)
+        if ((a->kind == RFM_MOVE_ACT_KIT_LOAD || a->kind == RFM_MOVE_ACT_KIT_FIND || a->kind == RFM_MOVE_ACT_KIT_EXPORT) && a->data)
             snprintf(D[nact], sizeof D[nact], "%.*s", (int)a->len, (const char *)a->data);
         nact++;
     }
@@ -510,13 +510,20 @@ static void t_knobs(void)
     knob(4, 10), knob(6, 30);                           /* (2026-11-26: the engine's on 5..8: 5 Loop Start (from the
                                                          * region's start), 7 Loop Fade) */
     CHECK(M.kit.pad[4].v[RFM_MOVE_KIT_P_LOOPS] == 1280 && M.kit.pad[4].v[RFM_MOVE_KIT_P_LOOPXF] == 30);
-    /* Trig: the sequencer's TRIG knobs, 8 dark */
+    /* Trig: the sequencer's TRIG knobs for a held step, 8 dark; (2026-11-26) no step held: all dark (no defaults for
+     * new hits: a new hit is plain) */
     jog(1);
     CHECK(M.kit.page == RFM_MOVE_KIT_PG_TRIG);
     leds(w);
     for (k = 0, lit_n = 0; k < 8; k++)
         lit_n += lit(w[L_RING0 + k]);
+    CHECK(lit_n == 0);
+    step(9, 1);
+    leds(w);
+    for (k = 0, lit_n = 0; k < 8; k++)
+        lit_n += lit(w[L_RING0 + k]);
     CHECK(lit_n == 7 && !lit(w[L_RING0 + 7]));
+    adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(9, 0), rest();   /* (a hold: nothing entered) */
     /* Pad Sample 2 (2026-11-26): 1 Attack, 4 Release, 5, 6 the engine's further (Loop: none), 7 Choke, 8 Reverse */
     jog(1);
     CHECK(M.kit.page == RFM_MOVE_KIT_PG_SAMPLE2);
@@ -2978,6 +2985,139 @@ static void t_held_len_nudge(void)
     CHECK(rfmv_seq_find(&M, clip, 9, 37) < 0 && M.kit.page == RFM_MOVE_KIT_PG_PADMIX && !M.pop);
 }
 
+/* 64. (2026-11-26, the owner's four) (1) "When I click to add a new step, it should start with default trig values,
+ * like length 1, chance 100": a tapped (or recorded) hit is plain whatever the track's TRIG defaults say (an older
+ * project's, set before), no locks, no padlock; the Trig page with no step held is dark and dead. (2) "none of this
+ * was playing until I stopped playback and started again": a pad of another track sequenced while playing sounds on
+ * the next pass (its defaults' Cond 1st no longer on the new hits). (4) a held step + the volume knob: the velocity
+ * from the touch on (no MASTER popup, MASTER untouched), one undo a hold, a ghost: nothing. (3) the pad's original
+ * place: kept by a copy-in, sent with KIT_FIND, saved (version 18; 17 loads with none), gone with another sound;
+ * Export Samples in a kit track's settings (Shift + step 3) */
+static int locks_at(int clip, int st)
+{
+    int lo, hi = rfmv_seq_lock_range(&M, clip, st, &lo);
+    return hi - lo;
+}
+static void odd_tdef(int tr)
+{
+    uint8_t *d = M.seq.tr[tr].tdef;
+    d[0] = 15, d[1] = 3, d[2] = 50, d[3] = RFM_MOVE_COND_1ST, d[4] = RFM_MOVE_FN_REVERSE, d[7] = 0;
+}
+static void t_owner_four(void)
+{
+    static uint8_t b[RFM_MOVE_PROJECT_MAX];
+    const int c13 = SEQ_CLIP(12, 0), c14 = SEQ_CLIP(13, 0);
+    const char *kick = "/data/UserData/UserLibrary/Samples/Kick.wav";
+    int i, c[16], n, mst, n0;
+    /* (1) a tapped hit: plain */
+    kit_view();
+    sound(0, "Kick", 4800, NULL, 0), sound(4, "Hat", 4800, NULL, 0);
+    odd_tdef(12), odd_tdef(13);
+    hit(kp(0)), tap_step(2), rest();
+    i = rfmv_seq_find(&M, c13, 2, 36);
+    CHECKF(i >= 0 && M.seq.notes[i].len == RFM_MOVE_SEQ_TPS && M.seq.notes[i].micro == 0 && M.seq.notes[i].vel == 100 &&
+           locks_at(c13, 2) == 0, "len %d micro %d locks %d", i >= 0 ? M.seq.notes[i].len : -1, i >= 0 ? M.seq.notes[i].micro : -1,
+           locks_at(c13, 2));
+    M.kit.page = RFM_MOVE_KIT_PG_TRIG;                  /* (its trigs: the defaults, no padlock) */
+    for (n = 1; n <= 6; n++) {
+        step(2, 1), touch(n, 1), screen();
+        CHECKF(!scr_padlock(SCR) && rfmv_seq_trig(&M, c13, 2, RFM_MOVE_TRIG_COND) < 0, "Trig knob %d: no padlock", n + 1);
+        touch(n, 0), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(2, 0), rest();
+    }
+    knob(2, -5), rest();                                /* (no step held: the Trig page's knobs dead) */
+    CHECK(M.seq.tr[12].tdef[2] == 50 && rfmv_seq_find(&M, c13, 2, 36) >= 0);
+    M.kit.page = RFM_MOVE_KIT_PG_SAMPLE;
+    step(2, 1), touch(0, 1), screen();
+    CHECK(!scr_padlock(SCR));
+    touch(0, 0), adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20), step(2, 0), rest();
+    /* (2) playing: pad 1 on, pad 5 (track 14) sequenced: both on the next pass and after */
+    rfm_move_seq_play(&M, 1), adv_ms(300);
+    hit(kp(4)), tap_step(0), tap_step(8), adv_ms(100);
+    CHECK(locks_at(c14, 0) == 0 && locks_at(c14, 8) == 0);
+    adv_ms(2000);                                       /* (the rest of the pass) */
+    clear(), adv_ms(4000);                              /* (two passes at 120 BPM) */
+    ons_of(c);
+    CHECKF(c[0] == 2 && c[4] == 4, "playing, another track's pad: kick %d hat %d", c[0], c[4]);
+    /* .. Record: the live hit plain too */
+    press(MR_CC_REC), adv_ms(10), pad(kp(4), 100), adv_ms(30), pad(kp(4), 0), adv_ms(500), press(MR_CC_REC);
+    for (i = 0, n = 0; i < M.seq.nlocks; i++)
+        n += M.seq.locks[i].clip == c14;
+    CHECKF(n == 0, "recorded: %d locks", n);
+    rfm_move_seq_play(&M, 0), rest();
+    /* (4) a step held + the volume knob */
+    kit_view();
+    sound(0, "Kick", 4800, NULL, 0);
+    hit(kp(0)), tap_step(3), rest();
+    mst = M.master;
+    step(3, 1), touch(8, 1);
+    CHECK(M.kit.vpop && M.pop != POP_MASTER);
+    screen();
+    {
+        uint8_t was[MR_SCREEN_BYTES];
+        memcpy(was, SCR, sizeof was);
+        raw(0xB0, MR_CC_VOLUME, (uint8_t)(-10 & 127)), raw(0xB0, MR_CC_VOLUME, (uint8_t)(-10 & 127));
+        screen();
+        CHECK(memcmp(was, SCR, sizeof was) != 0);       /* (the value moved: its popup) */
+    }
+    i = rfmv_seq_find(&M, c13, 3, 36);
+    CHECKF(i >= 0 && M.seq.notes[i].vel == 80 && M.master == mst && M.pop != POP_MASTER && M.kit.vpop,
+           "vel %d master %d/%d", i >= 0 ? M.seq.notes[i].vel : -1, M.master, mst);
+    dump("held_velocity");
+    touch(8, 0), step(3, 0), rest();
+    CHECK(rfmv_seq_find(&M, c13, 3, 36) >= 0);          /* (a hold: not toggled) */
+    press(MR_CC_UNDO);
+    i = rfmv_seq_find(&M, c13, 3, 36);
+    CHECKF(i >= 0 && M.seq.notes[i].vel == 100, "one undo: vel %d", i >= 0 ? M.seq.notes[i].vel : -1);
+    step(5, 1), touch(8, 1), raw(0xB0, MR_CC_VOLUME, 5), touch(8, 0), step(5, 0), rest();   /* (an empty step) */
+    CHECK(rfmv_seq_find(&M, c13, 5, 36) < 0 && M.master == mst);
+    raw(0xB0, MR_CC_VOLUME, 2);                         /* (no step held: MASTER) */
+    CHECK(M.master != mst);
+    /* (3) the original place */
+    kit_view();
+    sound(0, "Kick", 4800, NULL, 0);
+    CHECK(!M.kit.pad[0].orig[0]);
+    CHECK(rfm_move_kit_owned(&M, 0, kick, "@/Kick.wav") && !strcmp(M.kit.pad[0].path, "@/Kick.wav") &&
+          !strcmp(M.kit.pad[0].orig, kick));
+    rest(), clear(), jog_click();              /* (Files for pad 1: KIT_FIND, the copy then the original) */
+    {
+        const int f = last_i(RFM_MOVE_ACT_KIT_FIND);
+        CHECKF(f >= 0 && !strcmp(D[f], "@/Kick.wav") && A[f].len == strlen("@/Kick.wav") + 1 + strlen(kick),
+               "KIT_FIND '%s' len %u", f >= 0 ? D[f] : "", f >= 0 ? A[f].len : 0);
+    }
+    jog_click(), rest();                                /* (kept: Files closed) */
+    n = rfm_move_project_save(&M, b, sizeof b);
+    CHECK(n > 0 && b[4] == 18 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    rfm_move_init(&M2, NULL, on_act, NULL);
+    rfm_move_fw_caps(&M2, KCAPS);
+    CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0 && !strcmp(M2.kit.pad[0].orig, kick) &&
+          !strcmp(M2.kit.pad[0].path, "@/Kick.wav"));
+    n0 = (int)proj_v17(b, (uint32_t)n);                 /* (version 17: no original places) */
+    CHECK(n0 == n - RFM_MOVE_KIT_PADS * RFM_MOVE_KIT_PATH && rfm_move_project_check(b, (uint32_t)n0) == 0);
+    rfm_move_init(&M2, NULL, on_act, NULL);
+    rfm_move_fw_caps(&M2, KCAPS);
+    CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n0) == 0 && !M2.kit.pad[0].orig[0] &&
+          !strcmp(M2.kit.pad[0].path, "@/Kick.wav"));
+    M.kit.pad[0].keep = 1;                              /* (an edit's new file: its own original) */
+    rfm_move_kit_loaded(&M, 0, RFM_MOVE_KIT_OK, "Kick trim", "@/Kick trim.wav", 4000, 48000, 0, NULL);
+    CHECK(!strcmp(M.kit.pad[0].path, "@/Kick trim.wav") && !M.kit.pad[0].orig[0]);
+    CHECK(rfm_move_kit_set_orig(&M, 0, kick) == 0 && !strcmp(M.kit.pad[0].orig, kick));   /* (the host's word) */
+    /* Export Samples: a kit track's settings, its fifth row (the jog), the click */
+    sound(4, "Hat", 4800, NULL, 0);
+    hit(kp(0)), rest();
+    button(MR_CC_SHIFT, 1), tap_step(2), button(MR_CC_SHIFT, 0);
+    CHECK(M.seq.smenu == RFM_MOVE_SM_WORKFLOW && M.seq.sel_track == 12);
+    jog(1), jog(1), jog(1), jog(1);
+    CHECK(rfmv_seq_menu_sel(&M) == 4);
+    dump("export_row");
+    clear(), jog_click();
+    {
+        const int e = last_i(RFM_MOVE_ACT_KIT_EXPORT);
+        CHECK(e >= 0 && count(RFM_MOVE_ACT_KIT_EXPORT) == 1 && !M.seq.sm_edit && !strcmp(D[e], "Project 01"));
+        CHECK(e >= 0 && A[e].len == strlen("Project 01") + 1 + strlen("Kick trim") + 1 + 3 + strlen("Hat") + 1 + 11);
+    }
+    press(MR_CC_BACK), rest();
+}
+
 int main(void)
 {
     t_encoding();
@@ -3039,5 +3179,6 @@ int main(void)
     t_project_v2();
     t_poly();
     t_held_len_nudge();
+    t_owner_four();
     return check_done("move_kit");
 }

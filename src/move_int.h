@@ -488,6 +488,7 @@ void rfmv_kit_seq_note(rfm_move_t *m, int track, int note, int vel, int kw);   /
 void rfmv_kit_seq_ghosts(rfm_move_t *m, int track, int clip, int step);   /* (seq.c) a step passed: its ghost triggers */
 int rfmv_kit_route_flip(rfm_move_t *m, int fw, int track);   /* a held Track's hold on 13..16: kit <-> firmware; 1 done */
 int rfmv_kit_routed(const rfm_move_t *m, int track);
+void rfmv_kit_export(rfm_move_t *m);                    /* (2026-11-26) a kit track's settings' Export Samples: KIT_EXPORT */
 int rfmv_kit_route_set(rfm_move_t *m, int track, int on);   /* (3b) Routing's kit: track 12..15 to it (off the
                                                          * firmwares) or not; its state now */
 rfmv_rgb_t rfmv_kit_row_rgb(int track);                 /* a kit track's colour (13 pink .. 16 violet) */

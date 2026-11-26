@@ -450,7 +450,7 @@ static void send_pad_as(rfm_move_t *m, int k, int own)   /* the pad's sound and 
     int p;
     if (d->path[0]) {
         rfm_move_act_t a;
-        d->st = RFM_MOVE_KIT_LOADING, d->fresh = 0;
+        d->st = RFM_MOVE_KIT_LOADING, d->fresh = 0, d->ownq = (uint8_t)(own != 0);
         memset(&a, 0, sizeof a);
         a.frame = m->seq.frame;
         a.kind = RFM_MOVE_ACT_KIT_LOAD, a.index = (uint8_t)k, a.param = (uint8_t)(own != 0);
@@ -572,7 +572,7 @@ int rfmv_kit_used(const rfm_move_t *m)                  /* anything to save (els
 }
 static void w16(uint8_t *p, int v) { p[0] = (uint8_t)(v & 0xFF), p[1] = (uint8_t)((v >> 8) & 0xFF); }
 static int r16s(const uint8_t *p) { return (int16_t)(uint16_t)(p[0] | p[1] << 8); }
-void rfmv_kit_write(const rfm_move_t *m, uint8_t *p)    /* RFM_MOVE_KIT_BYTES (version 15) */
+void rfmv_kit_write(const rfm_move_t *m, uint8_t *p)    /* RFM_MOVE_KIT_BYTES (version 18) */
 {
     const rfm_move_kit_t *t = &m->kit;
     int k, i;
@@ -594,6 +594,9 @@ void rfmv_kit_write(const rfm_move_t *m, uint8_t *p)    /* RFM_MOVE_KIT_BYTES (v
         for (i = 0; i < RFM_MOVE_KIT_P_N; i++, p += 2)
             w16(p, t->pad[k].v[i]);
     }
+    for (k = 0; k < RFM_MOVE_KIT_PADS; k++, p += RFM_MOVE_KIT_PATH)   /* (version 18) the pads' original places */
+        for (i = 0; i < RFM_MOVE_KIT_PATH - 1 && t->pad[k].orig[i]; i++)
+            p[i] = (uint8_t)t->pad[k].orig[i];
 }
 static int str_ok(const uint8_t *p, int cap)            /* printable, NUL padded */
 {
@@ -610,7 +613,7 @@ static int str_ok(const uint8_t *p, int cap)            /* printable, NUL padded
 }
 static int pk_max(int p);
 static int bits_tenths(const uint8_t *p, int ver) { return ver >= 16 && (p[13] & 1); }   /* (2026-11-26) */
-int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 17 kit part valid: 0 */
+int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 18 kit part valid: 0 */
 {
     const int tenths = bits_tenths(p, ver);
     const int np = ver >= 17 ? RFM_MOVE_KIT_P_N : ver >= 15 ? RFM_MOVE_KIT_P_N_V15 : ver >= 14 ? RFM_MOVE_KIT_P_N_V14 : ver >= 12 ? RFM_MOVE_KIT_P_N_V12
@@ -654,6 +657,9 @@ int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 17 ki
             return -1;
         p += 2 * np;
     }
+    for (k = 0; ver >= 18 && k < RFM_MOVE_KIT_PADS; k++, p += RFM_MOVE_KIT_PATH)
+        if (!str_ok(p, RFM_MOVE_KIT_PATH))
+            return -1;                                  /* (version 18) the original places */
     return 0;
 }
 void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver)   /* (checked) */
@@ -695,6 +701,11 @@ void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver)   /* (checked) */
             if (t->pad[k].v[RFM_MOVE_KIT_P_STRETCH])
                 t->pad[k].v[RFM_MOVE_KIT_P_WARP] = RFM_MOVE_KIT_W_REPITCH;
         }
+    }
+    for (k = 0; ver >= 18 && k < RFM_MOVE_KIT_PADS; k++, p += RFM_MOVE_KIT_PATH) {   /* (version 18; before: unknown,
+                                                         * "": Files opens on the path, the project's copy) */
+        memcpy(t->pad[k].orig, p, RFM_MOVE_KIT_PATH);
+        t->pad[k].orig[RFM_MOVE_KIT_PATH - 1] = 0;
     }
     if (!tenths)                                        /* (2026-11-26) the Bits locks (XLOCK pairs: the setting, then
                                                          * its value, one after the other in the sorted list) as tenths:
@@ -859,6 +870,40 @@ int rfmv_kit_route_flip(rfm_move_t *m, int fw, int track)
 int rfmv_kit_routed(const rfm_move_t *m, int track)
 {
     return rfmv_kit_cap(m) && track >= 0 && track < 16 && (m->kit.route >> track & 1);
+}
+/* (2026-11-26, the owner's: "export the samples in the kit as a group. We shouldn't be modifying any of the original
+ * samples") KIT_EXPORT: the folder's name (the kit's, else "Project NN"), then each pad's sound's name (16, NUL after
+ * each; "" an empty pad). The host copies the files into a new folder of My Samples and says how many ("Exported 12") */
+void rfmv_kit_export(rfm_move_t *m)
+{
+    const rfm_move_kit_t *t = &m->kit;
+    char b[RFM_MOVE_KIT_NAME + 16 + RFM_MOVE_KIT_PADS * RFM_MOVE_KIT_NAME];
+    rfm_move_act_t a;
+    size_t n;
+    int k, any = 0;
+    if (!rfmv_kit_cap(m))
+        return;
+    for (k = 0; k < RFM_MOVE_KIT_PADS; k++)
+        any |= t->pad[k].path[0] != 0;
+    if (!any) {
+        rfm_move_popup(m, "No Sounds");
+        return;
+    }
+    if (t->name[0])
+        snprintf(b, RFM_MOVE_KIT_NAME + 16, "%s", t->name);
+    else
+        snprintf(b, RFM_MOVE_KIT_NAME + 16, "Project %02d", (m->seq.proj_cur >= 0 ? m->seq.proj_cur : 0) + 1);
+    n = strlen(b) + 1;
+    for (k = 0; k < RFM_MOVE_KIT_PADS; k++) {
+        const char *nm = t->pad[k].path[0] ? t->pad[k].name : "";
+        const size_t l = strlen(nm) < RFM_MOVE_KIT_NAME - 1 ? strlen(nm) : RFM_MOVE_KIT_NAME - 1;
+        memcpy(b + n, nm, l), b[n + l] = 0, n += l + 1;
+    }
+    memset(&a, 0, sizeof a);
+    a.frame = m->seq.frame, a.kind = RFM_MOVE_ACT_KIT_EXPORT, a.data = (const uint8_t *)b, a.len = (uint32_t)n;
+    if (m->fn)
+        m->fn(m->ctx, &a);
+    rfmv_say_text(m, "Exporting");
 }
 int rfmv_kit_route_set(rfm_move_t *m, int track, int on)
 {
@@ -2282,7 +2327,23 @@ static void find_ask(rfm_move_t *m, int k)
     if (!d->path[0])
         return;
     t->find_pad = (uint8_t)(k + 1);
-    act(m, RFM_MOVE_ACT_KIT_FIND, k, 0, 0, 0, 0, 0, 0, d->path);
+    {   /* (2026-11-26, the owner's: "I would like it to always point at the original sample location") data: the path,
+         * then (when the pad knows it) a NUL and its original place: the host finds that one while it is there, else
+         * the path (the project's copy) */
+        char b[2 * RFM_MOVE_KIT_PATH];
+        rfm_move_act_t a;
+        const size_t n = strlen(d->path);
+        memset(&a, 0, sizeof a);
+        memcpy(b, d->path, n + 1);
+        a.len = (uint32_t)n;
+        if (d->orig[0] && strcmp(d->orig, d->path)) {
+            memcpy(b + n + 1, d->orig, strlen(d->orig) + 1);
+            a.len = (uint32_t)(n + 1 + strlen(d->orig));
+        }
+        a.frame = m->seq.frame, a.kind = RFM_MOVE_ACT_KIT_FIND, a.index = (uint8_t)k, a.data = (const uint8_t *)b;
+        if (m->fn)
+            m->fn(m->ctx, &a);
+    }
 }
 /* (round C) the browse's sound kept: the pad's sound now copied into the project's folder (KIT_KEEP; once a landing) */
 static void browse_keep(rfm_move_t *m)
@@ -2402,6 +2463,12 @@ int rfm_move_kit_loaded(rfm_move_t *m, int k, int status, const char *name, cons
             if (strcmp(d->path, path)) {                /* (3b: a sound the host put there itself, a take: its whole;
                                                          * 3c: an edit's file keeps or mirrors the region) */
                 d->fresh = d->keep != 1 && d->keep != 2;
+                if (d->ownq && d->path[0] && strncmp(d->path, RFM_MOVE_KIT_OWN, 2)) {   /* (2026-11-26) a kept
+                                                         * load's copy: the sound asked for is its original */
+                    memcpy(d->orig, d->path, sizeof d->orig);   /* (the same size; NUL padded) */
+                    d->orig[sizeof d->orig - 1] = 0;
+                } else if (!d->ownq)                    /* (another sound: an edit's, a load's: its own original) */
+                    memset(d->orig, 0, sizeof d->orig);
                 memset(d->path, 0, sizeof d->path);
                 snprintf(d->path, sizeof d->path, "%s", path), rfmv_seq_dirty(m);
                 {   /* (2026-11-26, the owner's older project: its tracks 13..16 still went to firmwares, so the pad
@@ -2438,7 +2505,7 @@ int rfm_move_kit_loaded(rfm_move_t *m, int k, int status, const char *name, cons
             const int a = d->v[RFM_MOVE_KIT_P_START], b = d->v[RFM_MOVE_KIT_P_END];
             put(m, k, RFM_MOVE_KIT_P_START, RFM_MOVE_KIT_FRAC - b), put(m, k, RFM_MOVE_KIT_P_END, RFM_MOVE_KIT_FRAC - a);
         }
-        d->keep = 0;
+        d->keep = 0, d->ownq = 0;
         if (frozen) {                                   /* (round C) Freeze: what it baked back to neutral */
             static const uint8_t NP[] = { RFM_MOVE_KIT_P_PITCH, RFM_MOVE_KIT_P_STRETCH, RFM_MOVE_KIT_P_REVERSE,
                                           RFM_MOVE_KIT_P_ATTACK, RFM_MOVE_KIT_P_HOLD, RFM_MOVE_KIT_P_DECAY,
@@ -2459,11 +2526,11 @@ int rfm_move_kit_loaded(rfm_move_t *m, int k, int status, const char *name, cons
         m->kit.aud_pad = 0;                             /* (2026-11-26, the owner's rule: a sound plays only by its
                                                          * pad or the sequencer; a landing never heard by itself) */
     } else if ((d->fresh || d->keep) && d->frames) {    /* (a new sound refused: the pad keeps the one it had) */
-        d->fresh = 0, d->keep = 0, d->st = RFM_MOVE_KIT_OK;
+        d->fresh = 0, d->keep = 0, d->ownq = 0, d->st = RFM_MOVE_KIT_OK;
         msg(m, status == RFM_MOVE_KIT_TOO_LONG ? "Too Long" : "Not Loaded", NULL);
     } else {
         d->st = (uint8_t)(status == RFM_MOVE_KIT_TOO_LONG || status == RFM_MOVE_KIT_MISSING ? status : RFM_MOVE_KIT_FAILED);
-        d->frames = 0, d->rate = 0, d->npk = 0, d->fresh = 0, d->keep = 0;
+        d->frames = 0, d->rate = 0, d->npk = 0, d->fresh = 0, d->keep = 0, d->ownq = 0;
         msg(m, status == RFM_MOVE_KIT_TOO_LONG ? "Too Long" : status == RFM_MOVE_KIT_MISSING ? "Missing" : "Not Loaded",
             NULL);
     }
@@ -2788,7 +2855,9 @@ static int knob_dead_p(const rfm_move_t *m, int k, int p)   /* (p: the knob's se
     if (t->sl_on)                                       /* (round A: knob 3 the Hits' sensitivity) */
         return k > 2 || (k == 2 && t->sl_meth != RFM_MOVE_KIT_SM_HITS);
     if (trig_page(m))
-        return k > 6;                                   /* (pages v2: TRIG's knob 8 dark, as a firmware track's) */
+        return k > 6 || !t->st_down;                    /* (pages v2: TRIG's knob 8 dark, as a firmware track's;
+                                                         * 2026-11-26: a new hit is plain, no track defaults: no step
+                                                         * held, every knob dark and dead) */
     if (lock_layer(m))
         return kit_p(p) || !lockable(real_p(p));        /* (2026-11-26: every pad setting) */
     return p < 0 || t->tools || merge_up(m) || t->pend_take;
@@ -2878,15 +2947,25 @@ static int lock_val(const rfm_move_t *m, int p, int *v)
     *v = CPAD(m, pad)->v[p];
     return 1;
 }
-/* (round B) a step held + the volume knob: the chosen pad's hits there, their velocity */
+/* (round B) a step held + the volume knob: its velocity popup (2026-11-26, the owner's: "Holding a step and turning
+ * the volume knob should always change that steps velocity": from the touch on, the master's popup never over it) */
+static void vel_show(rfm_move_t *m)
+{
+    rfm_move_kit_t *t = K(m);
+    t->vpop = 1, t->vpop_ms = now(m), t->kpop = -1, t->lpop = 0, t->msg_ms = 0, t->lvl = 0;
+    len_pop_off(m);
+    if (m->pop == POP_MASTER)
+        m->pop = POP_NONE;
+    t->st_used |= t->st_down;
+    touched(m);
+}
+/* .. turned: the chosen pad's hits there, their velocity (a ghost, no hit: nothing, as a firmware track's) */
 static void vel_turn(rfm_move_t *m, int d)
 {
     rfm_move_kit_t *t = K(m);
     const int pad = t->cur, tr = trk(pad), clip = edit_clip_of(m, tr);
     int s, lo, hi, i;
-    t->vpop = 1, t->vpop_ms = now(m), t->kpop = -1, t->lpop = 0, t->msg_ms = 0, t->lvl = 0;
-    len_pop_off(m);
-    touched(m);
+    vel_show(m);
     for (s = 0; s < 16; s++)
         if (t->st_down >> s & 1) {
             const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
@@ -3502,6 +3581,11 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
     case MR_EV_TOUCH:
         if (i >= 0 && i < 9 && t->st_down)
             t->st_used |= t->st_down;                   /* (2026-11-26: a knob touched while a step is held: a hold) */
+        if (i == 8 && ev->value && t->st_down && !q->smenu && !t->sl_on) {
+            vel_show(m);                                /* (2026-11-26) a step held, the volume knob touched: its
+                                                         * velocity shows (not the master's level) */
+            return 1;
+        }
         if (i == 8 && ev->value && held_kit_pad(m) >= 0 && !t->st_down && !q->smenu && !t->sl_on) {
             lvl_show(m, 1, 1);                          /* (R5) a pad held, the volume knob touched: its Level shows */
             return 1;
@@ -5217,6 +5301,20 @@ void rfm_move_kit_set_bus(rfm_move_t *m, int cutoff, int reso)
     rfmv_seq_dirty(m);
 }
 /* ---- (round C) the project's own sounds */
+int rfm_move_kit_set_orig(rfm_move_t *m, int pad, const char *orig)
+{
+    rfm_move_kit_pad_t *d;
+    if (!rfmv_kit_cap(m) || pad < 0 || pad >= RFM_MOVE_KIT_PADS || !orig || orig[0] != '/' ||
+        strlen(orig) >= RFM_MOVE_KIT_PATH)
+        return 0;
+    d = PAD(m, pad);
+    if (!d->path[0] || !strcmp(d->path, orig) || !strcmp(d->orig, orig))
+        return 0;
+    memset(d->orig, 0, sizeof d->orig);
+    snprintf(d->orig, sizeof d->orig, "%s", orig);
+    rfmv_seq_dirty(m);
+    return 0;
+}
 int rfm_move_kit_owned(rfm_move_t *m, int pad, const char *from, const char *to)
 {
     rfm_move_kit_pad_t *d;
@@ -5226,6 +5324,11 @@ int rfm_move_kit_owned(rfm_move_t *m, int pad, const char *from, const char *to)
     d = PAD(m, pad);
     if (strcmp(d->path, from) || !strcmp(d->path, to))
         return 0;                                       /* (another sound there now; or the same already) */
+    if (!d->orig[0] && strncmp(from, RFM_MOVE_KIT_OWN, 2) && from[0] == '/') {   /* (2026-11-26) the copy's original:
+                                                         * where the sound was (a copy of a copy keeps the first's) */
+        memset(d->orig, 0, sizeof d->orig);
+        snprintf(d->orig, sizeof d->orig, "%s", from);
+    }
     memset(d->path, 0, sizeof d->path);
     snprintf(d->path, sizeof d->path, "%s", to);
     rfmv_seq_dirty(m);

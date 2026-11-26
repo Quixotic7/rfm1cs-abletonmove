@@ -358,6 +358,13 @@ enum {
  * "Shut Down?" up, the jog clicked: the host stops as for EXIT (everything saved) and then powers the Move off (on the
  * Move: Move Remote's own power off, Move's power service). No fields. Hosts that do not know it ignore it */
 #define RFM_MOVE_ACT_POWEROFF 82
+/* (2026-11-26, the owner's: "in the track settings, shift + S3, add a feature in which you can export the samples in
+ * the kit as a group") KIT_EXPORT: a kit track's settings (Shift + step 3), Export Samples clicked. data / len: the
+ * folder's name (the kit's name, else "Project NN"), a NUL, then for each pad 1..16 its sound's name and a NUL ("" an
+ * empty pad). The host copies each pad's file (as it is: the project's copy or an edit's file) into a new folder of
+ * My Samples named so (" 2", " 3" .. when there is one: nothing overwritten), the files named by pad ("01 Kick.wav"),
+ * and says so (rfm_move_popup: "Exported 12"). Hosts that do not know it ignore it */
+#define RFM_MOVE_ACT_KIT_EXPORT 83
 #define RFM_MOVE_POWER_DEBOUNCE_MS 120                  /* a press this soon after the last one taken: a bounce */
 #define RFM_MOVE_KIT_OWN "@/"
 #define RFM_MOVE_KIT_LAND_MS 120                        /* Files: the jog at rest so long on a sound: it is on the pad */
@@ -839,7 +846,7 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 17                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
+#define RFM_MOVE_PROJECT_VERSION 18                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
                                                          * values a slot, 7 the firmwares' MIDI routes, 8 the launch
                                                          * quantization and each clip's launch settings, 9 (0.13.0) the
                                                          * firmwares: each slot's id, level, settings and track, the
@@ -854,7 +861,9 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
                                                          * kit bus's low-pass, 16 (2026-11-26) a note's 8th byte: a
                                                          * kit note's signed semitones (-24..+31; 0 otherwise), the
                                                          * right half's octave shift (the kit's header), 17
-                                                         * (2026-11-26) Granular's Scan: 46 settings a pad */
+                                                         * (2026-11-26) Granular's Scan: 46 settings a pad, 18
+                                                         * (2026-11-26) each pad's original place (the kit part's
+                                                         * end: 16 paths) */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7 (version 16: x 8), locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -897,11 +906,15 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_KIT_BYTES_V12 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V12))   /* (3112) */
 #define RFM_MOVE_KIT_BYTES_V14 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V14))   /* (3240) */
 #define RFM_MOVE_KIT_BYTES_V15 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V15))   /* (4008) */
-#define RFM_MOVE_KIT_BYTES (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N))   /* (4040) */
+#define RFM_MOVE_KIT_BYTES_V17 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N))   /* (4040) */
+/* (version 18, 2026-11-26, the owner's: "I would like it to always point at the original sample location") then 16 x
+ * the pad's original place RFM_MOVE_KIT_PATH (NUL padded; "" the path is its own original) */
+#define RFM_MOVE_KIT_BYTES (RFM_MOVE_KIT_BYTES_V17 + RFM_MOVE_KIT_PADS * RFM_MOVE_KIT_PATH)   /* (6600) */
 #define RFM_MOVE_PROJECT_EXT_V11 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V11)
 #define RFM_MOVE_PROJECT_EXT_V12 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V12)
 #define RFM_MOVE_PROJECT_EXT_V14 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V14)
 #define RFM_MOVE_PROJECT_EXT_V15 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V15)
+#define RFM_MOVE_PROJECT_EXT_V17 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V17)
 #define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES)
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 8 + RFM_MOVE_SEQ_LOCKS * 4)
@@ -1507,6 +1520,11 @@ static inline int rfm_move_kit_pad_of(int track, int note, int *semis)
 }
 typedef struct {                                        /* a pad */
     char path[RFM_MOVE_KIT_PATH];                       /* (saved) its sound's path ("" empty) */
+    char orig[RFM_MOVE_KIT_PATH];                       /* (saved, version 18) where the sound came from when path is
+                                                         * the project's copy of it (Samples, a take, the Move Library,
+                                                         * a saved kit's folder): Files opens there; "" path is its own
+                                                         * original (an edit's, a mix's, a join's, a freeze's new file:
+                                                         * itself) */
     int16_t v[RFM_MOVE_KIT_P_N];                        /* (saved) its settings, by RFM_MOVE_KIT_P_* */
     /* (RAM) the host's word on it (rfm_move_kit_loaded) */
     char name[RFM_MOVE_KIT_NAME];                       /* the sound's name (the file's, no extension) */
@@ -1518,6 +1536,9 @@ typedef struct {                                        /* a pad */
     uint8_t keep;                                       /* a new file asked for: 0 its region whole, 1 kept (normalize,
                                                          * a slice), 2 mirrored (reverse), 3 whole with the join's seam */
     uint16_t cut;                                       /* a join's seam (of RFM_MOVE_KIT_FRAC; 0 none): drawn */
+    uint8_t ownq;                                       /* (2026-11-26, RAM) a kept load asked for (KIT_LOAD param 1):
+                                                         * its answer's path is the same sound's copy (orig: the one
+                                                         * asked for) */
 } rfm_move_kit_pad_t;
 typedef struct {                                        /* a row of Files (rfm_move_kit_rows) */
     uint32_t id;                                        /* the host's, never 0 (a take: its take id) */
@@ -2425,6 +2446,11 @@ int rfm_move_kit_set(rfm_move_t *m, int pad, int param, int value);
 /* (round C) KIT_KEEP's answer (also the host's own copy-in of a pad's sound): the pad's path from becomes to (the same
  * sound, now the project's own copy; nothing else changes, no load). 0: the pad has another sound now (ignored) */
 int rfm_move_kit_owned(rfm_move_t *m, int pad, const char *from, const char *to);
+/* (2026-11-26, the owner's: "I would like it to always point at the original sample location") a kept load's answer
+ * (KIT_LOAD param 1, a folder's All To Pads, a take's slices) came as the project's copy of orig (an absolute path):
+ * the pad keeps it as its original place (saved, version 18; KIT_FIND then carries it). Call after
+ * rfm_move_kit_loaded. Returns 0 (nothing to redraw) */
+int rfm_move_kit_set_orig(rfm_move_t *m, int pad, const char *orig);
 /* (round C) the paths the kit refers to now: every pad's and the Undo's (a pad's, the whole kit's) into out (at most
  * cap, "" skipped, each once). The host keeps those files of the project's folder; the count */
 int rfm_move_kit_refs(const rfm_move_t *m, const char **out, int cap);

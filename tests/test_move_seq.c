@@ -2640,8 +2640,12 @@ static void test_tracks16(void)
         CHECK(m->seq.notes[k].len == 36 && m->pop == POP_TRIG && m->pop_i == 6);
         press(m, MR_CC_RIGHT);
         CHECK(m->seq.notes[k].micro == 2 && m->seq.page == 0 && m->pop == POP_TRIG && m->pop_i == 0);
+        raw(m, 0x90, 8, 127);                          /* (2026-11-26) the volume knob touched: the held step's
+                                                         * velocity shows at once, not MASTER's level */
+        CHECK(m->pop == POP_TRIG && m->pop_i == 7 && m->master == mst);
         knob(m, 8, -20);
         CHECK(m->seq.notes[k].vel == 80 && m->master == mst && m->pop == POP_TRIG && m->pop_i == 7);
+        raw(m, 0x80, 8, 0);
         rfm_move_screen(m, NULL, out);
         write_pbm("move_seq_pop_velo.pbm", out);
         step(m, 3, 0);

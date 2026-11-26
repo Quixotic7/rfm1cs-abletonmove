@@ -1795,6 +1795,12 @@ static void on_touch(rfm_move_t *m, int k, int on)
     if (k == 8 && rfmv_fw_volume(m, 0))                 /* (0.13.0, R5) a Track 1..3 held, the volume knob touched: its
                                                          * slot's level shows at the touch (a turn changes it) */
         return;
+    if (k == 8 && rfmv_seq_held_takes(m) && !(rfmv_sess_on(m) && m->seq.cs_step >= 0)) {
+        rfmv_pop(m, POP_TRIG, 7);                       /* (2026-11-26) a step held, the volume knob touched: the held
+                                                         * step's velocity shows at once (a turn changes it), not the
+                                                         * master's level */
+        return;
+    }
     if ((t = rfmv_lay_menu(m)) != 0) {                  /* (0.8.0) a firmware Track held: a note layout's knob shows its
                                                          * CC number (the FM-1 layout's: nothing) */
         if (k < RFM_MOVE_NKNOBS && m->s.mode == RFM_MOVE_MODE_SEQ && !m->seq.view)
