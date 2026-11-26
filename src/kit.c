@@ -129,10 +129,9 @@ static icon_t *const PG_ICON[RFM_MOVE_KIT_PG_N] = { &PI_KIT, &PI_SAMPLE, &PI_TRI
 static icon_t *const ENG_ICON[RFM_MOVE_KIT_M_N] = { &I_PLAY, &I_PAD, &I_LOOP, &I_PENV, &I_LOFI, &I_GRAIN };
 /* (round B) the pad's filter: Filter (a low-pass slope), Resonance (its peak) */
 /* (pages, the owner's browser, as Move's) Back a left arrow, a folder a right arrow, a sample a small wave */
-static icon_t I_UP = { "...........", "....#......", "...##......", "..###......", ".#########.", "##########.",
-                       ".#########.", "..###......", "...##......", "....#......", "..........." };
-static icon_t I_IN = { "...........", "......#....", "......##...", "......###..", ".#########.", ".##########",
-                       ".#########.", "......###..", "......##...", "......#....", "..........." };
+/* (the owner's) the browser's Back and folder marks: plain filled triangles */
+static icon_t I_TRL = { "........#..", ".......##..", "......###..", ".....####..", "....#####..", "...######..", "....#####..", ".....####..", "......###..", ".......##..", "........#.." };
+static icon_t I_TRR = { "..#........", "..##.......", "..###......", "..####.....", "..#####....", "..######...", "..#####....", "..####.....", "..###......", "..##.......", "..#........" };
 static icon_t I_SND = { "...........", "....#......", "....#...#..", "..#.#...#..", "..#.##..#..", "#.#.##.##.#",
                         "..#.##..#..", "..#.#...#..", "....#...#..", "....#......", "..........." };
 static void ic(mr_canvas_t *cv, icon_t i, int x, int y, int v)
@@ -3297,7 +3296,7 @@ static void brow(mr_canvas_t *cv, int y, const char *name)
 }
 static icon_t *row_icon(const rfm_move_kit_row_t *r)
 {
-    return r->kind == RFM_MOVE_KIT_ROW_KIT ? &I_KIT : r->kind == RFM_MOVE_KIT_ROW_DIR ? &I_IN : &I_SND;
+    return r->kind == RFM_MOVE_KIT_ROW_KIT ? &I_KIT : r->kind == RFM_MOVE_KIT_ROW_DIR ? &I_TRR : &I_SND;
 }
 static void files_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
@@ -3309,7 +3308,7 @@ static void files_screen(const rfm_move_t *m, mr_canvas_t *cv)
         static const char *const PN[PL_N] = { "Takes", "Samples", "Kits" };
         for (i = 0; i < PL_N; i++)
             brow(cv, BR_H + (i - t->psel) * BR_H + off, PN[i]);
-        chosen = &I_IN;
+        chosen = &I_TRR;
     } else {                                            /* Back first (visual row 0), then the folder's own */
         const int sv = t->fsel[t->depth] + 1;
         for (i = sv - 2; i <= sv + 2; i++) {
@@ -3320,7 +3319,7 @@ static void files_screen(const rfm_move_t *m, mr_canvas_t *cv)
             if (i == 0) {
                 brow(cv, y, "Back");
                 if (i == sv)
-                    chosen = &I_UP;
+                    chosen = &I_TRL;
                 continue;
             }
             if (!(row = row_get(m, t->place, t->folder[t->depth], r)))
@@ -3594,7 +3593,6 @@ static int page_pic(const rfm_move_t *m, mr_canvas_t *cv)
     const rfm_move_kit_t *t = &m->kit;
     const int k = t->cur;
     const rfm_move_kit_pad_t *d = CPAD(m, k);
-    char nm[24];
     int i;
     switch (cur_page(m)) {
     case RFM_MOVE_KIT_PG_TRIG: trig_pic(m, cv); return 1;
@@ -3676,39 +3674,51 @@ static int page_pic(const rfm_move_t *m, mr_canvas_t *cv)
         return 1;
     }
     case RFM_MOVE_KIT_PG_FILTER: filter_page(m, cv, -1); return 1;   /* (the bars, the envelope) */
-    case RFM_MOVE_KIT_PG_PADMIX: {                      /* the pad's level as a bar, its pan a mark on it (muted:
-                                                         * hollow) */
-        const int lv = d->v[RFM_MOVE_KIT_P_LEVEL], w = lv <= LEVEL_MIN ? 0 : (lv - LEVEL_MIN) * 124 / (6 - LEVEL_MIN);
-        v2_R(cv, 2, 31, 124, 1, 1);
-        v2_R(cv, 2, 22, w, 20, 1);
-        if (d->v[RFM_MOVE_KIT_P_MUTE])
-            v2_R(cv, 4, 24, w > 4 ? w - 4 : 0, 16, 0);
-        v2_R(cv, 63 + d->v[RFM_MOVE_KIT_P_PAN] * 60 / 50, 12, 2, 40, 1);
-        v2_R(cv, 63 + d->v[RFM_MOVE_KIT_P_PAN] * 60 / 50, 12, 2, 40, 1);
+    case RFM_MOVE_KIT_PG_PADMIX: {                      /* (the owner's) the wave on the left; a level meter (muted:
+                                                         * dithered), the pan a mark on a short line under it, the
+                                                         * three sends as small bars right of it; no text */
+        const int lv = d->v[RFM_MOVE_KIT_P_LEVEL], h = lv <= LEVEL_MIN ? 0 : (lv - LEVEL_MIN) * 46 / (6 - LEVEL_MIN);
+        if (ready(d))
+            pad_wave_n(m, cv, k, 32, 26, 0, 41);
+        v2_O(cv, 88, 4, 12, 50, 1);
+        if (d->v[RFM_MOVE_KIT_P_MUTE]) {
+            int xx, yy;
+            for (yy = 52 - h; yy < 52; yy++)
+                for (xx = 90; xx < 98; xx++)
+                    if (((xx + yy) & 1) == 0)
+                        v2_px(cv, xx, yy, 1);
+        } else
+            v2_R(cv, 90, 52 - h, 8, h, 1);
+        v2_R(cv, 87, 60, 14, 1, 1);
+        v2_R(cv, 93 + d->v[RFM_MOVE_KIT_P_PAN] * 6 / 50, 57, 2, 5, 1);
+        for (i = 0; i < 3; i++) {
+            const int sv = d->v[RFM_MOVE_KIT_P_SEND1 + i];
+            v2_O(cv, 105, 8 + i * 16, 22, 7, 1);
+            v2_R(cv, 107, 10 + i * 16, sv * 18 / 100, 3, 1);
+        }
         return 1;
     }
-    case RFM_MOVE_KIT_PG_KITMIX:                        /* the kit's name, its 16 pads (a sound filled, empty a line,
-                                                         * muted dithered, the chosen underlined), its level */
-        snprintf(nm, sizeof nm, "%s", t->name[0] ? t->name : "Kit");
-        nm[10] = 0;
-        v2_TC(cv, 64, 0, nm, 2, 1);
+    case RFM_MOVE_KIT_PG_KITMIX:                        /* (the owner's) the 16 pads' meters in two rows of eight (pad 1
+                                                         * bottom left): each its level (muted: dithered; empty: a
+                                                         * line), a cap while it sounds, the chosen one marked; no text */
         for (i = 0; i < RFM_MOVE_KIT_PADS; i++) {
             const rfm_move_kit_pad_t *e = CPAD(m, i);
-            const int x = (i % 8) * 16 + 2, y = i < 8 ? 44 : 22;
-            if (!has_sound(e))
-                v2_R(cv, x, y + 15, 12, 1, 1);
-            else if (e->v[RFM_MOVE_KIT_P_MUTE]) {
+            const int x = (i % 8) * 16 + 3, yb = i < 8 ? 60 : 28, lv = e->v[RFM_MOVE_KIT_P_LEVEL];
+            const int h = !has_sound(e) || lv <= LEVEL_MIN ? 0 : 1 + (lv - LEVEL_MIN) * 22 / (6 - LEVEL_MIN);
+            v2_R(cv, x, yb, 10, 1, 1);
+            if (e->v[RFM_MOVE_KIT_P_MUTE]) {
                 int xx, yy;
-                for (yy = y; yy < y + 16; yy++)
-                    for (xx = x; xx < x + 12; xx++)
+                for (yy = yb - h; yy < yb; yy++)
+                    for (xx = x; xx < x + 10; xx++)
                         if (((xx + yy) & 1) == 0)
                             v2_px(cv, xx, yy, 1);
             } else
-                v2_R(cv, x, y, 12, 16, 1);
+                v2_R(cv, x + 2, yb - h, 6, h, 1);
+            if (t->glow[i] && now(m) - t->glow[i] < GLOW_MS && h)
+                v2_R(cv, x, yb - h - 3, 10, 2, 1);
             if (i == k)
-                v2_R(cv, x, y + 17, 12, 2, 1);
+                v2_R(cv, x - 2, yb - 4, 1, 4, 1);
         }
-        v2_R(cv, 0, 63, t->mix[RFM_MOVE_KIT_MIX_LEVEL] * 128 / 127, 1, 1);
         return 1;
     default: return 0;
     }
