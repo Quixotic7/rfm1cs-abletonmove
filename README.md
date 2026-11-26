@@ -1440,6 +1440,21 @@ the value 0..254 encoded: Pitch semitones + 24, Start of 254, Filter and Resonan
 envelope step). A clip's note-on of a kit pad carries its step's locks in `KIT_NOTE`'s `klk_mask` / `klk` (the
 settings' units). Undo, copy and save as any lock.
 
+## The kit (round C)
+
+The owner's 2026-11-26 round (remoteFM14Move-kit KIT-SPEC.md "Round C"): a pad's sound is its own, the originals never
+changed. The host keeps a folder of sounds for each project and copies a sound in when it is kept; every new file goes
+there. No new bytes: project version 14 still.
+
+| What | |
+|---|---|
+| `RFM_MOVE_KIT_OWN` ("@/") | a path that starts so is a file in the open project's own folder (the host's: Samples/RemoteFM1/Kits/Projects/NN), so a project moved or duplicated keeps its sounds |
+| `KIT_KEEP` (80) | Files left after the jog put a sound on the pad (the click on a sound, another tab, the view closed, another pad's browse): index the pad. The host copies the pad's sound into the folder (not a file already there) and answers `rfm_move_kit_owned(pad, from, to)`: the path alone changes, no load, no region reset. The jog's landings themselves write nothing |
+| `KIT_LOAD` param 1 | the sound kept: the sampler's To Kit (the take onto the chosen pad), a take's slices; the host loads its copy |
+| Freeze | the Sound row's tools are Play, Trim, Normalize, Reverse, Freeze (a snowflake), Delete (six icons, 21 px apart). `KIT_EDIT` `RFM_MOVE_KIT_ED_FREEZE` (4): the host renders the pad as it sounds now; the pad blinks white while it renders ("Freezing"), then its new file comes with pitch, stretch, reverse, the envelope, the filter, level and pan back to the defaults (`put`: KIT_SETs, the project edited) and "Frozen / Pad N"; one Undo brings the pad back as it was |
+| `rfm_move_kit_refs` | the paths the kit refers to: every pad's, the Undo's (a pad's, the whole kit's); the host keeps those files of the folder when it cleans it |
+| `rfm_move_kit_edit` | the page's Freeze (or any `RFM_MOVE_KIT_ED_*`), as the Sound row's tool |
+
 ## FX parameter pages (0.5.0)
 
 A module's own parameter pages, as Schwung's `ui_hierarchy` lays them out: each level's 8 knobs a page, its overflow

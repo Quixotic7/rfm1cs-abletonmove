@@ -5,6 +5,17 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## Unreleased: the kit, stages 3a, 3b and 3c
 
+### Round C (2026-11-26): the project's own sounds, Freeze
+
+README "The kit (round C)". `rfm_move_kit_t` gains `br_own`, `frz_ms` (RAM): rebuild everything. Project version 14.
+
+- Paths `RFM_MOVE_KIT_OWN` ("@/"): the open project's own folder (the host's).
+- `RFM_MOVE_ACT_KIT_KEEP` (80): Files left after a landing: the host copies the pad's sound in; answer
+  `rfm_move_kit_owned`. `KIT_LOAD`'s param 1 (To Kit, slices): kept.
+- Freeze: the Sound row's fifth tool (Delete sixth), `RFM_MOVE_KIT_ED_FREEZE`; the pad blinks while it renders, the
+  settings back to neutral when it comes, "Frozen", one Undo. `rfm_move_kit_edit` (the page's).
+- `rfm_move_kit_refs`: the pads' and the Undo's paths (the host's clean-up).
+
 ### Stage 3c: making sounds
 
 README "The kit (stage 3c)". `rfm_move_kit_pad_t` and `rfm_move_kit_t` gain fields (RAM only; the project is still
