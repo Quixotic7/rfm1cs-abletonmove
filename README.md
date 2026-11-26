@@ -1422,6 +1422,24 @@ Play mode may be 3. Tests: `move_kit` 9 (Files, rewritten: the landing, one load
 `KIT_FIND` and its answer, a pad pressed there), 30 (the close-up: `KIT_PEAKS`, Shift's zoom, the point, the
 dithering, the 150 ms audition), 31 (the sensitivity knob), 32 (Toggle), 33 (Trim silence saved).
 
+## The kit (round B)
+
+The owner's 2026-11-26 round (remoteFM14Move-kit KIT-SPEC.md "Round B"). Project version 14: 20 settings a pad
+(`RFM_MOVE_KIT_P_DECAY`, `_SUSTAIN`, `_CUTOFF`, `_RESO` after Send 3; versions 11..13 read with Decay 0, Sustain 100,
+the filter open).
+
+| Control | What |
+|---|---|
+| knobs | the page chosen at the touch: 1 Pitch, 2 Start, 3 Stretch, 4 Play, 5 Filter, 6 Resonance, 7 Level, 8 Send 1 (pink); Shift held at the touch (blue): 1 Attack, 2 Hold, 3 Decay, 4 Sustain, 5 Release, 6 Choke, 7 Pan, 8 Fine (cents, Shift + knob 1 before). Shift pressed after Start is touched: the 32x close-up and a fine turn |
+| a step held + the volume knob | the chosen pad's hits there: their velocity ("Step 5 Velo"); the step keys bright as the hits are hard (100 as before) |
+| a step held + a knob | the lockable ones lit yellow (Pitch, Start, Filter, Resonance, Level; Shift: Decay, Pan), the rest dark: that hit's own value. A locked step blinks slowly (a second round) while its pad is chosen; Delete + the step clears its notes and locks |
+| Slice, Tap (the sixth method) | the first step plays the take from its start, a cut at 0; each further step a cut where the sound heard is (the core's clock less `RFM_MOVE_KIT_TAP_LAG_US`, 17 ms, or the host's lead_us), 16 at most; steps white a cut each, the playhead's slice in the take's colour; a press after its end: a new pass; Delete + a step: the cuts cleared |
+
+Locks are the sequencer's (clip, step, cc) with cc `RFM_MOVE_KIT_LOCK0` (136) + lock x 4 + pad % 4 (`RFM_MOVE_KIT_LK_*`;
+the value 0..254 encoded: Pitch semitones + 24, Start of 254, Filter and Resonance, Level dB + 60, Pan + 50, Decay an
+envelope step). A clip's note-on of a kit pad carries its step's locks in `KIT_NOTE`'s `klk_mask` / `klk` (the
+settings' units). Undo, copy and save as any lock.
+
 ## FX parameter pages (0.5.0)
 
 A module's own parameter pages, as Schwung's `ui_hierarchy` lays them out: each level's 8 knobs a page, its overflow
