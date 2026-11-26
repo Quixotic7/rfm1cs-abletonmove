@@ -2487,7 +2487,7 @@ static void t_lock_popup(void)
                     knob(k, 4), knob(k, 124);              /* (a lock, there and back) */
                     screen(), memcpy(c, SCR, sizeof c);
                     n++;
-                    if ((scr_padlock(a) || scr_padlock(b) || (M.seq.nlocks > nl && !scr_padlock(c)) || px(0, 0) ||
+                    if ((scr_padlock(a) || scr_padlock(b) || (M.seq.nlocks > nl && !scr_padlock_at(c)) || px(0, 0) ||
                          !memcmp(a, b, sizeof a)) && bad++ < 4)
                         CHECKF(0, "mode %d page %d knob %d: plain %d, held %d, locked %d (locks %d -> %d), tag %d, held = plain %d",
                                md, pg, k, scr_padlock(a), scr_padlock(b), scr_padlock(c), nl, M.seq.nlocks, px(0, 0),
@@ -2505,7 +2505,20 @@ static void t_lock_popup(void)
     M.kit.page = RFM_MOVE_KIT_PG_PADMIX;
     step(0, 1), touch(4, 1), screen(), memcpy(b, SCR, sizeof b);
     knob(4, 1), knob(4, 127), screen(), memcpy(c, SCR, sizeof c);
-    CHECK(!scr_padlock(b) && scr_padlock(c) && scr_subset(b, c, MR_SCREEN_BYTES) && memcmp(b, c, sizeof b));
+    CHECK(!scr_padlock(b) && scr_padlock_at(c) && scr_subset(b, c, MR_SCREEN_BYTES) && memcmp(b, c, sizeof b));
+    {   /* (2026-11-26, the owner's) the value where the unlocked one is: the locked screen but its padlock's corner,
+         * hollowed, is the unlocked one */
+        static uint8_t h[MR_SCREEN_BYTES];
+        int x, y;
+        memcpy(h, c, sizeof h);
+        for (x = 118; x < 127; x++)
+            h[x] = 0, h[128 + x] &= (uint8_t)~3u;       /* (the corner: rows 0..9) */
+        for (y = 0; y < 64; y++)
+            for (x = 0; x < 128; x++)
+                if (((h[(y >> 3) * 128 + x] >> (y & 7)) & 1) && ((x + y) & 1) && !pl_px(b, x, y))
+                    h[(y >> 3) * 128 + x] &= (uint8_t)~(1u << (y & 7));   /* (the checker's dark half) */
+        CHECK(!memcmp(h, b, sizeof h));
+    }
     touch(4, 0), step(0, 0), rest(), press(MR_CC_UNDO), rest();
     /* a locked cutoff: the pad drawn at the lock's value, the padlock; cleared (step held + knob + Delete): hollow */
     M.kit.pad[1].v[RFM_MOVE_KIT_P_MODE] = 0, M.kit.pad[1].v[RFM_MOVE_KIT_P_WARP] = 0;
@@ -2515,7 +2528,7 @@ static void t_lock_popup(void)
         int c0 = M.kit.pad[1].v[RFM_MOVE_KIT_P_CUTOFF], lk;
         step(0, 1), touch(0, 1), knob(0, -40);
         screen();
-        CHECK(scr_padlock(SCR));
+        CHECK(scr_padlock_at(SCR));                     /* (the Filter page's line: the padlock in its corner) */
         press(MR_CC_DELETE), screen();
         CHECK(!scr_padlock(SCR) && !px(0, 0));          /* (cleared: hollow at once, no "Lock Cleared") */
         press(MR_CC_UNDO), screen();

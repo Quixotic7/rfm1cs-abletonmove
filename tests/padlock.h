@@ -21,6 +21,16 @@ static int scr_padlock(const uint8_t *s)
         }
     return 0;
 }
+static int scr_padlock_at(const uint8_t *s)          /* (2026-11-26) at its corner: x 119..125, y 1..9 */
+{
+    static const uint8_t P[9] = { 0x1C, 0x22, 0x22, 0x7F, 0x7F, 0x77, 0x77, 0x7F, 0x7F };
+    int i, j;
+    for (j = 0; j < 9; j++)
+        for (i = 0; i < 7; i++)
+            if ((P[j] >> (6 - i) & 1) != pl_px(s, 119 + i, 1 + j))
+                return 0;
+    return 1;
+}
 static int scr_subset(const uint8_t *a, const uint8_t *b, int n)   /* every pixel lit in a lit in b */
 {
     int i;

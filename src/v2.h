@@ -41,6 +41,8 @@ enum { V2_VAL_PLAIN, V2_VAL_LOCKED, V2_VAL_HOLLOW };
 #define V2_LOCK_W 7
 #define V2_LOCK_H 9
 #define V2_LOCK_GAP 3
+#define V2_LOCK_X 119                                  /* (2026-11-26) the padlock's corner: x 119..125, y 1..9 */
+#define V2_LOCK_Y 1
 void v2_valMode(int mode);
 int v2_valModeGet(void);
 void v2_padlock(mr_canvas_t *b, int x, int y);                       /* the 7 x 9 padlock */

@@ -1124,7 +1124,7 @@ static void test_lock_padlock(void)
     step(m, 4, 1), raw(m, 0x90, 2, 127), rfm_move_screen(m, NULL, b);
     CHECK(!scr_padlock(b) && memcmp(a, b, sizeof a));   /* (not locked: hollow) */
     knob(m, 2, 1), knob(m, 2, -1), rfm_move_screen(m, NULL, c);   /* (locked at the track's value) */
-    CHECK(rfmv_seq_lock_get(m, 0, 4, m->s.cc[m->s.bank][2]) >= 0 && scr_padlock(c) && scr_subset(b, c, MR_SCREEN_BYTES));
+    CHECK(rfmv_seq_lock_get(m, 0, 4, m->s.cc[m->s.bank][2]) >= 0 && scr_padlock_at(c) && scr_subset(b, c, MR_SCREEN_BYTES));
     press(m, MR_CC_DELETE), rfm_move_screen(m, NULL, c);
     CHECK(rfmv_seq_lock_get(m, 0, 4, m->s.cc[m->s.bank][2]) < 0 && !scr_padlock(c) && !memcmp(b, c, sizeof b));
     raw(m, 0x80, 2, 0), step(m, 4, 0), rest(m);

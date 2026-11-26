@@ -4207,19 +4207,12 @@ static void filter_page(const rfm_move_t *m, mr_canvas_t *cv, int p)
         char v[24], l[40];
         val_text(m, t->cur, p, 0, v, sizeof v);
         snprintf(l, sizeof l, "%s %s", P_NAME[p], v);
-        if (v2_valModeGet() == V2_VAL_PLAIN)
-            v2_TC(cv, 64, 0, l, 1, 1);
-        else {                                          /* (a held step: the padlock at the line's start, the value
-                                                         * locked or hollow, the name as ever) */
-            const int x = v2_valT(cv, 64 - (v2_valW(l, 1)) / 2, 0, "", 1) - 0;
-            const int nx = v2_T(cv, x, 0, P_NAME[p], 1, 1) + 6;
-            const int mode = v2_valModeGet();
-            v2_valMode(mode == V2_VAL_HOLLOW ? V2_VAL_HOLLOW : V2_VAL_PLAIN);
-            if (mode == V2_VAL_HOLLOW)
-                v2_valT(cv, nx - V2_LOCK_W - V2_LOCK_GAP, 0, v, 1);
-            else
-                v2_T(cv, nx, 0, v, 1, 1);
-            v2_valMode(mode);
+        if (v2_valModeGet() != V2_VAL_HOLLOW)
+            v2_TC(cv, 64, 0, l, 1, 1), v2_valT(cv, 200, 0, "", 1);   /* (locked: the
+                                                         * padlock in its corner) */
+        else {                                          /* (a held step, not locked: the value hollow) */
+            const int x = v2_T(cv, 64 - v2_tw(l, 1) / 2, 0, P_NAME[p], 1, 1) + 6;
+            v2_valT(cv, x, 0, v, 1);
         }
     }
 }

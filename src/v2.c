@@ -189,8 +189,8 @@ void v2_ghostStrip(mr_canvas_t *b, int real, int total)
     v2_R(b, 124, 59, 1, 5, 1);
 }
 /* ---- (2026-11-26, the owner's "a clear locked / not-locked language") a value while a step is held: locked, a padlock
- * before it (its own room, the value moved over); not locked, the track's or pad's own value hollow (a 50 % checker),
- * no padlock. V2_VAL_PLAIN: as ever */
+ * in the screen's top-right corner (2026-11-26: one place for every popup; the value where it always is); not locked,
+ * the track's or pad's own value hollow (a 50 % checker), no padlock. V2_VAL_PLAIN: as ever */
 static int g_vmode;
 void v2_valMode(int mode) { g_vmode = mode; }
 int v2_valModeGet(void) { return g_vmode; }
@@ -203,7 +203,7 @@ void v2_padlock(mr_canvas_t *b, int x, int y)
             if (PADLOCK[j] >> (V2_LOCK_W - 1 - i) & 1)
                 v2_px(b, x + i, y + j, 1);
 }
-int v2_valW(const char *s, int k) { return v2_tw(s, k) + (g_vmode != V2_VAL_PLAIN ? V2_LOCK_W + V2_LOCK_GAP : 0); }
+int v2_valW(const char *s, int k) { return v2_tw(s, k); }   /* (2026-11-26: the padlock has its own corner) */
 static void hollowT(mr_canvas_t *b, int x, int y, const char *s, int k)
 {
     static mr_canvas_t t;                               /* (the screen's one thread) */
@@ -227,16 +227,16 @@ static void hollowT(mr_canvas_t *b, int x, int y, const char *s, int k)
 }
 int v2_valT(mr_canvas_t *b, int x, int y, const char *s, int k)
 {
-    if (g_vmode == V2_VAL_PLAIN)
-        return v2_T(b, x, y, s, k, 1);
-    if (g_vmode == V2_VAL_LOCKED)
-        v2_padlock(b, x, y + (7 * k - V2_LOCK_H) / 2 < 0 ? 0 : y + (7 * k - V2_LOCK_H) / 2);
-    x += V2_LOCK_W + V2_LOCK_GAP;
+    int nx;
     if (g_vmode == V2_VAL_HOLLOW) {
         hollowT(b, x, y, s, k);
         return x + 6 * k * (int)strlen(s);
     }
-    return v2_T(b, x, y, s, k, 1);
+    nx = v2_T(b, x, y, s, k, 1);
+    if (g_vmode == V2_VAL_LOCKED)                       /* (the owner's 2026-11-26: always the top-right corner, the
+                                                         * value where it is; a title reaching there clipped) */
+        v2_R(b, V2_LOCK_X - 1, 0, V2_LOCK_W + 2, V2_LOCK_Y + V2_LOCK_H + 1, 0), v2_padlock(b, V2_LOCK_X, V2_LOCK_Y);
+    return nx;
 }
 int v2_valTC(mr_canvas_t *b, double cx, int y, const char *s, int k)
 {
