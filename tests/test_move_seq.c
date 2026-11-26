@@ -29,9 +29,12 @@ static uint8_t pbuf[RFM_MOVE_PROJECT_MAX];
 static uint32_t pbuf_n;
 static rfm_move_t *answer_m;
 
+static char said[4096];                                 /* (the words said, "|" after each; reset by hand) */
 static void on_act(void *ctx, const rfm_move_act_t *a)
 {
     (void)ctx;
+    if (a->kind == RFM_MOVE_ACT_SAY && a->data)
+        snprintf(said + strlen(said), sizeof said - strlen(said), "%s|", (const char *)a->data);
     if (nact < 8192)
         acts[nact].a = *a, acts[nact].at = base + a->frame, nact++;
     if (a->kind == RFM_MOVE_ACT_MIDI && a->n == 3) {
@@ -1098,6 +1101,85 @@ static void test_edits(void)
     CHECK(nnotes_clip(m, SEQ_CLIP(0, 1)) == 4 && rfmv_seq_clip_has(m, SEQ_CLIP(0, 1)));
     step(m, 3, 1), press(m, MR_CC_DELETE), step(m, 3, 0);   /* (with a step held: nothing) */
     CHECK(nnotes_clip(m, SEQ_CLIP(0, 1)) == 4 + 1);
+    CHECK(stuck() == 0);
+}
+
+/* (2026-11-26, Move's manual 14.2.3 "Deleting Automation": "hold the Delete button and tap the respective encoder")
+ * a firmware track: Delete held + a knob touched (no step held): that knob's CC locks on every step of the clip, the
+ * notes and the other knobs' locks kept, one undo step ("Cleared" "CC n", said); again: "No Automation"; the TRIG page:
+ * the knob's trig; the volume knob: nothing. (the owner's) a step held, a knob touched, then Delete: that step's lock
+ * only, the knob's popup tagged "Lock Cleared", its own undo step; a plain Delete with a step held: nothing */
+static void test_auto_clear(void)
+{
+    static rfm_move_lock_t before[RFM_MOVE_SEQ_LOCKS];
+    rfm_move_t *m = &M;
+    const char *a, *b;
+    int icon, cc, cc3, nb, nn, lo;
+    fresh(m);
+    rfm_move_set_speech_default(m, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(m, 1);
+    cc = m->s.cc[m->s.bank][2], cc3 = m->s.cc[m->s.bank][3];
+    pad(m, 0, 100), tap_step(m, 0), tap_step(m, 4), pad(m, 0, 0);
+    step(m, 0, 1), knob(m, 2, 5), step(m, 0, 0);
+    step(m, 4, 1), knob(m, 2, -5), knob(m, 3, 7), step(m, 4, 0);
+    step(m, 9, 1), knob(m, 2, 9), step(m, 9, 0);       /* (a lock on a step without notes too) */
+    m->seq.trig = 1;
+    step(m, 4, 1), knob(m, 2, -10), step(m, 4, 0);      /* (TRIG: Chance on step 5) */
+    m->seq.trig = 0;
+    CHECK(rfmv_seq_lock_get(m, 0, 0, cc) >= 0 && rfmv_seq_lock_get(m, 0, 4, cc) >= 0 && rfmv_seq_lock_get(m, 0, 9, cc) >= 0 &&
+          rfmv_seq_lock_get(m, 0, 4, cc3) >= 0 && rfmv_seq_lock_get(m, 0, 4, RFM_MOVE_TRIG_CHANCE) >= 0);
+    nb = m->seq.nlocks, nn = m->seq.nnotes;
+    memcpy(before, m->seq.locks, sizeof before);
+    said[0] = 0;
+    button(m, MR_CC_DELETE, 1), raw(m, 0x90, 2, 127);  /* Delete held, knob 3 touched */
+    CHECK(rfmv_seq_lock_get(m, 0, 0, cc) < 0 && rfmv_seq_lock_get(m, 0, 4, cc) < 0 && rfmv_seq_lock_get(m, 0, 9, cc) < 0);
+    CHECK(rfmv_seq_lock_get(m, 0, 4, cc3) >= 0 && rfmv_seq_lock_get(m, 0, 4, RFM_MOVE_TRIG_CHANCE) >= 0 &&
+          m->seq.nlocks == nb - 3 && m->seq.nnotes == nn);
+    CHECK(rfmv_seq_msg_info(m, &a, &b, &icon) == SEQ_MSG_AUTOCLR && !strcmp(a, "Cleared"));
+    {
+        char w[24];
+        snprintf(w, sizeof w, "CC %d", cc);
+        CHECKF(!strcmp(b, w), "msg %s %s", a, b);
+        raw(m, 0x80, 2, 0), button(m, MR_CC_DELETE, 0);
+        adv(m, 256);
+        snprintf(w, sizeof w, "Cleared CC %d", cc);
+        CHECKF(strstr(said, w) != NULL && !strstr(said, "Delete:"), "said %s", said);
+    }
+    rest(m);
+    button(m, MR_CC_DELETE, 1), raw(m, 0x90, 2, 127), raw(m, 0x80, 2, 0), button(m, MR_CC_DELETE, 0);
+    CHECK(rfmv_seq_msg_info(m, &a, &b, &icon) == SEQ_MSG_NOAUTO && !strcmp(a, "No") && !strcmp(b, "Automation"));
+    press(m, MR_CC_UNDO);                               /* one undo step: every lock back */
+    CHECK(m->seq.nlocks == nb && !memcmp(m->seq.locks, before, (size_t)nb * sizeof before[0]));
+    m->seq.trig = 1;                                    /* the TRIG page: knob 3, Chance */
+    button(m, MR_CC_DELETE, 1), raw(m, 0x90, 2, 127), raw(m, 0x80, 2, 0), button(m, MR_CC_DELETE, 0);
+    CHECK(rfmv_seq_lock_get(m, 0, 4, RFM_MOVE_TRIG_CHANCE) < 0 && rfmv_seq_lock_get(m, 0, 4, cc) >= 0 &&
+          rfmv_seq_msg_info(m, &a, &b, &icon) == SEQ_MSG_AUTOCLR && !strcmp(b, "Chance"));
+    press(m, MR_CC_UNDO);
+    m->seq.trig = 0;
+    CHECK(m->seq.nlocks == nb && !memcmp(m->seq.locks, before, (size_t)nb * sizeof before[0]));
+    rest(m), m->seq.msg = 0;
+    button(m, MR_CC_DELETE, 1), raw(m, 0x90, 8, 127), raw(m, 0x80, 8, 0), button(m, MR_CC_DELETE, 0);
+    CHECK(m->seq.nlocks == nb && m->seq.msg != SEQ_MSG_AUTOCLR && m->seq.msg != SEQ_MSG_NOAUTO);   /* (volume: nothing) */
+    /* (the owner's) a step held, a knob touched, Delete: that step's lock only */
+    said[0] = 0;
+    step(m, 4, 1), raw(m, 0x90, 2, 127), raw(m, 0x80, 2, 0), press(m, MR_CC_DELETE);
+    CHECK(rfmv_seq_lock_get(m, 0, 4, cc) < 0 && rfmv_seq_lock_get(m, 0, 0, cc) >= 0 && rfmv_seq_lock_get(m, 0, 9, cc) >= 0 &&
+          rfmv_seq_lock_get(m, 0, 4, cc3) >= 0);
+    CHECK(m->pop == POP_CC && m->pop_i == 2 && rfmv_seq_lkc_tag(m, 2) && !strcmp(rfmv_seq_lkc_tag(m, 2), "Lock Cleared"));
+    step(m, 4, 0), adv(m, 256);
+    {
+        char w[32];
+        snprintf(w, sizeof w, "Lock cleared, CC %d", cc);
+        CHECKF(strstr(said, w) != NULL, "said %s", said);
+    }
+    CHECK(m->seq.nnotes == nn && rfmv_seq_range(m, 0, 4, &lo) > lo);   /* (the step's release: its notes kept) */
+    press(m, MR_CC_UNDO);
+    CHECK(m->seq.nlocks == nb && !memcmp(m->seq.locks, before, (size_t)nb * sizeof before[0]));
+    step(m, 0, 1), press(m, MR_CC_DELETE), step(m, 0, 0);   /* (no knob touched in the hold: nothing) */
+    CHECK(m->seq.nlocks == nb && m->seq.nnotes == nn);
+    step(m, 0, 1), button(m, MR_CC_DELETE, 1), knob(m, 2, 1), button(m, MR_CC_DELETE, 0), step(m, 0, 0);
+    CHECK(rfmv_seq_lock_get(m, 0, 0, cc) < 0 && m->seq.nnotes == nn);   /* (the other order kept) */
+    rfm_move_set_speech(m, 0);
+    adv(m, RATE);                                       /* (the held steps' previews end) */
     CHECK(stuck() == 0);
 }
 
@@ -3593,6 +3675,7 @@ int main(void)
     test_capture_playing();
     test_repeat();
     test_edits();
+    test_auto_clear();
     test_scale_root();
     test_blob();
     test_project_grid();

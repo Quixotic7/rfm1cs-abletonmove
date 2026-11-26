@@ -215,7 +215,8 @@ enum { SEQ_MSG_NONE = 0, SEQ_MSG_NOCLIP, SEQ_MSG_FULL, SEQ_MSG_LOADFAIL, SEQ_MSG
        SEQ_MSG_REDO, SEQ_MSG_COPIED, SEQ_MSG_PASTED, SEQ_MSG_CUT, SEQ_MSG_QUANT, SEQ_MSG_DOUBLE, SEQ_MSG_EXTTAP,
        SEQ_MSG_DUP, SEQ_MSG_CLEARED, SEQ_MSG_CAPCLEAR, SEQ_MSG_CLK_AUTO, SEQ_MSG_CLK_INT, SEQ_MSG_CLK_EXT,
        SEQ_MSG_FULLVEL_ON, SEQ_MSG_FULLVEL_OFF, SEQ_MSG_METRO_ON, SEQ_MSG_METRO_OFF, SEQ_MSG_NEWCLIP, SEQ_MSG_CLIPCLEAR,
-       SEQ_MSG_NOTROUTED, SEQ_MSG_NOUNDO };                             /* (0.12.0: a select step held + volume, a track that reaches none) */
+       SEQ_MSG_NOTROUTED, SEQ_MSG_NOUNDO,
+       SEQ_MSG_AUTOCLR, SEQ_MSG_NOAUTO };   /* (2026-11-26: Delete + a knob's touch: "Cleared" + q->msg_name, "No Automation") */                             /* (0.12.0: a select step held + volume, a track that reaches none) */
 void rfmv_seq_ui_release(rfm_move_t *m);
 void rfmv_seq_srec_now(rfm_move_t *m);                 /* Capture, playing, the clip empty: Rec records at once */
 #define RFM_MOVE_TRIG_NLENS 17                         /* the TRIG page's lengths (seq_ui.c LENS) */
@@ -253,6 +254,14 @@ int rfmv_seq_loop_pad_n(int p);                        /* (0.13.0) the Loop laye
 int rfmv_seq_loop_steps(const rfm_move_t *m);          /* (0.13.0) the loop length popup with its bar's steps */          /* (0.13.0) a slot's level popup is up */ /* (0.12.0) a slot's level (the Mixer's), its popup; 0 empty */            /* (0.12.0) Delete held: 1 (scissors), Copy: 2 */
 void rfmv_seq_track_menu(const rfm_move_t *m, mr_canvas_t *cv);   /* Track 4 held */
 void rfmv_seq_msg(rfm_move_t *m, int msg);
+/* (2026-11-26, Move's 14.2.3 "Deleting Automation") Delete held + a knob touched: the knob's parameter's locks on every
+ * step of the shown clip, one undo step (1: taken); the helpers the Kit view shares: a TRIG page knob's lock ids (n,
+ * its name), every lock of those ids in clip removed (the count) */
+int rfmv_seq_auto_clear(rfm_move_t *m, int k);
+int rfmv_seq_trig_ids(int k, int ids[4], const char **name);
+int rfmv_seq_locks_clear(rfm_move_t *m, int clip, const int *ids, int n);
+const char *rfmv_seq_lkc_tag(const rfm_move_t *m, int k);   /* (a step held, a knob, Delete) "Lock Cleared", NULL */
+int rfmv_kit_lock_delete(rfm_move_t *m);                /* (kit.c) the Kit view's: a step held, a knob, Delete: 1 done */
 const char *rfmv_seq_msg_text(const rfm_move_t *m);    /* the message up now, NULL none */
 
 /* ---- fw.c: the firmware browser, FX setup, the library (0.4.0) */

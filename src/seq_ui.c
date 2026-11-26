@@ -1408,7 +1408,7 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
         return;
     }
     if (!q->step_held)
-        rfmv_seq_group(m);                              /* one hold, one undo */
+        rfmv_seq_group(m), q->sk_knob = 0;              /* one hold, one undo (2026-11-26: no knob touched in it yet) */
     q->step_held |= bit;
     q->step_t[s] = rfmv_now_ms(m);
     if (q->step_first < 0)
@@ -1723,6 +1723,69 @@ static int mod_bit(int cc)
     }
 }
 
+/* (2026-11-26, the owner's: "while holding a step, if you then touch a parameter and then click delete it should
+ * delete the steplock for that parameter on just that step. Move Default requires you to hold the step, then hold
+ * delete, then touch the step which is a lot of finger gymnastics") a firmware track's steps held, a knob touched in
+ * that hold (still touched or not: the last one), Delete pressed: the knob's lock (its CC; on TRIG, FM-1 or ENGINE:
+ * its trig) on the held steps removed, one undo step of its own; the knob's popup with the value unlocked and a
+ * "Lock Cleared" tag ("No Lock": nothing was locked). No knob touched in the hold: Delete does what it did (nothing) */
+static int held_lock_delete(rfm_move_t *m)
+{
+    rfm_move_seq_t *q = Q(m);
+    const int k = q->sk_knob - 1, clip = edit_clip(m), trig = rfmv_seq_trig_on(m);
+    const char *name = "";
+    char nm[12], w[40];
+    int ids[4], n = 0, s, j, c = 0, lo;
+    if (!q->step_held || q->view || q->projects || q->smenu || m->s.mode != RFM_MOVE_MODE_SEQ ||
+        (q->mods & (SEQ_M_SHIFT | SEQ_M_COPY | SEQ_M_LOOP)))
+        return 0;
+    for (s = 0; s < RFM_MOVE_NSTEPS; s++)               /* (Delete pressed with steps held, a knob touched or not:
+                                                         * a held step's release never takes its notes away) */
+        if ((q->step_held >> s & 1) && rfmv_seq_range(m, clip, q->page * RFM_MOVE_SEQ_PAGE + s, &lo) > lo)
+            q->step_edit |= (uint16_t)(1u << s);
+    if (k < 0)
+        return 0;
+    if (trig) {
+        if (k > 6)
+            return 0;
+        n = rfmv_seq_trig_ids(k, ids, &name);
+    } else {
+        ids[n++] = m->s.cc[m->s.bank][k];
+        snprintf(nm, sizeof nm, "CC %d", ids[0]);
+        name = nm;
+    }
+    for (s = 0; s < RFM_MOVE_NSTEPS; s++)
+        if (q->step_held >> s & 1)
+            for (j = 0; j < n; j++) {
+                const int abs = q->page * RFM_MOVE_SEQ_PAGE + s;
+                if (rfmv_seq_lock_get(m, clip, abs, ids[j]) < 0)
+                    continue;
+                if (!c++)
+                    rfmv_seq_group(m);                  /* (its own undo step, apart from the hold's other edits) */
+                rfmv_seq_lock_set(m, clip, abs, ids[j], -1);
+            }
+    if (c)
+        rfmv_seq_group(m);                              /* (a later turn in this hold: a step of its own) */
+    q->step_edit |= q->step_held;                       /* (the steps' release: no toggle) */
+    rfmv_pop(m, trig ? POP_TRIG : POP_CC, k);
+    q->lkc_k = (uint8_t)(k + 1), q->lkc_none = (uint8_t)!c, q->lkc_ms = rfmv_now_ms(m) ? rfmv_now_ms(m) : 1;
+    if (n == 0)
+        snprintf(w, sizeof w, "No lock");
+    else
+        snprintf(w, sizeof w, c ? "Lock cleared, %s" : "No lock, %s", name);
+    rfmv_say_text(m, w);
+    return 1;
+}
+/* (2026-11-26) the knob popup's tag after that: "Lock Cleared" / "No Lock" while it is k's and recent; NULL none */
+const char *rfmv_seq_lkc_tag(const rfm_move_t *m, int k)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    if (!q->lkc_ms || q->lkc_k != k + 1 || rfmv_now_ms(m) - q->lkc_ms >= RFM_MOVE_POPUP_MS ||
+        !(q->step_held || m->kit.st_down))
+        return NULL;
+    return q->lkc_none ? "No Lock" : "Lock Cleared";
+}
+
 int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
 {
     rfm_move_seq_t *q = Q(m);
@@ -1765,6 +1828,9 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
                 q->copy_src = 0, q->copy_pasted = 0;
             if (mb == SEQ_M_DELETE)
                 m->del_src = 0;
+            if (mb == SEQ_M_DELETE && (rfmv_kit_lock_delete(m) || held_lock_delete(m)))
+                q->mods_used |= SEQ_M_DELETE;           /* (2026-11-26) a step held, a knob touched, then Delete: that
+                                                         * knob's lock on the held steps (its release: nothing more) */
         } else if (mb == SEQ_M_SHIFT && q->shift_lock) {
             ;                                           /* (latched: it stays down) */
         } else if (mb == SEQ_M_LOOP && q->loop_end) {
@@ -2895,6 +2961,71 @@ void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now)
     }
 }
 
+/* ---- (2026-11-26, the owner's: "We should match how Move does automation step lock deletion. Hold delete then tap a
+ * knob and it should delete all automation for that parameter across all steps") Move's manual, 14.2.3: "hold the
+ * Delete button and tap the respective encoder". Delete held + a knob touched (the touch, not a turn; no step held,
+ * track view): the knob's parameter's locks on every step of the shown clip, one undo step. The CC pages: the knob's
+ * CC; TRIG: its trig (Function with its amount); the FM-1 and ENGINE pages keep no locks. "Cleared" and the name, or
+ * "No Automation"; the volume knob: nothing (Move's manual gives it no such gesture) */
+int rfmv_seq_trig_ids(int k, int ids[4], const char **name)
+{
+    switch (k) {
+    case 1: ids[0] = RFM_MOVE_TRIG_RATCHET, *name = "Ratchet"; return 1;
+    case 2: ids[0] = RFM_MOVE_TRIG_CHANCE, *name = "Chance"; return 1;
+    case 3: ids[0] = RFM_MOVE_TRIG_COND, *name = "Condition"; return 1;
+    case 4:                                             /* (its amount means nothing without it) */
+        ids[0] = RFM_MOVE_TRIG_FUNC, ids[1] = RFM_MOVE_TRIG_LEAP, ids[2] = RFM_MOVE_TRIG_JUMP;
+        ids[3] = RFM_MOVE_TRIG_REPEAT, *name = "Function";
+        return 4;
+    case 5:
+        ids[0] = RFM_MOVE_TRIG_LEAP, ids[1] = RFM_MOVE_TRIG_JUMP, ids[2] = RFM_MOVE_TRIG_REPEAT, *name = "Amount";
+        return 3;
+    default: *name = ""; return 0;                      /* (Micro and Length: the notes' own, no locks) */
+    }
+}
+int rfmv_seq_locks_clear(rfm_move_t *m, int clip, const int *ids, int n)
+{
+    int lo, hi = rfmv_seq_clip_lock_range(m, clip, &lo), c = 0, j;
+    while (hi-- > lo) {                                 /* (from the end: a removal keeps the lower indices) */
+        const rfm_move_lock_t l = m->seq.locks[hi];
+        for (j = 0; j < n; j++)
+            if (l.cc == ids[j]) {
+                if (!c++)
+                    rfmv_seq_group(m);                  /* (one undo step, only when something goes) */
+                rfmv_seq_lock_set(m, clip, l.step, l.cc, -1);
+                break;
+            }
+    }
+    return c;
+}
+int rfmv_seq_auto_clear(rfm_move_t *m, int k)
+{
+    rfm_move_seq_t *q = Q(m);
+    const char *name = "";
+    char nm[12];
+    int ids[4], n = 0;
+    if (k < 0 || k >= RFM_MOVE_NKNOBS || !(q->mods & SEQ_M_DELETE) || (q->mods & (SEQ_M_SHIFT | SEQ_M_COPY | SEQ_M_LOOP)) ||
+        m->s.mode != RFM_MOVE_MODE_SEQ || q->view || q->projects || q->step_held || q->smenu || rfmv_seq_trk_held(m) ||
+        rfmv_seq_mute_on(m) || rfmv_seq_loop_over(m))
+        return 0;
+    q->mods_used |= SEQ_M_DELETE;
+    if (q->trig) {
+        if (k > 6)
+            return 1;                                   /* (knob 8: dark, dead) */
+        n = rfmv_seq_trig_ids(k, ids, &name);
+    } else if (!q->fwp && !q->eng) {
+        ids[n++] = m->s.cc[m->s.bank][k];
+        snprintf(nm, sizeof nm, "CC %d", ids[0]);
+        name = nm;
+    }
+    if (n && rfmv_seq_locks_clear(m, edit_clip(m), ids, n)) {
+        snprintf(q->msg_name, sizeof q->msg_name, "%s", name);
+        rfmv_seq_msg(m, SEQ_MSG_AUTOCLR);
+    } else
+        rfmv_seq_msg(m, SEQ_MSG_NOAUTO);
+    return 1;
+}
+
 /* (0.13.0, the owner's 2026-11-22: "while holding on to a page/bar you should be able to turn the jogwheel and change
  * all the note lengths in that bar like you can with the default Move sequencer") the Loop layer, a page's step held
  * alone + the jog: every note starting on that page longer or shorter by what a held step's jog does to its notes (a
@@ -3479,6 +3610,7 @@ static const struct { const char *a, *b; int8_t icon; } MSG[] = {
     { "Clock Ext", "", -1 }, { "Full Vel", "", V2I_VEL }, { "Pad Vel", "", V2I_VEL }, { "Click On", "", V2I_METRO },
     { "Click Off", "", V2I_METRO }, { "New Clip", "", V2I_CLIP }, { "Clip", "Cleared", -1 }, { "Not routed", "", -1 },
     { "None", "", -1 },                                 /* (0.12.0, a13: Undo / Redo with nothing to undo, the owner's) */
+    { "Cleared", "", -1 }, { "No", "Automation", -1 },  /* (2026-11-26: Delete + a knob: its second row q->msg_name) */
 };
 const char *rfmv_seq_msg_text(const rfm_move_t *m)
 {
@@ -3490,7 +3622,7 @@ int rfmv_seq_msg_info(const rfm_move_t *m, const char **a, const char **b, int *
 {
     const rfm_move_seq_t *q = &m->seq;
     const int id = rfmv_seq_msg_text(m) ? q->msg : 0;
-    *a = MSG[id].a, *b = MSG[id].b, *icon = MSG[id].icon;
+    *a = MSG[id].a, *b = id == SEQ_MSG_AUTOCLR ? q->msg_name : MSG[id].b, *icon = MSG[id].icon;
     return id;
 }
 

@@ -580,6 +580,16 @@ static void value_pop(mr_canvas_t *cv, const char *label, const char *val, doubl
         v2_vbar(cv, frac, bar == 2, 4, 120, 52);
 }
 
+/* (2026-11-26) a step held, a knob touched, Delete: the knob's popup tagged in its top-left corner (the Kit view's
+ * step tag's look) */
+static void lkc_tag(const rfm_move_t *m, mr_canvas_t *cv, int k)
+{
+    const char *t = rfmv_seq_lkc_tag(m, k);
+    if (!t || g_half)
+        return;
+    v2_R(cv, 0, 0, v2_tw(t, 1) + 3, 9, 1);
+    v2_T(cv, 2, 1, t, 1, 0);
+}
 static const char *enc_label(const rfm_move_t *m, int e)
 {
     return e >= 0 && e <= RFM_MOVE_NENC && m->label[e][0] ? m->label[e] : rfm_move_enc_name(e);
@@ -667,6 +677,7 @@ static void value_popup(const rfm_move_t *m, mr_canvas_t *cv)
         else
             snprintf(v, sizeof v, "%d", val);
         value_pop(cv, l, v, val / 127.0, 1);
+        lkc_tag(m, cv, i);
         if (!g_half) {
             if (lock)
                 v2_ic(cv, V2I_LOCK, 114, 4, 1);         /* (a padlock: the step's lock) */
@@ -878,6 +889,7 @@ static void trig_popup(const rfm_move_t *m, mr_canvas_t *cv)
     default: snprintf(l, sizeof l, "--"); break;
     }
     v2_titleBox(cv, l, b, 88, 80);
+    lkc_tag(m, cv, k);
     {                                                   /* (0.12.x: the FM-1 page second; a step held on it: its
                                                          * TRIG knobs; 0.14.0: on ENGINE too) */
         int n, cur;

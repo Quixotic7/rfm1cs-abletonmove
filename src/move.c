@@ -1787,6 +1787,11 @@ static void on_touch(rfm_move_t *m, int k, int on)
         return;
     }
     m->touched = (int8_t)k;
+    if (k < RFM_MOVE_NKNOBS && m->s.mode == RFM_MOVE_MODE_SEQ && m->seq.step_held && !m->seq.view)
+        m->seq.sk_knob = (uint8_t)(k + 1);              /* (2026-11-26: a later Delete press clears its lock there) */
+    if (rfmv_seq_auto_clear(m, k))                      /* (2026-11-26, Move's) Delete held + a knob touched: that
+                                                         * parameter's locks on every step of the clip */
+        return;
     if (k == 8 && rfmv_fw_volume(m, 0))                 /* (0.13.0, R5) a Track 1..3 held, the volume knob touched: its
                                                          * slot's level shows at the touch (a turn changes it) */
         return;

@@ -2214,6 +2214,85 @@ static void t_ghost(void)
     (void)a;
 }
 
+/* 53. (2026-11-26, Move's 14.2.3 "Deleting Automation") Delete held + a knob touched, no step held: the chosen pad's
+ * locks of that setting on every step of its clip (Send 1: its XLOCK pairs freed), the hits kept, a ghost with no lock
+ * left gone, one with another lock kept; "Cleared" "Send 1", said; again: "No" "Automation"; Undo: as before, at once;
+ * (the owner's) a step held, a knob touched, then Delete: that step's lock only, Undo brings it back; a plain Delete with
+ * a step held and no knob touched: nothing (the hit stays) */
+static void t_auto_clear(void)
+{
+    static rfm_move_lock_t before[RFM_MOVE_SEQ_LOCKS];
+    const int clip = SEQ_CLIP(12, 0), lv = RFM_MOVE_KIT_LOCK0 + RFM_MOVE_KIT_LK_LEVEL * 4 + 1;
+    const int x0 = RFM_MOVE_KIT_XLOCK0 + (0 * 4 + 1) * 2;
+    int nb, nn, s, sends = 0;
+    char w[64];
+    uint16_t subj;
+    uint32_t stamp;
+    kit_view();
+    rfm_move_set_speech_default(&M, RFM_MOVE_SPEECH_ON), rfm_move_set_speech(&M, 1);
+    sound(1, "Snare", 4800, NULL, 0);
+    hit(kp(1)), tap_step(0), rest();
+    M.kit.page = RFM_MOVE_KIT_PG_PADMIX;
+    step(0, 1), knob(4, 30), step(0, 0), rest();        /* (Send 1 on the hit) */
+    step(2, 1), knob(4, 20), step(2, 0), rest();        /* (a ghost: Send 1 alone) */
+    step(5, 1), knob(0, -6), knob(4, 10), step(5, 0), rest();   /* (a ghost: Level and Send 1) */
+    CHECK(rfmv_seq_lock_get(&M, clip, 0, x0) == RFM_MOVE_KIT_P_SEND1 && rfmv_seq_lock_get(&M, clip, 2, x0) == RFM_MOVE_KIT_P_SEND1 &&
+          rfmv_seq_lock_get(&M, clip, 5, lv) >= 0);
+    nn = M.seq.nnotes, nb = M.seq.nlocks;
+    memcpy(before, M.seq.locks, sizeof before);
+    clear();
+    button(MR_CC_DELETE, 1), touch(4, 1);
+    for (s = 0; s < RFM_MOVE_SEQ_MAXLEN; s++)
+        sends += rfmv_seq_lock_get(&M, clip, s, x0) >= 0 || rfmv_seq_lock_get(&M, clip, s, x0 + 1) >= 0;
+    CHECKF(!sends && M.seq.nlocks == nb - 6, "sends %d locks %d of %d", sends, M.seq.nlocks, nb);
+    CHECK(M.seq.nnotes == nn && rfmv_seq_find(&M, clip, 0, 37) >= 0);   /* (the hit kept) */
+    {
+        int lo;
+        CHECK(rfmv_seq_lock_range(&M, clip, 2, &lo) == lo);   /* (step 3's ghost: gone) */
+    }
+    CHECK(rfmv_seq_lock_get(&M, clip, 5, lv) >= 0);    /* (step 6's: its Level kept) */
+    CHECKF(!strcmp(M.kit.msg, "Cleared") && !strcmp(M.kit.msg2, "Send 1"), "msg %s %s", M.kit.msg, M.kit.msg2);
+    CHECK(rfmv_kit_pop_words(&M, w, sizeof w, &subj, &stamp) && !strcmp(w, "Cleared Send 1"));
+    touch(4, 0), button(MR_CC_DELETE, 0);
+    adv_ms(50);
+    CHECKF(strstr(said, "Cleared Send 1") != NULL, "said %s", said);
+    CHECK(!strstr(said, "Delete:"));                    /* (the release: no hint) */
+    rest();
+    button(MR_CC_DELETE, 1), touch(4, 1), touch(4, 0), button(MR_CC_DELETE, 0);
+    CHECKF(!strcmp(M.kit.msg, "No") && !strcmp(M.kit.msg2, "Automation") && M.seq.nlocks == nb - 6, "msg %s %s",
+           M.kit.msg, M.kit.msg2);
+    rest(), press(MR_CC_UNDO), rest();
+    CHECKF(M.seq.nlocks == nb && !memcmp(M.seq.locks, before, (size_t)nb * sizeof before[0]) && M.seq.nnotes == nn,
+           "undo: locks %d of %d", M.seq.nlocks, nb);   /* (every lock, the ghost and the slots as they were) */
+    /* the owner's: a step held, a knob touched, then Delete: that step's lock only, its own undo step */
+    step(5, 1), touch(4, 1), touch(4, 0), press(MR_CC_DELETE);
+    CHECK(rfmv_seq_lock_get(&M, clip, 5, x0) < 0 && rfmv_seq_lock_get(&M, clip, 5, x0 + 1) < 0 &&
+          rfmv_seq_lock_get(&M, clip, 5, lv) >= 0 && rfmv_seq_lock_get(&M, clip, 2, x0) == RFM_MOVE_KIT_P_SEND1 &&
+          rfmv_seq_lock_get(&M, clip, 0, x0) == RFM_MOVE_KIT_P_SEND1);
+    CHECK(M.kit.lpop == 5 && M.kit.kpop == 4 && M.kit.lkc_ms && !M.kit.lkc_none);   /* (its popup, "Lock Cleared") */
+    CHECKF(rfmv_kit_pop_words(&M, w, sizeof w, &subj, &stamp) && !strncmp(w, "Step 6 Send 1: ", 15), "words %s", w);
+    screen();                                           /* (the corner tag: "Lock Cleared", wider than "S6") */
+    CHECK(px(40, 4) || px(41, 4) || px(42, 4) || px(43, 4) || px(44, 4) || px(45, 4));
+    step(5, 0), rest();
+    CHECKF(strstr(said, "Lock cleared, Send 1") != NULL, "said %s", said);
+    CHECK(rfmv_seq_find(&M, clip, 5, 37) < 0);         /* (the release toggled nothing) */
+    step(2, 1), touch(4, 1), press(MR_CC_DELETE), touch(4, 0), step(2, 0), rest();   /* (still touched: the same) */
+    {
+        int lo;
+        CHECK(rfmv_seq_lock_range(&M, clip, 2, &lo) == lo && rfmv_seq_find(&M, clip, 2, 37) < 0);   /* (the ghost: gone) */
+    }
+    press(MR_CC_UNDO), rest();
+    CHECK(rfmv_seq_lock_get(&M, clip, 2, x0) == RFM_MOVE_KIT_P_SEND1 && rfmv_seq_lock_get(&M, clip, 5, x0) < 0);
+    press(MR_CC_UNDO), rest();
+    CHECK(M.seq.nlocks == nb && !memcmp(M.seq.locks, before, (size_t)nb * sizeof before[0]));
+    step(0, 1), press(MR_CC_DELETE), step(0, 0), rest();   /* (no knob touched: nothing; the hit stays) */
+    CHECK(M.seq.nlocks == nb && rfmv_seq_find(&M, clip, 0, 37) >= 0);
+    step(0, 1), button(MR_CC_DELETE, 1), knob(4, 1), button(MR_CC_DELETE, 0), step(0, 0), rest();   /* (the other
+                                                         * order: step, Delete, a turn) */
+    CHECK(rfmv_seq_lock_get(&M, clip, 0, x0) < 0 && rfmv_seq_find(&M, clip, 0, 37) >= 0);
+    rfm_move_set_speech(&M, 0);
+}
+
 /* 48. (2026-11-26, the owner's: "the popup displays completely differently while holding a step") a held step's lock
  * popup is the knob's own popup (the S tag in the corner aside), for every lockable knob on every page and engine; a
  * locked cutoff draws as the pad at that cutoff */
@@ -2538,6 +2617,7 @@ int main(void)
     t_level_popups();
     t_step_preview();
     t_ghost();
+    t_auto_clear();
     t_lock_popup();
     t_pitch_range();
     t_project_old();

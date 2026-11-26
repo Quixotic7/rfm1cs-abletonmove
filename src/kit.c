@@ -2715,6 +2715,8 @@ static void knob_touch(rfm_move_t *m, int k, int on)
     t->kdown = (uint8_t)(t->kdown | 1u << k);
     if (knob_dead(m, k))
         return;                                         /* (dark and dead) */
+    if (t->st_down)
+        t->lk_knob = (uint8_t)(k + 1);                  /* (2026-11-26: a later Delete press clears its lock there) */
     if (trig_page(m)) {                                 /* (pages v2) the TRIG page's popup while touched */
         m->touched = (int8_t)k;
         rfmv_pop(m, POP_TRIG, k);
@@ -2742,6 +2744,16 @@ static void lock_turn(rfm_move_t *m, int k, int n)
             const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
             int e;                                      /* (2026-11-26: with no hit of the pad there,
                                                          * the lock makes a ghost trigger) */
+            if (m->seq.mods & SEQ_M_DELETE) {           /* (2026-11-26, as a firmware track's) Delete held: the
+                                                         * lock removed (a ghost with none left: gone) */
+                m->seq.mods_used |= SEQ_M_DELETE;
+                if (plock_get(m, clip, abs, pad, p) >= 0) {
+                    if (!t->lk_grp)
+                        rfmv_seq_group(m), t->lk_grp = 1;
+                    plock_set(m, clip, abs, pad, p, -1);
+                }
+                continue;
+            }
             if ((e = plock_get(m, clip, abs, pad, p)) < 0)
                 e = pk_enc(p, CPAD(m, pad)->v[p]);
             if (!t->lk_grp)
@@ -2790,6 +2802,107 @@ static void vel_turn(rfm_move_t *m, int d)
             }
         }
     t->st_used |= t->st_down;
+}
+/* (2026-11-26, Move's 14.2.3 "Deleting Automation": "hold the Delete button and tap the respective encoder") Delete held
+ * + a knob touched, no step held: the chosen pad's locks of the knob's setting on every step of its clip (its LK lock,
+ * or the XLOCK slot pairs that hold it, freed), one undo step; a ghost trigger left with no locks is gone with them,
+ * the hits stay. The Trig page: the knob's trig on the pad's track. "Cleared" and the setting, or "No Automation" */
+static void auto_clear(rfm_move_t *m, int k)
+{
+    rfm_move_kit_t *t = K(m);
+    const int pad = t->cur, clip = edit_clip_of(m, trk(pad));
+    const char *name = "";
+    int c = 0;
+    m->seq.mods_used |= SEQ_M_DELETE;
+    t->kdown = (uint8_t)(t->kdown | 1u << k);
+    if (knob_dead(m, k))
+        return;                                         /* (dark and dead) */
+    if (trig_page(m)) {
+        int ids[4];
+        const int n = rfmv_seq_trig_ids(k, ids, &name);
+        c = n ? rfmv_seq_locks_clear(m, clip, ids, n) : 0;
+    } else {
+        const int p = real_p(knob_p(m, k));
+        int abs;
+        if (!kit_p(knob_p(m, k)) && lockable(p)) {
+            name = P_NAME[p];
+            for (abs = 0; abs < RFM_MOVE_SEQ_MAXLEN; abs++)
+                if (plock_get(m, clip, abs, pad, p) >= 0) {
+                    if (!c++)
+                        rfmv_seq_group(m);
+                    plock_set(m, clip, abs, pad, p, -1);
+                }
+        }
+    }
+    t->kpop = -1, t->vpop = 0, t->lpop = 0, t->lvl = 0;
+    if (c) {
+        msg(m, "Cleared", name);
+        rfmv_seq_dirty(m);
+    } else
+        msg(m, "No", "Automation");
+}
+/* (2026-11-26, the owner's: a step held, a knob touched, then Delete) the Kit view's: that knob's lock of the chosen
+ * pad on the held steps (Trig: its trig there), its own undo step; the knob's lock popup at the pad's own value with a
+ * "Lock Cleared" tag ("No Lock" when none was there); a ghost left with no locks: gone. 1: done (Delete's release
+ * then nothing) */
+int rfmv_kit_lock_delete(rfm_move_t *m)
+{
+    rfm_move_kit_t *t = K(m);
+    const int k = t->lk_knob - 1, pad = t->cur, clip = edit_clip_of(m, trk(pad));
+    const char *name = "";
+    char w[40];
+    int s, c = 0, n = 0;
+    if (!rfmv_kit_cap(m) || !rfmv_kit_active(m) || !t->st_down || m->seq.smenu)
+        return 0;
+    t->st_used |= t->st_down;                           /* (Delete pressed with steps held: their release toggles no
+                                                         * hit, a knob touched or not) */
+    if (k < 0 || knob_dead(m, k))
+        return 0;
+    if (trig_page(m)) {
+        int ids[4], j;
+        n = rfmv_seq_trig_ids(k, ids, &name);
+        for (s = 0; s < 16; s++)
+            if (t->st_down >> s & 1)
+                for (j = 0; j < n; j++) {
+                    const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
+                    if (rfmv_seq_lock_get(m, clip, abs, ids[j]) < 0)
+                        continue;
+                    if (!c++)
+                        rfmv_seq_group(m);
+                    rfmv_seq_lock_set(m, clip, abs, ids[j], -1);
+                }
+        m->touched = (int8_t)k, rfmv_pop(m, POP_TRIG, k);
+        m->seq.lkc_k = (uint8_t)(k + 1), m->seq.lkc_none = (uint8_t)!c, m->seq.lkc_ms = now(m) ? now(m) : 1;
+        t->kpop = -1, t->msg_ms = 0, t->vpop = 0, t->lpop = 0;
+    } else {
+        const int p = real_p(knob_p(m, k));
+        if (kit_p(knob_p(m, k)) || !lockable(p))
+            return 0;
+        n = 1, name = P_NAME[p];
+        for (s = 0; s < 16; s++)
+            if (t->st_down >> s & 1) {
+                const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
+                if (plock_get(m, clip, abs, pad, p) < 0)
+                    continue;
+                if (!c++)
+                    rfmv_seq_group(m);
+                plock_set(m, clip, abs, pad, p, -1);
+            }
+        t->kpop = (int8_t)k, t->kpop_ms = now(m), t->msg_ms = 0, t->vpop = 0, t->lvl = 0;
+        t->lpop = (uint8_t)(k + 1);
+    }
+    if (c)
+        rfmv_seq_group(m), rfmv_seq_dirty(m);           /* (a later turn in this hold: its own step) */
+    t->lk_grp = 0;
+    t->lkc_none = (uint8_t)!c, t->lkc_ms = now(m) ? now(m) : 1;
+    t->st_used |= t->st_down;                           /* (the steps' release: nothing) */
+    touched(m);
+    if (!n)
+        snprintf(w, sizeof w, "No lock");
+    else
+        snprintf(w, sizeof w, c ? "Lock cleared, %s" : "No lock, %s", name);
+    rfmv_say_text(m, w);
+    return 1;
 }
 int rfmv_kit_rh_of(const rfm_move_t *m) { return rfmv_kit_cap(m) && rfmv_kit_active(m) ? m->kit.rh : -1; }
 const char *rfmv_kit_rh_name(int rh) { return RH_NAME[clampi(rh, 0, RFM_MOVE_KIT_RH_N - 1)]; }
@@ -3026,7 +3139,7 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
         if (!t->st_down) {                              /* (round B: the next hold its own undo; its popups gone) */
             if (t->lpop)
                 t->kpop = -1;
-            t->lk_grp = 0, t->vel_grp = 0, t->lpop = 0, t->vpop = 0;
+            t->lk_grp = 0, t->vel_grp = 0, t->lpop = 0, t->vpop = 0, t->lk_knob = 0;
         }
         if (!(t->st_used & bit) && now(m) - t->st_ms[i] < RFM_MOVE_SEQ_HOLD_MS && rfmv_kit_active(m))
             step_click(m, i);                           /* (a click: at its release; 2026-11-26: a hold, gated as
@@ -3105,6 +3218,11 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
             t->st_used |= t->st_down;                   /* (2026-11-26: a knob touched while a step is held: a hold) */
         if (i == 8 && ev->value && held_kit_pad(m) >= 0 && !t->st_down && !q->smenu && !t->sl_on) {
             lvl_show(m, 1, 1);                          /* (R5) a pad held, the volume knob touched: its Level shows */
+            return 1;
+        }
+        if (i >= 0 && i < 8 && ev->value && !q->smenu && !t->st_down && (q->mods & SEQ_M_DELETE) &&
+            !(q->mods & (SEQ_M_SHIFT | SEQ_M_COPY | SEQ_M_LOOP)) && !rfmv_seq_mute_on(m)) {
+            auto_clear(m, i);                           /* (2026-11-26, Move's) Delete held + a knob touched */
             return 1;
         }
         if (i >= 0 && i < 8 && !q->smenu) {
@@ -4274,7 +4392,7 @@ static void knob_popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
  * makes a ghost trigger) */
 static void lock_popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
 {
-    char t[8];
+    char t[16];
     int lv;
     if (!lock_val(m, p, &lv)) {
         knob_popup(m, cv, p);
@@ -4290,6 +4408,8 @@ static void lock_popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
         d->v[rp] = was;
     }
     snprintf(t, sizeof t, "S%d", held_step(m) + 1);
+    if (m->kit.lkc_ms && now(m) - m->kit.lkc_ms < RFM_MOVE_POPUP_MS && m->kit.lk_knob == m->kit.kpop + 1)
+        snprintf(t, sizeof t, "%s", m->kit.lkc_none ? "No Lock" : "Lock Cleared");   /* (2026-11-26) */
     v2_R(cv, 0, 0, v2_tw(t, 1) + 3, 9, 1);
     v2_T(cv, 2, 1, t, 1, 0);
 }

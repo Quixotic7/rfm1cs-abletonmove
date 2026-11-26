@@ -5,6 +5,24 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## 0.16.0 (prepared 2026-11-26, not yet tagged): the kit, stages 3a, 3b and 3c, pages, engines, Warp; Exit; one-setting Shift menus
 
+### Clearing automation: Delete + a knob, and a held step's lock with Delete (2026-11-26, the owner's)
+
+"We should match how Move does automation step lock deletion. Hold delete then tap a knob and it should delete all
+automation for that parameter across all steps." Move's manual (14.2.3, Deleting Automation): "hold the Delete button
+and tap the respective encoder".
+
+- Delete held + a knob touched (the touch, no step held): that knob's parameter's locks on every step of the shown
+  clip, one undo step. A firmware track: the CC page's CC; TRIG: the knob's trig (Function takes its amount with it);
+  the FM-1 and ENGINE pages keep no locks. The Kit view: the chosen pad's locks of the page's setting (its LK lock or
+  the XLOCK slot pairs holding it, freed); a ghost left with no locks goes, the hits stay; the Trig page: the trig on
+  the pad's track. "Cleared" and the name (said "Cleared Send 1"), or "No Automation". The volume knob: nothing (the
+  manual gives it no such gesture).
+- (the owner's) A step held, a knob touched in that hold (still touched or not), then Delete pressed: that knob's lock
+  on the held steps only, its own undo step; the knob's popup at the unlocked value tagged "Lock Cleared" ("No Lock":
+  nothing was locked), said "Lock cleared, CC 22". Delete pressed with a step held and no knob touched: nothing, and
+  the step's release no longer takes its notes or hits away. Step held + Delete held + a turn clears as before, the
+  Kit view's too now.
+
 ### Step preview, locks on any step, ghost triggers (2026-11-26, the owner's)
 
 "Holding a step while stopped should preview it. You should be able to lock parameters on any step. If you lock a

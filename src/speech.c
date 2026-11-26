@@ -24,7 +24,7 @@ static const char *const MSG_WORDS[] = {
     "", "No empty clip", "Full", "Load failed", "Captured", "Undo", "Redo", "Copied", "Pasted", "", "Quantized",
     "Loop doubled", "External tempo", "Duplicated", "Cleared", "Capture cleared", "Sync: AUTO", "Sync: INT",
     "Sync: EXT", "Full velocity", "Pad velocity", "Metronome on", "Metronome off", "New clip", "Clip cleared", "Not routed",
-    "None" };
+    "None", "Cleared", "No automation" };
 static const char *const FN_WORDS[RFM_MOVE_FN_N] = { "None", "Restart", "Reverse", "Forward", "Flip", "Random",
                                                      "Random function", "Leap", "Jump", "Repeat" };
 
@@ -631,7 +631,10 @@ static int pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint
     if (up && m->pop == POP_LABEL && rfmv_now_ms(m) - m->pop_ms < m->pop_delay)
         up = 0;
     if (rfmv_seq_msg_text(m) && (!up || (int32_t)(q->msg_ms - m->pop_ms) >= 0)) {
-        snprintf(o, (size_t)cap, "%s", q->msg < sizeof MSG_WORDS / sizeof MSG_WORDS[0] ? MSG_WORDS[q->msg] : "");
+        if (q->msg == SEQ_MSG_AUTOCLR)                  /* (2026-11-26) "Cleared CC 74", "Cleared Chance" */
+            snprintf(o, (size_t)cap, "Cleared %s", q->msg_name);
+        else
+            snprintf(o, (size_t)cap, "%s", q->msg < sizeof MSG_WORDS / sizeof MSG_WORDS[0] ? MSG_WORDS[q->msg] : "");
         *subj = (uint16_t)(0x300 | q->msg), *stamp = m->msg_n;
         return 1;
     }

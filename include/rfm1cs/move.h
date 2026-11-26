@@ -1192,6 +1192,13 @@ typedef struct {
     /* (0.14.0, the owner's 2026-11-24) the ENGINE knob page shown (with trig 0, fwp 0; s.bank keeps the CC bank), and
      * its page list open (the jog's click) */
     uint8_t eng, ep_list;
+    /* (2026-11-26) SEQ_MSG_AUTOCLR's second row: the parameter whose locks Delete + a knob's touch cleared */
+    char msg_name[20];
+    /* (2026-11-26, the owner's) a step held, a knob touched, then Delete pressed: that knob's lock on the held steps
+     * cleared. sk_knob: the knob touched last in this hold + 1 (0 none); lkc_*: the knob popup's "Lock Cleared" tag
+     * (the knob + 1, since when, 1 nothing was locked: "No Lock") */
+    uint8_t sk_knob, lkc_k, lkc_none;
+    uint32_t lkc_ms;
 } rfm_move_seq_t;
 
 /* ---- (0.14.0) engine parameters: what the firmware's ep1 gives (engine-params SPEC.md, sections 3, 4 and 9) */
@@ -1638,6 +1645,10 @@ typedef struct {                                        /* (kit.c) */
     uint16_t pv_st;
     uint8_t pv_n[16], pv_pad[16];
     int8_t pv_sm[16][4];
+    /* (2026-11-26) a step held: the knob touched last + 1 (0 none; a later Delete press clears its lock there); the
+     * lock popup's "Lock Cleared" tag since lkc_ms (lkc_none: "No Lock") */
+    uint8_t lk_knob, lkc_none;
+    uint32_t lkc_ms;
 } rfm_move_kit_t;
 
 /* ---- the state */
