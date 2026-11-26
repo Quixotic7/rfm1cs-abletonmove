@@ -824,7 +824,7 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
                                                          * (round A) the kit's Trim silence, Toggle (no new bytes), 14
                                                          * (round B) Decay, Sustain, Filter, Resonance a pad; the kit
                                                          * pads' step locks (RFM_MOVE_KIT_LOCK0..), 15 (pages v2) a
-                                                         * pad's engines, Warp and filter envelope (46 settings), the
+                                                         * pad's engines, Warp and filter envelope (45 settings), the
                                                          * kit bus's low-pass */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
@@ -854,11 +854,11 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
  * RFM_MOVE_KIT_P_N settings i16 }.
  * (version 13, round A: no new bytes) the header's byte 9 the Trim silence (0 / 1; before: 0, read as on), the Play
  * mode RFM_MOVE_KIT_M_TOGGLE.
- * (version 14, round B) 20 settings a pad. (version 15, pages v2) 46 settings a pad (RFM_MOVE_KIT_P_N); the header's
+ * (version 14, round B) 20 settings a pad. (version 15, pages v2) 45 settings a pad (RFM_MOVE_KIT_P_N); the header's
  * bytes 10, 11 the kit bus's low-pass: cutoff 0..100 (100 open), resonance 0..100 (before: open, 0) */
 #define RFM_MOVE_KIT_PADS 16
 #define RFM_MOVE_KIT_PATH 160                           /* a sound's path with its NUL (the host's) */
-#define RFM_MOVE_KIT_P_N 46                             /* a pad's settings (RFM_MOVE_KIT_P_*; 12 in version 11, 16 in
+#define RFM_MOVE_KIT_P_N 45                             /* a pad's settings (RFM_MOVE_KIT_P_*; 12 in version 11, 16 in
                                                          * 12 and 13, 20 in 14) */
 #define RFM_MOVE_KIT_P_N_V14 20
 #define RFM_MOVE_KIT_P_N_V11 12
@@ -866,7 +866,7 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_KIT_BYTES_V11 (8 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V11))   /* (2952) */
 #define RFM_MOVE_KIT_BYTES_V12 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V12))   /* (3112) */
 #define RFM_MOVE_KIT_BYTES_V14 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V14))   /* (3240) */
-#define RFM_MOVE_KIT_BYTES (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N))   /* (4072) */
+#define RFM_MOVE_KIT_BYTES (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N))   /* (4040) */
 #define RFM_MOVE_PROJECT_EXT_V11 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V11)
 #define RFM_MOVE_PROJECT_EXT_V12 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V12)
 #define RFM_MOVE_PROJECT_EXT_V14 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V14)

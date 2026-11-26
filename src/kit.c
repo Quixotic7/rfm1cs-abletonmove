@@ -49,6 +49,7 @@
 #include "v2.h"
 
 #define clampi rfmv_clampi
+typedef char kit_pn_check[RFM_MOVE_KIT_P_FRELEASE + 1 == RFM_MOVE_KIT_P_N ? 1 : -1];   /* (pages v2) */
 #define K(m) (&(m)->kit)
 typedef rfmv_rgb_t rgb_t;
 
@@ -105,6 +106,26 @@ static icon_t I_LOFI = { "...........", "........###", "........#..", ".....####
                          "..#........", "###........", "...........", "...........", "..........." };
 static icon_t I_GRAIN = { "...........", ".##....##..", ".##....##..", "....##.....", "....##...##", "##.......##",
                           "##..##.....", "....##..##.", "........##.", "..##.......", "..##......." };
+/* (pages v2, the owner's 2026-11-26) the pages' icons (the switcher): Sample Kit's lanes, Pad Sample's wave, Trig's
+ * ratchet, Pad Sample 2's sliders, Warp's arrows, Filter's slope, Pad Mix's fader, Kit Mix's faders */
+static icon_t PI_KIT = { "...........", "##.##.##.##", "...........", "##.....##..", "...........", "...##.##.##",
+                         "...........", "##.##......", "...........", ".....##.##.", "..........." };
+static icon_t PI_SAMPLE = { "...........", ".....#.....", ".....#.....", "...#.#.....", "...#.#..#..", "#.##.##.#.#",
+                            "...#.#..#..", "...#.#.....", ".....#.....", ".....#.....", "..........." };
+static icon_t PI_TRIG = { "...........", "#..........", "#..#.......", "#..#..#....", "#..#..#..#.", "#..#..#..#.",
+                          "#..#..#..#.", "#..#..#..#.", "#..#..#..#.", "###########", "..........." };
+static icon_t PI_SAMPLE2 = { "...........", ".#...#...#.", ".#...#...#.", "###..#...#.", ".#...#..###", ".#..###..#.",
+                             ".#...#...#.", ".#...#...#.", ".#...#...#.", ".#...#...#.", "..........." };
+static icon_t PI_WARP = { "...........", "#.........#", "#..#...#..#", "#.##...##.#", "#.#######.#", "#.##...##.#",
+                          "#..#...#..#", "#.........#", "...........", "...........", "..........." };
+static icon_t PI_FILTER = { "...........", "...........", "######.....", "......#....", ".......#...", "........#..",
+                            "........#..", ".........#.", ".........#.", "..........#", "..........." };
+static icon_t PI_PADMIX = { ".....#.....", ".....#.....", ".....#.....", "...#####...", "...#####...", ".....#.....",
+                            ".....#.....", ".....#.....", ".....#.....", ".....#.....", ".....#....." };
+static icon_t PI_KITMIX = { ".#...#...#.", ".#...#...#.", "###..#...#.", "###..#...#.", ".#...#..###", ".#..###.###",
+                            ".#..###..#.", ".#...#...#.", ".#...#...#.", ".#...#...#.", ".#...#...#." };
+static icon_t *const PG_ICON[RFM_MOVE_KIT_PG_N] = { &PI_KIT, &PI_SAMPLE, &PI_TRIG, &PI_SAMPLE2, &PI_WARP, &PI_FILTER,
+                                                    &PI_PADMIX, &PI_KITMIX };
 static icon_t *const ENG_ICON[RFM_MOVE_KIT_M_N] = { &I_PLAY, &I_PAD, &I_LOOP, &I_PENV, &I_LOFI, &I_GRAIN };
 /* (round B) the pad's filter: Filter (a low-pass slope), Resonance (its peak) */
 /* (pages, the owner's browser, as Move's) Back a left arrow, a folder a right arrow, a sample a small wave */
@@ -3520,9 +3541,34 @@ static void cells(const rfm_move_t *m, mr_canvas_t *cv)
         v2_TC(cv, x + 16, y + 10, v, 1, 1);
     }
 }
-/* (Sample Kit) the whole kit's steps: 16 lanes of 4 px, pad 1 at the bottom, each its pad's hits over the 16 steps
- * shown (8 px a step); a pad with no sound: empty; the chosen pad's lane underlined; while playing, each lane's
- * playhead a tick */
+/* (pages v2, the owner's 2026-11-26) the page switcher (while the jog turns pages, and on a blank page): the eight
+ * pages' icons in a row, each in a filled cell (no outline), the page shown inverted, its name under them at one size
+ * (1x: "Pad Sample 2" fits); no marks */
+static void page_switch(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    const int pg = cur_page(m);
+    int i;
+    for (i = 0; i < RFM_MOVE_KIT_PG_N; i++) {
+        const int x = i * 16 + 1, y = 14;
+        if (i != pg)
+            v2_R(cv, x - 1, y - 2, 15, 15, 1);
+        ic(cv, *PG_ICON[i], x + 1, y, i == pg);
+    }
+    v2_TC(cv, 64, 36, PG_NAME[pg], 1, 1);
+}
+/* (Sample Kit; pages v2, the owner's exact pixels) the whole kit's steps: 16 lanes of 4 px, pad 1 at the bottom; a step
+ * a 4 x 4 cell, 2 px apart (16 x 6 px from x 8): a hit its lower three rows, an empty step a 2 px dash; the chosen pad's
+ * lane a small arrow on the left; while playing, the playhead's column inverted (each lane's own playhead) */
+#define LANE_X0 8
+static int lanes_blank(const rfm_move_t *m)             /* no hit in the 16 steps shown */
+{
+    int k, s;
+    for (k = 0; k < RFM_MOVE_KIT_PADS; k++)
+        for (s = 0; s < 16; s++)
+            if (step_has(m, k, m->seq.page * RFM_MOVE_SEQ_PAGE + s))
+                return 0;
+    return 1;
+}
 static void lanes(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_seq_t *q = &m->seq;
@@ -3530,19 +3576,18 @@ static void lanes(const rfm_move_t *m, mr_canvas_t *cv)
     for (k = 0; k < RFM_MOVE_KIT_PADS; k++) {
         const int y = (15 - k) * 4, tr = trk(k);
         const int pos = (q->playing || q->start_pending) && q->tr[tr].active == q->tr[tr].sel ? rfmv_seq_clip_pos(m, tr) : -1;
-        if (!has_sound(CPAD(m, k)))
-            continue;
         for (s = 0; s < 16; s++) {
-            const int abs = q->page * RFM_MOVE_SEQ_PAGE + s;
+            const int abs = q->page * RFM_MOVE_SEQ_PAGE + s, x = LANE_X0 + s * 6;
+            const int on = pos == abs;
+            if (on)
+                v2_R(cv, x, y, 4, 4, 1);                /* (the playhead: the cell inverted) */
             if (step_has(m, k, abs))
-                v2_R(cv, s * 8 + 1, y, 6, 3, 1);
+                v2_R(cv, x, y + 1, 4, 3, !on);
             else
-                v2_px(cv, s * 8 + 4, y + 1, 1);
-            if (pos == abs)
-                v2_R(cv, s * 8, y, 1, 3, 1);
+                v2_R(cv, x + 1, y + 2, 2, 1, !on);
         }
-        if (k == m->kit.cur)
-            v2_R(cv, 0, y + 3, 128, 1, 1);
+        if (k == m->kit.cur)                            /* (a right-pointing arrow, 3 px tall) */
+            v2_R(cv, 3, y + 1, 1, 3, 1), v2_px(cv, 4, y + 2, 1);
     }
 }
 /* (pages v2) the Trig page's picture: the chosen pad's track over the 16 steps shown (6 px a step): its hits (the
@@ -3658,8 +3703,12 @@ static void page_pic(const rfm_move_t *m, mr_canvas_t *cv)
 }
 static void page_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
-    if (cur_page(m) == RFM_MOVE_KIT_PG_KIT) {           /* (Sample Kit: the lanes, the whole screen) */
-        lanes(m, cv);
+    if (cur_page(m) == RFM_MOVE_KIT_PG_KIT) {           /* (Sample Kit: the lanes, the whole screen; pages v2: an empty
+                                                         * pattern, the page switcher) */
+        if (lanes_blank(m))
+            page_switch(m, cv);
+        else
+            lanes(m, cv);
         return;
     }
     page_pic(m, cv);
@@ -4022,9 +4071,7 @@ int rfmv_kit_screen(const rfm_move_t *m, mr_canvas_t *cv)
     if (t->turned && now(m) - t->turn_ms < RFM_MOVE_POPUP_MS) {   /* (pages) the jog turning: the page's name and
                                                          * the page marks, as the sequencer's pages (v2_modeName,
                                                          * the ENGINE page's arrival) */
-        int n, cur;
-        rfmv_kit_page_cells(m, &n, &cur);               /* (pages v2: the pages shown, Stretch the Stretch engine's) */
-        v2_modeName(cv, PG_NAME[cur_page(m)], n, cur);
+        page_switch(m, cv);                             /* (pages v2: the icons, the name; no marks) */
         return 1;
     }
     page_screen(m, cv);
