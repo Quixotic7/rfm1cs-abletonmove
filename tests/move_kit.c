@@ -541,7 +541,8 @@ static void t_rows(void)
     CHECK(M.kit.tools && M.kit.ti == 0);
     clear(), jog_click();
     CHECK(last(RFM_MOVE_ACT_KIT_NOTE) && last(RFM_MOVE_ACT_KIT_NOTE)->down);
-    jog(4), clear(), jog_click();                       /* (3c: Play, Trim, Normalize, Reverse, Delete) */
+    jog(5), clear(), jog_click();                       /* (3c: Play, Trim, Normalize, Reverse, Delete; round C:
+                                                         * Freeze before Delete) */
     CHECK(!M.kit.tools && !M.kit.pad[0].path[0] && last(RFM_MOVE_ACT_KIT_LOAD) && !last(RFM_MOVE_ACT_KIT_LOAD)->take);
     clear(), press(MR_CC_UNDO);                         /* (the pad back) */
     CHECK(M.kit.pad[0].path[0] && last_i(RFM_MOVE_ACT_KIT_LOAD) >= 0 && strstr(D[last_i(RFM_MOVE_ACT_KIT_LOAD)], "Kick.wav"));
@@ -1617,7 +1618,10 @@ static void t_mock3c(void)
     rfm_move_kit_loaded(&M, 4, RFM_MOVE_KIT_OK, "Snare Rim", "/s/Snare Rim.wav", 28541, 48000, n, p2);
     jog_click(), jog(1), rest();
     CHECK(M.kit.tools && M.kit.ti == 1);
-    out = vs_ref("padact", NULL, 0);
+    {   /* (round C: the tools' row has Freeze too, six icons closer than the mock's five: not compared) */
+        static const box_t TOOLS = { 0, 24, 128, 17 };
+        out = vs_ref("padact", &TOOLS, 1);
+    }
     CHECKF(out == 0, "padact: %d differ", out);
     dump("padact");
     back();

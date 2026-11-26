@@ -335,13 +335,26 @@ enum {
 #define RFM_MOVE_ACT_KIT_FIND 77
 #define RFM_MOVE_ACT_KIT_PEAKS 78
 #define RFM_MOVE_ACT_KIT_AUDITION 79
+/* (round C, 2026-11-26: the project's own sounds; README "The kit (round C)")
+ *  - KIT_KEEP: Files left (the click, the tabs, the view) after the jog put a sound on the pad (a browse's landing):
+ *    index the pad. The host copies the sound the pad has now into the project's own folder (once: a sound already
+ *    there stays) and answers rfm_move_kit_owned
+ *  - KIT_LOAD also carries param 1: the sound is kept (the sampler's To Kit, a take's slices): copied into the
+ *    project's folder first, the pad gets the copy
+ *  - KIT_EDIT's RFM_MOVE_KIT_ED_FREEZE: the pad rendered as it sounds now (region, pitch, stretch, reverse, the
+ *    envelope, the filter, level, pan; not the sends) into a new file; the answer's sound comes with its settings back
+ *    to neutral (one Undo: the pad as it was)
+ *  - a path starting RFM_MOVE_KIT_OWN ("@/") is a file in the open project's own folder (the host's) */
+#define RFM_MOVE_ACT_KIT_KEEP 80
+#define RFM_MOVE_KIT_OWN "@/"
 #define RFM_MOVE_KIT_LAND_MS 120                        /* Files: the jog at rest so long on a sound: it is on the pad */
 #define RFM_MOVE_KIT_AUD_MS 150                         /* Start / End at rest so long: heard */
 #define RFM_MOVE_KIT_SENS_MS 100                        /* the Hits' sensitivity at rest so long: the cuts asked again */
 #define RFM_MOVE_KIT_ZOOM 8                             /* the close-up: 8 times nearer than the whole sound (Shift: 32) */
 #define RFM_MOVE_KIT_ZOOM_FINE 32
 enum { RFM_MOVE_KIT_MG_COPY, RFM_MOVE_KIT_MG_MIX, RFM_MOVE_KIT_MG_JOIN, RFM_MOVE_KIT_MG_N };
-enum { RFM_MOVE_KIT_ED_TRIM = 1, RFM_MOVE_KIT_ED_NORMALIZE, RFM_MOVE_KIT_ED_REVERSE };
+enum { RFM_MOVE_KIT_ED_TRIM = 1, RFM_MOVE_KIT_ED_NORMALIZE, RFM_MOVE_KIT_ED_REVERSE,
+       RFM_MOVE_KIT_ED_FREEZE };                    /* (round C) */
 enum { RFM_MOVE_KIT_SL_ASK, RFM_MOVE_KIT_SL_PLAY, RFM_MOVE_KIT_SL_DONE };
 enum { RFM_MOVE_KIT_SM_HITS, RFM_MOVE_KIT_SM_EQ16, RFM_MOVE_KIT_SM_EQ8, RFM_MOVE_KIT_SM_EQ4, RFM_MOVE_KIT_SM_STEPS,
        RFM_MOVE_KIT_SM_TAP,                             /* (round B) the steps tapped while the take plays (the host
@@ -1491,6 +1504,9 @@ typedef struct {                                        /* (kit.c) */
     uint8_t tap_on;                                     /* Tap: a pass playing (since tap_us0, the core's clock) */
     uint64_t tap_us0;
     uint16_t tap_down;                                  /* .. the steps it took (their releases) */
+    /* (round C) */
+    uint8_t br_own;                                     /* the browse's sound kept (KIT_KEEP sent) */
+    uint32_t frz_ms;                                    /* a Freeze asked: its pad blinking from */
 } rfm_move_kit_t;
 
 /* ---- the state */
@@ -2213,6 +2229,14 @@ void rfm_move_kit_set_trim(rfm_move_t *m, int on);
 int rfm_move_kit_play(rfm_move_t *m, int pad, int vel);
 int rfm_move_kit_choose(rfm_move_t *m, int pad);
 int rfm_move_kit_set(rfm_move_t *m, int pad, int param, int value);
+/* (round C) KIT_KEEP's answer (also the host's own copy-in of a pad's sound): the pad's path from becomes to (the same
+ * sound, now the project's own copy; nothing else changes, no load). 0: the pad has another sound now (ignored) */
+int rfm_move_kit_owned(rfm_move_t *m, int pad, const char *from, const char *to);
+/* (round C) the paths the kit refers to now: every pad's and the Undo's (a pad's, the whole kit's) into out (at most
+ * cap, "" skipped, each once). The host keeps those files of the project's folder; the count */
+int rfm_move_kit_refs(const rfm_move_t *m, const char **out, int cap);
+/* (round C, the page's Kit tab) a pad's own edit, as the Sound row's tools: RFM_MOVE_KIT_ED_*. 1 asked */
+int rfm_move_kit_edit(rfm_move_t *m, int pad, int op);
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */
