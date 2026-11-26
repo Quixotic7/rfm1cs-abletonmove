@@ -1378,8 +1378,8 @@ static void test_sv_launch_q(void)
     {                                                   /* a version 7 blob: loads, with the defaults */
         uint32_t h = 2166136261u;
         n = (int)proj_v15(blob, (uint32_t)rfm_move_project_save(&M, blob, sizeof blob));   /* (7 bytes a note) */
-        memmove(blob + n - 4 - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES, blob + n - 4, 4);
-        n -= 1 + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_PFW_BYTES + RFM_MOVE_KIT_BYTES, blob[4] = 7;
+        memmove(blob + n - 4 - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES_V15, blob + n - 4, 4);
+        n -= 1 + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_PFW_BYTES + RFM_MOVE_KIT_BYTES_V15, blob[4] = 7;
         for (k = 0; k < n - 4; k++)
             h = (h ^ blob[k]) * 16777619u;
         for (k = 0; k < 4; k++)
@@ -2747,7 +2747,7 @@ static void test_ps_blob(void)
     /* a version 8 blob (no firmwares): the slots, the levels and the settings as they are; saved again as 9 with what
      * is loaded */
     memcpy(b8, b9, (size_t)n);
-    n8 = (int)proj_v15(b8, (uint32_t)n) - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES;   /* (7 bytes a note) */
+    n8 = (int)proj_v15(b8, (uint32_t)n) - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES_V15;   /* (7 bytes a note) */
     b8[4] = 8;
     refnv32(b8, (uint32_t)n8);
     CHECK(rfm_move_project_check(b8, (uint32_t)n8) == 0);
@@ -2963,7 +2963,7 @@ static void test_ps_held(void)
         static uint8_t b8[RFM_MOVE_PROJECT_MAX];
         int n8;
         memcpy(b8, PS_BLOB[6], (size_t)PS_N[6]);
-        n8 = (int)proj_v15(b8, PS_N[6]) - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES;   /* (7 bytes a note) */
+        n8 = (int)proj_v15(b8, PS_N[6]) - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES_V15;   /* (7 bytes a note) */
         b8[4] = 8;
         refnv32(b8, (uint32_t)n8);
         memcpy(PS_BLOB[3], b8, (size_t)n8), PS_N[3] = (uint32_t)n8;

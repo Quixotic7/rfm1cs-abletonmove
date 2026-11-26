@@ -1118,9 +1118,9 @@ static void test_old_formats(void)
     rfmv_seq_note_put(m, 0, 3, 64, 90, 24, 0);
     m->seq.fx.send[0][1] = 33;
     n = rfm_move_project_save(m, blob, sizeof blob);
-    CHECK(blob[4] == RFM_MOVE_PROJECT_VERSION && RFM_MOVE_PROJECT_VERSION == 16);
+    CHECK(blob[4] == RFM_MOVE_PROJECT_VERSION && RFM_MOVE_PROJECT_VERSION == 17);
     n = (int)proj_v15(blob, (uint32_t)n);               /* (2026-11-26: 7 bytes a note before 16) */
-    n4 = n - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES;   /* a version 4 blob: no FX setup (0.6.6:
+    n4 = n - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES_V15;   /* a version 4 blob: no FX setup (0.6.6:
                                                          * nor MIDI routes; 0.12.0: nor launch settings) */
     blob[4] = 4;
     for (h = 2166136261u, k = 0; k < n4 - 4; k++)

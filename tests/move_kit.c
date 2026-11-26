@@ -926,7 +926,7 @@ static void t_project(void)
     /* version 10 (no kit): its routing as it was, an empty kit */
     memcpy(c, b, (size_t)n);
     n = (int)proj_v15(c, (uint32_t)n);                  /* (2026-11-26: 7 bytes a note before 16) */
-    n10 = n - RFM_MOVE_KIT_BYTES;
+    n10 = n - RFM_MOVE_KIT_BYTES_V15;
     c[4] = 10;
     for (h = 2166136261u, i = 0; i < n10 - 4; i++)
         h = (h ^ c[i]) * 16777619u;
@@ -1440,17 +1440,17 @@ static void t_project12(void)
           M2.kit.pad[3].v[RFM_MOVE_KIT_P_SEND3] == 77 && !strcmp(M2.kit.name, "Kit 9") && M2.kit.mix[4] == 5);
     /* a version 11 blob (as stage 3a wrote it): 8 bytes, 12 settings a pad */
     n = (int)proj_v15(b, (uint32_t)n);                  /* (2026-11-26: 7 bytes a note before 16) */
-    memcpy(c, b, (size_t)n - 4 - RFM_MOVE_KIT_BYTES);
+    memcpy(c, b, (size_t)n - 4 - RFM_MOVE_KIT_BYTES_V15);
     {
-        uint8_t *o = c + n - 4 - RFM_MOVE_KIT_BYTES;
-        const uint8_t *x = b + n - 4 - RFM_MOVE_KIT_BYTES;
+        uint8_t *o = c + n - 4 - RFM_MOVE_KIT_BYTES_V15;
+        const uint8_t *x = b + n - 4 - RFM_MOVE_KIT_BYTES_V15;
         memset(o, 0, RFM_MOVE_KIT_BYTES_V11);
         memcpy(o, x, 4);
         o += 8, x += 40;
-        for (k = 0; k < RFM_MOVE_KIT_PADS; k++, o += 160 + 24, x += 160 + 2 * RFM_MOVE_KIT_P_N)
+        for (k = 0; k < RFM_MOVE_KIT_PADS; k++, o += 160 + 24, x += 160 + 2 * RFM_MOVE_KIT_P_N_V15)
             memcpy(o, x, 160 + 24);
     }
-    n11 = n - RFM_MOVE_KIT_BYTES + RFM_MOVE_KIT_BYTES_V11;
+    n11 = n - RFM_MOVE_KIT_BYTES_V15 + RFM_MOVE_KIT_BYTES_V11;
     c[4] = 11;
     for (h = 2166136261u, i = 0; i < n11 - 4; i++)
         h = (h ^ c[i]) * 16777619u;
@@ -1536,11 +1536,11 @@ static void t_merge(void)
         static uint8_t kb[RFM_MOVE_KIT_BYTES];
         memset(M.kit.pad[6].path, 'x', sizeof M.kit.pad[6].path - 1);
         sound_at(6, "/s/a.wav", 4800, 48000);
-        rfmv_kit_write(&M, kb), kb[13] = 0;              /* (as 15 had it) */
+        rfmv_kit_write(&M, kb), kit_v15(kb);            /* (as 15 had it) */
         CHECK(rfmv_kit_check(kb, 15) == 0 && !strcmp(M.kit.pad[6].path, "/s/a.wav"));
         M.kit.pad[6].path[0] = 0;
         memset(M.kit.pad[6].path + 1, 'y', 20);
-        rfmv_kit_write(&M, kb), kb[13] = 0;
+        rfmv_kit_write(&M, kb), kit_v15(kb);
         CHECK(rfmv_kit_check(kb, 15) == 0);
         rfm_move_kit_loaded(&M, 6, RFM_MOVE_KIT_EMPTY, NULL, NULL, 0, 0, 0, NULL);
         memset(M.kit.pad[6].path, 0, sizeof M.kit.pad[6].path);
@@ -1811,10 +1811,10 @@ static void t_trim(void)
     M.kit.rec_pad = 0, M.kit.rec_held = 0;
     /* saved: version 13 its byte; 12 read as On; a bad byte refused */
     rfm_move_kit_set_trim(&M, 0);
-    rfmv_kit_write(&M, kb), kb[13] = 0;
+    rfmv_kit_write(&M, kb), kit_v15(kb);
     CHECK(kb[9] == 0 && rfmv_kit_check(kb, 15) == 0);
     rfm_move_kit_set_trim(&M, 1);
-    rfmv_kit_write(&M, kb), kb[13] = 0;
+    rfmv_kit_write(&M, kb), kit_v15(kb);
     CHECK(kb[9] == 1 && rfmv_kit_check(kb, 15) == 0 && rfmv_kit_check(kb, 12) != 0);
     kb[9] = 2;
     CHECK(rfmv_kit_check(kb, 14) != 0);
@@ -2054,15 +2054,15 @@ static void t_bits(void)
            "lock %d = %d", rfmv_seq_lock_get(&M, clip, 0, xs), rfmv_seq_lock_get(&M, clip, 0, xs + 1));
     /* a kit part saved before the tenths: the flag off, whole bits (12), a whole-bit lock (7 bits: 6) */
     rfmv_kit_write(&M, b);
-    CHECK(b[13] == 1 && rfmv_kit_check(b, 16) == 0);
+    CHECK(b[13] == 1 && rfmv_kit_check(b, 17) == 0);
     b[13] = 0, b[at] = 12, b[at + 1] = 0;
-    CHECK(rfmv_kit_check(b, 16) == 0);
+    CHECK(rfmv_kit_check(b, 17) == 0);
     rfmv_seq_lock_set(&M, clip, 0, xs + 1, 6);
-    rfmv_kit_read(&M, b, 16);
+    rfmv_kit_read(&M, b, 17);
     CHECKF(M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS] == 120 && rfmv_seq_lock_get(&M, clip, 0, xs + 1) == 60,
            "bits %d lock %d", M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS], rfmv_seq_lock_get(&M, clip, 0, xs + 1));
     b[13] = 1, b[at] = 5;                               /* (tenths: 0.5 bits is out of range) */
-    CHECK(rfmv_kit_check(b, 16) != 0);
+    CHECK(rfmv_kit_check(b, 17) != 0);
 }
 /* 41c. (2026-11-26, the owner's) Loop Start / End as a percentage of the region, its ends START / END (screen and
  * words: "Loop Start: Start") */
@@ -2087,6 +2087,42 @@ static void t_loop_pct(void)
     touch(4, 1);
     CHECKF(rfmv_kit_pop_words(&M, w, sizeof w, &subj, &stamp) && !strcmp(w, "Loop Start: 50.0%"), "words %s", w);
     touch(4, 0), rest();
+}
+/* 41d. (2026-11-26, the owner's) Granular's Scan: Pad Sample 5 Position, 6 Scan, 7 Size, 8 Density; Pad Sample 2 5
+ * Spray, 6 Spread; Scan -100..+100 ("Off" at 0, "+35 %"), locked on a step as the rest */
+static void t_scan(void)
+{
+    char w[96];
+    uint16_t subj;
+    uint32_t stamp;
+    const int clip = SEQ_CLIP(12, 0);
+    kit_view();
+    sound(1, "Snare", 48000, NULL, 0);
+    hit(kp(1)), rest();
+    rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_MODE, RFM_MOVE_KIT_M_GRANULAR);
+    CHECK(M.kit.page == RFM_MOVE_KIT_PG_SAMPLE && M.kit.pad[1].v[RFM_MOVE_KIT_P_GSCAN] == 0);
+    touch(5, 1);
+    CHECKF(rfmv_kit_pop_words(&M, w, sizeof w, &subj, &stamp) && !strcmp(w, "Scan: Off"), "words %s", w);
+    knob(5, 35);
+    CHECKF(M.kit.pad[1].v[RFM_MOVE_KIT_P_GSCAN] == 35 && rfmv_kit_pop_words(&M, w, sizeof w, &subj, &stamp) &&
+           !strcmp(w, "Scan: +35 %"), "scan %d words %s", M.kit.pad[1].v[RFM_MOVE_KIT_P_GSCAN], w);
+    knob(5, 127 - 59), touch(5, 0), rest();             /* (-60: -25) */
+    CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_GSCAN] == -25);
+    knob(6, 2), knob(7, 1);                             /* (7 Size, 8 Density) */
+    CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_GSIZE] != 80 && M.kit.pad[1].v[RFM_MOVE_KIT_P_GDENS] == 5);
+    M.kit.page = RFM_MOVE_KIT_PG_SAMPLE2;
+    knob(4, 10), knob(5, 3);                            /* (Pad Sample 2: 5 Spray, 6 Spread) */
+    CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_GSPRAY] == 10 && M.kit.pad[1].v[RFM_MOVE_KIT_P_GSPREAD] == 3);
+    M.kit.page = RFM_MOVE_KIT_PG_SAMPLE, rest();
+    tap_step(0), rest();
+    step(0, 1), touch(5, 1), knob(5, 10), touch(5, 0), step(0, 0), rest();   /* (a lock: -15) */
+    {
+        int j, got = 0;
+        for (j = 0; j < RFM_MOVE_KIT_XSLOTS; j++)
+            if (rfmv_seq_lock_get(&M, clip, 0, RFM_MOVE_KIT_XLOCK0 + (j * 4 + 1) * 2) == RFM_MOVE_KIT_P_GSCAN)
+                got = rfmv_seq_lock_get(&M, clip, 0, RFM_MOVE_KIT_XLOCK0 + (j * 4 + 1) * 2 + 1) - 100;
+        CHECKF(got == -15 && M.kit.pad[1].v[RFM_MOVE_KIT_P_GSCAN] == -25, "lock %d", got);
+    }
 }
 /* 42. the Kit view's Layout menu (Shift + step 8): the jog's turn sets the right half's mode, not the note layout */
 static void t_kit_layout(void)
@@ -2598,7 +2634,7 @@ static void t_pitch_range(void)
     CHECK(play_ons(1, 200, &a) >= 1 && a.value == -21);
     /* saved (version 16) and back: the pitch, the octave */
     n = rfm_move_project_save(&M, b, sizeof b);
-    CHECK(n > 0 && b[4] == 16 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    CHECK(n > 0 && b[4] == RFM_MOVE_PROJECT_VERSION && rfm_move_project_check(b, (uint32_t)n) == 0);
     rfm_move_init(&M2, NULL, on_act, NULL);
     rfm_move_fw_caps(&M2, KCAPS);
     CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0 && M2.kit.rh_oct == -2);
@@ -2637,7 +2673,7 @@ static void t_pitch_range(void)
 static int old_blob(const uint8_t *b, int n, int ver, uint8_t *c)
 {
     const int np = ver >= 14 ? RFM_MOVE_KIT_P_N_V14 : RFM_MOVE_KIT_P_N_V12;
-    const int kb = 16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * np), base = n - 4 - RFM_MOVE_KIT_BYTES;
+    const int kb = 16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * np), base = n - 4 - RFM_MOVE_KIT_BYTES_V15;
     const uint8_t *x = b + base;
     uint8_t *o = c + base;
     int k, i, no;
@@ -2649,7 +2685,7 @@ static int old_blob(const uint8_t *b, int n, int ver, uint8_t *c)
     if (ver < 13)
         o[4 + RFM_MOVE_KIT_MIX_N] = 0;                  /* (no Trim before 13) */
     o += 40, x += 40;
-    for (k = 0; k < RFM_MOVE_KIT_PADS; k++, o += RFM_MOVE_KIT_PATH + 2 * np, x += RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N)
+    for (k = 0; k < RFM_MOVE_KIT_PADS; k++, o += RFM_MOVE_KIT_PATH + 2 * np, x += RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V15)
         memcpy(o, x, (size_t)(RFM_MOVE_KIT_PATH + 2 * np));
     no = base + kb + 4;
     c[4] = (uint8_t)ver;
@@ -2810,6 +2846,7 @@ int main(void)
     t_xlock();
     t_bits();
     t_loop_pct();
+    t_scan();
     t_kit_layout();
     t_kit_level();
     t_pad_level();

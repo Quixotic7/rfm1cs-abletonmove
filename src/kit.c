@@ -49,7 +49,7 @@
 #include "v2.h"
 
 #define clampi rfmv_clampi
-typedef char kit_pn_check[RFM_MOVE_KIT_P_FRELEASE + 1 == RFM_MOVE_KIT_P_N ? 1 : -1];   /* (pages v2) */
+typedef char kit_pn_check[RFM_MOVE_KIT_P_GSCAN + 1 == RFM_MOVE_KIT_P_N ? 1 : -1];   /* (pages v2; 2026-11-26 Scan) */
 #define K(m) (&(m)->kit)
 typedef rfmv_rgb_t rgb_t;
 
@@ -162,7 +162,7 @@ static const char *const P_NAME[KP_ALL] = {
     [RFM_MOVE_KIT_P_GDENS] = "Density", [RFM_MOVE_KIT_P_GSPRAY] = "Spray", [RFM_MOVE_KIT_P_GSPREAD] = "Spread",
     [RFM_MOVE_KIT_P_WARP] = "Warp", [RFM_MOVE_KIT_P_SPEED] = "Speed", [RFM_MOVE_KIT_P_WPITCH] = "Pitch",
     [RFM_MOVE_KIT_P_WGRAIN] = "Grain", [RFM_MOVE_KIT_P_WJITTER] = "Jitter", [RFM_MOVE_KIT_P_WSEARCH] = "Search",
-    [RFM_MOVE_KIT_P_MORPH] = "Morph", [RFM_MOVE_KIT_P_FENV] = "Env Amount", [RFM_MOVE_KIT_P_FATTACK] = "F Attack",
+    [RFM_MOVE_KIT_P_GSCAN] = "Scan", [RFM_MOVE_KIT_P_MORPH] = "Morph", [RFM_MOVE_KIT_P_FENV] = "Env Amount", [RFM_MOVE_KIT_P_FATTACK] = "F Attack",
     [RFM_MOVE_KIT_P_FDECAY] = "F Decay", [RFM_MOVE_KIT_P_FSUSTAIN] = "F Sustain", [RFM_MOVE_KIT_P_FRELEASE] = "F Release",
     [KP_FINE] = "Fine", [KP_KLEVEL] = "Kit Level", [KP_KPAN] = "Kit Pan", [KP_KSEND1] = "Kit Send 1",
     [KP_KSEND2] = "Kit Send 2", [KP_KSEND3] = "Kit Send 3", [KP_RH] = "Right Half", [KP_TRIM] = "Trim",
@@ -203,7 +203,8 @@ static const int8_t ENG_K[RFM_MOVE_KIT_M_N][6] = {
     { RFM_MOVE_KIT_P_LOOPS, RFM_MOVE_KIT_P_LOOPE, RFM_MOVE_KIT_P_LOOPXF, -1, -1, -1 },
     { RFM_MOVE_KIT_P_PDEPTH, RFM_MOVE_KIT_P_PATTACK, RFM_MOVE_KIT_P_PRELEASE, -1, -1, -1 },
     { RFM_MOVE_KIT_P_BITS, RFM_MOVE_KIT_P_DOWNS, -1, -1, -1, -1 },
-    { RFM_MOVE_KIT_P_GPOS, RFM_MOVE_KIT_P_GSIZE, RFM_MOVE_KIT_P_GDENS, RFM_MOVE_KIT_P_GSPRAY, RFM_MOVE_KIT_P_GSPREAD, -1 } };
+    { RFM_MOVE_KIT_P_GPOS, RFM_MOVE_KIT_P_GSCAN, RFM_MOVE_KIT_P_GSIZE, RFM_MOVE_KIT_P_GDENS, RFM_MOVE_KIT_P_GSPRAY,
+      RFM_MOVE_KIT_P_GSPREAD } };                       /* (2026-11-26: Scan after Position) */
 /* (Warp, Sync on) Speed's multipliers of the synced length (x 100) */
 static const int16_t SYNC_SPEED[8] = { 25, 50, 75, 100, 150, 200, 300, 400 };
 static int kit_page(int pg) { return pg == RFM_MOVE_KIT_PG_KIT || pg == RFM_MOVE_KIT_PG_KITMIX; }   /* (the click: Kits) */
@@ -303,7 +304,8 @@ static int p_min(int p)
     case RFM_MOVE_KIT_P_PITCH:
     case RFM_MOVE_KIT_P_WPITCH: return -2400;
     case RFM_MOVE_KIT_P_PDEPTH: return -48;
-    case RFM_MOVE_KIT_P_FENV: return -100;
+    case RFM_MOVE_KIT_P_FENV:
+    case RFM_MOVE_KIT_P_GSCAN: return -100;
     case RFM_MOVE_KIT_P_BITS: return 10;                /* (2026-11-26: tenths) */
     case RFM_MOVE_KIT_P_DOWNS:
     case RFM_MOVE_KIT_P_GDENS:
@@ -337,6 +339,7 @@ static int p_max(int p)
     case RFM_MOVE_KIT_P_WJITTER:
     case RFM_MOVE_KIT_P_MORPH:
     case RFM_MOVE_KIT_P_FENV:
+    case RFM_MOVE_KIT_P_GSCAN:
     case RFM_MOVE_KIT_P_FSUSTAIN: return 100;
     case RFM_MOVE_KIT_P_PATTACK:
     case RFM_MOVE_KIT_P_PRELEASE:
@@ -606,10 +609,10 @@ static int str_ok(const uint8_t *p, int cap)            /* printable, NUL padded
 }
 static int pk_max(int p);
 static int bits_tenths(const uint8_t *p, int ver) { return ver >= 16 && (p[13] & 1); }   /* (2026-11-26) */
-int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 15 kit part valid: 0 */
+int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 17 kit part valid: 0 */
 {
     const int tenths = bits_tenths(p, ver);
-    const int np = ver >= 15 ? RFM_MOVE_KIT_P_N : ver >= 14 ? RFM_MOVE_KIT_P_N_V14 : ver >= 12 ? RFM_MOVE_KIT_P_N_V12
+    const int np = ver >= 17 ? RFM_MOVE_KIT_P_N : ver >= 15 ? RFM_MOVE_KIT_P_N_V15 : ver >= 14 ? RFM_MOVE_KIT_P_N_V14 : ver >= 12 ? RFM_MOVE_KIT_P_N_V12
                  : RFM_MOVE_KIT_P_N_V11;
     int k, i;
     if (p[0] >= RFM_MOVE_KIT_RH_N || (r16s(p + 1) & 0x0FFF) || p[3] >= RFM_MOVE_KIT_PADS)
@@ -655,7 +658,7 @@ int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 15 ki
 void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver)   /* (checked) */
 {
     rfm_move_kit_t *t = K(m);
-    const int np = ver >= 15 ? RFM_MOVE_KIT_P_N : ver >= 14 ? RFM_MOVE_KIT_P_N_V14 : ver >= 12 ? RFM_MOVE_KIT_P_N_V12
+    const int np = ver >= 17 ? RFM_MOVE_KIT_P_N : ver >= 15 ? RFM_MOVE_KIT_P_N_V15 : ver >= 14 ? RFM_MOVE_KIT_P_N_V14 : ver >= 12 ? RFM_MOVE_KIT_P_N_V12
                  : RFM_MOVE_KIT_P_N_V11;                /* (round B: an older one's Decay 0, Sustain 100, the filter
                                                          * open; pages v2: Classic, speed 1.00, no filter envelope,
                                                          * morph LP, the kit bus open) */
@@ -1088,6 +1091,7 @@ static void vtext(const rfm_move_t *m, int k, int p, int v, int row, char *o, in
         break;
     case RFM_MOVE_KIT_P_GDENS: snprintf(o, (size_t)cap, "%d", v); break;
     case RFM_MOVE_KIT_P_GSPREAD: snprintf(o, (size_t)cap, v ? "+-%d st" : "0", v); break;
+    case RFM_MOVE_KIT_P_GSCAN: snprintf(o, (size_t)cap, v ? "%+d %%" : "Off", v); break;   /* (2026-11-26) */
     case RFM_MOVE_KIT_P_GSIZE:
     case RFM_MOVE_KIT_P_WGRAIN:
     case RFM_MOVE_KIT_P_WSEARCH:
@@ -4502,11 +4506,13 @@ static void popup_t(const rfm_move_t *m, mr_canvas_t *cv, int p, const char *ttl
         v2_vbar(cv, p == KP_KPAN ? (x - 64) / 63.0 : x / 127.0, p == KP_KPAN, 4, 120, 52);
         return;
     }
-    if (p == RFM_MOVE_KIT_P_PITCH || p == RFM_MOVE_KIT_P_WPITCH || p == RFM_MOVE_KIT_P_PDEPTH) {   /* (pages v2, the
-                                                         * owner's: up or down, a bar from the middle) */
+    if (p == RFM_MOVE_KIT_P_PITCH || p == RFM_MOVE_KIT_P_WPITCH || p == RFM_MOVE_KIT_P_PDEPTH || p == RFM_MOVE_KIT_P_GSCAN) {
+                                                         /* (pages v2, the owner's: up or down, a bar from the middle;
+                                                         * 2026-11-26: Scan too) */
         v2_titleBox(cv, P_NAME[p], v, 64, 124);
         if (!(p == RFM_MOVE_KIT_P_PITCH && fitted(d)))
-            v2_vbar(cv, (double)d->v[p] / (p == RFM_MOVE_KIT_P_PDEPTH ? 48.0 : 2400.0), 1, 4, 120, 52);
+            v2_vbar(cv, (double)d->v[p] / (p == RFM_MOVE_KIT_P_PDEPTH ? 48.0 : p == RFM_MOVE_KIT_P_GSCAN ? 100.0 : 2400.0),
+                    1, 4, 120, 52);
         return;
     }
     v2_titleBox(cv, P_NAME[p], v, 64, 128);

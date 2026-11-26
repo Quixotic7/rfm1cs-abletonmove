@@ -834,7 +834,7 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 16                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
+#define RFM_MOVE_PROJECT_VERSION 17                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
                                                          * values a slot, 7 the firmwares' MIDI routes, 8 the launch
                                                          * quantization and each clip's launch settings, 9 (0.13.0) the
                                                          * firmwares: each slot's id, level, settings and track, the
@@ -848,7 +848,8 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
                                                          * pad's engines, Warp and filter envelope (45 settings), the
                                                          * kit bus's low-pass, 16 (2026-11-26) a note's 8th byte: a
                                                          * kit note's signed semitones (-24..+31; 0 otherwise), the
-                                                         * right half's octave shift (the kit's header) */
+                                                         * right half's octave shift (the kit's header), 17
+                                                         * (2026-11-26) Granular's Scan: 46 settings a pad */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7 (version 16: x 8), locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -881,18 +882,21 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
  * bytes 10, 11 the kit bus's low-pass: cutoff 0..100 (100 open), resonance 0..100 (before: open, 0) */
 #define RFM_MOVE_KIT_PADS 16
 #define RFM_MOVE_KIT_PATH 160                           /* a sound's path with its NUL (the host's) */
-#define RFM_MOVE_KIT_P_N 45                             /* a pad's settings (RFM_MOVE_KIT_P_*; 12 in version 11, 16 in
-                                                         * 12 and 13, 20 in 14) */
+#define RFM_MOVE_KIT_P_N 46                             /* a pad's settings (RFM_MOVE_KIT_P_*; 12 in version 11, 16 in
+                                                         * 12 and 13, 20 in 14, 45 in 15 and 16) */
+#define RFM_MOVE_KIT_P_N_V15 45
 #define RFM_MOVE_KIT_P_N_V14 20
 #define RFM_MOVE_KIT_P_N_V11 12
 #define RFM_MOVE_KIT_P_N_V12 16
 #define RFM_MOVE_KIT_BYTES_V11 (8 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V11))   /* (2952) */
 #define RFM_MOVE_KIT_BYTES_V12 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V12))   /* (3112) */
 #define RFM_MOVE_KIT_BYTES_V14 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V14))   /* (3240) */
+#define RFM_MOVE_KIT_BYTES_V15 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V15))   /* (4008) */
 #define RFM_MOVE_KIT_BYTES (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N))   /* (4040) */
 #define RFM_MOVE_PROJECT_EXT_V11 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V11)
 #define RFM_MOVE_PROJECT_EXT_V12 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V12)
 #define RFM_MOVE_PROJECT_EXT_V14 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V14)
+#define RFM_MOVE_PROJECT_EXT_V15 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V15)
 #define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES)
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 8 + RFM_MOVE_SEQ_LOCKS * 4)
@@ -1402,7 +1406,11 @@ enum { RFM_MOVE_KIT_P_PITCH,                            /* cents -2400..2400 (a 
        RFM_MOVE_KIT_P_FENV,                             /* the filter envelope's amount -100..100 (100: 8 octaves up) */
        RFM_MOVE_KIT_P_FATTACK, RFM_MOVE_KIT_P_FDECAY,   /* .. its attack, decay (ms, RFM_MOVE_KIT_ENV_MS steps; 0, 300) */
        RFM_MOVE_KIT_P_FSUSTAIN,                         /* .. its sustain 0..100 % (0) */
-       RFM_MOVE_KIT_P_FRELEASE };                       /* .. its release (ms; 300) */
+       RFM_MOVE_KIT_P_FRELEASE,                         /* .. its release (ms; 300) */
+       /* (2026-11-26, version 17) */
+       RFM_MOVE_KIT_P_GSCAN };                          /* Granular: Scan -100..100 % (0 off): the position moves from
+                                                         * Position on while the voice plays, forwards (+) or back (-),
+                                                         * wrapping round the region; (v / 100)^2 passes a second */
 /* (pages v2) Warp's algorithms: Off; Repitch (the rate: Sync fits the region to its steps by pitch, Transpose and the
  * notes' pitches then ignored); Grains (overlap-add of Hann grains: the pitch kept); Beats (WSOLA: each grain aligned to
  * the last by cross-correlation, for drums and loops: the pitch kept) */
