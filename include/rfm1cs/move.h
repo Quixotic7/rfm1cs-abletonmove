@@ -1559,6 +1559,8 @@ typedef struct {                                        /* (kit.c) */
                                                          * page's live bars and envelope; rfm_move_kit_live) */
     int8_t lv_fst;
     uint32_t lv_ms;
+    uint32_t pg_ms;                                     /* (pages v2) the page switcher's slide: since, its way */
+    int8_t pg_dir;
     uint8_t undk_trim;
     uint8_t br_pad, br_kept;                            /* Files' browse: its pad + 1; its Undo kept (one for it all) */
     uint8_t land, land_pl;                              /* the jog moved in Files: a sound's load due (RFM_MOVE_KIT_LAND_MS) */

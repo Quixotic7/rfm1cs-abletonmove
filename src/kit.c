@@ -2240,8 +2240,10 @@ static void turn(rfm_move_t *m, int d)
                 break;
             pg = nx, n -= st;
         }
-        if (pg != t->page)
+        if (pg != t->page) {
             memset(t->kacc, 0, sizeof t->kacc);
+            t->pg_ms = now(m) ? now(m) : 1, t->pg_dir = (int8_t)(pg > t->page ? 1 : -1);   /* (the switcher slides) */
+        }
         t->page = (uint8_t)pg;
         t->turned = 1, t->turn_ms = now(m);
     }
@@ -3336,17 +3338,45 @@ static void files_screen(const rfm_move_t *m, mr_canvas_t *cv)
 /* (pages v2, the owner's 2026-11-26) the page switcher (while the jog turns pages, and on a blank page): the eight
  * pages' icons in a row, each in a filled cell (no outline), the page shown inverted, its name under them at one size
  * (1x: "Pad Sample 2" fits); no marks */
+/* (the owner's follow-up) the switcher's row: the icons at 2x in 28 px cells, the shown page's in the centre (a white
+ * cell, its icon black; the others white on black, no box), the row sliding a cell as the page turns (PG_SLIDE_MS,
+ * eased; the next turn starts its own; no wrap: past the ends black); the name under it at 2x, one size for all
+ * (labels of 10 characters at most: "Pad Sample 2" shown "Sample 2") */
+#define PG_CELL 28
+#define PG_SLIDE_MS 110
+static const char *const PG_LABEL[RFM_MOVE_KIT_PG_N] = { "Sample Kit", "Pad Sample", "Trig", "Sample 2", "Warp", "Filter",
+                                                         "Pad Mix", "Kit Mix" };
+static void ic2(mr_canvas_t *cv, icon_t i, int x, int y, int v)   /* an icon at 2x */
+{
+    int r, c;
+    for (r = 0; r < 11; r++)
+        for (c = 0; c < 11 && i[r][c]; c++)
+            if (i[r][c] == '#')
+                v2_R(cv, x + 2 * c, y + 2 * r, 2, 2, v);
+}
+static int pg_off(const rfm_move_t *m)                  /* the slide's offset now (px; toward the turn's way) */
+{
+    const rfm_move_kit_t *t = &m->kit;
+    const uint32_t el = now(m) - t->pg_ms;
+    float x;
+    if (!t->pg_ms || el >= PG_SLIDE_MS)
+        return 0;
+    x = 1.0f - (float)el / PG_SLIDE_MS;                 /* (ease out: the cube of what is left) */
+    return (int)(t->pg_dir * PG_CELL * x * x * x + (t->pg_dir > 0 ? 0.5f : -0.5f));
+}
 static void page_switch(const rfm_move_t *m, mr_canvas_t *cv)
 {
-    const int pg = cur_page(m);
+    const int pg = cur_page(m), off = pg_off(m), y = 7;  /* (the row 28 px and the name 16, 6 apart: centred) */
     int i;
     for (i = 0; i < RFM_MOVE_KIT_PG_N; i++) {
-        const int x = i * 16 + 1, y = 14;
-        if (i != pg)
-            v2_R(cv, x - 1, y - 2, 15, 15, 1);
-        ic(cv, *PG_ICON[i], x + 1, y, i == pg);
+        const int x = 64 - PG_CELL / 2 + (i - pg) * PG_CELL + off;
+        if (x <= -PG_CELL || x >= 128)
+            continue;
+        if (i == pg)
+            v2_R(cv, x, y, PG_CELL, PG_CELL, 1);
+        ic2(cv, *PG_ICON[i], x + 3, y + 3, i != pg);
     }
-    v2_TC(cv, 64, 36, PG_NAME[pg], 1, 1);
+    v2_TC(cv, 64, y + PG_CELL + 6, PG_LABEL[pg], 2, 1);
 }
 /* (Sample Kit; pages v2, the owner's exact pixels) the whole kit's steps: 16 lanes of 4 px, pad 1 at the bottom; a step
  * a 4 x 4 cell, 2 px apart (16 x 6 px from x 8): a hit its lower three rows, an empty step a 2 px dash; the chosen pad's
@@ -4077,7 +4107,7 @@ int rfmv_kit_timed(const rfm_move_t *m)
             return 1;
     if (t->land || t->aud || t->sl_ask || msg_up(m) || rec_running(m) || t->pend_take || merge_up(m) || t->sl_on || t->tab == 2 || t->tool_note || to_kit(m) ||
         (t->tab == 0 && cur_page(m) == RFM_MOVE_KIT_PG_KIT && (m->seq.playing || m->seq.start_pending)) ||
-        (t->tab == 0 && cur_page(m) == RFM_MOVE_KIT_PG_FILTER && t->lv_on) || br_off(m) ||
+        (t->tab == 0 && cur_page(m) == RFM_MOVE_KIT_PG_FILTER && t->lv_on) || br_off(m) || pg_off(m) ||
         (t->turned && now(m) - t->turn_ms < RFM_MOVE_POPUP_MS) || (t->kpop >= 0 && now(m) - t->kpop_ms < RFM_MOVE_POPUP_MS))
         return 1;
     for (i = 0; i < 16; i++)
