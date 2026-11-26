@@ -311,8 +311,8 @@ int rfmv_seq_lock_set(rfm_move_t *m, int clip, int step, int cc, int val)
     const int old = rfmv_seq_lock_get(m, clip, step, cc);
     rfm_move_note_t n;
     if (clip < 0 || clip >= RFM_MOVE_SEQ_CLIPS || step < 0 || step >= RFM_MOVE_SEQ_MAXLEN || cc < 0 ||
-        cc > RFM_MOVE_TRIG_LAST)
-        return -1;
+        (cc > RFM_MOVE_TRIG_LAST && (cc < RFM_MOVE_KIT_LOCK0 || cc > RFM_MOVE_KIT_LOCK_LAST)))
+        return -1;                                      /* (round B: the kit pads' step locks too) */
     val = val < 0 ? -1 : clampi(val, 0, cc < 128 ? 127 : 254);   /* (255: SEQ_NOLOCK) */
     if (old == val)
         return 0;
@@ -1087,6 +1087,7 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
         const int ps = t->rsrc >= 0 ? t->rsrc : t->pos; /* (a repeat: the source's content) */
         const int r = rfmv_seq_lock_get(m, clip, ps, RFM_MOVE_TRIG_RATCHET), nr = r < 2 ? 1 : r;
         hi = rfmv_seq_range(m, clip, ps, &lo);
+        q->kit_cok = 1, q->kit_cclip = (uint8_t)clip, q->kit_cstep = (uint16_t)ps;   /* (round B: a kit pad's locks) */
         for (i = lo; i < hi; i++) {
             const rfm_move_note_t n = q->notes[i];      /* (note_on cannot change the notes) */
             const int mt = groove_at(m, tr, t->pos, micro_ticks(n.micro, t->tps));
@@ -1097,6 +1098,7 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
                 if (mt + k * t->tps / nr == t->sub && !rec_held(q, clip, n.note))
                     clip_note(m, tr, n.note, n.vel, len);   /* (0.14.0: the track's arp, while on) */
         }
+        q->kit_cok = 0;
         if (t->sub == 0) {
             hi = rfmv_seq_lock_range(m, clip, ps, &lo);
             for (i = lo; i < hi && q->locks[i].cc < 128; i++)
@@ -1106,12 +1108,14 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
     if (t->next >= 0 && t->nfire && t->sub >= t->tps / 2 && !rfmv_seq_dead(m, tr, t->next)) {   /* the next step's
                                                          * early notes */
         hi = rfmv_seq_range(m, clip, t->nrsrc >= 0 ? t->nrsrc : t->next, &lo);
+        q->kit_cok = 1, q->kit_cclip = (uint8_t)clip, q->kit_cstep = (uint16_t)(t->nrsrc >= 0 ? t->nrsrc : t->next);
         for (i = lo; i < hi; i++) {
             const rfm_move_note_t n = q->notes[i];
             const int mt = groove_at(m, tr, t->next, micro_ticks(n.micro, t->tps));
             if (mt < 0 && t->tps + mt == t->sub && !rec_held(q, clip, n.note))
                 clip_note(m, tr, n.note, n.vel, n.len * t->tps / RFM_MOVE_SEQ_TPS);
         }
+        q->kit_cok = 0;
     }
 }
 

@@ -109,6 +109,11 @@ static icon_t I_NORM = { "###########", "...........", "..#.....#..", ".###...##
 /* (round A) Toggle: play, then stop */
 static icon_t I_TOGGLE = { "...........", "#.....####.", "##....####.", "###...####.", "####..####.", "#####.####.",
                            "####..####.", "###...####.", "##....####.", "#.....####.", "..........." };
+/* (round B) the pad's filter: Filter (a low-pass slope), Resonance (its peak) */
+static icon_t I_FILTER = { "...........", "...........", "######.....", "......#....", ".......#...", "........#..",
+                           "........#..", ".........#.", ".........#.", "..........#", "..........." };
+static icon_t I_RESO = { "...........", "......#....", ".....#.#...", "#####...#..", "........#..", ".........#.",
+                         ".........#.", ".........#.", "..........#", "..........#", "..........." };
 static void ic(mr_canvas_t *cv, icon_t i, int x, int y, int v)
 {
     int r, c;
@@ -119,16 +124,20 @@ static void ic(mr_canvas_t *cv, icon_t i, int x, int y, int v)
 }
 
 /* ---- the Pad tab's rows (3b: Stretch after Pitch, the sends at the end) */
-enum { KR_SOUND, KR_PITCH, KR_STRETCH, KR_START, KR_END, KR_MODE, KR_ATTACK, KR_HOLD, KR_RELEASE, KR_CHOKE, KR_REVERSE,
-       KR_LEVEL, KR_PAN, KR_SEND1, KR_SEND2, KR_SEND3, KR_N };
+/* (round B) Decay, Sustain after Hold; Filter, Resonance after Release */
+enum { KR_SOUND, KR_PITCH, KR_STRETCH, KR_START, KR_END, KR_MODE, KR_ATTACK, KR_HOLD, KR_DECAY, KR_SUSTAIN, KR_RELEASE,
+       KR_CUTOFF, KR_RESO, KR_CHOKE, KR_REVERSE, KR_LEVEL, KR_PAN, KR_SEND1, KR_SEND2, KR_SEND3, KR_N };
 static const int8_t ROW_P[KR_N] = { -1, RFM_MOVE_KIT_P_PITCH, RFM_MOVE_KIT_P_STRETCH, RFM_MOVE_KIT_P_START,
                                     RFM_MOVE_KIT_P_END, RFM_MOVE_KIT_P_MODE, RFM_MOVE_KIT_P_ATTACK, RFM_MOVE_KIT_P_HOLD,
-                                    RFM_MOVE_KIT_P_RELEASE, RFM_MOVE_KIT_P_CHOKE, RFM_MOVE_KIT_P_REVERSE,
+                                    RFM_MOVE_KIT_P_DECAY, RFM_MOVE_KIT_P_SUSTAIN, RFM_MOVE_KIT_P_RELEASE,
+                                    RFM_MOVE_KIT_P_CUTOFF, RFM_MOVE_KIT_P_RESO, RFM_MOVE_KIT_P_CHOKE, RFM_MOVE_KIT_P_REVERSE,
                                     RFM_MOVE_KIT_P_LEVEL, RFM_MOVE_KIT_P_PAN, RFM_MOVE_KIT_P_SEND1,
                                     RFM_MOVE_KIT_P_SEND2, RFM_MOVE_KIT_P_SEND3 };
-static const char *const P_NAME[RFM_MOVE_KIT_P_N] = { "Pitch", "Start", "End", "Play", "Attack", "Hold", "Release",
-                                                      "Choke", "Reverse", "Level", "Pan", "Mute", "Stretch",
-                                                      "Send 1", "Send 2", "Send 3" };
+#define KP_FINE RFM_MOVE_KIT_P_N                       /* (round B) Shift's knob 8: the pitch's cents */
+static const char *const P_NAME[RFM_MOVE_KIT_P_N + 1] = { "Pitch", "Start", "End", "Play", "Attack", "Hold", "Release",
+                                                          "Choke", "Reverse", "Level", "Pan", "Mute", "Stretch",
+                                                          "Send 1", "Send 2", "Send 3", "Decay", "Sustain", "Filter",
+                                                          "Resonance", "Fine" };
 static const char *const MODE_NAME[RFM_MOVE_KIT_M_N] = { "One Shot", "Momentary", "Loop", "Toggle" };
 static const char *const MODE_SAY[RFM_MOVE_KIT_M_N] = { "One shot", "Momentary", "Loop", "Toggle" };
 static icon_t *const MODE_ICON[RFM_MOVE_KIT_M_N] = { &I_PLAY, &I_PAD, &I_LOOP, &I_TOGGLE };
@@ -137,10 +146,18 @@ static const char *const SCALE_SHORT[RFM_MOVE_NSCALES] = { "Major", "Minor", "Do
                                                            "HarmMin", "Blues", "Phrygn", "Lydian", "Locrian", "MelMin",
                                                            "Whole", "Dim HW", "Dim WH", "Hungar", "PhrDom", "In Sen",
                                                            "Hirajo", "Iwato", "Pelog", "DblHarm", "Span 8", "Bebop" };
-/* the knobs: 1 Pitch, 2 Start, 3 Stretch, 4 Play mode, 5 Attack, 6 Release, 7 Level, 8 Send 1 */
-static const int8_t KNOB_P[8] = { RFM_MOVE_KIT_P_PITCH, RFM_MOVE_KIT_P_START, RFM_MOVE_KIT_P_STRETCH, RFM_MOVE_KIT_P_MODE,
-                                  RFM_MOVE_KIT_P_ATTACK, RFM_MOVE_KIT_P_RELEASE, RFM_MOVE_KIT_P_LEVEL,
+/* the knobs (round B: two pages, the page chosen at the knob's touch): 1 Pitch, 2 Start, 3 Stretch, 4 Play mode,
+ * 5 Filter, 6 Resonance, 7 Level, 8 Send 1; Shift held at the touch: 1 Attack, 2 Hold, 3 Decay, 4 Sustain, 5 Release,
+ * 6 Choke, 7 Pan, 8 Fine (the pitch's cents) */
+static const int8_t KNOB_N[8] = { RFM_MOVE_KIT_P_PITCH, RFM_MOVE_KIT_P_START, RFM_MOVE_KIT_P_STRETCH, RFM_MOVE_KIT_P_MODE,
+                                  RFM_MOVE_KIT_P_CUTOFF, RFM_MOVE_KIT_P_RESO, RFM_MOVE_KIT_P_LEVEL,
                                   RFM_MOVE_KIT_P_SEND1 };
+static const int8_t KNOB_S[8] = { RFM_MOVE_KIT_P_ATTACK, RFM_MOVE_KIT_P_HOLD, RFM_MOVE_KIT_P_DECAY, RFM_MOVE_KIT_P_SUSTAIN,
+                                  RFM_MOVE_KIT_P_RELEASE, RFM_MOVE_KIT_P_CHOKE, RFM_MOVE_KIT_P_PAN, KP_FINE };
+static const rgb_t SHIFTC = { 154, 208, 255 };          /* (round B) the knobs on Shift's page */
+static const rgb_t LOCKC = { 255, 209, 102 };           /* .. a step held: the knobs it locks */
+static int knob_p(const rfm_move_t *m, int k) { return (m->kit.kshift >> (k & 7) & 1) ? KNOB_S[k & 7] : KNOB_N[k & 7]; }
+static int real_p(int p) { return p == KP_FINE ? RFM_MOVE_KIT_P_PITCH : p; }
 /* the envelope's times (ms), a detent each */
 static const int16_t ENV_MS[] = { 0, 1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 300, 400, 500, 750,
                                   1000, 1500, 2000, 3000, 5000, 10000 };
@@ -185,6 +202,7 @@ static void defaults(int16_t v[RFM_MOVE_KIT_P_N])
 {
     memset(v, 0, sizeof(int16_t) * RFM_MOVE_KIT_P_N);
     v[RFM_MOVE_KIT_P_END] = RFM_MOVE_KIT_FRAC;
+    v[RFM_MOVE_KIT_P_SUSTAIN] = 100, v[RFM_MOVE_KIT_P_CUTOFF] = 100;   /* (round B: today's sound, the filter open) */
 }
 static int p_min(int p)
 {
@@ -204,8 +222,12 @@ static int p_max(int p)
     case RFM_MOVE_KIT_P_MODE: return RFM_MOVE_KIT_M_N - 1;
     case RFM_MOVE_KIT_P_ATTACK:
     case RFM_MOVE_KIT_P_HOLD:
-    case RFM_MOVE_KIT_P_RELEASE: return ENV_MS[NENV - 1];
+    case RFM_MOVE_KIT_P_RELEASE:
+    case RFM_MOVE_KIT_P_DECAY: return ENV_MS[NENV - 1];
     case RFM_MOVE_KIT_P_CHOKE: return 4;
+    case RFM_MOVE_KIT_P_SUSTAIN:
+    case RFM_MOVE_KIT_P_CUTOFF:
+    case RFM_MOVE_KIT_P_RESO: return 100;
     case RFM_MOVE_KIT_P_LEVEL: return 6;
     case RFM_MOVE_KIT_P_PAN: return 50;
     case RFM_MOVE_KIT_P_STRETCH: return RFM_MOVE_KIT_STRETCH_MAX;
@@ -304,10 +326,13 @@ void rfm_move_kit_sync(rfm_move_t *m)
     send_mix(m);
 }
 /* a pad's note to the host; the pad glows */
-static void note_out(rfm_move_t *m, int k, int semis, int vel, int track)
+static int note_locks(const rfm_move_t *m, int k, int16_t *v);
+static void note_out_lk(rfm_move_t *m, int k, int semis, int vel, int track, int lk)
 {
     rfm_move_act_t a;
     memset(&a, 0, sizeof a);
+    if (lk && vel)                                      /* (round B: the step's locks on this hit) */
+        a.klk_mask = (uint8_t)note_locks(m, k, a.klk);
     a.frame = m->seq.frame;
     a.kind = RFM_MOVE_ACT_KIT_NOTE, a.index = (uint8_t)k, a.value = (int16_t)semis, a.vel = (uint8_t)vel;
     a.down = (uint8_t)(vel > 0), a.track = (uint8_t)(track + 1);
@@ -316,6 +341,7 @@ static void note_out(rfm_move_t *m, int k, int semis, int vel, int track)
     if (m->fn)
         m->fn(m->ctx, &a);
 }
+static void note_out(rfm_move_t *m, int k, int semis, int vel, int track) { note_out_lk(m, k, semis, vel, track, 0); }
 /* (seq.c) a sequencer note on track (0..15): a track routed to the kit plays its pad */
 void rfmv_kit_seq_note(rfm_move_t *m, int track, int note, int vel)
 {
@@ -324,7 +350,7 @@ void rfmv_kit_seq_note(rfm_move_t *m, int track, int note, int vel)
         return;
     if ((k = rfm_move_kit_pad_of(track, note, &semis)) < 0)
         return;
-    note_out(m, k, semis, vel, track);
+    note_out_lk(m, k, semis, vel, track, 1);
 }
 static void preview_stop(rfm_move_t *m)
 {
@@ -419,9 +445,9 @@ static int str_ok(const uint8_t *p, int cap)            /* printable, NUL padded
     }
     return end >= 0;
 }
-int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 / 12 / 13 kit part valid: 0 */
+int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 14 kit part valid: 0 */
 {
-    const int np = ver >= 12 ? RFM_MOVE_KIT_P_N : RFM_MOVE_KIT_P_N_V11;
+    const int np = ver >= 14 ? RFM_MOVE_KIT_P_N : ver >= 12 ? RFM_MOVE_KIT_P_N_V12 : RFM_MOVE_KIT_P_N_V11;
     int k, i;
     if (p[0] >= RFM_MOVE_KIT_RH_N || (r16s(p + 1) & 0x0FFF) || p[3] >= RFM_MOVE_KIT_PADS)
         return -1;
@@ -459,7 +485,8 @@ int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 / 12 / 1
 void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver)   /* (checked) */
 {
     rfm_move_kit_t *t = K(m);
-    const int np = ver >= 12 ? RFM_MOVE_KIT_P_N : RFM_MOVE_KIT_P_N_V11;
+    const int np = ver >= 14 ? RFM_MOVE_KIT_P_N : ver >= 12 ? RFM_MOVE_KIT_P_N_V12 : RFM_MOVE_KIT_P_N_V11;   /* (round B:
+                                                         * an older one's Decay 0, Sustain 100, the filter open) */
     int k, i;
     rfmv_kit_clear(m);
     t->rh = p[0], t->route = (uint16_t)r16s(p + 1), t->cur = p[3];
@@ -668,7 +695,8 @@ static int step_val(const rfm_move_t *m, int k, int p, int d, int fine)
         return clampi(v + d * (fine ? 4 : 64), e->v[RFM_MOVE_KIT_P_START] + GAP, RFM_MOVE_KIT_FRAC);
     case RFM_MOVE_KIT_P_ATTACK:
     case RFM_MOVE_KIT_P_HOLD:
-    case RFM_MOVE_KIT_P_RELEASE: return ENV_MS[clampi(env_idx(v) + d, 0, NENV - 1)];
+    case RFM_MOVE_KIT_P_RELEASE:
+    case RFM_MOVE_KIT_P_DECAY: return ENV_MS[clampi(env_idx(v) + d, 0, NENV - 1)];
     case RFM_MOVE_KIT_P_PITCH: return pitch_step(v, d, fine);
     default: return clampi(v + d, p_min(p), p_max(p));
     }
@@ -759,12 +787,35 @@ static void pitch_text(int c, char *o, int cap)
     else
         snprintf(o, (size_t)cap, "%+d", c / 100);
 }
-/* a setting's words: row 1 (a row's value: "A 20 ms"), else a popup's ("20 ms"); say 1: spoken */
-static void val_text(const rfm_move_t *m, int k, int p, int row, char *o, int cap)
+/* (round B) the filter's cutoff 0..100 in Hz: 20 x 1000^(v / 100) */
+static int cutoff_hz(int v) { return (int)((uint64_t)20u * pitch_q16(clampi(v, 0, 100) * 11959 / 100) / 65536u); }
+static void cutoff_text(int v, char *o, int cap)
+{
+    const int hz = cutoff_hz(v);
+    if (v >= 100)
+        snprintf(o, (size_t)cap, "Open");
+    else if (hz >= 1000)
+        snprintf(o, (size_t)cap, "%d.%d kHz", hz / 1000, hz % 1000 / 100);
+    else
+        snprintf(o, (size_t)cap, "%d Hz", hz);
+}
+/* a setting's words for value v: row 1 (a row's value: "A 20 ms"), else a popup's ("20 ms") */
+static void vtext(const rfm_move_t *m, int k, int p, int v, int row, char *o, int cap)
 {
     const rfm_move_kit_pad_t *d = CPAD(m, k);
-    const int v = d->v[p];
     switch (p) {
+    case KP_FINE: pitch_text(v, o, cap); break;
+    case RFM_MOVE_KIT_P_CUTOFF:
+        if (row) {
+            char b[16];
+            cutoff_text(v, b, sizeof b);
+            snprintf(o, (size_t)cap, "F %s", b);
+        } else
+            cutoff_text(v, o, cap);
+        break;
+    case RFM_MOVE_KIT_P_RESO: snprintf(o, (size_t)cap, row ? "Q %d%%" : "%d%%", v); break;
+    case RFM_MOVE_KIT_P_SUSTAIN: snprintf(o, (size_t)cap, row ? "S %d%%" : "%d%%", v); break;
+    case RFM_MOVE_KIT_P_DECAY: snprintf(o, (size_t)cap, row ? "D %d ms" : "%d ms", v); break;
     case RFM_MOVE_KIT_P_PITCH:
         if (d->v[RFM_MOVE_KIT_P_STRETCH])
             snprintf(o, (size_t)cap, "Stretch");        /* (3b: the Pitch ignored) */
@@ -816,6 +867,10 @@ static void val_text(const rfm_move_t *m, int k, int p, int row, char *o, int ca
         break;
     default: snprintf(o, (size_t)cap, "%s", v ? "On" : "Off"); break;
     }
+}
+static void val_text(const rfm_move_t *m, int k, int p, int row, char *o, int cap)
+{
+    vtext(m, k, p, CPAD(m, k)->v[real_p(p)], row, o, cap);
 }
 static void sound_text(const rfm_move_t *m, int k, char *o, int cap)
 {
@@ -884,6 +939,84 @@ static int step_has(const rfm_move_t *m, int k, int abs)
         n += rfm_move_kit_pad_of(tr, m->seq.notes[i].note, NULL) == k;
     return n;
 }
+/* (round B) the loudest of the pad's notes there (0: none): the step key's brightness */
+static int step_vel(const rfm_move_t *m, int k, int abs)
+{
+    const int tr = trk(k), clip = edit_clip_of(m, tr);
+    int lo, hi = rfmv_seq_range(m, clip, abs, &lo), i, v = 0;
+    for (i = lo; i < hi; i++)
+        if (rfm_move_kit_pad_of(tr, m->seq.notes[i].note, NULL) == k && m->seq.notes[i].vel > v)
+            v = m->seq.notes[i].vel;
+    return v;
+}
+/* ---- (round B) a kit pad's step locks (move.h RFM_MOVE_KIT_LOCK0): which settings, their encoding */
+static int lk_of(int p)
+{
+    switch (p) {
+    case RFM_MOVE_KIT_P_PITCH: return RFM_MOVE_KIT_LK_PITCH;
+    case RFM_MOVE_KIT_P_START: return RFM_MOVE_KIT_LK_START;
+    case RFM_MOVE_KIT_P_CUTOFF: return RFM_MOVE_KIT_LK_CUTOFF;
+    case RFM_MOVE_KIT_P_RESO: return RFM_MOVE_KIT_LK_RESO;
+    case RFM_MOVE_KIT_P_LEVEL: return RFM_MOVE_KIT_LK_LEVEL;
+    case RFM_MOVE_KIT_P_PAN: return RFM_MOVE_KIT_LK_PAN;
+    case RFM_MOVE_KIT_P_DECAY: return RFM_MOVE_KIT_LK_DECAY;
+    default: return -1;
+    }
+}
+static int lk_max(int l) { static const uint8_t X[RFM_MOVE_KIT_LK_N] = { 48, 254, 100, 100, 66, 100, NENV - 1 }; return X[l]; }
+static int lk_id(int l, int k) { return RFM_MOVE_KIT_LOCK0 + l * 4 + (k & 3); }
+static int lk_enc(int l, int v)
+{
+    switch (l) {
+    case RFM_MOVE_KIT_LK_PITCH: return clampi((v + (v < 0 ? -50 : 50)) / 100 + 24, 0, 48);
+    case RFM_MOVE_KIT_LK_START: return clampi((int)(((int64_t)v * 254 + RFM_MOVE_KIT_FRAC / 2) / RFM_MOVE_KIT_FRAC), 0, 254);
+    case RFM_MOVE_KIT_LK_LEVEL: return clampi(v + 60, 0, 66);
+    case RFM_MOVE_KIT_LK_PAN: return clampi(v + 50, 0, 100);
+    case RFM_MOVE_KIT_LK_DECAY: return env_idx(v);
+    default: return clampi(v, 0, 100);
+    }
+}
+static int lk_dec(int l, int e)
+{
+    switch (l) {
+    case RFM_MOVE_KIT_LK_PITCH: return (e - 24) * 100;
+    case RFM_MOVE_KIT_LK_START: return (int)((int64_t)e * RFM_MOVE_KIT_FRAC / 254);
+    case RFM_MOVE_KIT_LK_LEVEL: return e - 60;
+    case RFM_MOVE_KIT_LK_PAN: return e - 50;
+    case RFM_MOVE_KIT_LK_DECAY: return ENV_MS[clampi(e, 0, NENV - 1)];
+    default: return e;
+    }
+}
+/* the pad's locks at step abs of its edited clip: any (bits of RFM_MOVE_KIT_LK_*) */
+static int step_locks(const rfm_move_t *m, int k, int abs)
+{
+    const int clip = edit_clip_of(m, trk(k));
+    int l, b = 0;
+    for (l = 0; l < RFM_MOVE_KIT_LK_N; l++)
+        b |= (rfmv_seq_lock_get(m, clip, abs, lk_id(l, k)) >= 0) << l;
+    return b;
+}
+static void locks_clear(rfm_move_t *m, int k, int clip, int abs)
+{
+    int l;
+    for (l = 0; l < RFM_MOVE_KIT_LK_N; l++)
+        if (rfmv_seq_lock_get(m, clip, abs, lk_id(l, k)) >= 0)
+            rfmv_seq_lock_set(m, clip, abs, lk_id(l, k), -1);
+}
+/* (seq.c) a note-on of a kit pad from its clip: the step's locks on it (the setting's units; mask 0 none) */
+static int note_locks(const rfm_move_t *m, int k, int16_t *v)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    int l, b = 0;
+    if (!q->kit_cok)
+        return 0;
+    for (l = 0; l < RFM_MOVE_KIT_LK_N; l++) {
+        const int e = rfmv_seq_lock_get(m, q->kit_cclip, q->kit_cstep, lk_id(l, k));
+        if (e >= 0)
+            b |= 1 << l, v[l] = (int16_t)lk_dec(l, e);
+    }
+    return b;
+}
 static void step_clear(rfm_move_t *m, int k, int abs)
 {
     const int tr = trk(k), clip = edit_clip_of(m, tr);
@@ -891,6 +1024,7 @@ static void step_clear(rfm_move_t *m, int k, int abs)
     while (hi-- > lo)
         if (rfm_move_kit_pad_of(tr, m->seq.notes[hi].note, NULL) == k)
             rfmv_seq_note_del(m, clip, abs, m->seq.notes[hi].note);
+    locks_clear(m, k, clip, abs);                       /* (round B: its locks with them) */
 }
 /* a pad's own note in or out of step s of the page shown (one undo step) */
 static void step_toggle(rfm_move_t *m, int k, int s, int vel)
@@ -1015,7 +1149,11 @@ static void pad_delete(rfm_move_t *m, int k)
         if (rfm_move_kit_pad_of(tr, m->seq.notes[hi].note, NULL) == k) {
             if (!any)
                 rfmv_seq_group(m), any = 1;
-            rfmv_seq_note_del(m, clip, m->seq.notes[hi].step, m->seq.notes[hi].note);
+            {
+                const int st = m->seq.notes[hi].step;
+                rfmv_seq_note_del(m, clip, st, m->seq.notes[hi].note);
+                locks_clear(m, k, clip, st);            /* (round B) */
+            }
         }
     if (any) {
         rfmv_seq_dirty(m);
@@ -1117,7 +1255,7 @@ static void slice_leave(rfm_move_t *m)
     if (!t->sl_on)
         return;
     slice_act(m, RFM_MOVE_KIT_SL_DONE, 0, 0);
-    t->sl_on = 0, t->sl_ok = 0, t->kpop = -1, t->sl_ask = 0;
+    t->sl_on = 0, t->sl_ok = 0, t->kpop = -1, t->sl_ask = 0, t->tap_on = 0;
 }
 static int slice_count(const rfm_move_t *m)              /* the slices that go onto the pads */
 {
@@ -1205,7 +1343,7 @@ int rfm_move_kit_slices(rfm_move_t *m, uint32_t take, const char *path, uint32_t
         rfmv_say_check(m);
         return rfm_move_kit_shown(m);
     }
-    t->sl_ok = 1, t->sl_n = (uint8_t)n, t->sl_frames = frames, t->sl_rate = rate ? rate : 48000;
+    t->sl_ok = 1, t->sl_n = (uint8_t)n, t->sl_frames = frames, t->sl_rate = rate ? rate : 48000, t->tap_on = 0;
     for (i = 0; i <= n; i++)
         t->sl_cut[i] = cuts[i];
     snprintf(t->sl_path, sizeof t->sl_path, "%s", path);
@@ -1314,9 +1452,11 @@ static void pad_down(rfm_move_t *m, int p, int vel)
                 const int tr = trk(k), clip = edit_clip_of(m, tr), abs = q->page * RFM_MOVE_SEQ_PAGE + s;
                 const int n = rfm_move_kit_note(k, semis);
                 rfmv_seq_group(m);
-                if (rfmv_seq_find(m, clip, abs, n) >= 0)
+                if (rfmv_seq_find(m, clip, abs, n) >= 0) {
                     rfmv_seq_note_del(m, clip, abs, n);
-                else
+                    if (!step_has(m, k, abs))
+                        locks_clear(m, k, clip, abs);   /* (round B) */
+                } else
                     rfmv_seq_step_enter(m, clip, abs, n, vel);
                 rfmv_seq_dirty(m);
             }
@@ -1624,7 +1764,7 @@ static void turn(rfm_move_t *m, int d)
         const int was = t->sl_meth;
         t->sl_meth = (uint8_t)clampi(t->sl_meth + d, 0, RFM_MOVE_KIT_SM_N - 1);
         if (t->sl_meth != was)
-            slice_ask(m);
+            t->tap_on = 0, slice_ask(m);                /* (round B: Tap's answer one slice, the whole take) */
         return;
     }
     if (t->pend_take) {                                 /* (3c) a take waiting: To Pad, Slice */
@@ -1881,13 +2021,36 @@ int rfmv_kit_back(rfm_move_t *m)
 }
 
 /* ================================================================ the knobs === */
-/* (3c) the knobs: dark and dead under the tools, the Copy menu, a waiting take; the slices' cut on 1 and 2 */
-static int knob_dead(const rfm_move_t *m, int k)
+/* (round B) a step held (the Kit view, not slicing): the knobs lock the chosen pad's hit there; the step shown */
+static int lock_layer(const rfm_move_t *m) { return m->kit.st_down && !m->kit.sl_on && !m->kit.tools && !m->kit.pend_take; }
+static int held_step(const rfm_move_t *m)              /* the first step held (0..15), -1 */
+{
+    int s;
+    for (s = 0; s < 16; s++)
+        if (m->kit.st_down >> s & 1)
+            return s;
+    return -1;
+}
+/* (3c) the knobs: dark and dead under the tools, the Copy menu, a waiting take; the slices' cut on 1 and 2; (round B)
+ * a step held: only the lockable ones */
+static int knob_dead_p(const rfm_move_t *m, int k, int p)   /* (p: the knob's setting on its page) */
 {
     const rfm_move_kit_t *t = &m->kit;
     if (t->sl_on)                                       /* (round A: knob 3 the Hits' sensitivity) */
         return k > 2 || (k == 2 && t->sl_meth != RFM_MOVE_KIT_SM_HITS);
-    return KNOB_P[k] < 0 || t->tools || merge_up(m) || t->pend_take;
+    if (lock_layer(m))
+        return lk_of(p) < 0;
+    return p < 0 || t->tools || merge_up(m) || t->pend_take;
+}
+static int knob_dead(const rfm_move_t *m, int k) { return knob_dead_p(m, k, knob_p(m, k)); }
+/* the page a knob's touch (or an untouched turn) chooses: Shift held, the Shift page */
+static void knob_page(rfm_move_t *m, int k)
+{
+    rfm_move_kit_t *t = K(m);
+    if (m->seq.mods & SEQ_M_SHIFT)
+        t->kshift = (uint8_t)(t->kshift | 1u << k), m->seq.mods_used |= SEQ_M_SHIFT;
+    else
+        t->kshift = (uint8_t)(t->kshift & ~(1u << k));
 }
 static void knob_touch(rfm_move_t *m, int k, int on)
 {
@@ -1899,19 +2062,88 @@ static void knob_touch(rfm_move_t *m, int k, int on)
         return;
     }
     t->kdown = (uint8_t)(t->kdown | 1u << k);
+    if (!t->sl_on)
+        knob_page(m, k);                                /* (round B: the page chosen at the touch) */
     if (knob_dead(m, k))
         return;                                         /* (dark and dead) */
-    t->kpop = (int8_t)k, t->kpop_ms = now(m), t->msg_ms = 0;
+    t->kpop = (int8_t)k, t->kpop_ms = now(m), t->msg_ms = 0, t->vpop = 0;
+    t->lpop = (uint8_t)(lock_layer(m) ? k + 1 : 0);
+    if (t->lpop)
+        t->st_used |= t->st_down;                       /* (a lock looked at: the step's release toggles nothing) */
     touched(m);
+}
+/* (round B) a lock turned: the chosen pad's hits on the held steps get their own value (n detents) */
+static void lock_turn(rfm_move_t *m, int k, int n)
+{
+    rfm_move_kit_t *t = K(m);
+    const int p = knob_p(m, k), l = lk_of(p), pad = t->cur, clip = edit_clip_of(m, trk(pad));
+    int s;
+    if (l < 0 || !n)
+        return;
+    for (s = 0; s < 16; s++)
+        if (t->st_down >> s & 1) {
+            const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
+            int e;
+            if (!step_has(m, pad, abs))
+                continue;                               /* (no hit of the pad there: nothing to lock) */
+            if ((e = rfmv_seq_lock_get(m, clip, abs, lk_id(l, pad))) < 0)
+                e = lk_enc(l, CPAD(m, pad)->v[p]);
+            if (!t->lk_grp)
+                rfmv_seq_group(m), t->lk_grp = 1;
+            rfmv_seq_lock_set(m, clip, abs, lk_id(l, pad), clampi(e + n, 0, lk_max(l)));
+            rfmv_seq_dirty(m);
+        }
+    t->st_used |= t->st_down;
+}
+/* the lock the popup shows: the first held step's (its value, else the pad's own); 0: no hit there */
+static int lock_val(const rfm_move_t *m, int p, int *v)
+{
+    const int l = lk_of(p), s = held_step(m), pad = m->kit.cur, abs = m->seq.page * RFM_MOVE_SEQ_PAGE + (s < 0 ? 0 : s);
+    int e;
+    if (l < 0 || s < 0 || !step_has(m, pad, abs))
+        return 0;
+    e = rfmv_seq_lock_get(m, edit_clip_of(m, trk(pad)), abs, lk_id(l, pad));
+    *v = e >= 0 ? lk_dec(l, e) : CPAD(m, pad)->v[p];
+    return 1;
+}
+/* (round B) a step held + the volume knob: the chosen pad's hits there, their velocity */
+static void vel_turn(rfm_move_t *m, int d)
+{
+    rfm_move_kit_t *t = K(m);
+    const int pad = t->cur, tr = trk(pad), clip = edit_clip_of(m, tr);
+    int s, lo, hi, i;
+    t->vpop = 1, t->vpop_ms = now(m), t->kpop = -1, t->lpop = 0, t->msg_ms = 0;
+    touched(m);
+    for (s = 0; s < 16; s++)
+        if (t->st_down >> s & 1) {
+            const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
+            hi = rfmv_seq_range(m, clip, abs, &lo);
+            for (i = lo; i < hi; i++) {
+                const rfm_move_note_t n = m->seq.notes[i];
+                if (rfm_move_kit_pad_of(tr, n.note, NULL) != pad)
+                    continue;
+                if (!t->vel_grp)
+                    rfmv_seq_group(m), t->vel_grp = 1;
+                rfmv_seq_note_put(m, clip, abs, n.note, clampi(n.vel + d, 1, 127), n.len, n.micro);
+                rfmv_seq_dirty(m);
+                hi = rfmv_seq_range(m, clip, abs, &lo); /* (the same notes, put back in place) */
+            }
+        }
+    t->st_used |= t->st_down;
 }
 static void knob_turn(rfm_move_t *m, int k, int d)
 {
     rfm_move_kit_t *t = K(m);
-    const int p = KNOB_P[k], fine = (m->seq.mods & SEQ_M_SHIFT) != 0;
+    int p, fine = (m->seq.mods & SEQ_M_SHIFT) != 0;
     int n;
-    static const uint8_t DIV[RFM_MOVE_KIT_P_N] = { 2, 1, 1, 5, 2, 2, 2, 5, 5, 2, 1, 5, 3, 1, 1, 1 };
-    if (!d || knob_dead(m, k))
+    static const uint8_t DIV[RFM_MOVE_KIT_P_N + 1] = { 2, 1, 1, 5, 2, 2, 2, 5, 5, 2, 1, 5, 3, 1, 1, 1, 2, 1, 1, 1, 1 };
+    if (!d)
         return;
+    if (!(t->kdown >> k & 1) && !t->sl_on && t->kpop != k)
+        knob_page(m, k);                                /* (a turn with no touch: the page Shift says now) */
+    if (knob_dead(m, k))
+        return;
+    p = knob_p(m, k);
     if (fine)
         m->seq.mods_used |= SEQ_M_SHIFT;
     if (t->sl_on) {                                     /* (3c) the chosen slice's cut: 1 coarse, 2 (or Shift) fine */
@@ -1926,9 +2158,12 @@ static void knob_turn(rfm_move_t *m, int k, int d)
         cut_move(m, d, k == 1 || fine);
         return;
     }
-    t->kpop = (int8_t)k, t->kpop_ms = now(m), t->msg_ms = 0;
+    t->kpop = (int8_t)k, t->kpop_ms = now(m), t->msg_ms = 0, t->vpop = 0;
+    t->lpop = (uint8_t)(lock_layer(m) ? k + 1 : 0);
     touched(m);
-    if (fine && (p == RFM_MOVE_KIT_P_PITCH || p == RFM_MOVE_KIT_P_START))
+    if (p == KP_FINE)
+        fine = 1;                                       /* (round B: Shift's knob 8, the cents) */
+    if (fine && !t->lpop && (p == RFM_MOVE_KIT_P_PITCH || p == RFM_MOVE_KIT_P_START || p == KP_FINE))
         n = d;
     else {
         int a = t->kacc[k];
@@ -1938,8 +2173,57 @@ static void knob_turn(rfm_move_t *m, int k, int d)
         n = a / DIV[p];
         t->kacc[k] = (int8_t)(a - n * DIV[p]);
     }
-    if (n)
-        turn_p(m, p, n, fine);
+    if (!n)
+        return;
+    if (t->lpop)
+        lock_turn(m, k, n);
+    else
+        turn_p(m, real_p(p), n, fine);
+}
+
+/* ---- (round B) Tap: the take plays from its start at the first step pressed (a cut at 0), each further press a cut
+ * where the sound heard is (the core's clock less RFM_MOVE_KIT_TAP_LAG_US), 16 slices at most; a press after the take
+ * ended: a new pass, its cuts replacing the last's */
+static uint32_t tap_lag(const rfm_move_t *m) { return m->seq.lead_us ? m->seq.lead_us : RFM_MOVE_KIT_TAP_LAG_US; }
+static int tap_pos(const rfm_move_t *m, uint32_t *pos)  /* the frame heard now; 0: the pass is over */
+{
+    const rfm_move_kit_t *t = &m->kit;
+    const uint64_t el = m->seq.now_us - t->tap_us0, lag = tap_lag(m);
+    const uint64_t f = el > lag ? (el - lag) * (t->sl_rate ? t->sl_rate : 48000) / 1000000u : 0;
+    if (!t->tap_on || f >= t->sl_frames)
+        return 0;
+    *pos = (uint32_t)f;
+    return 1;
+}
+static void tap_clear(rfm_move_t *m)
+{
+    rfm_move_kit_t *t = K(m);
+    if (t->sl_ok != 1)
+        return;
+    if (t->tap_on)
+        slice_act(m, RFM_MOVE_KIT_SL_PLAY, 0, 0);       /* (the pass stopped) */
+    t->tap_on = 0, t->sl_n = 1, t->sl_cut[0] = 0, t->sl_cut[1] = t->sl_frames, t->sl_cur = 0;
+    msg(m, "Cuts", "Cleared");
+}
+static void tap_press(rfm_move_t *m)
+{
+    rfm_move_kit_t *t = K(m);
+    uint32_t pos;
+    touched(m);
+    if (t->sl_ok != 1 || !t->sl_frames)
+        return;
+    if (!tap_pos(m, &pos)) {                            /* a new pass: from the start, a cut at 0 */
+        t->tap_on = 1, t->tap_us0 = m->seq.now_us;
+        t->sl_n = 1, t->sl_cut[0] = 0, t->sl_cut[1] = t->sl_frames, t->sl_cur = 0;
+        slice_act(m, RFM_MOVE_KIT_SL_PLAY, 0, t->sl_frames);
+        return;
+    }
+    {
+        const uint32_t gap = t->sl_rate / 100 ? t->sl_rate / 100 : 1;   /* (10 ms from a cut, from the end) */
+        if (t->sl_n >= RFM_MOVE_KIT_SLICES || pos < t->sl_cut[t->sl_n - 1] + gap || pos + gap > t->sl_frames)
+            return;
+        t->sl_cut[t->sl_n] = pos, t->sl_n++, t->sl_cut[t->sl_n] = t->sl_frames, t->sl_cur = (uint8_t)(t->sl_n - 1);
+    }
 }
 
 /* ================================================================ input === */
@@ -1957,9 +2241,18 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
         pad_up(m, i);
         return 1;
     }
+    if (ev->type == MR_EV_STEP && !ev->value && i >= 0 && i < 16 && (t->tap_down >> i & 1)) {
+        t->tap_down = (uint16_t)(t->tap_down & ~(1u << i));   /* (round B: Tap's) */
+        return 1;
+    }
     if (ev->type == MR_EV_STEP && !ev->value && i >= 0 && i < 16 && (t->st_down >> i & 1)) {
         const uint16_t bit = (uint16_t)(1u << i);
         t->st_down &= (uint16_t)~bit;
+        if (!t->st_down) {                              /* (round B: the next hold its own undo; its popups gone) */
+            if (t->lpop)
+                t->kpop = -1;
+            t->lk_grp = 0, t->vel_grp = 0, t->lpop = 0, t->vpop = 0;
+        }
         if (!(t->st_used & bit) && rfmv_kit_active(m))
             step_toggle(m, t->cur, i, 100);             /* (a click: at its release, the pads may fill a held one) */
         t->st_used &= (uint16_t)~bit;
@@ -1993,6 +2286,16 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
         if (i < 0 || i >= 16 || !ev->value || q->smenu || loop_layer(m) || rfmv_seq_mute_on(m) ||
             (q->mods & (SEQ_M_SHIFT | SEQ_M_COPY | SEQ_M_MUTE)))
             return 0;                                   /* (Shift: the shortcuts; Copy, Mute, Loop: the sequencer's) */
+        if (t->sl_on) {                                 /* (round B) slicing: the steps Tap's, else dark and dead */
+            t->tap_down = (uint16_t)(t->tap_down | 1u << i);
+            if (t->sl_meth == RFM_MOVE_KIT_SM_TAP) {
+                if (q->mods & SEQ_M_DELETE)
+                    q->mods_used |= SEQ_M_DELETE, tap_clear(m);
+                else
+                    tap_press(m);
+            }
+            return 1;
+        }
         if (q->mods & SEQ_M_DELETE) {                   /* Delete + a step: the chosen pad's notes there */
             const int abs = q->page * RFM_MOVE_SEQ_PAGE + i;
             q->mods_used |= SEQ_M_DELETE;
@@ -2004,6 +2307,10 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
         touched(m);
         return 1;
     case MR_EV_KNOB:
+        if (i == 8 && t->st_down && !q->smenu && !t->sl_on && ev->value) {
+            vel_turn(m, ev->value);                     /* (round B) a step held + the volume knob: its velocity */
+            return 1;
+        }
         if (i < 0 || i > 7 || q->smenu)
             return 0;
         knob_turn(m, i, ev->value);
@@ -2073,7 +2380,7 @@ static int zoom_p(const rfm_move_t *m)
     if (!rfmv_kit_shown(m) || msg_up(m) || rec_running(m) || merge_up(m) || t->sl_on || t->pend_take)
         return -1;
     if (kpop_up(m))
-        p = KNOB_P[t->kpop];
+        p = t->lpop ? -1 : knob_p(m, t->kpop);
     else if (t->edit && t->tab == 0 && !t->tools && !t->on_tabs)
         p = ROW_P[t->row];
     return p == RFM_MOVE_KIT_P_START || p == RFM_MOVE_KIT_P_END ? p : -1;
@@ -2190,7 +2497,7 @@ static int len_param(int p)
 static int kpop_up(const rfm_move_t *m)                 /* a knob's popup is on the screen */
 {
     const rfm_move_kit_t *t = &m->kit;
-    return t->kpop >= 0 && KNOB_P[t->kpop] >= 0 && ((t->kdown >> t->kpop & 1) || now(m) - t->kpop_ms < RFM_MOVE_POPUP_MS);
+    return t->kpop >= 0 && knob_p(m, t->kpop) >= 0 && ((t->kdown >> t->kpop & 1) || now(m) - t->kpop_ms < RFM_MOVE_POPUP_MS);
 }
 /* (3b, board D) Pitch, Stretch, Start or End changing: the steps it lasts on the step keys */
 static int len_pop(const rfm_move_t *m)
@@ -2199,7 +2506,7 @@ static int len_pop(const rfm_move_t *m)
     if (msg_up(m))
         return 0;
     if (kpop_up(m))
-        return len_param(KNOB_P[t->kpop]);
+        return !t->lpop && len_param(knob_p(m, t->kpop));
     return t->edit && t->tab == 0 && !t->tools && ROW_P[t->row] >= 0 && len_param(ROW_P[t->row]);
 }
 static int next_empty(const rfm_move_t *m)
@@ -2219,7 +2526,7 @@ void rfmv_kit_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
     const rfm_move_kit_t *t = &m->kit;
     const rfm_move_seq_t *q = &m->seq;
     const int k0 = t->cur, cg = CPAD(m, k0)->v[RFM_MOVE_KIT_P_CHOKE];
-    const int choke_pop = (t->edit && t->tab == 0 && t->row == KR_CHOKE) || (t->kpop >= 0 && KNOB_P[t->kpop] == RFM_MOVE_KIT_P_CHOKE);
+    const int choke_pop = (t->edit && t->tab == 0 && t->row == KR_CHOKE) || (t->kpop >= 0 && knob_p(m, t->kpop) == RFM_MOVE_KIT_P_CHOKE);
     int i;
     if (!rfmv_kit_active(m))
         return;
@@ -2269,21 +2576,45 @@ void rfmv_kit_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
         for (i = 0; i < 16; i++) {                      /* the chosen pad's steps */
             const int abs = q->page * RFM_MOVE_SEQ_PAGE + i;
             const int in = abs >= rfmv_seq_loop_lo(m, clip) && abs < rfmv_seq_loop_hi(m, clip);
-            rgb_t v = step_has(m, k0, abs) ? sc(ROWC[k0 / 4], in ? 220 : 60) : in ? sc(RFMV_WHITE, 16) : RFMV_OFF;
+            const int vel = step_vel(m, k0, abs);       /* (round B: soft dim, hard bright; 100 as before) */
+            const int br = clampi(30 + (vel * 190 + 50) / 100, 0, 255);
+            rgb_t v = vel ? sc(ROWC[k0 / 4], in ? br : br * 60 / 220) : in ? sc(RFMV_WHITE, 16) : RFMV_OFF;
+            if (vel && (now(m) / 500u) % 2u && step_locks(m, k0, abs))
+                v = sc(ROWC[k0 / 4], (in ? br : 60) / 4);   /* (round B: locked: a slow
+                                                         * blink, 1 s round) */
             if (in && pos == abs && (q->playing || q->start_pending))
                 v = sc(RFMV_WHITE, 200);                /* (the playhead) */
             if (lp)                                     /* (3b, board D) the steps the sound lasts, the first brightest */
                 v = i < ln ? sc(ROWC[k0 / 4], i == 0 ? 255 : 110) : RFMV_OFF;
             if (t->sl_on)                               /* (3c, board P: dark under the slices) */
                 v = RFMV_OFF;
+            if (t->sl_on && t->sl_meth == RFM_MOVE_KIT_SM_TAP && t->sl_ok == 1) {   /* (round B) Tap: a step a cut
+                                                         * made (white), the slice the playhead is in (its colour) */
+                uint32_t hp;
+                if (i < t->sl_n)
+                    v = sc(RFMV_WHITE, 150);
+                if (tap_pos(m, &hp) && i < t->sl_n && hp >= t->sl_cut[i] && hp < t->sl_cut[i + 1])
+                    v = slice_rgb(m);
+                if (t->tap_down >> i & 1)
+                    v = RFMV_WHITE;
+            }
             if (t->st_down >> i & 1)
                 v = RFMV_WHITE;
             c[L_STEP0 + i] = v;
         }
     }
-    for (i = 0; i < 8; i++)                             /* the knobs: the chosen pad's */
-        c[L_RING0 + i] = knob_dead(m, i) ? RFMV_OFF : (t->kdown >> i & 1) || t->kpop == i ? RFMV_WHITE
-                                                    : sc(t->sl_on ? MENU_KNOB : KIT, 150);
+    for (i = 0; i < 8; i++) {                           /* the knobs: the chosen pad's (round B: the page as Shift says:
+                                                         * pink, Shift's blue; a step held: the lockable ones yellow) */
+        rgb_t kc = t->sl_on ? MENU_KNOB : lock_layer(m) ? LOCKC : KIT;
+        int dead;
+        if (!t->sl_on && !lock_layer(m) && !(t->kdown >> i & 1) && t->kpop != i && (q->mods & SEQ_M_SHIFT))
+            kc = SHIFTC;
+        if (!t->sl_on && !(t->kdown >> i & 1) && t->kpop != i)   /* (an untouched knob: the page it takes now) */
+            dead = knob_dead_p(m, i, (q->mods & SEQ_M_SHIFT) ? KNOB_S[i] : KNOB_N[i]);
+        else
+            dead = knob_dead(m, i);
+        c[L_RING0 + i] = dead ? RFMV_OFF : (t->kdown >> i & 1) || t->kpop == i ? RFMV_WHITE : sc(kc, 150);
+    }
     wv[W_UP] = 0, wv[W_DOWN] = 0;                       /* (no job here) */
     if (und_ours(m) || undk_ours(m))
         wv[W_UNDO] = 60;
@@ -2358,20 +2689,28 @@ static void icon_row(mr_canvas_t *cv, icon_t *const *icons, int n, int chosen, c
     if (name)
         v2_TC(cv, 64, y + 19, name, 2, 1);
 }
-/* the envelope: attack, hold, release as parts of w (in 1/100); thick 1..3 the part turned */
-static void ahr(mr_canvas_t *cv, int x0, int y0, int w, int ht, int a, int h, int r, int thick)
+/* (round B) the envelope: attack, hold, decay, sustain, release as parts of w (in 1/100), sus the sustain's level
+ * (0..100); thick 1..5 the part turned (A H D S R) */
+static void ahdsr(mr_canvas_t *cv, int x0, int y0, int w, int ht, const int pt[5], int sus, int thick)
 {
-    const int xa = x0 + w * a / 100, xh = xa + w * h / 100, xr = xh + w * r / 100;
+    const int xa = x0 + w * pt[0] / 100, xh = xa + w * pt[1] / 100, xd = xh + w * pt[2] / 100, xs = xd + w * pt[3] / 100;
+    const int xr = xs + w * pt[4] / 100, ys = y0 - ht * sus / 100;
     v2_L(cv, x0, y0, xa, y0 - ht);
     v2_L(cv, xa, y0 - ht, xh, y0 - ht);
-    v2_L(cv, xh, y0 - ht, xr, y0);
+    v2_L(cv, xh, y0 - ht, xd, ys);
+    v2_L(cv, xd, ys, xs, ys);
+    v2_L(cv, xs, ys, xr, y0);
     v2_dotH(cv, x0, y0, w);
     if (thick == 1)
         v2_L(cv, x0 + 1, y0, xa + 1, y0 - ht), v2_L(cv, x0 + 2, y0, xa + 2, y0 - ht);
     if (thick == 2)
         v2_R(cv, xa, y0 - ht + 1, xh - xa, 2, 1);
     if (thick == 3)
-        v2_L(cv, xh - 1, y0 - ht, xr - 1, y0), v2_L(cv, xh - 2, y0 - ht, xr - 2, y0);
+        v2_L(cv, xh + 1, y0 - ht, xd + 1, ys), v2_L(cv, xh + 2, y0 - ht, xd + 2, ys);
+    if (thick == 4)
+        v2_R(cv, xd, ys + 1, xs - xd, 2, 1), v2_R(cv, xd, ys - 2, xs - xd, 2, 1);
+    if (thick == 5)
+        v2_L(cv, xs - 1, ys, xr - 1, y0), v2_L(cv, xs - 2, ys, xr - 2, y0);
 }
 static int isqrt(int v)
 {
@@ -2380,16 +2719,19 @@ static int isqrt(int v)
         r++;
     return r;
 }
-/* the pad's envelope as parts of 100 (a square root of the times, so short ones show): a, h, r */
-static void ahr_parts(const rfm_move_t *m, int k, int *a, int *h, int *r)
+/* the pad's envelope as parts of 100 (a square root of the times, so short ones show): a, h, d, the sustain, r */
+static void env_parts(const rfm_move_t *m, int k, int pt[5])
 {
     const rfm_move_kit_pad_t *d = CPAD(m, k);
-    int wa = isqrt(d->v[RFM_MOVE_KIT_P_ATTACK]), wh = isqrt(d->v[RFM_MOVE_KIT_P_HOLD]), wr = isqrt(d->v[RFM_MOVE_KIT_P_RELEASE]);
-    int tot;
-    if (!d->v[RFM_MOVE_KIT_P_HOLD])                     /* (no hold: held to the end, or while held) */
-        wh = (wa + wr) > 0 ? wa + wr : 10;
-    tot = wa + wh + wr;
-    *a = wa * 95 / tot, *r = wr * 95 / tot, *h = 95 - *a - *r;
+    int w[5], tot = 0, i, used = 0;
+    w[0] = isqrt(d->v[RFM_MOVE_KIT_P_ATTACK]), w[1] = isqrt(d->v[RFM_MOVE_KIT_P_HOLD]);
+    w[2] = isqrt(d->v[RFM_MOVE_KIT_P_DECAY]), w[4] = isqrt(d->v[RFM_MOVE_KIT_P_RELEASE]);
+    w[3] = (w[0] + w[1] + w[2] + w[4]) / 2 > 10 ? (w[0] + w[1] + w[2] + w[4]) / 2 : 10;   /* (held, or to the end) */
+    for (i = 0; i < 5; i++)
+        tot += w[i];
+    for (i = 0; i < 5; i++)
+        pt[i] = i == 3 ? 0 : w[i] * 95 / tot, used += pt[i];
+    pt[3] = 95 - used;
 }
 /* the pad's wave over [start, end) as 64 columns 2 px apart about y0 (h each way) */
 static void pad_wave(const rfm_move_t *m, mr_canvas_t *cv, int k, int y0, int h, int whole)
@@ -2473,6 +2815,8 @@ static icon_t *row_icon(int r, int mode)
     case KR_LEVEL: return &I_LVL;
     case KR_PAN: return &I_PAN;
     case KR_STRETCH: return &I_STRETCH;
+    case KR_CUTOFF: return &I_FILTER;
+    case KR_RESO: return &I_RESO;
     case KR_SEND1:
     case KR_SEND2:
     case KR_SEND3: return &I_SEND;
@@ -2539,7 +2883,7 @@ static void popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
     const int k = m->kit.cur;
     const rfm_move_kit_pad_t *d = CPAD(m, k);
     char v[32];
-    int a, h, r;
+    int pt[5];
     if (p == RFM_MOVE_KIT_P_START || p == RFM_MOVE_KIT_P_END) {   /* (round A) the close-up */
         zoom_screen(m, cv, p);
         return;
@@ -2550,15 +2894,35 @@ static void popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
         v2_TC(cv, 64, 0, "Play", 2, 1);
         icon_row(cv, P, RFM_MOVE_KIT_M_N, d->v[p], NULL, 18);
         v2_TC(cv, 64, 32, MODE_NAME[clampi(d->v[p], 0, RFM_MOVE_KIT_M_N - 1)], 2, 1);
-        ahr_parts(m, k, &a, &h, &r);
-        ahr(cv, 14, 63, 100, 12, a, h, r, 0);
+        env_parts(m, k, pt);
+        ahdsr(cv, 14, 63, 100, 12, pt, d->v[RFM_MOVE_KIT_P_SUSTAIN], 0);
         return;
     }
-    if (p == RFM_MOVE_KIT_P_ATTACK || p == RFM_MOVE_KIT_P_HOLD || p == RFM_MOVE_KIT_P_RELEASE) {   /* (board F) */
+    if (p == RFM_MOVE_KIT_P_ATTACK || p == RFM_MOVE_KIT_P_HOLD || p == RFM_MOVE_KIT_P_DECAY ||
+        p == RFM_MOVE_KIT_P_SUSTAIN || p == RFM_MOVE_KIT_P_RELEASE) {   /* (board F; round B: the five stages) */
         v2_TC(cv, 64, 0, P_NAME[p], 2, 1);
         v2_TC(cv, 64, 17, v, 2, 1);
-        ahr_parts(m, k, &a, &h, &r);
-        ahr(cv, 4, 60, 120, 22, a, h, r, p - RFM_MOVE_KIT_P_ATTACK + 1);
+        env_parts(m, k, pt);
+        ahdsr(cv, 4, 60, 120, 22, pt, d->v[RFM_MOVE_KIT_P_SUSTAIN],
+              p == RFM_MOVE_KIT_P_ATTACK ? 1 : p == RFM_MOVE_KIT_P_HOLD ? 2 : p == RFM_MOVE_KIT_P_DECAY ? 3
+              : p == RFM_MOVE_KIT_P_SUSTAIN ? 4 : 5);
+        return;
+    }
+    if (p == RFM_MOVE_KIT_P_CUTOFF || p == RFM_MOVE_KIT_P_RESO) {   /* (round B) the filter's curve, the cutoff's place */
+        int x, py = -1;
+        const int c = d->v[RFM_MOVE_KIT_P_CUTOFF], q = d->v[RFM_MOVE_KIT_P_RESO], xc = 4 + c * 120 / 100;
+        v2_TC(cv, 64, 0, P_NAME[p], 2, 1);
+        v2_TC(cv, 64, 17, v, 2, 1);
+        for (x = 4; x < 124; x++) {                     /* (flat to the cutoff, the peak, then down 12 px a fifth) */
+            const int dx = x - xc;
+            int y = 50 - (dx > -6 && dx < 6 ? q * (6 - (dx < 0 ? -dx : dx)) / 60 : 0) + (dx > 0 ? dx / 2 : 0);
+            y = clampi(y, 34, 63);
+            if (py >= 0)
+                v2_L(cv, x - 1, py, x, y);
+            py = y;
+        }
+        if (p == RFM_MOVE_KIT_P_CUTOFF)
+            v2_dotV(cv, clampi(xc, 0, 127), 34, 29);
         return;
     }
     v2_titleBox(cv, P_NAME[p], v, 64, 128);
@@ -2570,6 +2934,29 @@ static void popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
             v2_R(cv, 8, 56, 112 * d->v[p] / 100, 5, 1);
     }
 }
+/* (round B) a held step's lock: "Step 5", the setting, its value for that hit (the pad's own until locked) */
+static void lock_popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
+{
+    char t[24], v[32];
+    int lv;
+    snprintf(t, sizeof t, "Step %d %s", held_step(m) + 1, P_NAME[p]);
+    if (v2_tw(t, 2) > 128)
+        snprintf(t, sizeof t, "Step %d", held_step(m) + 1), v2_TC(cv, 64, 21, P_NAME[p], 1, 1);
+    v2_TC(cv, 64, 3, t, 2, 1);
+    if (!lock_val(m, p, &lv)) {
+        v2_TC(cv, 64, 34, "No Hit", 2, 1);
+        return;
+    }
+    vtext(m, m->kit.cur, p, lv, 0, v, sizeof v);
+    v2_TC(cv, 64, v2_tw(v, 3) <= 128 ? 32 : 36, v, v2_tw(v, 3) <= 128 ? 3 : 2, 1);
+    ic(cv, I_DOT, 0, 52, 1);                            /* (a lock: the dot, as a step key's blink) */
+}
+static int held_vel(const rfm_move_t *m)
+{
+    const int s = held_step(m);
+    return s < 0 ? 0 : step_vel(m, m->kit.cur, m->seq.page * RFM_MOVE_SEQ_PAGE + s);
+}
+static int vpop_up(const rfm_move_t *m) { return m->kit.vpop && (m->kit.st_down || now(m) - m->kit.vpop_ms < RFM_MOVE_POPUP_MS); }
 static void rec_screen(const rfm_move_t *m, mr_canvas_t *cv)   /* (boards L, M) a take into the pad */
 {
     const rfm_move_smp_status_t *s = &m->smp.st;
@@ -2633,8 +3020,8 @@ static int slice_x(const rfm_move_kit_t *t, uint32_t f)
 static void slice_text(const rfm_move_t *m, char *o, int cap)
 {
     const rfm_move_kit_t *t = &m->kit;
-    static const char *const W[RFM_MOVE_KIT_SM_N] = { "Hits", "Equal", "Equal", "Equal", "Steps" };
-    static const uint8_t N[RFM_MOVE_KIT_SM_N] = { 0, 16, 8, 4, 0 };
+    static const char *const W[RFM_MOVE_KIT_SM_N] = { "Hits", "Equal", "Equal", "Equal", "Steps", "Tap" };
+    static const uint8_t N[RFM_MOVE_KIT_SM_N] = { 0, 16, 8, 4, 0, 0 };
     const int meth = t->sl_meth % RFM_MOVE_KIT_SM_N;
     const int n = t->sl_ok == 1 ? t->sl_n : N[meth];
     if (n)
@@ -2661,6 +3048,11 @@ static void slice_screen(const rfm_move_t *m, mr_canvas_t *cv)
                 pk = t->sl_pk[j] > pk ? t->sl_pk[j] : pk;
             a = (pk * 12 + 127) / 255;
             v2_R(cv, c * 2, 18 - a, 1, a ? a * 2 : 1, !(c * 2 >= xa && c * 2 < xb));
+        }
+        {                                               /* (round B) Tap: the playhead over the wave */
+            uint32_t hp;
+            if (t->sl_meth == RFM_MOVE_KIT_SM_TAP && tap_pos(m, &hp))
+                v2_R(cv, slice_x(t, hp), 2, 2, 30, 1);
         }
         for (i = 0; i <= t->sl_n; i++)                  /* (the cuts between the slices; the ends where they cut) */
             if ((i > 0 && i < t->sl_n) || (i == 0 && t->sl_cut[0] > 0) || (i == t->sl_n && t->sl_cut[i] < t->sl_frames))
@@ -2713,8 +3105,20 @@ int rfmv_kit_screen(const rfm_move_t *m, mr_canvas_t *cv)
         icon_row(cv, A, 2, t->pend_i, t->pend_i ? "Slice" : "To Pad", 26);
         return 1;
     }
+    if (vpop_up(m)) {                                   /* (round B) a held step + the volume knob */
+        char ttl[16], b[8];
+        const int v = held_vel(m);
+        snprintf(ttl, sizeof ttl, "Step %d Velo", held_step(m) + 1);
+        snprintf(b, sizeof b, "%d", v);
+        v2_titleBox(cv, ttl, v ? b : "-", 64, 124);
+        v2_vbar(cv, v / 127.0, 0, 4, 120, 52);
+        return 1;
+    }
     if (kpop_up(m)) {
-        popup(m, cv, KNOB_P[t->kpop]);
+        if (t->lpop)
+            lock_popup(m, cv, knob_p(m, t->kpop));
+        else
+            popup(m, cv, knob_p(m, t->kpop));
         return 1;
     }
     if (t->tab == 2 && t->fact && !t->on_tabs) {       /* (3b, board K) a folder's actions: Open, All To Pads */
@@ -2801,6 +3205,11 @@ int rfmv_kit_timed(const rfm_move_t *m)
     int i;
     if (!rfmv_kit_active(m))
         return 0;
+    if (t->vpop || (t->st_down && t->kpop >= 0))
+        return 1;                                       /* (round B: the held step's popups) */
+    for (i = 0; i < 16; i++)                            /* (round B: a locked step blinks) */
+        if (step_locks(m, t->cur, m->seq.page * RFM_MOVE_SEQ_PAGE + i) && step_has(m, t->cur, m->seq.page * RFM_MOVE_SEQ_PAGE + i))
+            return 1;
     if (t->land || t->aud || t->sl_ask || msg_up(m) || rec_running(m) || t->pend_take || merge_up(m) || t->sl_on || (t->tab == 2 && !t->on_tabs) || t->tool_note || to_kit(m) ||
         (t->turned && now(m) - t->turn_ms < RFM_MOVE_POPUP_MS) || (t->kpop >= 0 && now(m) - t->kpop_ms < RFM_MOVE_POPUP_MS))
         return 1;
@@ -2847,10 +3256,22 @@ int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
     } else if (t->pend_take) {
         snprintf(o, (size_t)cap, "%s", t->pend_i ? "Slice" : "To pad");
         *subj = 0xA79, *stamp = 0;
-    } else if (t->kpop >= 0 && KNOB_P[t->kpop] >= 0) {
-        val_text(m, t->cur, KNOB_P[t->kpop], 0, v, sizeof v);
-        snprintf(o, (size_t)cap, "%s: %s", P_NAME[KNOB_P[t->kpop]],
-                 KNOB_P[t->kpop] == RFM_MOVE_KIT_P_MODE ? MODE_SAY[CPAD(m, t->cur)->v[RFM_MOVE_KIT_P_MODE] % RFM_MOVE_KIT_M_N] : v);
+    } else if (vpop_up(m)) {                            /* (round B) a held step's velocity */
+        snprintf(o, (size_t)cap, "Step %d velocity: %d", held_step(m) + 1, held_vel(m));
+        *subj = 0xA7B;
+    } else if (t->kpop >= 0 && t->lpop) {               /* (round B) a held step's lock */
+        const int p = knob_p(m, t->kpop);
+        int lv;
+        if (lock_val(m, p, &lv))
+            vtext(m, t->cur, p, lv, 0, v, sizeof v);
+        else
+            snprintf(v, sizeof v, "no hit");
+        snprintf(o, (size_t)cap, "Step %d %s: %s", held_step(m) + 1, P_NAME[p], v);
+        *subj = (uint16_t)(0xA80 | t->kpop);
+    } else if (t->kpop >= 0 && knob_p(m, t->kpop) >= 0) {
+        val_text(m, t->cur, knob_p(m, t->kpop), 0, v, sizeof v);
+        snprintf(o, (size_t)cap, "%s: %s", P_NAME[knob_p(m, t->kpop)],
+                 knob_p(m, t->kpop) == RFM_MOVE_KIT_P_MODE ? MODE_SAY[CPAD(m, t->cur)->v[RFM_MOVE_KIT_P_MODE] % RFM_MOVE_KIT_M_N] : v);
         *subj = (uint16_t)(0xA10 | t->kpop);
     } else if (t->tools) {
         snprintf(o, (size_t)cap, "%s", TOOL_NAME[t->ti % TL_N]);
@@ -3035,7 +3456,8 @@ int rfm_move_kit_set(rfm_move_t *m, int pad, int p, int value)
         v = clampi(v, 0, d->v[RFM_MOVE_KIT_P_END] - GAP);
     else if (p == RFM_MOVE_KIT_P_END)
         v = clampi(v, d->v[RFM_MOVE_KIT_P_START] + GAP, RFM_MOVE_KIT_FRAC);
-    else if (p == RFM_MOVE_KIT_P_ATTACK || p == RFM_MOVE_KIT_P_HOLD || p == RFM_MOVE_KIT_P_RELEASE)
+    else if (p == RFM_MOVE_KIT_P_ATTACK || p == RFM_MOVE_KIT_P_HOLD || p == RFM_MOVE_KIT_P_RELEASE ||
+             p == RFM_MOVE_KIT_P_DECAY)
         v = ENV_MS[env_idx(v)];
     if (v == d->v[p])
         return 0;

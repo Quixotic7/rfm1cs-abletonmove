@@ -187,7 +187,7 @@ static int trig_ok(int cc, int v)
     case RFM_MOVE_TRIG_LEAP: return v <= 30;
     case RFM_MOVE_TRIG_JUMP: return v < RFM_MOVE_SEQ_MAXLEN;
     case RFM_MOVE_TRIG_REPEAT: return v >= 1 && v <= 16;
-    default: return 0;
+    default: return cc >= RFM_MOVE_KIT_LOCK0 && cc <= RFM_MOVE_KIT_LOCK_LAST && v <= 254;   /* (round B: a kit pad's) */
     }
 }
 
@@ -204,7 +204,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
     ver = b[4];
     if (ver < 1 || ver > RFM_MOVE_PROJECT_VERSION)
         return -2;
-    ext = ver >= 12 ? RFM_MOVE_PROJECT_EXT : ver == 11 ? RFM_MOVE_PROJECT_EXT_V11 : ver >= 9 ? RFM_MOVE_PROJECT_EXT_V10 : ver == 8 ? RFM_MOVE_PROJECT_EXT_V8 : ver == 7 ? RFM_MOVE_PROJECT_EXT_V7 : ver == 6 ? RFM_MOVE_PROJECT_EXT_V6 : ver == 5 ? RFM_MOVE_PROJECT_EXT_V5 : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
+    ext = ver >= 14 ? RFM_MOVE_PROJECT_EXT : ver >= 12 ? RFM_MOVE_PROJECT_EXT_V12 : ver == 11 ? RFM_MOVE_PROJECT_EXT_V11 : ver >= 9 ? RFM_MOVE_PROJECT_EXT_V10 : ver == 8 ? RFM_MOVE_PROJECT_EXT_V8 : ver == 7 ? RFM_MOVE_PROJECT_EXT_V7 : ver == 6 ? RFM_MOVE_PROJECT_EXT_V6 : ver == 5 ? RFM_MOVE_PROJECT_EXT_V5 : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
           ver == 2 ? RFM_MOVE_PROJECT_EXT_V2 : 0;
     ab = ver >= 3 ? RFM_MOVE_ARP_BYTES : RFM_MOVE_ARP_BYTES_V2;   /* (an arp's bytes) */
     fixed = RFM_MOVE_PROJECT_FIXED - RFM_MOVE_PROJECT_EXT + ext;
@@ -408,7 +408,10 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
 }
 
 int rfm_move_project_check(const uint8_t *b, uint32_t n) { return parse(b, n, NULL); }
-static uint32_t kit_bytes(int ver) { return ver >= 12 ? RFM_MOVE_KIT_BYTES : ver == 11 ? RFM_MOVE_KIT_BYTES_V11 : 0; }
+static uint32_t kit_bytes(int ver)
+{
+    return ver >= 14 ? RFM_MOVE_KIT_BYTES : ver >= 12 ? RFM_MOVE_KIT_BYTES_V12 : ver == 11 ? RFM_MOVE_KIT_BYTES_V11 : 0;
+}
 /* a checked blob's firmware part (version 9..12; NULL before), its kit part (version 11, 12; NULL before) */
 static const uint8_t *pfw_part(const uint8_t *b, uint32_t n)
 {

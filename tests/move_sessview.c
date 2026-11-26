@@ -1367,7 +1367,7 @@ static void test_sv_launch_q(void)
           !M2.seq.cset[SEQ_CLIP(4, 4)]);
     {                                                   /* a clip's settings out of range: refused */
         uint32_t h = 2166136261u;
-        blob[n - 4 - RFM_MOVE_PFW_BYTES - RFM_MOVE_SEQ_CLIPS + 3] = 0x17;
+        blob[n - 4 - RFM_MOVE_KIT_BYTES - RFM_MOVE_PFW_BYTES - RFM_MOVE_SEQ_CLIPS + 3] = 0x17;
         for (k = 0; k < n - 4; k++)
             h = (h ^ blob[k]) * 16777619u;
         for (k = 0; k < 4; k++)

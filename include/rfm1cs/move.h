@@ -344,7 +344,20 @@ enum { RFM_MOVE_KIT_MG_COPY, RFM_MOVE_KIT_MG_MIX, RFM_MOVE_KIT_MG_JOIN, RFM_MOVE
 enum { RFM_MOVE_KIT_ED_TRIM = 1, RFM_MOVE_KIT_ED_NORMALIZE, RFM_MOVE_KIT_ED_REVERSE };
 enum { RFM_MOVE_KIT_SL_ASK, RFM_MOVE_KIT_SL_PLAY, RFM_MOVE_KIT_SL_DONE };
 enum { RFM_MOVE_KIT_SM_HITS, RFM_MOVE_KIT_SM_EQ16, RFM_MOVE_KIT_SM_EQ8, RFM_MOVE_KIT_SM_EQ4, RFM_MOVE_KIT_SM_STEPS,
+       RFM_MOVE_KIT_SM_TAP,                             /* (round B) the steps tapped while the take plays (the host
+                                                         * answers one slice, the whole take) */
        RFM_MOVE_KIT_SM_N };
+/* (round B) Tap: a press's cut is where the sound heard is: the core's clock since the pass started less the output's
+ * delay (the host's lead_us when it sets one, else this: the Move host's 5-block ring lead plus Move's SPI block, 768
+ * frames at 44.1 kHz) */
+#define RFM_MOVE_KIT_TAP_LAG_US 17000
+/* (round B) a kit pad's step locks: sequencer locks (clip, step, cc) with cc RFM_MOVE_KIT_LOCK0 + l * 4 + pad % 4 (the
+ * track's four pads apart), l RFM_MOVE_KIT_LK_*; the value encoded 0..254: Pitch semitones + 24, Start of 254, Filter
+ * and Resonance as they are, Level dB + 60, Pan + 50, Decay an index of the envelope's steps */
+enum { RFM_MOVE_KIT_LK_PITCH, RFM_MOVE_KIT_LK_START, RFM_MOVE_KIT_LK_CUTOFF, RFM_MOVE_KIT_LK_RESO, RFM_MOVE_KIT_LK_LEVEL,
+       RFM_MOVE_KIT_LK_PAN, RFM_MOVE_KIT_LK_DECAY, RFM_MOVE_KIT_LK_N };
+#define RFM_MOVE_KIT_LOCK0 136
+#define RFM_MOVE_KIT_LOCK_LAST (RFM_MOVE_KIT_LOCK0 + RFM_MOVE_KIT_LK_N * 4 - 1)
 #define RFM_MOVE_KIT_SLICES 16                          /* slices a take gives at most */
 enum { RFM_MOVE_SMP_OP_DELETE = 1, RFM_MOVE_SMP_OP_TRIM, RFM_MOVE_SMP_OP_NORMALIZE, RFM_MOVE_SMP_OP_REVERSE,
        RFM_MOVE_SMP_OP_FADE_IN, RFM_MOVE_SMP_OP_FADE_OUT, RFM_MOVE_SMP_OP_UNDO };   /* SMP_EDIT's index; _UNDO: answers */
@@ -389,6 +402,10 @@ typedef struct {
     /* (0.15.0, stage 2) the sampler's takes (SMP_ROWS .. SMP_EDIT) */
     uint32_t take;                                      /* a take's id (SMP_ROWS: the folder's) */
     uint32_t from, count;                               /* frames (SMP_ROWS: rows) */
+    /* (round B, the kit) KIT_NOTE (a note-on from the sequencer): the step's locks on this hit, bit l of klk_mask
+     * (RFM_MOVE_KIT_LK_*) set: klk[l] replaces the pad's setting for this voice only, in the setting's own units */
+    uint8_t klk_mask;
+    int16_t klk[7];
 } rfm_move_act_t;
 typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
@@ -778,7 +795,7 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 13                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
+#define RFM_MOVE_PROJECT_VERSION 14                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
                                                          * values a slot, 7 the firmwares' MIDI routes, 8 the launch
                                                          * quantization and each clip's launch settings, 9 (0.13.0) the
                                                          * firmwares: each slot's id, level, settings and track, the
@@ -786,7 +803,9 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
                                                          * the rate bytes: a base rate and a feel; no new bytes), 11
                                                          * (stage 3a) the kit (RFM_MOVE_KIT_BYTES at the end), 12
                                                          * (stage 3b) the kit's name, mix, stretch and sends, 13
-                                                         * (round A) the kit's Trim silence, Toggle (no new bytes) */
+                                                         * (round A) the kit's Trim silence, Toggle (no new bytes), 14
+                                                         * (round B) Decay, Sustain, Filter, Resonance a pad; the kit
+                                                         * pads' step locks (RFM_MOVE_KIT_LOCK0..) */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -817,11 +836,15 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
  * mode RFM_MOVE_KIT_M_TOGGLE */
 #define RFM_MOVE_KIT_PADS 16
 #define RFM_MOVE_KIT_PATH 160                           /* a sound's path with its NUL (the host's) */
-#define RFM_MOVE_KIT_P_N 16                             /* a pad's settings (RFM_MOVE_KIT_P_*; 12 in version 11) */
+#define RFM_MOVE_KIT_P_N 20                             /* a pad's settings (RFM_MOVE_KIT_P_*; 12 in version 11, 16 in
+                                                         * 12 and 13) */
 #define RFM_MOVE_KIT_P_N_V11 12
+#define RFM_MOVE_KIT_P_N_V12 16
 #define RFM_MOVE_KIT_BYTES_V11 (8 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V11))   /* (2952) */
-#define RFM_MOVE_KIT_BYTES (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N))   /* (3112) */
+#define RFM_MOVE_KIT_BYTES_V12 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V12))   /* (3112) */
+#define RFM_MOVE_KIT_BYTES (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N))   /* (3240) */
 #define RFM_MOVE_PROJECT_EXT_V11 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V11)
+#define RFM_MOVE_PROJECT_EXT_V12 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V12)
 #define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES)
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 7 + RFM_MOVE_SEQ_LOCKS * 4)
@@ -931,6 +954,10 @@ typedef struct {
     uint8_t fill;                                       /* FILL (the jog wheel held down) */
     uint32_t rng;                                       /* chance, random functions */
     uint32_t lead_us;                                   /* the host runs the clock this far ahead of what sounds */
+    uint8_t kit_cok;                                    /* (round B) a clip's notes playing now: kit_cclip, kit_cstep the
+                                                         * step their locks are on */
+    uint8_t kit_cclip;
+    uint16_t kit_cstep;
     uint8_t metro;                                      /* the metronome (off at first) */
     uint8_t groove, root, scale;                        /* (saved) the project's (Global) groove, key and scale */
     uint8_t color;                                      /* (saved) this project's colour, 0 its slot's */
@@ -1282,7 +1309,11 @@ enum { RFM_MOVE_KIT_P_PITCH,                            /* cents -2400..2400 (a 
        /* (stage 3b, version 12) */
        RFM_MOVE_KIT_P_STRETCH,                          /* 0 Off, 1..64 steps: start..end repitched to last them (the
                                                          * Pitch ignored; KIT_SET's `from` the microseconds) */
-       RFM_MOVE_KIT_P_SEND1, RFM_MOVE_KIT_P_SEND2, RFM_MOVE_KIT_P_SEND3 };   /* 0..100 %: to audio FX 1..3 */
+       RFM_MOVE_KIT_P_SEND1, RFM_MOVE_KIT_P_SEND2, RFM_MOVE_KIT_P_SEND3,   /* 0..100 %: to audio FX 1..3 */
+       /* (round B, version 14) the envelope's Decay (ms, RFM_MOVE_KIT_ENV_MS steps) and Sustain (0..100 %, 100 at
+        * first); the pad's low-pass filter: Filter (the cutoff 0..100: 20 Hz .. 20 kHz, 100 open: bypassed, the
+        * default) and Resonance 0..100 */
+       RFM_MOVE_KIT_P_DECAY, RFM_MOVE_KIT_P_SUSTAIN, RFM_MOVE_KIT_P_CUTOFF, RFM_MOVE_KIT_P_RESO };
 #define RFM_MOVE_KIT_STRETCH_MAX 64
 /* how a pad plays: One shot start..end to its end (Hold 0: the release a tail ending at the end; Hold > 0: the release
  * starts after attack + hold), Momentary while the pad (or the step's note) is held, Loop round start..end while held.
@@ -1452,6 +1483,14 @@ typedef struct {                                        /* (kit.c) */
     uint32_t za_from, za_count;
     uint8_t sl_sens, sl_ask;                            /* the Hits' sensitivity 1..100; asked again at sl_ms + .. */
     uint32_t sl_ms;
+    /* (round B) */
+    uint8_t kshift;                                     /* each knob's page (bits: 1 the Shift page), chosen at its touch */
+    uint8_t lk_grp, vel_grp;                            /* a held step's locks / velocity edited: its undo group made */
+    uint8_t lpop, vpop;                                 /* a lock's popup (the knob + 1), the velocity's (1) */
+    uint32_t vpop_ms;
+    uint8_t tap_on;                                     /* Tap: a pass playing (since tap_us0, the core's clock) */
+    uint64_t tap_us0;
+    uint16_t tap_down;                                  /* .. the steps it took (their releases) */
 } rfm_move_kit_t;
 
 /* ---- the state */
