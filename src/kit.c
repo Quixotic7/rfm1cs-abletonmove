@@ -2043,7 +2043,7 @@ static void land_poll(rfm_move_t *m)
     t->land = 0;
     if (r->kind != RFM_MOVE_KIT_ROW_FILE || (r->id == t->land_id && t->place == t->land_pl))
         return;                                         /* (a folder, a kit: nothing; the pad's own already) */
-    land_load(m, r, 1);
+    land_load(m, r, 0);                                 /* (2026-11-26, the owner's: loaded, not heard: the pad plays it) */
 }
 int rfm_move_kit_found(rfm_move_t *m, int pad, int place, int depth, const uint32_t *folder, const int16_t *sel,
                        uint32_t id)

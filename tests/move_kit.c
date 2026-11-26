@@ -638,7 +638,7 @@ static void t_files(void)
           !count(RFM_MOVE_ACT_KIT_PREVIEW));
     clear();
     rfm_move_kit_loaded(&M, 6, RFM_MOVE_KIT_OK, "Clap", "/data/UserData/UserLibrary/Samples/Clap.wav", 4800, 48000, 0, NULL);
-    CHECK(count(RFM_MOVE_ACT_KIT_NOTE) == 1 && (a = last(RFM_MOVE_ACT_KIT_NOTE)) && a->index == 6 && a->down);
+    CHECK(!count(RFM_MOVE_ACT_KIT_NOTE));              /* (2026-11-26: loaded, not heard: the pad plays it) */
     clear(), jog(1), jog(-1), jog(1);                   /* (a fast spin: one load, the sound it rests on) */
     adv_ms(RFM_MOVE_KIT_LAND_MS - 40);
     CHECK(!count(RFM_MOVE_ACT_KIT_LOAD));
