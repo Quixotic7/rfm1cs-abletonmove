@@ -39,7 +39,7 @@ static void on_act(void *ctx, const rfm_move_act_t *a)
     if (nact < (int)(sizeof A / sizeof A[0])) {
         A[nact] = *a, A[nact].data = NULL;
         D[nact][0] = 0;
-        if (a->kind == RFM_MOVE_ACT_KIT_LOAD && a->data)
+        if ((a->kind == RFM_MOVE_ACT_KIT_LOAD || a->kind == RFM_MOVE_ACT_KIT_FIND) && a->data)
             snprintf(D[nact], sizeof D[nact], "%.*s", (int)a->len, (const char *)a->data);
         nact++;
     }
@@ -66,6 +66,8 @@ static int kit_acts(void)
 {
     int k, n = 0;
     for (k = RFM_MOVE_ACT_KIT_NOTE; k <= RFM_MOVE_ACT_KIT_SLICE; k++)
+        n += count(k);
+    for (k = RFM_MOVE_ACT_KIT_FIND; k <= RFM_MOVE_ACT_KIT_AUDITION; k++)   /* (round A) */
         n += count(k);
     return n;
 }
@@ -555,8 +557,8 @@ static void t_files(void)
     int i;
     kit_view();
     hit(kp(6));
-    jog(-1), jog_click(), jog(2), jog_click(), jog(1);  /* (Files, the places) */
-    CHECK(M.kit.tab == 2 && !M.kit.on_tabs && M.kit.place == 0 && M.kit.psel == 0);
+    jog(-1), jog_click(), jog(2), jog_click(), jog(1);  /* (Files, the places; pad 7 empty: nothing looked for) */
+    CHECK(M.kit.tab == 2 && !M.kit.on_tabs && M.kit.place == 0 && M.kit.psel == 0 && !count(RFM_MOVE_ACT_KIT_FIND));
     jog(1), clear(), jog_click();                       /* Samples */
     CHECK(M.kit.place == RFM_MOVE_KIT_PL_SAMPLES && (a = last(RFM_MOVE_ACT_KIT_ROWS)) && a->value == 2 && a->take == 0 &&
           a->from == 0 && a->count == 3);
@@ -565,33 +567,95 @@ static void t_files(void)
     r[1].id = 8, r[1].kind = RFM_MOVE_KIT_ROW_FILE, snprintf(r[1].name, sizeof r[1].name, "Clap");
     r[2].id = 9, r[2].kind = RFM_MOVE_KIT_ROW_FILE, snprintf(r[2].name, sizeof r[2].name, "Hat");
     CHECK(rfm_move_kit_rows(&M, 2, 0, 3, 0, 3, r) == 1);
-    clear(), jog(1);                                    /* (a sound: heard as the jog lands on it) */
-    CHECK((a = last(RFM_MOVE_ACT_KIT_PREVIEW)) && a->down && a->take == 8 && a->value == 2);
-    clear(), jog(1);
-    CHECK(count(RFM_MOVE_ACT_KIT_PREVIEW) == 1 && last(RFM_MOVE_ACT_KIT_PREVIEW)->take == 9);
-    clear(), jog_click();                               /* onto the chosen pad (7) */
-    CHECK((a = last(RFM_MOVE_ACT_KIT_LOAD)) && a->index == 6 && a->take == 9 && a->value == 2 && !D[last_i(RFM_MOVE_ACT_KIT_LOAD)][0]);
-    CHECK(M.kit.pad[6].st == RFM_MOVE_KIT_LOADING);
-    clear(), hit(kp(6));                                /* (a pad while browsing: it plays, it is the target) */
-    CHECKF(count(RFM_MOVE_ACT_KIT_NOTE) == 2 && M.kit.cur == 6, "notes %d", count(RFM_MOVE_ACT_KIT_NOTE));
+    clear(), jog(1);                                    /* (round A) Clap: at rest, onto the chosen pad (7), heard */
+    CHECK(!count(RFM_MOVE_ACT_KIT_LOAD) && !count(RFM_MOVE_ACT_KIT_PREVIEW));
+    adv_ms(RFM_MOVE_KIT_LAND_MS + 20);
+    CHECK(count(RFM_MOVE_ACT_KIT_LOAD) == 1 && (a = last(RFM_MOVE_ACT_KIT_LOAD)) && a->index == 6 && a->take == 8 &&
+          a->value == 2 && !D[last_i(RFM_MOVE_ACT_KIT_LOAD)][0] && M.kit.pad[6].st == RFM_MOVE_KIT_LOADING &&
+          !count(RFM_MOVE_ACT_KIT_PREVIEW));
+    clear();
+    rfm_move_kit_loaded(&M, 6, RFM_MOVE_KIT_OK, "Clap", "/data/UserData/UserLibrary/Samples/Clap.wav", 4800, 48000, 0, NULL);
+    CHECK(count(RFM_MOVE_ACT_KIT_NOTE) == 1 && (a = last(RFM_MOVE_ACT_KIT_NOTE)) && a->index == 6 && a->down);
+    clear(), jog(1), jog(-1), jog(1);                   /* (a fast spin: one load, the sound it rests on) */
+    adv_ms(RFM_MOVE_KIT_LAND_MS - 40);
+    CHECK(!count(RFM_MOVE_ACT_KIT_LOAD));
+    adv_ms(60);
+    CHECKF(count(RFM_MOVE_ACT_KIT_LOAD) == 1 && last(RFM_MOVE_ACT_KIT_LOAD)->take == 9, "loads %d",
+           count(RFM_MOVE_ACT_KIT_LOAD));
+    adv_ms(500);
+    CHECK(count(RFM_MOVE_ACT_KIT_LOAD) == 1);
+    clear(), jog(-2), adv_ms(RFM_MOVE_KIT_LAND_MS + 20);   /* (a folder: nothing) */
+    CHECK(!count(RFM_MOVE_ACT_KIT_LOAD) && M.kit.fsel[0] == 0);
     for (i = 0; i < 64; i++)
         pk[i] = (uint8_t)(255 - i * 3);
-    M.kit.pad[6].v[RFM_MOVE_KIT_P_START] = 500;
+    M.kit.pad[6].v[RFM_MOVE_KIT_P_START] = 500, M.kit.pad[6].v[RFM_MOVE_KIT_P_PITCH] = 300;
     clear();
     CHECK(rfm_move_kit_loaded(&M, 6, RFM_MOVE_KIT_OK, "Hat", "/data/UserData/UserLibrary/Samples/Hat.wav", 9600, 48000, 64, pk) >= 0);
     CHECK(!strcmp(M.kit.pad[6].path, "/data/UserData/UserLibrary/Samples/Hat.wav") && M.kit.pad[6].st == RFM_MOVE_KIT_OK &&
-          M.kit.pad[6].npk == 64 && M.kit.pad[6].v[RFM_MOVE_KIT_P_START] == 0);   /* (a new sound: its whole region) */
+          M.kit.pad[6].npk == 64 && M.kit.pad[6].v[RFM_MOVE_KIT_P_START] == 0 &&   /* (a new sound: its whole region) */
+          M.kit.pad[6].v[RFM_MOVE_KIT_P_PITCH] == 300);  /* (.. its settings kept) */
     CHECK(rfm_move_kit_loaded(&M, 5, RFM_MOVE_KIT_TOO_LONG, "Big", NULL, 0, 0, 0, NULL) >= 0 &&
           M.kit.pad[5].st == RFM_MOVE_KIT_TOO_LONG && !strcmp(M.kit.msg, "Too Long"));
     M.kit.pad[6].st = RFM_MOVE_KIT_LOADING, M.kit.pad[6].fresh = 1;   /* (another sound asked for pad 7, refused: the
                                                          * pad keeps Hat) */
     CHECK(rfm_move_kit_loaded(&M, 6, RFM_MOVE_KIT_TOO_LONG, "Big", NULL, 0, 0, 0, NULL) >= 0 &&
           M.kit.pad[6].st == RFM_MOVE_KIT_OK && M.kit.pad[6].frames == 9600 && strstr(M.kit.pad[6].path, "Hat.wav"));
-    /* a folder: entered, its rows asked; Back: up, the places, the tabs */
+    /* one Undo for the whole browse: the pad as it was before Files (empty) */
+    rest(), clear(), press(MR_CC_UNDO);
+    CHECK(!M.kit.pad[6].path[0] && (a = last(RFM_MOVE_ACT_KIT_LOAD)) && a->index == 6 && !a->take &&
+          !D[last_i(RFM_MOVE_ACT_KIT_LOAD)][0]);
+    printf("  ok    Files: the jog at rest on a sound puts it on pad 7 (one load for a fast spin), heard; one Undo\n");
+    /* the click keeps it (loaded at once if the jog has not rested), the Pad tab; Undo again the empty pad */
+    jog(2), clear(), jog_click();
+    CHECK(count(RFM_MOVE_ACT_KIT_LOAD) == 1 && last(RFM_MOVE_ACT_KIT_LOAD)->take == 9 && M.kit.tab == 0 && !M.kit.on_tabs &&
+          M.kit.row == 0 && !strcmp(M.kit.msg, "Hat"));
+    adv_ms(300);
+    CHECK(count(RFM_MOVE_ACT_KIT_LOAD) == 1);
+    rfm_move_kit_loaded(&M, 6, RFM_MOVE_KIT_OK, "Hat", "/data/UserData/UserLibrary/Samples/Hat.wav", 9600, 48000, 64, pk);
+    /* Files again for pad 7: where its sound sits (KIT_FIND, the answer: Samples/Drums, its third row) */
+    rest(), clear();
+    jog(-1), jog_click(), jog(2), jog_click();
+    CHECK(M.kit.tab == 2 && M.kit.on_tabs && (a = last(RFM_MOVE_ACT_KIT_FIND)) && a->index == 6 &&
+          !strcmp(D[last_i(RFM_MOVE_ACT_KIT_FIND)], "/data/UserData/UserLibrary/Samples/Hat.wav"));
+    {
+        static const uint32_t F[2] = { 0, 7 };
+        static const int16_t S[2] = { 0, 2 };
+        CHECK(rfm_move_kit_found(&M, 5, 2, 1, F, S, 9) == 0);   /* (another pad's: not asked) */
+        clear();
+        rfm_move_kit_found(&M, 6, 2, 1, F, S, 9);
+        CHECK(M.kit.place == 2 && M.kit.depth == 1 && M.kit.folder[1] == 7 && M.kit.fsel[1] == 2 && M.kit.fsel[0] == 0);
+        jog(1);                                         /* (into the list: on Hat, the pad's own: nothing loaded) */
+        CHECK((a = last(RFM_MOVE_ACT_KIT_ROWS)) && a->take == 7 && a->from == 1);
+        r[0].id = 11, snprintf(r[0].name, sizeof r[0].name, "Kick"), r[0].kind = RFM_MOVE_KIT_ROW_FILE;
+        r[1].id = 12, snprintf(r[1].name, sizeof r[1].name, "Snare");
+        CHECK(rfm_move_kit_rows(&M, 2, 7, 3, 0, 3, r) == 1);
+        adv_ms(RFM_MOVE_KIT_LAND_MS + 20);
+        CHECK(!count(RFM_MOVE_ACT_KIT_LOAD) && !M.kit.on_tabs && M.kit.fsel[1] == 2);
+        screen();
+        dump("files_found");
+    }
+    /* a pad pressed in Files: it plays, it is the target (empty: the list stays), pad 7 again: its sound looked for */
+    clear(), hit(kp(3));
+    CHECK(count(RFM_MOVE_ACT_KIT_NOTE) == 2 && M.kit.cur == 3 && M.kit.br_pad == 4 && !count(RFM_MOVE_ACT_KIT_FIND));
+    hit(kp(6));
+    CHECK(M.kit.cur == 6 && (a = last(RFM_MOVE_ACT_KIT_FIND)) && a->index == 6 && count(RFM_MOVE_ACT_KIT_NOTE) == 4);
+    clear(), hit(kp(6));                                /* (the same pad: plays, no new browse) */
+    CHECK(count(RFM_MOVE_ACT_KIT_NOTE) == 2 && !count(RFM_MOVE_ACT_KIT_FIND));
+    button(MR_CC_SHIFT, 1), hit(kp(3)), button(MR_CC_SHIFT, 0);   /* (Shift + pad 4: the target, silent) */
+    clear(), jog(-1), jog_click();                      /* (Snare at once on pad 4: the click before the rest) */
+    CHECK((a = last(RFM_MOVE_ACT_KIT_LOAD)) && a->index == 3 && a->take == 12 && count(RFM_MOVE_ACT_KIT_LOAD) == 1 &&
+          M.kit.tab == 0);
     rest();
-    jog(-2), clear(), jog_click();
-    CHECK(M.kit.depth == 1 && M.kit.folder[1] == 7 && (a = last(RFM_MOVE_ACT_KIT_ROWS)) && a->take == 7);
-    CHECK(rfm_move_kit_rows(&M, 2, 7, 0, 0, 0, NULL) == 1);
+    CHECK(count(RFM_MOVE_ACT_KIT_LOAD) == 1);
+    clear(), press(MR_CC_UNDO);                         /* (Undo: the last target's pad, pad 4, empty again) */
+    CHECK((a = last(RFM_MOVE_ACT_KIT_LOAD)) && a->index == 3 && !a->take && !M.kit.pad[3].path[0] &&
+          !strcmp(M.kit.pad[6].path, "/data/UserData/UserLibrary/Samples/Hat.wav"));
+    printf("  ok    Files on the pad's sound (KIT_FIND); a pad pressed there the target; the click keeps; Undo the last target's\n");
+    /* Back: a folder up, the places, the tabs (never out of the view) */
+    rest();
+    jog(-1), jog_click(), jog(2), jog_click(), jog(1);
+    CHECK(M.kit.tab == 2 && M.kit.place == 2 && M.kit.depth == 1);
+    rfm_move_kit_rows(&M, 2, 7, 0, 0, 0, NULL);
     screen();
     dump("empty_folder");
     back();
@@ -603,7 +667,7 @@ static void t_files(void)
     back();
     CHECK(M.kit.on_tabs && rfmv_kit_active(&M));
     /* Takes: every take, the newest first (the host's) */
-    jog(1), clear(), jog_click();
+    jog(1), jog(-1), clear(), jog_click();
     CHECK(M.kit.place == RFM_MOVE_KIT_PL_TAKES && (a = last(RFM_MOVE_ACT_KIT_ROWS)) && a->value == 1);
 }
 
@@ -739,7 +803,7 @@ static void t_project(void)
     M.kit.rh = RFM_MOVE_KIT_RH_INKEY, M.kit.cur = 3, M.kit.route = 0xB000;
     rfmv_seq_note_put(&M, SEQ_CLIP(12, 0), 2, rfm_move_kit_note(3, 9), 100, 24, 0);
     n = rfm_move_project_save(&M, b, sizeof b);
-    CHECK(n == RFM_MOVE_PROJECT_FIXED + 7 && b[4] == 12 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    CHECK(n == RFM_MOVE_PROJECT_FIXED + 7 && b[4] == 13 && rfm_move_project_check(b, (uint32_t)n) == 0);
     clear();
     rfm_move_init(&M2, NULL, on_act, NULL);
     rfm_move_fw_caps(&M2, KCAPS);
@@ -1271,7 +1335,7 @@ static void t_project12(void)
     M.kit.pad[3].v[RFM_MOVE_KIT_P_STRETCH] = 12, M.kit.pad[3].v[RFM_MOVE_KIT_P_SEND3] = 77, M.kit.pad[3].v[RFM_MOVE_KIT_P_CHOKE] = 3;
     snprintf(M.kit.name, sizeof M.kit.name, "Kit 9"), M.kit.mix[4] = 5, M.kit.route = 0xD000;
     n = rfm_move_project_save(&M, b, sizeof b);
-    CHECK(b[4] == 12 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    CHECK(b[4] == 13 && rfm_move_project_check(b, (uint32_t)n) == 0);
     rfm_move_init(&M2, NULL, on_act, NULL);
     rfm_move_fw_caps(&M2, KCAPS);
     CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0 && M2.kit.pad[3].v[RFM_MOVE_KIT_P_STRETCH] == 12 &&
@@ -1419,11 +1483,11 @@ static void t_merge(void)
         memset(M.kit.pad[6].path, 'x', sizeof M.kit.pad[6].path - 1);
         sound_at(6, "/s/a.wav", 4800, 48000);
         rfmv_kit_write(&M, kb);
-        CHECK(rfmv_kit_check(kb, 12) == 0 && !strcmp(M.kit.pad[6].path, "/s/a.wav"));
+        CHECK(rfmv_kit_check(kb, 13) == 0 && !strcmp(M.kit.pad[6].path, "/s/a.wav"));
         M.kit.pad[6].path[0] = 0;
         memset(M.kit.pad[6].path + 1, 'y', 20);
         rfmv_kit_write(&M, kb);
-        CHECK(rfmv_kit_check(kb, 12) == 0);
+        CHECK(rfmv_kit_check(kb, 13) == 0);
         rfm_move_kit_loaded(&M, 6, RFM_MOVE_KIT_EMPTY, NULL, NULL, 0, 0, 0, NULL);
         memset(M.kit.pad[6].path, 0, sizeof M.kit.pad[6].path);
     }
@@ -1461,7 +1525,8 @@ static void t_slice(void)
     CHECK(M.kit.sl_ok == 1 && M.kit.sl_n == 4);
     leds(w);
     CHECK(lit(w[L_PAD0 + kp(3)]) && !lit(w[L_PAD0 + kp(4)]) && is_rgb(w[L_PAD0 + kp(0)], 255, 255, 255) &&
-          lit(w[L_RING0]) && lit(w[L_RING0 + 1]) && !lit(w[L_RING0 + 2]));
+          lit(w[L_RING0]) && lit(w[L_RING0 + 1]) && lit(w[L_RING0 + 2]) && !lit(w[L_RING0 + 3]));   /* (round A: knob 3 the
+                                                         * Hits' sensitivity) */
     clear(), hit(kp(2));                                /* (slice 3 heard and chosen) */
     CHECK(M.kit.sl_cur == 2 && (a = last(RFM_MOVE_ACT_KIT_SLICE)) && a->param == RFM_MOVE_KIT_SL_PLAY && a->from == 24000 &&
           a->count == 6000 && !count(RFM_MOVE_ACT_KIT_NOTE));
@@ -1572,6 +1637,169 @@ static void t_mock3c(void)
     printf("mock boards (3c): merge, joined, padact, slice\n");
 }
 
+/* ================================================================ (round A, 2026-11-25) === */
+/* 30. the close-up of Start (knob 2) and End (its row's popup): KIT_PEAKS of the window round the point (8 times nearer,
+ * Shift: 32), the point a line with a notch, what does not play dithered; heard at rest (KIT_AUDITION, 150 ms) */
+static void t_zoom(void)
+{
+    const rfm_move_act_t *a;
+    uint8_t pk[64];
+    int i;
+    kit_view();
+    memset(pk, 255, sizeof pk);
+    button(MR_CC_SHIFT, 1), hit(kp(1)), button(MR_CC_SHIFT, 0);
+    sound(1, "Loop", 96000, NULL, 0);
+    rest(), clear();
+    touch(1, 1), adv_ms(10);                            /* (Start at 0: the window [-6000, 6000), its part in the sound) */
+    CHECK(count(RFM_MOVE_ACT_KIT_PEAKS) == 1 && (a = last(RFM_MOVE_ACT_KIT_PEAKS)) && a->index == 1 && a->from == 0 &&
+          a->count == 6000 && a->value == RFM_MOVE_KIT_PEAKS);
+    adv_ms(50);
+    CHECK(count(RFM_MOVE_ACT_KIT_PEAKS) == 1);          /* (asked once while it stays) */
+    clear(), button(MR_CC_SHIFT, 1), adv_ms(10);        /* (Shift: 32 times nearer) */
+    CHECK((a = last(RFM_MOVE_ACT_KIT_PEAKS)) && a->from == 0 && a->count == 1500);
+    CHECK(rfm_move_kit_peaks(&M, 1, 0, 1500, 64, pk) == 1);
+    screen();
+    dump("zoom_start");
+    CHECK(px(64, 24) && px(64, 63) && px(61, 24) && px(67, 24) && px(63, 26) && !px(61, 26));   /* (the point, its notch) */
+    CHECK(px(66, 44) && px(66, 45) && px(66, 29) && !px(20, 44) && !px(20, 45));   /* (played; before the sound: nothing) */
+    {
+        int top = 0;
+        for (i = 0; i < 128; i++)
+            top |= px(i, 4);
+        CHECK(top);                                     /* (the value, large) */
+    }
+    clear(), knob(1, 40);                               /* (Shift: fine, 4 a detent) */
+    CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_START] == 160 && !count(RFM_MOVE_ACT_KIT_AUDITION));
+    adv_ms(100), knob(1, 1), adv_ms(100);               /* (a turn more: the pending one later) */
+    CHECK(!count(RFM_MOVE_ACT_KIT_AUDITION));
+    adv_ms(70);
+    CHECKF(count(RFM_MOVE_ACT_KIT_AUDITION) == 1 && (a = last(RFM_MOVE_ACT_KIT_AUDITION)) && a->index == 1 &&
+           a->from == (uint32_t)(96000ull * 164 / RFM_MOVE_KIT_FRAC) && a->count == 48000, "audition from %u count %u",
+           a ? (unsigned)a->from : 0u, a ? (unsigned)a->count : 0u);
+    button(MR_CC_SHIFT, 0), touch(1, 0), rest(), clear();
+    /* End: its row's popup, the close-up at the sound's end; the part after the point dithered */
+    jog(4), jog_click();
+    CHECK(M.kit.edit && M.kit.row == 4);
+    adv_ms(10);
+    CHECK((a = last(RFM_MOVE_ACT_KIT_PEAKS)) && a->from == 90000 && a->count == 6000);
+    rfm_move_kit_peaks(&M, 1, 90000, 6000, 64, pk);
+    jog(-20), adv_ms(10);                               /* (End 20 detents in: 1280 of 32767) */
+    CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_END] == RFM_MOVE_KIT_FRAC - 1280);
+    rfm_move_kit_peaks(&M, 1, last(RFM_MOVE_ACT_KIT_PEAKS)->from, last(RFM_MOVE_ACT_KIT_PEAKS)->count, 64, pk);
+    screen();
+    dump("zoom_end");
+    CHECK(px(40, 44) && px(40, 45) && px(80, 44) && !px(80, 45) && px(64, 40));   /* (played left, dithered right) */
+    adv_ms(RFM_MOVE_KIT_AUD_MS);
+    {
+        const uint32_t e = (uint32_t)(96000ull * (RFM_MOVE_KIT_FRAC - 1280) / RFM_MOVE_KIT_FRAC);
+        CHECK((a = last(RFM_MOVE_ACT_KIT_AUDITION)) && a->count == 48000 && a->from == e - 48000);   /* (its last second) */
+    }
+    back();
+    printf("  ok    the close-up: KIT_PEAKS round Start (x8, Shift x32) and End, the point and notch, dithered; heard at rest\n");
+}
+/* 31. Slice's Hits: knob 3 the sensitivity (lit), the cuts asked again at rest; dead with Equal */
+static void t_sens(void)
+{
+    const rfm_move_act_t *a;
+    kit_view();
+    rfmv_kit_to(&M, 42), rest();
+    clear(), jog(1), jog_click();
+    CHECK(M.kit.sl_on && (a = last(RFM_MOVE_ACT_KIT_SLICE)) && a->param == RFM_MOVE_KIT_SL_ASK && a->count == 50);
+    clear(), touch(2, 1), knob(2, 5);
+    CHECK(M.kit.sl_sens == 55 && !count(RFM_MOVE_ACT_KIT_SLICE));
+    screen();
+    dump("sens");
+    adv_ms(RFM_MOVE_KIT_SENS_MS + 10);
+    CHECK(count(RFM_MOVE_ACT_KIT_SLICE) == 1 && (a = last(RFM_MOVE_ACT_KIT_SLICE)) && a->param == RFM_MOVE_KIT_SL_ASK &&
+          a->value == RFM_MOVE_KIT_SM_HITS && a->count == 55 && a->take == 42);
+    touch(2, 0), clear(), jog(1);                       /* (Equal 16: knob 3 dead) */
+    knob(2, 5), adv_ms(RFM_MOVE_KIT_SENS_MS + 10);
+    CHECK(M.kit.sl_sens == 55 && count(RFM_MOVE_ACT_KIT_SLICE) == 1 && last(RFM_MOVE_ACT_KIT_SLICE)->value == RFM_MOVE_KIT_SM_EQ16);
+    back();
+    printf("  ok    Slice's Hits: knob 3 the sensitivity, the cuts asked again (count 55)\n");
+}
+/* 32. Play mode Toggle: knob 4's fourth, its name, a tap's and a step's notes to the host (which toggles), the tools'
+ * Play: a second tap stops it; saved (version 13) */
+static void t_toggle(void)
+{
+    const rfm_move_act_t *a;
+    char v[32];
+    kit_view();
+    sound(0, "Loop", 48000, NULL, 0);
+    rest(), clear();
+    knob(3, 15);                                        /* (5 ticks a mode: Toggle) */
+    CHECK(M.kit.pad[0].v[RFM_MOVE_KIT_P_MODE] == RFM_MOVE_KIT_M_TOGGLE && (a = last(RFM_MOVE_ACT_KIT_SET)) &&
+          a->param == RFM_MOVE_KIT_P_MODE && a->value == 3);
+    {
+        uint16_t subj;
+        uint32_t stamp;
+        CHECK(rfmv_kit_pop_words(&M, v, sizeof v, &subj, &stamp) && !strcmp(v, "Play: Toggle"));
+    }
+    screen();
+    dump("toggle");
+    knob(3, 5);
+    CHECK(M.kit.pad[0].v[RFM_MOVE_KIT_P_MODE] == RFM_MOVE_KIT_M_TOGGLE);   /* (the last) */
+    rest(), clear(), hit(kp(0)), hit(kp(0));            /* (two taps: on, off; the host toggles) */
+    CHECK(count(RFM_MOVE_ACT_KIT_NOTE) == 4);
+    clear(), tap_step(0);                               /* (a step's note) */
+    press(MR_CC_PLAY), adv_ms(200), press(MR_CC_PLAY);
+    CHECK(count(RFM_MOVE_ACT_KIT_NOTE) >= 1 && last(RFM_MOVE_ACT_KIT_NOTE)->index == 0);
+    rest(), clear();
+    jog(-30), jog(1), jog_click(), jog_click();         /* (the Sound row's tools: Play) */
+    CHECK(M.kit.tools && count(RFM_MOVE_ACT_KIT_NOTE) == 1);
+    adv_ms(450);                                        /* (a held mode's audition let go: Toggle, a second tap) */
+    CHECK(count(RFM_MOVE_ACT_KIT_NOTE) == 3 && A[last_i(RFM_MOVE_ACT_KIT_NOTE) - 1].down);
+    back();
+    printf("  ok    Play mode Toggle: knob 4, a tap and a step, the tools' Play stopped by a second tap\n");
+}
+/* 33. the Kit tab's Trim silence: its row (On), its popup, KIT_REC's param, saved (version 13; 12 read as On) */
+static void t_trim(void)
+{
+    static uint8_t kb[RFM_MOVE_KIT_BYTES], b[RFM_MOVE_PROJECT_MAX];
+    const rfm_move_act_t *a;
+    int n;
+    kit_view();
+    CHECK(M.kit.trim == 1 && rfm_move_kit_trim(&M));
+    jog(-1), jog_click(), jog(1), jog_click(), jog(1), jog(3);
+    CHECK(M.kit.tab == 1 && M.kit.kitrow == 3);
+    screen();
+    dump("trim");
+    jog_click(), jog(-1);
+    CHECK(M.kit.edit && !M.kit.trim);
+    back(), rest();
+    sound(6, "Old", 4800, NULL, 0);
+    clear(), pad(kp(6), 100), press(MR_CC_SAMPLE);
+    CHECK((a = last(RFM_MOVE_ACT_KIT_REC)) && a->down && a->index == 6 && a->param == 0);
+    pad(kp(6), 0);
+    M.kit.rec_pad = 0, M.kit.rec_held = 0;
+    rfm_move_kit_set_trim(&M, 1);
+    clear(), pad(kp(6), 100), press(MR_CC_SAMPLE);
+    CHECK((a = last(RFM_MOVE_ACT_KIT_REC)) && a->down && a->param == 1);
+    pad(kp(6), 0);
+    M.kit.rec_pad = 0, M.kit.rec_held = 0;
+    /* saved: version 13 its byte; 12 read as On; a bad byte refused */
+    rfm_move_kit_set_trim(&M, 0);
+    rfmv_kit_write(&M, kb);
+    CHECK(kb[9] == 0 && rfmv_kit_check(kb, 13) == 0);
+    rfm_move_kit_set_trim(&M, 1);
+    rfmv_kit_write(&M, kb);
+    CHECK(kb[9] == 1 && rfmv_kit_check(kb, 13) == 0 && rfmv_kit_check(kb, 12) != 0);
+    kb[9] = 2;
+    CHECK(rfmv_kit_check(kb, 13) != 0);
+    kb[9] = 0;
+    rfm_move_init(&M2, NULL, on_act, NULL);
+    rfm_move_fw_caps(&M2, KCAPS);
+    rfmv_kit_read(&M2, kb, 12);
+    CHECK(M2.kit.trim == 1);
+    rfm_move_kit_set_trim(&M, 0);
+    M.kit.pad[6].v[RFM_MOVE_KIT_P_MODE] = RFM_MOVE_KIT_M_TOGGLE;
+    n = rfm_move_project_save(&M, b, sizeof b);
+    CHECK(b[4] == 13 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0 && M2.kit.trim == 0 &&
+          M2.kit.pad[6].v[RFM_MOVE_KIT_P_MODE] == RFM_MOVE_KIT_M_TOGGLE);
+    printf("  ok    Trim silence: the Kit tab's row, KIT_REC's param, saved (version 13; 12 read as On)\n");
+}
+
 int main(void)
 {
     t_encoding();
@@ -1604,5 +1832,9 @@ int main(void)
     t_slice();
     t_page3c();
     t_mock3c();
+    t_zoom();
+    t_sens();
+    t_toggle();
+    t_trim();
     return check_done("move_kit");
 }

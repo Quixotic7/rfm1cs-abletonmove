@@ -36,6 +36,7 @@
  *      (version 12, stage 3b) the kit instead (RFM_MOVE_KIT_BYTES): { the layout, the routing u16, the chosen pad, the
  *      kit's strip (level, pan, sends 1..3: 0..127), 7 zero }, its name 24 NUL padded, 16 pads x { path 160, 16
  *      settings i16 (12 + Stretch, Send 1..3) }
+ *      (version 13, round A) no new bytes: the kit's header byte 9 its Trim silence (0 / 1), Play mode Toggle (3)
  *      FNV-1a (32 bit) of everything before it */
 #include <stdio.h>
 #include <string.h>

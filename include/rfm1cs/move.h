@@ -321,6 +321,25 @@ enum {
 /* (the owner's 2026-11-25) Global settings' last row, Exit (only with RFM_MOVE_CAP_EXIT): a click asks "Exit?", a second
  * click sends EXIT; the host leaves (on the Move: Move Remote's QUIT, Move's own software starts again). No fields */
 #define RFM_MOVE_ACT_EXIT 76
+/* (round A, the owner's 2026-11-25 kit round; README "The kit (round A)"):
+ *  - KIT_FIND: Files opened for a pad (or a pad pressed in Files): index the pad, data / len its path (NUL-terminated).
+ *    Answer: rfm_move_kit_found (where the sound sits: the place, its folders, its row)
+ *  - KIT_PEAKS: the close-up of Start / End: index the pad, from / count its sound's frames (the window round the
+ *    point, inside the sound), value the columns wanted (RFM_MOVE_KIT_PEAKS). Off the audio thread. Answer:
+ *    rfm_move_kit_peaks
+ *  - KIT_AUDITION: a Start or End moved, the knob at rest RFM_MOVE_KIT_AUD_MS: index the pad, its frames [from, from +
+ *    count) heard once on the preview path (never recorded; the latest replaces one sounding)
+ *  - KIT_REC (down 1) also carries param 1: the Kit tab's Trim silence is on (the take's start moved past its silence:
+ *    the host's rfm_move_kit_set of RFM_MOVE_KIT_P_START once it is on the pad)
+ *  - KIT_SLICE's RFM_MOVE_KIT_SL_ASK also carries count: the Hits' sensitivity 1..100 (0: 50) */
+#define RFM_MOVE_ACT_KIT_FIND 77
+#define RFM_MOVE_ACT_KIT_PEAKS 78
+#define RFM_MOVE_ACT_KIT_AUDITION 79
+#define RFM_MOVE_KIT_LAND_MS 120                        /* Files: the jog at rest so long on a sound: it is on the pad */
+#define RFM_MOVE_KIT_AUD_MS 150                         /* Start / End at rest so long: heard */
+#define RFM_MOVE_KIT_SENS_MS 100                        /* the Hits' sensitivity at rest so long: the cuts asked again */
+#define RFM_MOVE_KIT_ZOOM 8                             /* the close-up: 8 times nearer than the whole sound (Shift: 32) */
+#define RFM_MOVE_KIT_ZOOM_FINE 32
 enum { RFM_MOVE_KIT_MG_COPY, RFM_MOVE_KIT_MG_MIX, RFM_MOVE_KIT_MG_JOIN, RFM_MOVE_KIT_MG_N };
 enum { RFM_MOVE_KIT_ED_TRIM = 1, RFM_MOVE_KIT_ED_NORMALIZE, RFM_MOVE_KIT_ED_REVERSE };
 enum { RFM_MOVE_KIT_SL_ASK, RFM_MOVE_KIT_SL_PLAY, RFM_MOVE_KIT_SL_DONE };
@@ -759,14 +778,15 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 12                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
+#define RFM_MOVE_PROJECT_VERSION 13                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
                                                          * values a slot, 7 the firmwares' MIDI routes, 8 the launch
                                                          * quantization and each clip's launch settings, 9 (0.13.0) the
                                                          * firmwares: each slot's id, level, settings and track, the
                                                          * slot played, the drum notes, the pads' velocity, 10 (0.14.0)
                                                          * the rate bytes: a base rate and a feel; no new bytes), 11
                                                          * (stage 3a) the kit (RFM_MOVE_KIT_BYTES at the end), 12
-                                                         * (stage 3b) the kit's name, mix, stretch and sends */
+                                                         * (stage 3b) the kit's name, mix, stretch and sends, 13
+                                                         * (round A) the kit's Trim silence, Toggle (no new bytes) */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -792,7 +812,9 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
  * 4 zero }, then 16 pads x { the sound's path RFM_MOVE_KIT_PATH (NUL padded, "" empty), 12 settings i16 }.
  * (version 12, stage 3b) { the right half's layout, the routing u16, the chosen pad, the kit's mix (level, pan, sends
  * 1..3: 0..127), 7 zero }, the kit's name RFM_MOVE_KIT_NAME (NUL padded, "" never saved), then 16 pads x { the path,
- * RFM_MOVE_KIT_P_N settings i16 } */
+ * RFM_MOVE_KIT_P_N settings i16 }.
+ * (version 13, round A: no new bytes) the header's byte 9 the Trim silence (0 / 1; before: 0, read as on), the Play
+ * mode RFM_MOVE_KIT_M_TOGGLE */
 #define RFM_MOVE_KIT_PADS 16
 #define RFM_MOVE_KIT_PATH 160                           /* a sound's path with its NUL (the host's) */
 #define RFM_MOVE_KIT_P_N 16                             /* a pad's settings (RFM_MOVE_KIT_P_*; 12 in version 11) */
@@ -1265,7 +1287,8 @@ enum { RFM_MOVE_KIT_P_PITCH,                            /* cents -2400..2400 (a 
 /* how a pad plays: One shot start..end to its end (Hold 0: the release a tail ending at the end; Hold > 0: the release
  * starts after attack + hold), Momentary while the pad (or the step's note) is held, Loop round start..end while held.
  * The envelope (attack, hold, release) on all three */
-enum { RFM_MOVE_KIT_M_ONESHOT, RFM_MOVE_KIT_M_MOMENTARY, RFM_MOVE_KIT_M_LOOP, RFM_MOVE_KIT_M_N };
+/* (round A) Toggle: a tap (or a step's note) starts it, the next stops it (a short release); it loops while on */
+enum { RFM_MOVE_KIT_M_ONESHOT, RFM_MOVE_KIT_M_MOMENTARY, RFM_MOVE_KIT_M_LOOP, RFM_MOVE_KIT_M_TOGGLE, RFM_MOVE_KIT_M_N };
 enum { RFM_MOVE_KIT_RH_PITCHES, RFM_MOVE_KIT_RH_INKEY, RFM_MOVE_KIT_RH_OFF, RFM_MOVE_KIT_RH_N };   /* the right half */
 enum { RFM_MOVE_KIT_PL_TAKES = 1, RFM_MOVE_KIT_PL_SAMPLES = 2, RFM_MOVE_KIT_PL_KITS = 3 };   /* Files' places */
 enum { RFM_MOVE_KIT_ROW_DIR = 1, RFM_MOVE_KIT_ROW_FILE = 2, RFM_MOVE_KIT_ROW_KIT = 3 };   /* (KIT: a saved kit, Kits') */
@@ -1412,6 +1435,23 @@ typedef struct {                                        /* (kit.c) */
     uint32_t sl_cut[RFM_MOVE_KIT_SLICES + 1];           /* slice i: [sl_cut[i], sl_cut[i + 1]) frames */
     uint8_t sl_pk[RFM_MOVE_KIT_PEAKS];
     char sl_path[RFM_MOVE_KIT_PATH];                    /* the take's file (the pads' sound) */
+    /* (round A) */
+    uint8_t trim;                                       /* (saved, version 13) the Kit tab's Trim silence (1 on) */
+    uint8_t undk_trim;
+    uint8_t br_pad, br_kept;                            /* Files' browse: its pad + 1; its Undo kept (one for it all) */
+    uint8_t land, land_pl;                              /* the jog moved in Files: a sound's load due (RFM_MOVE_KIT_LAND_MS) */
+    uint32_t land_ms, land_id;                          /* .. since; the row the pad has now (no load again) */
+    uint8_t find_pad;                                   /* KIT_FIND asked for pad + 1 */
+    uint8_t aud_pad;                                    /* a landed sound: heard once it is on pad + 1 */
+    uint8_t aud, aud_p;                                 /* Start / End moved: heard at aud_ms + RFM_MOVE_KIT_AUD_MS */
+    uint32_t aud_ms;
+    uint8_t zpad, zn;                                   /* the close-up's peaks come: pad + 1, columns */
+    uint32_t zfrom, zcount;                             /* .. their frames */
+    uint8_t zpk[RFM_MOVE_KIT_PEAKS];
+    uint8_t za_pad;                                     /* .. the last asked: pad + 1, frames */
+    uint32_t za_from, za_count;
+    uint8_t sl_sens, sl_ask;                            /* the Hits' sensitivity 1..100; asked again at sl_ms + .. */
+    uint32_t sl_ms;
 } rfm_move_kit_t;
 
 /* ---- the state */
@@ -2115,6 +2155,19 @@ int rfm_move_kit_next_empty(rfm_move_t *m, int claim);
  * Sliced") as n + 1 cuts in frames (slice i [cuts[i], cuts[i + 1])), npk peaks of the whole take. Returns 1 when shown */
 int rfm_move_kit_slices(rfm_move_t *m, uint32_t take, const char *path, uint32_t frames, uint32_t rate, int n,
                         const uint32_t *cuts, int npk, const uint8_t *peaks);
+/* (round A) KIT_FIND's answer for pad: place RFM_MOVE_KIT_PL_* (0: not found: Files stays where it was), depth the
+ * folders in (0..RFM_MOVE_KIT_DEPTH), folder[0..depth] their ids (folder[0] 0, the place's top), sel[0..depth] the row
+ * chosen in each (sel[depth] the sound's), id the sound's row id (the jog landing there loads nothing). Returns 1 when
+ * shown */
+int rfm_move_kit_found(rfm_move_t *m, int pad, int place, int depth, const uint32_t *folder, const int16_t *sel,
+                       uint32_t id);
+/* (round A) KIT_PEAKS' answer: the pad's frames [from, from + count) as n peaks 0..255 (scaled as its whole wave's).
+ * Returns 1 when shown */
+int rfm_move_kit_peaks(rfm_move_t *m, int pad, uint32_t from, uint32_t count, int n, const uint8_t *peaks);
+/* (round A) the Kit tab's Trim silence (1 on, the default; saved with the kit and kit.json); set: as a kit.json says
+ * (after rfm_move_kit_apply: one Undo brings the one before back) */
+int rfm_move_kit_trim(const rfm_move_t *m);
+void rfm_move_kit_set_trim(rfm_move_t *m, int on);
 /* (stage 3c, the page's Kit tab) a pad played (vel 1..127) or let go (0), as a pad press (its KIT_NOTE, its glow);
  * chosen (the Kit view's chosen pad; its track selected while the view shows); a setting set (RFM_MOVE_KIT_P_*, as
  * the knobs clamp it: its KIT_SET, the project edited). 1 done */
