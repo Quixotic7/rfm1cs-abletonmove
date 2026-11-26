@@ -4301,6 +4301,13 @@ void rfmv_kit_to_text(const rfm_move_t *m, char *o, int cap)
     else
         snprintf(o, (size_t)cap, "Kit Full");
 }
+/* (fw.c, 2026-11-26) Track 4 held + the volume knob: the kit's level said on the screen */
+void rfmv_kit_level_pop(rfm_move_t *m)
+{
+    char v[16];
+    snprintf(v, sizeof v, "%d", K(m)->mix[RFM_MOVE_KIT_MIX_LEVEL]);
+    msg(m, "Kit Level", v);
+}
 /* (fw.c) the kit's strip in the Mixer: a value (RFM_MOVE_MIXP_*) d detents on */
 void rfmv_kit_mix_turn(rfm_move_t *m, int par, int d)
 {

@@ -1239,6 +1239,13 @@ int rfmv_fw_volume(rfm_move_t *m, int d)
             set_level(m, t, d);
             return 1;
         }
+    if (rfmv_track_held(m, 3) && rfmv_kit_active(m)) {   /* (2026-11-26, the owner's) the kit open, Track 4 held: the
+                                                         * kit's level, as a firmware Track's slot level */
+        if (d)
+            rfmv_kit_mix_turn(m, RFM_MOVE_KIT_MIX_LEVEL, d);
+        rfmv_kit_level_pop(m);
+        return 1;
+    }
     return 0;
 }
 static void after_filter(rfm_move_t *m, int step)
