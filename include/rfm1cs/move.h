@@ -1334,6 +1334,8 @@ enum { RFM_MOVE_KIT_P_PITCH,                            /* cents -2400..2400 (a 
 /* (round A) Toggle: a tap (or a step's note) starts it, the next stops it (a short release); it loops while on */
 enum { RFM_MOVE_KIT_M_ONESHOT, RFM_MOVE_KIT_M_MOMENTARY, RFM_MOVE_KIT_M_LOOP, RFM_MOVE_KIT_M_TOGGLE, RFM_MOVE_KIT_M_N };
 enum { RFM_MOVE_KIT_RH_PITCHES, RFM_MOVE_KIT_RH_INKEY, RFM_MOVE_KIT_RH_OFF, RFM_MOVE_KIT_RH_N };   /* the right half */
+/* (pages, 2026-11-26) the Kit view's knob pages, the jog's turn: SOUND, ENVELOPE, FILTER & FX, KIT */
+enum { RFM_MOVE_KIT_PG_SOUND, RFM_MOVE_KIT_PG_ENV, RFM_MOVE_KIT_PG_FILTER, RFM_MOVE_KIT_PG_KIT, RFM_MOVE_KIT_PG_N };
 enum { RFM_MOVE_KIT_PL_TAKES = 1, RFM_MOVE_KIT_PL_SAMPLES = 2, RFM_MOVE_KIT_PL_KITS = 3 };   /* Files' places */
 enum { RFM_MOVE_KIT_ROW_DIR = 1, RFM_MOVE_KIT_ROW_FILE = 2, RFM_MOVE_KIT_ROW_KIT = 3 };   /* (KIT: a saved kit, Kits') */
 #define RFM_MOVE_KIT_SLOT 3                             /* (stage 3b) MIX's slot for the kit's own strip */
@@ -1411,11 +1413,14 @@ typedef struct {                                        /* (kit.c) */
     /* (RAM) the view */
     uint8_t on;                                         /* the Kit view is Track 4's view now */
     uint8_t prev_mode, prev_track, prev_view, prev_ok;  /* what it was opened over (given back when it is left) */
-    uint8_t tab, on_tabs, picking;                      /* Pad 0, Kit 1, Files 2; the jog on the tabs; their click */
-    uint8_t row, kitrow, edit;                          /* the Pad tab's row (KR_*), the Kit tab's; a row's popup */
-    uint8_t turned;                                     /* the jog turned: three rows until turn_ms + RFM_MOVE_POPUP_MS */
+    uint8_t tab;                                        /* (pages, 2026-11-26) the layer: 0 the pages, 1 Kits (Load,
+                                                         * Save), 2 Files */
+    uint8_t page, kitrow;                               /* the knob page (RFM_MOVE_KIT_PG_*; the view's, not a pad's),
+                                                         * Kits' row */
+    uint8_t turned;                                     /* the jog turned the page: its name until turn_ms +
+                                                         * RFM_MOVE_POPUP_MS */
     uint32_t turn_ms, chg_ms;
-    uint8_t tools, ti;                                  /* the Sound row's click: its tools (Play, Delete), the chosen */
+    uint8_t tools, ti;                                  /* Shift + the jog's click: the pad's tools, the chosen */
     int8_t kpop;                                        /* a knob touched or turned: its popup (the knob, -1 none) */
     uint32_t kpop_ms;
     uint8_t kdown;                                      /* knobs touched (bits) */
@@ -1497,7 +1502,6 @@ typedef struct {                                        /* (kit.c) */
     uint8_t sl_sens, sl_ask;                            /* the Hits' sensitivity 1..100; asked again at sl_ms + .. */
     uint32_t sl_ms;
     /* (round B) */
-    uint8_t kshift;                                     /* each knob's page (bits: 1 the Shift page), chosen at its touch */
     uint8_t lk_grp, vel_grp;                            /* a held step's locks / velocity edited: its undo group made */
     uint8_t lpop, vpop;                                 /* a lock's popup (the knob + 1), the velocity's (1) */
     uint32_t vpop_ms;

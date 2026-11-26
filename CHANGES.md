@@ -5,6 +5,17 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## Unreleased: the kit, stages 3a, 3b and 3c
 
+### Pages (2026-11-26): the jog turns the knob pages
+
+README "The kit (pages)". `rfm_move_kit_t`: `page` (RAM) replaces `row`, `on_tabs`, `picking`, `edit`, `kshift`:
+rebuild everything. `RFM_MOVE_KIT_PG_*`. Nothing saved changes (project version 14).
+
+- The jog turns SOUND, ENVELOPE, FILTER & FX, KIT (the sequencer's way: the name and the page marks a second); the
+  knobs follow the page, 8 cells on the screen under the page's picture. No tabs, no rows, no Shift knob page.
+- The click: Files for the chosen pad (KIT: Kits, Load and Save); Shift + the click: the pad's tools.
+- move_kit: boards A, B (rest, three), O (joined) and Q (kittab) no longer compared (drawn); the places and files
+  boards with their header masked.
+
 ### Round C (2026-11-26): the project's own sounds, Freeze
 
 README "The kit (round C)". `rfm_move_kit_t` gains `br_own`, `frz_ms` (RAM): rebuild everything. Project version 14.
