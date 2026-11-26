@@ -121,6 +121,9 @@ int rfmv_seq_live_key(int tri, int i);                 /* .. the i-th live step 
 /* edits (journaled into the current undo group, the project marked changed) */
 void rfmv_seq_group(rfm_move_t *m);                    /* a new undo group: one gesture */
 int rfmv_seq_note_put(rfm_move_t *m, int clip, int step, int note, int vel, int len, int micro);   /* add/replace */
+int rfmv_seq_note_put_w(rfm_move_t *m, int clip, int step, int note, int vel, int len, int micro, int kw);   /* .. with
+                                                         * its kw (1: the replaced note's, else 0; a kit track's only) */
+int rfmv_seq_note_copy(rfm_move_t *m, int clip, int step, const rfm_move_note_t *n);   /* n's copy (its kw too) there */
 int rfmv_seq_note_del(rfm_move_t *m, int clip, int step, int note);
 void rfmv_seq_step_clear(rfm_move_t *m, int clip, int step);
 int rfmv_seq_lock_set(rfm_move_t *m, int clip, int step, int cc, int val);   /* val -1: remove */
@@ -172,6 +175,7 @@ int rfmv_seq_clip_pos(const rfm_move_t *m, int track); /* the active clip's step
 int rfmv_seq_clip_tick(const rfm_move_t *m, int track);   /* .. its tick in the clip now, -1 */
 /* live pad notes in Sequencer mode: recording and capture */
 void rfmv_seq_pad_on(rfm_move_t *m, int pad, int note, int vel);
+void rfmv_seq_pad_on_w(rfm_move_t *m, int pad, int note, int vel, int kw);   /* (a kit note: its kw) */
 void rfmv_seq_pad_off(rfm_move_t *m, int pad, int note);
 int rfmv_seq_capture(rfm_move_t *m);                   /* the clip's scene, -1 nothing captured */
 void rfmv_seq_tap(rfm_move_t *m, uint32_t now_ms);
@@ -453,13 +457,15 @@ void rfmv_kit_leds_w(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3]);   /* Sa
 int rfmv_kit_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* 1 drawn */
 int rfmv_kit_timed(const rfm_move_t *m);
 void rfmv_kit_poll(rfm_move_t *m);                      /* (advance) */
-void rfmv_kit_seq_note(rfm_move_t *m, int track, int note, int vel);   /* (seq.c) a note of a track (vel 0: off) */
+void rfmv_kit_seq_note(rfm_move_t *m, int track, int note, int vel, int kw);   /* (seq.c) a note of a track (vel 0: off) */
 int rfmv_kit_route_flip(rfm_move_t *m, int fw, int track);   /* a held Track's hold on 13..16: kit <-> firmware; 1 done */
 int rfmv_kit_routed(const rfm_move_t *m, int track);
 int rfmv_kit_route_set(rfm_move_t *m, int track, int on);   /* (3b) Routing's kit: track 12..15 to it (off the
                                                          * firmwares) or not; its state now */
 rfmv_rgb_t rfmv_kit_row_rgb(int track);                 /* a kit track's colour (13 pink .. 16 violet) */
-int rfmv_kit_right_semis(const rfm_move_t *m, int n);   /* the right half's pad n: semitones, -1 dead */
+#define RFMV_KIT_DEAD (-128)
+int rfmv_kit_right_semis(const rfm_move_t *m, int n);   /* the right half's pad n: semitones (its octave shift in),
+                                                         * RFMV_KIT_DEAD dead */
 void rfmv_kit_clear(rfm_move_t *m);                     /* (project.c) an empty kit, unrouted */
 void rfmv_kit_new(rfm_move_t *m);                       /* .. a new project's: empty, tracks 13..16 routed to it */
 int rfmv_kit_used(const rfm_move_t *m);                 /* .. anything to save (version 11) */
@@ -481,6 +487,7 @@ void rfmv_kit_page_cells(const rfm_move_t *m, int *n, int *cur);   /* .. its pag
  * selected track's defaults for new steps: its popup, as a firmware track's */
 void rfmv_seq_trig_knob(rfm_move_t *m, int clip, int k, int d, uint16_t held);
 void rfmv_mode_set(rfm_move_t *m, int mode);            /* (move.c) the mode (FM-1 / Sequencer) as a layout change */
+void rfmv_seq_step_enter_w(rfm_move_t *m, int clip, int abs, int note, int vel, int kw);
 void rfmv_seq_step_enter(rfm_move_t *m, int clip, int abs, int note, int vel);   /* (seq_ui.c) a note into a step as a
                                                          * tap enters it (the TRIG defaults, the loop grown) */
 int rfmv_st_on(const rfm_move_t *m);                    /* the States layer open: its slot + 1, 0 */

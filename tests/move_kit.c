@@ -21,6 +21,7 @@
 #include "rfm1cs/move.h"
 #include "move_fwb_data.h"
 #include "move_kit_ref.h"
+#include "proj15.h"
 
 #define NFW ((int)(sizeof FWB / sizeof FWB[0]))
 #define KCAPS (RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_SAMPLER | RFM_MOVE_CAP_KIT)
@@ -877,7 +878,7 @@ static void t_project(void)
     M.kit.rh = RFM_MOVE_KIT_RH_INKEY, M.kit.cur = 3, M.kit.route = 0xB000;
     rfmv_seq_note_put(&M, SEQ_CLIP(12, 0), 2, rfm_move_kit_note(3, 9), 100, 24, 0);
     n = rfm_move_project_save(&M, b, sizeof b);
-    CHECK(n == RFM_MOVE_PROJECT_FIXED + 7 && b[4] == 15 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    CHECK(n == RFM_MOVE_PROJECT_FIXED + 8 && b[4] == RFM_MOVE_PROJECT_VERSION && rfm_move_project_check(b, (uint32_t)n) == 0);
     clear();
     rfm_move_init(&M2, NULL, on_act, NULL);
     rfm_move_fw_caps(&M2, KCAPS);
@@ -917,6 +918,7 @@ static void t_project(void)
     }
     /* version 10 (no kit): its routing as it was, an empty kit */
     memcpy(c, b, (size_t)n);
+    n = (int)proj_v15(c, (uint32_t)n);                  /* (2026-11-26: 7 bytes a note before 16) */
     n10 = n - RFM_MOVE_KIT_BYTES;
     c[4] = 10;
     for (h = 2166136261u, i = 0; i < n10 - 4; i++)
@@ -1406,12 +1408,13 @@ static void t_project12(void)
     M.kit.pad[3].v[RFM_MOVE_KIT_P_STRETCH] = 12, M.kit.pad[3].v[RFM_MOVE_KIT_P_SEND3] = 77, M.kit.pad[3].v[RFM_MOVE_KIT_P_CHOKE] = 3;
     snprintf(M.kit.name, sizeof M.kit.name, "Kit 9"), M.kit.mix[4] = 5, M.kit.route = 0xD000;
     n = rfm_move_project_save(&M, b, sizeof b);
-    CHECK(b[4] == 15 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    CHECK(b[4] == RFM_MOVE_PROJECT_VERSION && rfm_move_project_check(b, (uint32_t)n) == 0);
     rfm_move_init(&M2, NULL, on_act, NULL);
     rfm_move_fw_caps(&M2, KCAPS);
     CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0 && M2.kit.pad[3].v[RFM_MOVE_KIT_P_STRETCH] == 12 &&
           M2.kit.pad[3].v[RFM_MOVE_KIT_P_SEND3] == 77 && !strcmp(M2.kit.name, "Kit 9") && M2.kit.mix[4] == 5);
     /* a version 11 blob (as stage 3a wrote it): 8 bytes, 12 settings a pad */
+    n = (int)proj_v15(b, (uint32_t)n);                  /* (2026-11-26: 7 bytes a note before 16) */
     memcpy(c, b, (size_t)n - 4 - RFM_MOVE_KIT_BYTES);
     {
         uint8_t *o = c + n - 4 - RFM_MOVE_KIT_BYTES;
@@ -1798,7 +1801,7 @@ static void t_trim(void)
     rfm_move_kit_set_trim(&M, 0);
     M.kit.pad[6].v[RFM_MOVE_KIT_P_MODE] = RFM_MOVE_KIT_M_LOFI;
     n = rfm_move_project_save(&M, b, sizeof b);
-    CHECK(b[4] == 15 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    CHECK(b[4] == RFM_MOVE_PROJECT_VERSION && rfm_move_project_check(b, (uint32_t)n) == 0);
     CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0 && M2.kit.trim == 0 &&
           M2.kit.pad[6].v[RFM_MOVE_KIT_P_MODE] == RFM_MOVE_KIT_M_LOFI);
     /* (pages v2) before version 15: Toggle (3) loads as Loop, Stretch N as Warp Repitch, Sync N */
@@ -2152,6 +2155,81 @@ static void t_lock_popup(void)
     }
 }
 
+/* 49. (2026-11-26, the owner's: "the up and down arrows should adjust the pitch range since a sample can go +- 24
+ * semitones") Up / Down an octave on the right half (lit where it moves; Chop: dark, dead), "Pitch -24"; a pitch under
+ * the pad's (kw -32) heard, entered at a step, recorded, played back and kept through a version 16 save; past +24 dead */
+static int kw_note(int clip, int note)
+{
+    int i;
+    for (i = 0; i < M.seq.nnotes; i++)
+        if (M.seq.notes[i].clip == clip && M.seq.notes[i].note == note && M.seq.notes[i].kw == -32)
+            return i;
+    return -1;
+}
+static void t_pitch_range(void)
+{
+    static uint8_t b[RFM_MOVE_PROJECT_MAX];
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    const int clip = SEQ_CLIP(12, 0), lo = rfm_move_kit_note(1, -21);
+    rfm_move_act_t a;
+    int n, i, rec_ok = 0;
+    kit_view();
+    sound(1, "Snare", 4800, NULL, 0);
+    hit(kp(1)), rest();
+    CHECK(M.kit.rh == RFM_MOVE_KIT_RH_PITCHES && M.kit.rh_oct == 0);
+    leds(w);
+    CHECK(lit(w[L_WHITE0 + W_UP]) && lit(w[L_WHITE0 + W_DOWN]));
+    press(MR_CC_DOWN), press(MR_CC_DOWN);
+    CHECKF(M.kit.rh_oct == -2 && !strcmp(M.kit.msg, "Pitch") && !strcmp(M.kit.msg2, "-24"), "oct %d %s %s", M.kit.rh_oct,
+           M.kit.msg, M.kit.msg2);
+    press(MR_CC_DOWN);
+    leds(w);
+    CHECK(M.kit.rh_oct == -2 && !lit(w[L_WHITE0 + W_DOWN]) && lit(w[L_WHITE0 + W_UP]));
+    CHECK(rfmv_kit_right_semis(&M, 0) == -24 && rfmv_kit_right_semis(&M, 15) == -9 && lo >= 0);
+    clear(), pad(rp(3), 100), pad(rp(3), 0);            /* (heard at -21) */
+    CHECKF(last(RFM_MOVE_ACT_KIT_NOTE) && count(RFM_MOVE_ACT_KIT_NOTE) == 2 && A[last_i(RFM_MOVE_ACT_KIT_NOTE) - 1].value == -21,
+           "%d notes", count(RFM_MOVE_ACT_KIT_NOTE));
+    step(0, 1), pad(rp(3), 100), pad(rp(3), 0), step(0, 0), rest();   /* (entered at step 1) */
+    CHECKF(kw_note(clip, lo) >= 0, "no note %d kw -32", lo);
+    M.seq.tr[12].active = 0;
+    memset(&a, 0, sizeof a);
+    CHECK(play_ons(1, 200, &a) >= 1 && a.value == -21);
+    /* saved (version 16) and back: the pitch, the octave */
+    n = rfm_move_project_save(&M, b, sizeof b);
+    CHECK(n > 0 && b[4] == 16 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    rfm_move_init(&M2, NULL, on_act, NULL);
+    rfm_move_fw_caps(&M2, KCAPS);
+    CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0 && M2.kit.rh_oct == -2);
+    {
+        const int j = rfmv_seq_find(&M2, clip, 0, lo);
+        CHECK(j >= 0 && M2.seq.notes[j].kw == -32);
+    }
+    /* Up three: +12 (Pitches 12..27: past +24 dead) */
+    press(MR_CC_UP), press(MR_CC_UP), press(MR_CC_UP);
+    leds(w);
+    CHECK(M.kit.rh_oct == 1 && !lit(w[L_WHITE0 + W_UP]) && !strcmp(M.kit.msg2, "+12"));
+    CHECK(rfmv_kit_right_semis(&M, 12) == 24 && rfmv_kit_right_semis(&M, 13) == RFMV_KIT_DEAD);
+    clear(), pad(rp(13), 100), pad(rp(13), 0);
+    CHECK(!count(RFM_MOVE_ACT_KIT_NOTE));
+    /* Record, playing, an octave down: the note lands with its kw */
+    press(MR_CC_DOWN), press(MR_CC_DOWN);
+    CHECK(M.kit.rh_oct == -1);
+    rfm_move_seq_play(&M, 1), press(MR_CC_REC);
+    adv_ms(10);
+    clear(), pad(rp(2), 100), adv_ms(50), pad(rp(2), 0);   /* (-10) */
+    adv_ms(100);
+    press(MR_CC_REC), rfm_move_seq_play(&M, 0);
+    for (i = 0; i < M.seq.nnotes; i++)
+        rec_ok |= M.seq.notes[i].clip == clip && M.seq.notes[i].note == rfm_move_kit_note(1, -10) && M.seq.notes[i].kw == -32;
+    CHECK(rec_ok);
+    /* Chop: Up / Down dark and dead */
+    M.kit.rh = RFM_MOVE_KIT_RH_CHOP;
+    press(MR_CC_UP);
+    leds(w);
+    CHECK(M.kit.rh_oct == -1 && !lit(w[L_WHITE0 + W_UP]) && !lit(w[L_WHITE0 + W_DOWN]));
+    M.kit.rh = RFM_MOVE_KIT_RH_PITCHES, M.kit.rh_oct = 0;
+}
+
 /* 44. versions 12, 13 and 14 into 15: Toggle as Loop, Stretch N as Warp Repitch Sync N, In Key as In Key 4ths, Off as
  * Pitches, the new settings at their defaults */
 static int old_blob(const uint8_t *b, int n, int ver, uint8_t *c)
@@ -2197,7 +2275,7 @@ static void t_project_old(void)
         for (rh = 1; rh <= 2; rh++) {
             int no, bad = -1;
             M.kit.rh = (uint8_t)rh;                     /* (an older one's 1 In Key, 2 Off) */
-            n = rfm_move_project_save(&M, b, sizeof b);
+            n = (int)proj_v15(b, (uint32_t)rfm_move_project_save(&M, b, sizeof b));
             no = old_blob(b, n, ver, c);
             CHECKF(rfm_move_project_check(c, (uint32_t)no) == 0, "version %d check %d", ver, rfm_move_project_check(c, (uint32_t)no));
             rfm_move_init(&M2, NULL, on_act, NULL);
@@ -2274,7 +2352,7 @@ static void t_project_v2(void)
     M.kit.pad[2].v[RFM_MOVE_KIT_P_GSIZE] = 120;
     rfm_move_kit_set_bus(&M, 45, 20);
     n = rfm_move_project_save(&M, b, sizeof b);
-    CHECK(n > 0 && b[4] == 15 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    CHECK(n > 0 && b[4] == RFM_MOVE_PROJECT_VERSION && rfm_move_project_check(b, (uint32_t)n) == 0);
     rfm_move_init(&M2, NULL, on_act, NULL);
     rfm_move_fw_caps(&M2, KCAPS);
     CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0);
@@ -2331,6 +2409,7 @@ int main(void)
     t_kit_level();
     t_pad_level();
     t_lock_popup();
+    t_pitch_range();
     t_project_old();
     t_chop_seq();
     t_project_v2();

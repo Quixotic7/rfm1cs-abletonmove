@@ -493,14 +493,14 @@ static void note_out_lk(rfm_move_t *m, int k, int semis, int vel, int track, int
 }
 static void note_out(rfm_move_t *m, int k, int semis, int vel, int track) { note_out_lk(m, k, semis, vel, track, 0); }
 /* (seq.c) a sequencer note on track (0..15): a track routed to the kit plays its pad */
-void rfmv_kit_seq_note(rfm_move_t *m, int track, int note, int vel)
+void rfmv_kit_seq_note(rfm_move_t *m, int track, int note, int vel, int kw)
 {
     int k, semis;
     if (!rfmv_kit_cap(m) || track < 0 || track >= RFM_MOVE_SEQ_TRACKS || !(m->kit.route >> track & 1))
         return;
     if ((k = rfm_move_kit_pad_of(track, note, &semis)) < 0)
         return;
-    note_out_lk(m, k, semis, vel, track, 1);
+    note_out_lk(m, k, semis ? semis + kw : 0, vel, track, 1);   /* (2026-11-26: kw -32, under the pad's pitch) */
 }
 static void preview_stop(rfm_move_t *m)
 {
@@ -529,7 +529,7 @@ void rfmv_kit_clear(rfm_move_t *m)                      /* an empty kit (an olde
         defaults(t->pad[k].v);
         t->pad[k].st = RFM_MOVE_KIT_EMPTY;
     }
-    t->rh = RFM_MOVE_KIT_RH_PITCHES, t->route = 0, t->cur = 0, t->und = 0, t->undk = 0, t->trim = 1;
+    t->rh = RFM_MOVE_KIT_RH_PITCHES, t->route = 0, t->cur = 0, t->und = 0, t->undk = 0, t->trim = 1, t->rh_oct = 0;
     t->name[0] = 0;
     memset(t->mix, 0, sizeof t->mix);
     t->mix[RFM_MOVE_KIT_MIX_LEVEL] = MIX_LEVEL0, t->mix[RFM_MOVE_KIT_MIX_PAN] = 64;
@@ -572,6 +572,7 @@ void rfmv_kit_write(const rfm_move_t *m, uint8_t *p)    /* RFM_MOVE_KIT_BYTES (v
     memcpy(p + 4, t->mix, RFM_MOVE_KIT_MIX_N);
     p[4 + RFM_MOVE_KIT_MIX_N] = t->trim ? 1 : 0;       /* (round A, version 13) */
     p[10] = t->bus[0], p[11] = t->bus[1];               /* (pages v2, version 15) the kit bus's low-pass */
+    p[12] = (uint8_t)t->rh_oct;                         /* (version 16) the right half's octave */
     p += 16;
     memcpy(p, t->name, strlen(t->name) < RFM_MOVE_KIT_NAME ? strlen(t->name) : RFM_MOVE_KIT_NAME - 1);
     p += RFM_MOVE_KIT_NAME;
@@ -612,7 +613,9 @@ int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 15 ki
             return -1;                                  /* (round A: the Trim silence) */
         if (ver >= 15 && (p[10] > 100 || p[11] > 100))
             return -1;                                  /* (pages v2: the kit bus's low-pass) */
-        for (i = ver >= 15 ? 12 : 4 + RFM_MOVE_KIT_MIX_N + (ver >= 13); i < 16; i++)
+        if (ver >= 16 && ((int8_t)p[12] < RFM_MOVE_KIT_OCT_LO || (int8_t)p[12] > RFM_MOVE_KIT_OCT_HI))
+            return -1;                                  /* (version 16: the right half's octave) */
+        for (i = ver >= 16 ? 13 : ver >= 15 ? 12 : 4 + RFM_MOVE_KIT_MIX_N + (ver >= 13); i < 16; i++)
             if (p[i])
                 return -1;
         p += 16;
@@ -652,6 +655,8 @@ void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver)   /* (checked) */
         t->trim = ver >= 13 ? p[4 + RFM_MOVE_KIT_MIX_N] : 1;   /* (round A; before it: on) */
         if (ver >= 15)
             t->bus[0] = p[10], t->bus[1] = p[11];
+        if (ver >= 16)
+            t->rh_oct = (int8_t)p[12];
         p += 16;
         memcpy(t->name, p, RFM_MOVE_KIT_NAME), t->name[RFM_MOVE_KIT_NAME - 1] = 0;
         p += RFM_MOVE_KIT_NAME;
@@ -1201,12 +1206,21 @@ static void key_of(const rfm_move_t *m, int tr, int *root, int *scale)
     *root %= 12, *scale %= RFM_MOVE_NSCALES;
 }
 /* right-half pad n (0..15, bottom left first): its semitones over the chosen pad's pitch, -1 dead (Chop: no pitches) */
+/* (2026-11-26, the owner's: "the up and down arrows should adjust the pitch range since a sample can go +- 24
+ * semitones") the right half's pitches an octave (In Key: a scale's octave, the same 12) up or down a step of
+ * rh_oct, RFM_MOVE_KIT_OCT_LO..HI (Pitches: -24..-9 up to +12..+27); a pad past +-RFM_MOVE_KIT_SEMIS_HI dark, dead */
+static int right_base(const rfm_move_t *m, int n);
 int rfmv_kit_right_semis(const rfm_move_t *m, int n)
+{
+    const int b = right_base(m, n), v = b + 12 * m->kit.rh_oct;
+    return b == RFMV_KIT_DEAD || v < -RFM_MOVE_KIT_SEMIS_HI || v > RFM_MOVE_KIT_SEMIS_HI ? RFMV_KIT_DEAD : v;
+}
+static int right_base(const rfm_move_t *m, int n)
 {
     const int tr = trk(m->kit.cur);
     int v = -1;
     if (n < 0 || n > 15)
-        return -1;
+        return RFMV_KIT_DEAD;
     switch (m->kit.rh) {
     case RFM_MOVE_KIT_RH_PITCHES: return n;
     case RFM_MOVE_KIT_RH_CHROMA: return n % 4 + (n / 4) * 5;   /* (pages v2: rows a fourth apart, chromatic) */
@@ -1218,9 +1232,9 @@ int rfmv_kit_right_semis(const rfm_move_t *m, int n)
         const uint8_t *s = rfmv_scales[scale < RFM_MOVE_NSCALES ? scale : 0];
         const int deg = m->kit.rh == RFM_MOVE_KIT_RH_INKEY ? n : n % 4 + (n / 4) * 3;
         v = 12 * (deg / s[0]) + s[1 + deg % s[0]];
-        return v <= RFM_MOVE_KIT_SEMIS ? v : -1;
+        return v;
     }
-    default: return -1;
+    default: return RFMV_KIT_DEAD;
     }
 }
 static int right_root(const rfm_move_t *m, int n)      /* the pad's own note or its octave (Pitches), a root (In Key) */
@@ -1455,7 +1469,7 @@ static void step_click(rfm_move_t *m, int s)
             continue;
         if (t->rh == RFM_MOVE_KIT_RH_CHOP)
             step_chop(m, k, s, chop_of(rp), 100), any = 1;
-        else if (rfmv_kit_right_semis(m, rp) >= 0)
+        else if (rfmv_kit_right_semis(m, rp) != RFMV_KIT_DEAD)
             step_pitch(m, k, s, rfmv_kit_right_semis(m, rp), 100), any = 1;
     }
     if (!any)
@@ -1835,14 +1849,19 @@ static void step_chop(rfm_move_t *m, int k, int s, int c, int vel)
 static void step_pitch(rfm_move_t *m, int k, int s, int semis, int vel)
 {
     const int tr = trk(k), clip = edit_clip_of(m, tr), abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
-    const int n = rfm_move_kit_note(k, semis);
+    const int n = rfm_move_kit_note(k, semis), i = n < 0 ? -1 : rfmv_seq_find(m, clip, abs, n);
+    if (n < 0)
+        return;
     rfmv_seq_group(m);
-    if (rfmv_seq_find(m, clip, abs, n) >= 0) {
+    if (i >= 0 && m->seq.notes[i].kw == rfm_move_kit_kw(semis)) {
         rfmv_seq_note_del(m, clip, abs, n);
         if (!step_has(m, k, abs))
             locks_clear(m, k, clip, abs);               /* (round B) */
-    } else
-        rfmv_seq_step_enter(m, clip, abs, n, vel);
+    } else if (i >= 0)                                  /* (2026-11-26: the same code 32 semitones away: this pitch) */
+        rfmv_seq_note_put_w(m, clip, abs, n, m->seq.notes[i].vel, m->seq.notes[i].len, m->seq.notes[i].micro,
+                            rfm_move_kit_kw(semis));
+    else
+        rfmv_seq_step_enter_w(m, clip, abs, n, vel, rfm_move_kit_kw(semis));
     rfmv_seq_dirty(m);
 }
 static void chop_down(rfm_move_t *m, int p, int rp, int vel)
@@ -1955,7 +1974,7 @@ static void pad_down(rfm_move_t *m, int p, int vel)
         return;
     } else {
         k = t->cur;
-        if ((semis = rfmv_kit_right_semis(m, rp)) < 0)
+        if ((semis = rfmv_kit_right_semis(m, rp)) == RFMV_KIT_DEAD)
             return;                                     /* (past the pitches a note can carry: dead) */
     }
     if (t->st_down) {                                   /* a step held: the pad's note in or out of it */
@@ -1974,7 +1993,8 @@ static void pad_down(rfm_move_t *m, int p, int vel)
         else
             rfmv_emit_midi_t(m, tr + 1, 0x90 | q->tr[tr].ch, n, vel);
         if (!t->st_down)
-            rfmv_seq_pad_on(m, p, n, vel);              /* (recorded with Record, kept for Capture) */
+            rfmv_seq_pad_on_w(m, p, n, vel, rfm_move_kit_kw(semis));   /* (recorded with Record, kept for Capture;
+                                                         * under the pad's pitch: kw -32) */
     }
 }
 static void pad_up(rfm_move_t *m, int p)
@@ -3056,8 +3076,17 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
                 undo_pad(m);
             return 1;
         }
-        if ((i == MR_CC_UP || i == MR_CC_DOWN) && !q->step_held) {   /* (no job in the kit: dark, dead) */
+        if ((i == MR_CC_UP || i == MR_CC_DOWN) && !q->step_held) {   /* (2026-11-26) the right half's pitches an
+                                                         * octave up / down (Chop: dark, dead) */
             t->ud_down = 1;
+            if (t->rh != RFM_MOVE_KIT_RH_CHOP && !t->sl_on && !t->tools && !merge_up(m)) {
+                const int o = clampi(t->rh_oct + (i == MR_CC_UP ? 1 : -1), RFM_MOVE_KIT_OCT_LO, RFM_MOVE_KIT_OCT_HI);
+                char v[8];
+                if (o != t->rh_oct)
+                    t->rh_oct = (int8_t)o, rfmv_seq_dirty(m);
+                snprintf(v, sizeof v, o > 0 ? "+%d" : "%d", 12 * o);
+                msg(m, "Pitch", v);
+            }
             return 1;
         }
         return 0;
@@ -3168,17 +3197,17 @@ void rfmv_kit_poll(rfm_move_t *m)
 
 /* ================================================================ the lights === */
 static int blink_on(const rfm_move_t *m) { return (now(m) - m->kit.blink_ms) % 400u < 200u; }
-/* (2026-11-26) a held step of the page shown has pad k's hit at semis (w >= 0) or with chop -1 - w */
-static int held_has(const rfm_move_t *m, int k, int w)
+/* (2026-11-26) a held step of the page shown has pad k's hit at semis w (chop: with chop -1 - w) */
+static int held_has(const rfm_move_t *m, int k, int chop, int w)
 {
     const int tr = trk(k), clip = edit_clip_of(m, tr);
-    int s;
+    int s, i;
     for (s = 0; s < RFM_MOVE_NSTEPS; s++) {
         const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
         if (!(m->kit.st_down >> s & 1))
             continue;
-        if (w >= 0 ? rfmv_seq_find(m, clip, abs, rfm_move_kit_note(k, w)) >= 0
-                   : rfmv_seq_find(m, clip, abs, rfm_move_kit_note(k, 0)) >= 0 &&
+        if (!chop ? (i = rfmv_seq_find(m, clip, abs, rfm_move_kit_note(k, w))) >= 0 && m->seq.notes[i].kw == rfm_move_kit_kw(w)
+                  : rfmv_seq_find(m, clip, abs, rfm_move_kit_note(k, 0)) >= 0 &&
                          rfmv_seq_lock_get(m, clip, abs, lk_id(RFM_MOVE_KIT_LK_CHOP, k)) <= -1 - w &&
                          rfmv_seq_lock_get(m, clip, abs, lk_id(RFM_MOVE_KIT_LK_CHOPE, k)) >= -1 - w)
             return 1;
@@ -3264,7 +3293,7 @@ void rfmv_kit_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
         for (i = 0; i < 16; i++) {                      /* the right half: the chosen pad's pitches */
             const int p = (i / 4) * 8 + 4 + i % 4, s = rfmv_kit_right_semis(m, i);
             rgb_t v = RFMV_OFF;
-            if (s >= 0 && !(t->fact && rfmv_kit_shown(m)) && !to_kit(m) && !t->sl_on && !merge_up(m) && !t->tools)
+            if (s != RFMV_KIT_DEAD && !(t->fact && rfmv_kit_shown(m)) && !to_kit(m) && !t->sl_on && !merge_up(m) && !t->tools)
                 v = right_root(m, i) ? sc(ROWC[k0 / 4], 230) : sc(RFMV_WHITE, 40);
             if (t->rh == RFM_MOVE_KIT_RH_CHOP && has_sound(CPAD(m, k0)) && !(t->fact && rfmv_kit_shown(m)) && !to_kit(m) &&
                 !t->sl_on && !merge_up(m) && !t->tools) {   /* (pages v2) Chop: the pad's row colour, the chops
@@ -3275,10 +3304,10 @@ void rfmv_kit_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
                 if (t->down >> p & 1)
                     v = RFMV_WHITE;
             }
-            if (t->st_down && !t->sl_on && !merge_up(m) && !t->tools && (s >= 0 || t->rh == RFM_MOVE_KIT_RH_CHOP) &&
-                held_has(m, k0, t->rh == RFM_MOVE_KIT_RH_CHOP ? -1 - chop_of(i) : s))
+            if (t->st_down && !t->sl_on && !merge_up(m) && !t->tools && (s != RFMV_KIT_DEAD || t->rh == RFM_MOVE_KIT_RH_CHOP) &&
+                held_has(m, k0, t->rh == RFM_MOVE_KIT_RH_CHOP, t->rh == RFM_MOVE_KIT_RH_CHOP ? -1 - chop_of(i) : s))
                 v = sc(ROWC[k0 / 4], 256);              /* (2026-11-26: a step held: the pitches / chops on it) */
-            if (s >= 0 && (t->down >> p & 1))
+            if (s != RFMV_KIT_DEAD && (t->down >> p & 1))
                 v = RFMV_WHITE;
             c[L_PAD0 + p] = v;
         }
@@ -3322,7 +3351,11 @@ void rfmv_kit_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
         const rgb_t kc = t->sl_on ? MENU_KNOB : lock_layer(m) ? LOCKC : KIT;
         c[L_RING0 + i] = knob_dead(m, i) ? RFMV_OFF : (t->kdown >> i & 1) || t->kpop == i ? RFMV_WHITE : sc(kc, 150);
     }
-    wv[W_UP] = 0, wv[W_DOWN] = 0;                       /* (no job here) */
+    {                                                   /* (2026-11-26) the right half's octave: lit where it moves */
+        const int ud = t->rh != RFM_MOVE_KIT_RH_CHOP && !t->sl_on && !t->tools && !merge_up(m);
+        wv[W_UP] = (uint8_t)(ud && t->rh_oct < RFM_MOVE_KIT_OCT_HI ? 100 : 0);
+        wv[W_DOWN] = (uint8_t)(ud && t->rh_oct > RFM_MOVE_KIT_OCT_LO ? 100 : 0);
+    }
     if (und_ours(m) || undk_ours(m))
         wv[W_UNDO] = 60;
 }

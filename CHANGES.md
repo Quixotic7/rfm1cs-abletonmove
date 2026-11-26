@@ -5,6 +5,25 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## 0.16.0 (prepared 2026-11-26, not yet tagged): the kit, stages 3a, 3b and 3c, pages, engines, Warp; Exit; one-setting Shift menus
 
+### Levels, lock popups, the pitch range (2026-11-26, the owner's on-device round)
+
+- Track 4 held + the volume knob sets the kit's level wherever Track 4's views include the kit, with a full-screen
+  popup over Track 4's menu while the knob is touched (`rfmv_kit_volume`, `rfmv_kit_level_screen`). The level already
+  changed before this, but its message was hidden behind the held Track's menu. A kit pad held + the volume knob sets
+  that pad's Level (every held pad) in its knob's dB steps, with the same popup.
+- A held step's lock popup is now the knob's own popup, drawn by the same code at the lock's value, with an "S5" tag
+  in the top-left corner (the Start / End close-up included).
+- Up / Down shift the right half's pitches an octave (`rh_oct`, -2..+1: Pitches -24..-9 up to +12..+27; In Key the
+  scale's octave, the same 12). A pad past +-24 semitones is dark and dead. Up and Down are lit where they can move
+  and dark in Chop. "Pitch -12" shows. Project version 16: a note is 8 bytes, the 8th byte a kit note's signed
+  semitones. In RAM, `rfm_move_note_t.kw` (-32: a kit pitch under its pad's, coded as `semis + 32`) travels through
+  copies, Record, Capture and playback (`rfmv_seq_note_put_w`, `rfmv_seq_note_copy`, `rfmv_seq_pad_on_w`). The kit
+  header's byte 12 holds the octave. Versions 15 and older load as before (kw 0). One limit: a pad can't hold, on one
+  step, two pitches exactly 32 semitones apart (-24 / +8 .. -8 / +24); the later one replaces the earlier.
+  `rfm_move_note_t`, `rfm_move_kit_t`, `rfm_move_cap_t`, `rfm_move_sounding_t` and `rfm_move_recnote_t` change:
+  rebuild everything. `RFM_MOVE_PROJECT_MAX` grows by 4096. move_kit 43 reworked, 47..49; tests/proj15.h turns a
+  version 16 save into version 15 for the old-format tests.
+
 ### Browser and sound (2026-11-26)
 
 README "The kit (browser and sound, 2026-11-26)". `RFM_MOVE_KIT_PL_CORE` (the Move Library) and

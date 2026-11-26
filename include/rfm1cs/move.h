@@ -826,7 +826,7 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 15                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
+#define RFM_MOVE_PROJECT_VERSION 16                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
                                                          * values a slot, 7 the firmwares' MIDI routes, 8 the launch
                                                          * quantization and each clip's launch settings, 9 (0.13.0) the
                                                          * firmwares: each slot's id, level, settings and track, the
@@ -838,9 +838,11 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
                                                          * (round B) Decay, Sustain, Filter, Resonance a pad; the kit
                                                          * pads' step locks (RFM_MOVE_KIT_LOCK0..), 15 (pages v2) a
                                                          * pad's engines, Warp and filter envelope (45 settings), the
-                                                         * kit bus's low-pass */
+                                                         * kit bus's low-pass, 16 (2026-11-26) a note's 8th byte: a
+                                                         * kit note's signed semitones (-24..+31; 0 otherwise), the
+                                                         * right half's octave shift (the kit's header) */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
-/* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
+/* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7 (version 16: x 8), locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
 #define RFM_MOVE_ARP_BYTES_V2 7                         /* a track's arp in version 2: pattern rate range chance mode
                                                          * gate odist */
@@ -885,7 +887,7 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_PROJECT_EXT_V14 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V14)
 #define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES)
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
-#define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 7 + RFM_MOVE_SEQ_LOCKS * 4)
+#define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 8 + RFM_MOVE_SEQ_LOCKS * 4)
 enum { RFM_MOVE_CLOCK_AUTO = 0, RFM_MOVE_CLOCK_INTERNAL = 1, RFM_MOVE_CLOCK_EXTERNAL = 2 };
 /* (0.12.0) launch quantization: when a clicked clip, scene or stop takes effect (1 Bar the default, 0). CLIP: at the end
  * of the loop of the clip the track plays (none: the next bar) */
@@ -898,6 +900,9 @@ typedef struct {                                        /* a note in a clip; sor
     int8_t micro;                                       /* ticks off the step, -12..+11 */
     uint8_t rsv;
     uint16_t len;                                       /* ticks, 1..256 x 24 */
+    int8_t kw;                                          /* (2026-11-26) a kit track's note below its pad's pitch: -32
+                                                         * (rfm_move_kit_note's code for semis s < 0 is that of s + 32),
+                                                         * else 0 */
 } rfm_move_note_t;
 typedef struct { uint8_t clip, step, cc, val; } rfm_move_lock_t;   /* a CC lock; sorted by (clip, step, cc) */
 typedef struct {                                        /* an undo journal entry */
@@ -937,9 +942,9 @@ typedef struct {
     uint8_t pre;                                        /* the last condition's result (PRE, NEI) */
     uint16_t pass, npass;                               /* loop passes since the launch (1: the first) */
 } rfm_move_track_t;
-typedef struct { uint8_t ch, note, track, rsv; int32_t off; } rfm_move_sounding_t;
-typedef struct { int32_t t; uint8_t note, vel, rsv[2]; } rfm_move_cap_t;   /* t: timeline tick, vel 0 = off */
-typedef struct { int32_t t; uint8_t clip, note, vel, on, step; int8_t micro; uint8_t rsv[2]; } rfm_move_recnote_t;
+typedef struct { uint8_t ch, note, track; int8_t kw; int32_t off; } rfm_move_sounding_t;   /* (kw: the note's) */
+typedef struct { int32_t t; uint8_t note, vel; int8_t kw; uint8_t rsv; } rfm_move_cap_t;   /* t: timeline tick, vel 0 = off */
+typedef struct { int32_t t; uint8_t clip, note, vel, on, step; int8_t micro, kw; uint8_t rsv; } rfm_move_recnote_t;
 typedef struct {                                        /* a stored project in brief (rfm_move_project_info) */
     uint8_t ok;                                         /* 1: known */
     uint8_t clips;                                      /* clips with notes or locks */
@@ -1423,6 +1428,10 @@ enum { RFM_MOVE_KIT_OK = 0, RFM_MOVE_KIT_TOO_LONG = 1, RFM_MOVE_KIT_FAILED = 2, 
        RFM_MOVE_KIT_LOADING = 4, RFM_MOVE_KIT_EMPTY = 5 };
 #define RFM_MOVE_KIT_FRAC 32767                         /* START / END: the whole sound */
 #define RFM_MOVE_KIT_SEMIS 31                           /* the semitones a kit note can carry over the pad's pitch */
+#define RFM_MOVE_KIT_SEMIS_LO (-24)                     /* (2026-11-26) .. and under it (the note's kw -32) */
+#define RFM_MOVE_KIT_SEMIS_HI 24                        /* the right half's pads past +-24 semitones: dark, dead */
+#define RFM_MOVE_KIT_OCT_LO (-2)                        /* the right half's octave shift (Up / Down): -24 .. +12 */
+#define RFM_MOVE_KIT_OCT_HI 1
 #define RFM_MOVE_KIT_NOTE0 36                           /* pad k's own note: 36 + k (pads 1..16: 36..51) */
 #define RFM_MOVE_KIT_TRACK0 12                          /* pads 1..4 on track 13, 5..8 on 14, 9..12 on 15, 13..16 on 16 */
 #define RFM_MOVE_KIT_PEAKS 64                           /* a pad's wave: its whole sound in 64 peaks */
@@ -1431,11 +1440,15 @@ enum { RFM_MOVE_KIT_OK = 0, RFM_MOVE_KIT_TOO_LONG = 1, RFM_MOVE_KIT_FAILED = 2, 
                                                          * is refused (RFM_MOVE_KIT_TOO_LONG, "Too Long") */
 /* (the right half's pitches on the steps) a kit track's note for pad (0..15) at semis (0..RFM_MOVE_KIT_SEMIS) over its
  * pitch: semis 0 is the pad's own note 36 + pad; else the n-th of the track's other 124 notes, n = (pad % 4) * 31 +
- * semis - 1 (0..35 as they are, the rest past the track's own four). -1 out of range */
+ * semis - 1 (0..35 as they are, the rest past the track's own four). -1 out of range. (2026-11-26) semis
+ * RFM_MOVE_KIT_SEMIS_LO..-1: the code of semis + 32, the stored note's kw -32 (rfm_move_kit_kw) telling them apart */
+static inline int rfm_move_kit_kw(int semis) { return semis < 0 ? -32 : 0; }
 static inline int rfm_move_kit_note(int pad, int semis)
 {
     const int b = RFM_MOVE_KIT_NOTE0 + (pad / 4) * 4;
     int n;
+    if (semis < 0 && semis >= RFM_MOVE_KIT_SEMIS_LO)
+        semis += 32;
     if (pad < 0 || pad >= RFM_MOVE_KIT_PADS || semis < 0 || semis > RFM_MOVE_KIT_SEMIS)
         return -1;
     if (!semis)
@@ -1486,6 +1499,8 @@ typedef struct {                                        /* a row of Files (rfm_m
 typedef struct {                                        /* (kit.c) */
     rfm_move_kit_pad_t pad[RFM_MOVE_KIT_PADS];
     uint8_t rh;                                         /* (saved) the right half: RFM_MOVE_KIT_RH_* */
+    int8_t rh_oct;                                      /* (saved, version 16) its pitches' octave shift (Up / Down):
+                                                         * RFM_MOVE_KIT_OCT_LO..RFM_MOVE_KIT_OCT_HI */
     uint16_t route;                                     /* (saved) the sequencer tracks routed to the kit (bits 12..15) */
     uint8_t cur;                                        /* (saved) the chosen pad 0..15 */
     /* (RAM) the view */

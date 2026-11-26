@@ -804,10 +804,11 @@ int rfmv_seq_loop_steps(const rfm_move_t *m)
 static void grow_to(rfm_move_t *m, int clip, int abs);
 /* (stage 3a, kit.c) a note entered at a step as a tap enters one: the TRIG defaults on an empty step, the loop grown to
  * its page, the clip playing with the transport (the caller's undo group) */
-void rfmv_seq_step_enter(rfm_move_t *m, int clip, int abs, int note, int vel)
+void rfmv_seq_step_enter(rfm_move_t *m, int clip, int abs, int note, int vel) { rfmv_seq_step_enter_w(m, clip, abs, note, vel, 0); }
+void rfmv_seq_step_enter_w(rfm_move_t *m, int clip, int abs, int note, int vel, int kw)
 {
     const int was = rfmv_seq_clip_used(m, clip), e = step_empty(m, clip, abs);
-    if (rfmv_seq_note_put(m, clip, abs, note, vel_of(m, vel), RFM_MOVE_SEQ_TPS, 0) != 0)
+    if (rfmv_seq_note_put_w(m, clip, abs, note, vel_of(m, vel), RFM_MOVE_SEQ_TPS, 0, kw) != 0)
         return;
     if (e)
         rfmv_seq_tdef_apply(m, clip, abs, 1);
@@ -865,7 +866,7 @@ static void page_edit(rfm_move_t *m, int clip, int pg, int del)
     rfmv_seq_group(m);                                  /* an empty page: the clipboard pasted */
     for (i = 0; i < q->pg_nn; i++) {
         const rfm_move_note_t *n = &q->pg_notes[i];
-        rfmv_seq_note_put(m, clip, a + n->step, n->note, n->vel, n->len, n->micro);
+        rfmv_seq_note_copy(m, clip, a + n->step, n);
     }
     for (i = 0; i < q->pg_nl; i++)
         rfmv_seq_lock_set(m, clip, a + q->pg_locks[i].step, q->pg_locks[i].cc, q->pg_locks[i].val);

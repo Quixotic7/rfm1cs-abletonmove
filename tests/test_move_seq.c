@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "proj15.h"
 #include "move_int.h"
 #include "moveremote/client.h"
 #include "rfm1cs/move.h"
@@ -1239,7 +1240,7 @@ static void test_blob(void)
     CHECK(rfm_move_project_save(m, a, sizeof a) == RFM_MOVE_PROJECT_FIXED);   /* an empty project: 608 bytes */
     rich_project(m, 7);
     n = rfm_move_project_save(m, a, sizeof a);
-    CHECK(n == RFM_MOVE_PROJECT_FIXED + m->seq.nnotes * 7 + m->seq.nlocks * 4 && n < 8000 + 720 + RFM_MOVE_KIT_BYTES);   /* (0.5.0: 720 more FX values;
+    CHECK(n == RFM_MOVE_PROJECT_FIXED + m->seq.nnotes * 8 + m->seq.nlocks * 4 && n < 8000 + 720 + RFM_MOVE_KIT_BYTES + m->seq.nnotes);   /* (0.5.0: 720 more FX values;
                                                          * stage 3a: the kit) */
     printf("blob: empty %d bytes, %d notes + %d locks %d bytes, worst case %d\n", RFM_MOVE_PROJECT_FIXED,
            m->seq.nnotes, m->seq.nlocks, n, RFM_MOVE_PROJECT_MAX);
@@ -1264,8 +1265,9 @@ static void test_blob(void)
     CHECK(rfm_move_project_check(b, (uint32_t)n) == -7);
     memcpy(b, a, (size_t)n), b[24] = 16, refnv(b, (uint32_t)n);                 /* channel 17 */
     CHECK(rfm_move_project_check(b, (uint32_t)n) == -6);
-    memcpy(b, a, (size_t)n), b[OFF_TEST_NOTE0 + 7] = b[OFF_TEST_NOTE0], b[OFF_TEST_NOTE0 + 8] = b[OFF_TEST_NOTE0 + 1],
-        b[OFF_TEST_NOTE0 + 9] = b[OFF_TEST_NOTE0 + 2], refnv(b, (uint32_t)n);   /* a duplicate key */
+    memcpy(b, a, (size_t)n), b[OFF_TEST_NOTE0 + 8] = b[OFF_TEST_NOTE0], b[OFF_TEST_NOTE0 + 9] = b[OFF_TEST_NOTE0 + 1],
+        b[OFF_TEST_NOTE0 + 10] = b[OFF_TEST_NOTE0 + 2], refnv(b, (uint32_t)n);   /* a duplicate key (version 16: 8 bytes a
+                                                         * note) */
     CHECK(rfm_move_project_check(b, (uint32_t)n) == -7);
     CHECK(rfm_move_project_check(NULL, 100) < 0 && rfm_move_project_check(a, 0) < 0);
     /* truncated at every length: never valid, never read past n (ASan watches a copy of exactly n bytes) */
@@ -2000,9 +2002,10 @@ static void test_trig(void)
           m->seq.notes[rfmv_seq_find(m, 0, 3, m->seq.notes[0].note)].len == 12);
     {                                                   /* kept with the project (version 4) */
         static uint8_t blob[RFM_MOVE_PROJECT_MAX];
-        const int nb = rfm_move_project_save(m, blob, sizeof blob);
+        int nb = rfm_move_project_save(m, blob, sizeof blob);
         rfm_move_init(&M2, NULL, on_act, NULL);
         CHECK(rfm_move_project_load(&M2, 1, blob, (uint32_t)nb) == 0 && M2.seq.tr[0].tdef[1] == 2 && M2.seq.tr[0].tdef[2] == 75);
+        nb = (int)proj_v15(blob, (uint32_t)nb);         /* (2026-11-26: 7 bytes a note before 16) */
         {                                               /* a version 3 blob (no defaults) still loads: the plain ones */
             const int n3 = nb - RFM_MOVE_SEQ_TRACKS * 8 - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES -
                            RFM_MOVE_KIT_BYTES;   /* (0.4.0:
@@ -2349,7 +2352,7 @@ static void test_blob_v2(void)
     m->seq.tr[3].rate = 7, m->seq.tr[3].groove = 33, m->seq.tr[3].arp.pat = RFM_MOVE_AP_CONDIV, m->seq.tr[3].arp.odist = -7;
     m->seq.rec_mode = RFM_MOVE_RM_STEP, m->seq.rec_style = RFM_MOVE_RS_REPLACE;
     n = rfm_move_project_save(m, a, sizeof a);
-    CHECK(n == RFM_MOVE_PROJECT_FIXED + 7 + 2 * 4 && a[4] == RFM_MOVE_PROJECT_VERSION);
+    CHECK(n == RFM_MOVE_PROJECT_FIXED + 8 + 2 * 4 && a[4] == RFM_MOVE_PROJECT_VERSION);
     rfm_move_init(m2, NULL, on_act, NULL);
     CHECK(rfm_move_project_load(m2, 1, a, (uint32_t)n) == 0);
     CHECK(m2->seq.lstart[0] == 16 && m2->seq.len[0] == 32 && rfmv_seq_clip_has(m2, 0));
@@ -2363,7 +2366,7 @@ static void test_blob_v2(void)
     /* version 1: no extension, plain CC locks only */
     fresh(m);
     rfmv_seq_note_put(m, SEQ_CLIP(1, 2), 3, 60, 100, 24, 0);
-    n = rfm_move_project_save(m, a, sizeof a);
+    n = (int)proj_v15(a, (uint32_t)rfm_move_project_save(m, a, sizeof a));   /* (7 bytes a note before 16) */
     n1 = n - RFM_MOVE_PROJECT_EXT;
     memcpy(b, a, (size_t)n1 - 4), b[4] = 1;
     refnv(b, (uint32_t)n1);
@@ -2652,7 +2655,7 @@ static void test_round2(void)
     fresh(m);
     rfmv_seq_note_put(m, 0, 1, 60, 100, 24, 0);
     m->seq.tr[2].arp.pat = RFM_MOVE_AP_DIV, m->seq.tr[2].groove = 40;
-    n = rfm_move_project_save(m, a, sizeof a);
+    n = (int)proj_v15(a, (uint32_t)rfm_move_project_save(m, a, sizeof a));   /* (7 bytes a note before 16) */
     {
         const int body = n - 4 - RFM_MOVE_PROJECT_EXT, x = body;
         const int pre = RFM_MOVE_SEQ_CLIPS + RFM_MOVE_SEQ_CLIPS / 8 + 2 * RFM_MOVE_SEQ_TRACKS;
@@ -3332,6 +3335,7 @@ static void test_rates_feel(void)
     memcpy(b, a, (size_t)n), b[RATE_BYTE(n, 0)] = 3 << 4, refnv(b, (uint32_t)n);   /* (no such feel) */
     CHECK(rfm_move_project_check(b, (uint32_t)n) == -9);
     /* version 9 (0.13.0, the same bytes but the kit's): tracks 1..10 with the ten old rates load with their timing */
+    n = (int)proj_v15(a, (uint32_t)n);                  /* (2026-11-26: 7 bytes a note before 16) */
     memcpy(b, a, (size_t)n), b[4] = 9;
     for (i = 0; i < 10; i++)
         b[RATE_BYTE(n, i)] = (uint8_t)i;
@@ -3512,6 +3516,7 @@ static void test_triplet_layout(void)
     rfmv_seq_lock_set(m, 0, 2, RFM_MOVE_TRIG_JUMP, 3);
     rfmv_seq_loop_set(m, 0, 1, 5);
     n = rfm_move_project_save(m, a, sizeof a);
+    n = (int)proj_v15(a, (uint32_t)n);                  /* (2026-11-26: 7 bytes a note before 16) */
     a[4] = 9, a[RATE_BYTE(n, 0)] = 2, n -= RFM_MOVE_KIT_BYTES, refnv(a, (uint32_t)n);   /* (stage 3a: no kit) */
     rfm_move_init(m2, NULL, on_act, NULL);
     CHECK(rfm_move_project_load(m2, 1, a, (uint32_t)n) == 0);

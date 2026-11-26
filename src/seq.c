@@ -270,7 +270,8 @@ static void jot(rfm_move_t *m, int type, const rfm_move_note_t *n, int old, int 
     q->utop = q->un;
 }
 
-int rfmv_seq_note_put(rfm_move_t *m, int clip, int step, int note, int vel, int len, int micro)
+/* (2026-11-26) kw: a kit track's note under its pad's pitch (-32, rfm_move_kit_note), 0; 1: the note it replaces' */
+int rfmv_seq_note_put_w(rfm_move_t *m, int clip, int step, int note, int vel, int len, int micro, int kw)
 {
     rfm_move_seq_t *q = &m->seq;
     rfm_move_note_t n;
@@ -282,6 +283,15 @@ int rfmv_seq_note_put(rfm_move_t *m, int clip, int step, int note, int vel, int 
     n.micro = (int8_t)clampi(micro, -TPS / 2, TPS / 2 - 1);
     n.len = (uint16_t)clampi(len, 1, RFM_MOVE_SEQ_MAXLEN * TPS);
     i = rfmv_seq_find(m, clip, step, note);
+    if (kw == 1)
+        kw = i >= 0 ? q->notes[i].kw : 0;
+    {
+        const int tr = clip / RFM_MOVE_SEQ_SCENES;
+        int semis;
+        n.kw = (int8_t)(kw == -32 && tr >= RFM_MOVE_KIT_TRACK0 && tr < RFM_MOVE_KIT_TRACK0 + 4 &&
+                        rfm_move_kit_pad_of(tr, note, &semis) >= 0 && semis + kw >= RFM_MOVE_KIT_SEMIS_LO && semis + kw < 0
+                        ? -32 : 0);
+    }
     if (i >= 0) {
         if (!memcmp(&q->notes[i], &n, sizeof n))
             return 0;
@@ -294,6 +304,14 @@ int rfmv_seq_note_put(rfm_move_t *m, int clip, int step, int note, int vel, int 
     raw_put(q, &n);
     jot(m, OP_NOTE_ADD, &n, 0, 0);
     return 0;
+}
+int rfmv_seq_note_put(rfm_move_t *m, int clip, int step, int note, int vel, int len, int micro)
+{
+    return rfmv_seq_note_put_w(m, clip, step, note, vel, len, micro, 1);
+}
+int rfmv_seq_note_copy(rfm_move_t *m, int clip, int step, const rfm_move_note_t *n)
+{
+    return rfmv_seq_note_put_w(m, clip, step, n->note, n->vel, n->len, n->micro, n->kw);
 }
 int rfmv_seq_note_del(rfm_move_t *m, int clip, int step, int note)
 {
@@ -411,7 +429,7 @@ int rfmv_seq_clip_double(rfm_move_t *m, int clip)
     for (i = lo; i < hi && q->notes[i].step < a + L; i++) {   /* (the copies sort after: indices hold) */
         const rfm_move_note_t n = q->notes[i];
         if (n.step >= a)
-            rfmv_seq_note_put(m, clip, n.step + L, n.note, n.vel, n.len, n.micro);
+            rfmv_seq_note_copy(m, clip, n.step + L, &n);
     }
     hi = rfmv_seq_clip_lock_range(m, clip, &lo);
     for (i = lo; i < hi && q->locks[i].step < a + L; i++) {
@@ -562,7 +580,7 @@ void rfmv_seq_paste_step(rfm_move_t *m, int clip, int step)
         const rfm_move_note_t n = q->clip_notes[i];
         const int d = step + n.step - q->clip_step;
         if (d >= 0 && d < RFM_MOVE_SEQ_MAXLEN)
-            rfmv_seq_note_put(m, clip, d, n.note, n.vel, n.len, n.micro);
+            rfmv_seq_note_copy(m, clip, d, &n);
     }
     for (i = 0; i < q->clip_nl; i++) {
         const rfm_move_lock_t l = q->clip_locks[i];
@@ -582,7 +600,7 @@ void rfmv_seq_paste_clip(rfm_move_t *m, int clip)
     rfmv_seq_clip_make(m, clip, 1);
     for (i = 0; i < q->clip_nn; i++) {
         const rfm_move_note_t *n = &q->clip_notes[i];
-        rfmv_seq_note_put(m, clip, n->step, n->note, n->vel, n->len, n->micro);
+        rfmv_seq_note_copy(m, clip, n->step, n);
     }
     for (i = 0; i < q->clip_nl; i++)
         rfmv_seq_lock_set(m, clip, q->clip_locks[i].step, q->clip_locks[i].cc, q->clip_locks[i].val);
@@ -616,7 +634,7 @@ void rfmv_seq_clip_dup(rfm_move_t *m, int from, int to)
         rfm_move_note_t c;
         rfmv_seq_clip_range(m, from, &lo);
         c = q->notes[lo + k];
-        rfmv_seq_note_put(m, to, c.step, c.note, c.vel, c.len, c.micro);
+        rfmv_seq_note_copy(m, to, c.step, &c);
     }
     n = rfmv_seq_clip_lock_range(m, from, &lo) - lo;
     for (k = 0; k < n; k++) {
@@ -679,7 +697,7 @@ void rfmv_seq_scene_paste(rfm_move_t *m, int scene)
     }
     for (i = 0; i < q->sb_nn; i++) {
         const rfm_move_note_t *n = &q->sb_notes[i];
-        rfmv_seq_note_put(m, SEQ_CLIP(n->clip, scene), n->step, n->note, n->vel, n->len, n->micro);
+        rfmv_seq_note_copy(m, SEQ_CLIP(n->clip, scene), n->step, n);
     }
     for (i = 0; i < q->sb_nl; i++)
         rfmv_seq_lock_set(m, SEQ_CLIP(q->sb_locks[i].clip, scene), q->sb_locks[i].step, q->sb_locks[i].cc, q->sb_locks[i].val);
@@ -756,7 +774,7 @@ static void snd_off(rfm_move_t *m, int i)
 {
     rfm_move_seq_t *q = &m->seq;
     rfmv_emit_midi_t(m, q->snd[i].track + 1, 0x80 | q->snd[i].ch, q->snd[i].note, 0);
-    rfmv_kit_seq_note(m, q->snd[i].track, q->snd[i].note, 0);   /* (stage 3a: a track routed to the kit) */
+    rfmv_kit_seq_note(m, q->snd[i].track, q->snd[i].note, 0, q->snd[i].kw);   /* (stage 3a: a track routed to the kit) */
     q->snd[i] = q->snd[--q->nsnd];
 }
 static void arp_clip_drop(rfm_move_t *m, int tr);
@@ -771,7 +789,7 @@ void rfmv_seq_release(rfm_move_t *m, int track)
         else
             i++;
 }
-static void note_on(rfm_move_t *m, int track, int note, int vel, int len)
+static void note_on(rfm_move_t *m, int track, int note, int vel, int len, int kw)
 {
     rfm_move_seq_t *q = &m->seq;
     const int ch = q->tr[track].ch;
@@ -790,8 +808,9 @@ static void note_on(rfm_move_t *m, int track, int note, int vel, int len)
         snd_off(m, old);
     }
     rfmv_emit_midi_t(m, track + 1, 0x90 | ch, note, vel);
-    rfmv_kit_seq_note(m, track, note, vel);             /* (stage 3a: a track routed to the kit plays its pad) */
+    rfmv_kit_seq_note(m, track, note, vel, kw);         /* (stage 3a: a track routed to the kit plays its pad) */
     q->snd[q->nsnd].ch = (uint8_t)ch, q->snd[q->nsnd].note = (uint8_t)note, q->snd[q->nsnd].track = (uint8_t)track;
+    q->snd[q->nsnd].kw = (int8_t)kw;
     q->snd[q->nsnd].off = q->tl + (len < 1 ? 1 : len);
     q->nsnd++;
 }
@@ -1001,7 +1020,7 @@ static void grow_finish(rfm_move_t *m, int track, int bars)
         n = q->notes[i];
         rfmv_seq_note_del(m, clip, n.step, n.note);
         if (n.step == lo + L && n.micro < 0 && rfmv_seq_find(m, clip, lo, n.note) < 0)
-            rfmv_seq_note_put(m, clip, lo, n.note, n.vel, n.len, n.micro);
+            rfmv_seq_note_copy(m, clip, lo, &n);
     }
     q->group = g;
 }
@@ -1037,7 +1056,7 @@ static void launch_now(rfm_move_t *m, int track, int scene, int32_t T)
     }
 }
 
-static void clip_note(rfm_move_t *m, int tr, int note, int vel, int len);
+static void clip_note(rfm_move_t *m, int tr, int note, int vel, int len, int kw);
 /* a track's tick: the playhead on, then what is due now */
 static void track_tick(rfm_move_t *m, int tr, int32_t T)
 {
@@ -1096,7 +1115,7 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
                 len = t->tps / nr;
             for (k = 0; k < nr; k++)
                 if (mt + k * t->tps / nr == t->sub && !rec_held(q, clip, n.note))
-                    clip_note(m, tr, n.note, n.vel, len);   /* (0.14.0: the track's arp, while on) */
+                    clip_note(m, tr, n.note, n.vel, len, n.kw);   /* (0.14.0: the track's arp, while on) */
         }
         q->kit_cok = 0;
         if (t->sub == 0) {
@@ -1113,7 +1132,7 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
             const rfm_move_note_t n = q->notes[i];
             const int mt = groove_at(m, tr, t->next, micro_ticks(n.micro, t->tps));
             if (mt < 0 && t->tps + mt == t->sub && !rec_held(q, clip, n.note))
-                clip_note(m, tr, n.note, n.vel, n.len * t->tps / RFM_MOVE_SEQ_TPS);
+                clip_note(m, tr, n.note, n.vel, n.len * t->tps / RFM_MOVE_SEQ_TPS, n.kw);
         }
         q->kit_cok = 0;
     }
@@ -1209,7 +1228,7 @@ void rfmv_seq_preview(rfm_move_t *m, int clip, int step)
     int lo, hi = rfmv_seq_range(m, clip, step, &lo), i;
     for (i = lo; i < hi; i++) {
         const rfm_move_note_t n = q->notes[i];
-        note_on(m, track, n.note, n.vel, n.len * tps / RFM_MOVE_SEQ_TPS);
+        note_on(m, track, n.note, n.vel, n.len * tps / RFM_MOVE_SEQ_TPS, n.kw);
     }
 }
 
@@ -1468,13 +1487,13 @@ static void arp_clip_drop(rfm_move_t *m, int tr)
     }
 }
 /* a clip's note (track_tick): to the firmware, or (0.14.0) into the track's arp while it is on, held for its length */
-static void clip_note(rfm_move_t *m, int tr, int note, int vel, int len)
+static void clip_note(rfm_move_t *m, int tr, int note, int vel, int len, int kw)
 {
     rfm_move_seq_t *q = &m->seq;
     if (q->hush)
         return;
-    if (!arp_in(m, tr, note, vel, 2, q->tl + (len < 1 ? 1 : len), q->tl))
-        note_on(m, tr, note, vel, len);
+    if (!arp_in(m, tr, note, vel, 2, q->tl + (len < 1 ? 1 : len), q->tl))   /* (an arp's notes: kw 0) */
+        note_on(m, tr, note, vel, len, kw);
 }
 
 /* one step (FIZZ's arp_step): the pattern's next note through the MOD lane (play, rest, tie, repeat, low, high,
@@ -1561,7 +1580,7 @@ static void arp_step(rfm_move_t *m, int atr)
                 continue;
             if (mod != RFM_MOVE_AL_REPEAT && s->lastn < 8)
                 s->lastp[s->lastn++] = (uint8_t)pitch[i];
-            note_on(m, atr, pitch[i], vel, len < 1 ? 1 : len);   /* (0.14.0: never recorded: the clip takes what was
+            note_on(m, atr, pitch[i], vel, len < 1 ? 1 : len, 0);   /* (0.14.0: never recorded: the clip takes what was
                                                          * played, the arp plays it back) */
         }
     }
@@ -2106,11 +2125,11 @@ static int32_t T_now(const rfm_move_t *m)
     return T < 0 ? 0 : T;
 }
 
-static void cap_push(rfm_move_t *m, int note, int vel)
+static void cap_push(rfm_move_t *m, int note, int vel, int kw)
 {
     rfm_move_seq_t *q = &m->seq;
     rfm_move_cap_t *c = &q->cap[q->cap_head];
-    c->t = tl_now(m), c->note = (uint8_t)note, c->vel = (uint8_t)vel;
+    c->t = tl_now(m), c->note = (uint8_t)note, c->vel = (uint8_t)vel, c->kw = (int8_t)kw;
     q->cap_head = (uint16_t)((q->cap_head + 1) % RFM_MOVE_SEQ_CAPTURE);
     if (q->ncap < RFM_MOVE_SEQ_CAPTURE)
         q->ncap++;
@@ -2138,7 +2157,7 @@ static void rec_pos_r(rfm_move_t *m, int tr, int arp, int *step, int *micro)
 
 static void rec_pos(rfm_move_t *m, int tr, int *step, int *micro) { rec_pos_r(m, tr, 0, step, micro); }
 
-static void rec_start_note(rfm_move_t *m, int pad, int clip, int step, int micro, int note, int vel, int32_t T)
+static void rec_start_note(rfm_move_t *m, int pad, int clip, int step, int micro, int note, int vel, int32_t T, int kw)
 {
     rfm_move_seq_t *q = &m->seq;
     rfm_move_recnote_t *r = &q->recn[pad];
@@ -2147,7 +2166,7 @@ static void rec_start_note(rfm_move_t *m, int pad, int clip, int step, int micro
     {
         int lo;
         const int e = rfmv_seq_range(m, clip, step, &lo) == lo;
-        rfmv_seq_note_put(m, clip, step, note, vel, TPS, micro);   /* (its length at the release) */
+        rfmv_seq_note_put_w(m, clip, step, note, vel, TPS, micro, kw);   /* (its length at the release) */
         if (e)
             rfmv_seq_tdef_apply(m, clip, step, 0);     /* (a new step: the track's default trigs) */
     }
@@ -2158,11 +2177,11 @@ static void rec_start_note(rfm_move_t *m, int pad, int clip, int step, int micro
             q->notes[i].rsv = q->take;                  /* (this take's: Replace keeps it) */
     }
     r->t = T, r->clip = (uint8_t)clip, r->step = (uint8_t)step, r->micro = (int8_t)micro;
-    r->note = (uint8_t)note, r->vel = (uint8_t)vel, r->on = 1;
+    r->note = (uint8_t)note, r->vel = (uint8_t)vel, r->on = 1, r->kw = (int8_t)kw;
 }
 
 /* Sample armed: the first note starts the take (the selected clip cleared; stopped: the transport from it) */
-static void srec_start(rfm_move_t *m, int pad, int note, int vel)
+static void srec_start(rfm_move_t *m, int pad, int note, int vel, int kw)
 {
     rfm_move_seq_t *q = &m->seq;
     const int tr = q->sel_track;
@@ -2178,7 +2197,7 @@ static void srec_start(rfm_move_t *m, int pad, int note, int vel)
     if (!q->playing) {                                  /* the note is the clip's first step, the transport starts */
         t->t0 = 0;
         rfmv_seq_start(m);
-        rec_start_note(m, pad, clip, 0, 0, note, vel, 0);
+        rec_start_note(m, pad, clip, 0, 0, note, vel, 0, kw);
         return;
     }
     {
@@ -2186,20 +2205,21 @@ static void srec_start(rfm_move_t *m, int pad, int note, int vel)
         int step, micro;
         t->t0 = T - T % BAR;                            /* playing: from this bar */
         rec_pos(m, tr, &step, &micro);
-        rec_start_note(m, pad, clip, step, micro, note, vel, T);
+        rec_start_note(m, pad, clip, step, micro, note, vel, T, kw);
     }
 }
 
-void rfmv_seq_pad_on(rfm_move_t *m, int pad, int note, int vel)
+void rfmv_seq_pad_on(rfm_move_t *m, int pad, int note, int vel) { rfmv_seq_pad_on_w(m, pad, note, vel, 0); }
+void rfmv_seq_pad_on_w(rfm_move_t *m, int pad, int note, int vel, int kw)
 {
     rfm_move_seq_t *q = &m->seq;
     rfm_move_track_t *t = &q->tr[q->sel_track];
     int step, micro, clip;
-    cap_push(m, note, vel);
+    cap_push(m, note, vel, kw);
     if (pad < 0 || pad >= RFM_MOVE_NPADS)
         return;
     if (q->srec == 1) {
-        srec_start(m, pad, note, vel);
+        srec_start(m, pad, note, vel, kw);
         return;
     }
     if (!q->rec || !q->playing)
@@ -2210,7 +2230,7 @@ void rfmv_seq_pad_on(rfm_move_t *m, int pad, int note, int vel)
     }
     clip = SEQ_CLIP(q->sel_track, t->active);
     rec_pos(m, q->sel_track, &step, &micro);
-    rec_start_note(m, pad, clip, step, micro, note, vel, T_now(m));
+    rec_start_note(m, pad, clip, step, micro, note, vel, T_now(m), kw);
 }
 
 /* the note's length, at its release (it went in at the press) */
@@ -2239,7 +2259,7 @@ static void rec_finish(rfm_move_t *m, int pad)
 void rfmv_seq_pad_off(rfm_move_t *m, int pad, int note)
 {
     rfm_move_seq_t *q = &m->seq;
-    cap_push(m, note, 0);
+    cap_push(m, note, 0, 0);
     if (pad >= 0 && pad < RFM_MOVE_NPADS && q->recn[pad].on)
         rec_finish(m, pad);
 }
@@ -2324,7 +2344,7 @@ void rfmv_seq_sample(rfm_move_t *m)
 }
 
 /* ---- Capture (Move's): the last phrase played on the pads becomes a clip on the selected track */
-typedef struct { int32_t on, off; uint8_t note, vel; } cnote_t;
+typedef struct { int32_t on, off; uint8_t note, vel; int8_t kw; } cnote_t;
 
 /* the tempo a phrase was played at (BPM x 10, 70..140: Move's range, so no octave errors), from its onsets
  * (timeline ticks at bpm10) */
@@ -2396,7 +2416,7 @@ int rfmv_seq_capture(rfm_move_t *m)
         const rfm_move_cap_t *e = &q->cap[(start + i) % RFM_MOVE_SEQ_CAPTURE];
         if (!e->vel)
             continue;
-        c[n].on = e->t, c[n].off = now, c[n].note = e->note, c[n].vel = e->vel;
+        c[n].on = e->t, c[n].off = now, c[n].note = e->note, c[n].vel = e->vel, c[n].kw = e->kw;
         for (j = i + 1; j < q->ncap; j++) {
             const rfm_move_cap_t *f = &q->cap[(start + j) % RFM_MOVE_SEQ_CAPTURE];
             if (f->note == e->note) {
@@ -2463,8 +2483,8 @@ int rfmv_seq_capture(rfm_move_t *m)
         if (s >= pages * live)
             continue;
         s = rfmv_seq_live_key(tri, s);
-        rfmv_seq_note_put(m, clip, s, c[i].note, c[i].vel,
-                          clampi((c[i].off - c[i].on) * TPS / tps, 1, L * TPS), micro);
+        rfmv_seq_note_put_w(m, clip, s, c[i].note, c[i].vel,
+                            clampi((c[i].off - c[i].on) * TPS / tps, 1, L * TPS), micro, c[i].kw);
     }
     rfmv_seq_release(m, tr);
     t->queued = SEQ_NONE, t->grow = 0;

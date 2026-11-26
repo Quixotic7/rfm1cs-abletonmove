@@ -9,7 +9,9 @@
  *   16 root  17 scale (version 3)  18 colour 0..16 (any version: older blobs have 0, the slot's own)  19..23 zero
  *   24 16 tracks x { channel 0..15, mute 0/1, active clip 0..15 or 255, edited clip 0..15 }
  *   88 256 clip lengths u16 (1..256 steps), clip id = track * 16 + scene
- *  600 notes u16, then n x { clip, step, note 0..127, velocity 1..127, micro -12..11, length u16 1..6144 }
+ *  600 notes u16, then n x { clip, step, note 0..127, velocity 1..127, micro -12..11, length u16 1..6144,
+ *      (version 16) a kit track's note: its signed semitones over its pad's pitch (-24..+31; its own note and every
+ *      other track's 0) }
  *      strictly ascending by (clip, step, note)
  *      locks u16, then n x { clip, step, cc, value } strictly ascending by (clip, step, cc): cc 0..127 value
  *      0..127 (a CC lock), or (version 2) a trig parameter RFM_MOVE_TRIG_* (128..133) in its range
@@ -58,13 +60,20 @@ static uint32_t fnv(const uint8_t *p, uint32_t n)
 static void w16(uint8_t *p, unsigned v) { p[0] = (uint8_t)(v & 0xFF), p[1] = (uint8_t)(v >> 8 & 0xFF); }
 static void w32(uint8_t *p, uint32_t v) { w16(p, v & 0xFFFF), w16(p + 2, v >> 16); }
 static unsigned r16(const uint8_t *p) { return (unsigned)p[0] | (unsigned)p[1] << 8; }
+static uint32_t note_bytes(int ver) { return ver >= 16 ? 8u : 7u; }   /* (version 16: the kit's semitones) */
+/* (version 16) a stored note's 8th byte: a kit track's note's signed semitones (rfm_move_kit_note), else 0 */
+static int kit_semis(int clip, int note, int kw)
+{
+    int semis;
+    return rfm_move_kit_pad_of(clip / RFM_MOVE_SEQ_SCENES, note, &semis) >= 0 ? semis + kw : 0;
+}
 static uint32_t r32(const uint8_t *p) { return (uint32_t)r16(p) | (uint32_t)r16(p + 2) << 16; }
 
 int rfm_move_project_save(rfm_move_t *m, uint8_t *out, uint32_t cap)
 {
     rfmv_seq_sync(m);                                   /* (the selected track's layout and CC numbers in) */
     const rfm_move_seq_t *q = &m->seq;
-    const uint32_t need = RFM_MOVE_PROJECT_FIXED + (uint32_t)q->nnotes * 7u + (uint32_t)q->nlocks * 4u;   /* (v2) */
+    const uint32_t need = RFM_MOVE_PROJECT_FIXED + (uint32_t)q->nnotes * 8u + (uint32_t)q->nlocks * 4u;   /* (v2; 16: 8 a note) */
     uint8_t *p = out;
     int i;
     if (!out || cap < need)
@@ -86,10 +95,11 @@ int rfm_move_project_save(rfm_move_t *m, uint8_t *out, uint32_t cap)
     for (i = 0; i < RFM_MOVE_SEQ_CLIPS; i++, p += 2)
         w16(p, q->len[i]);
     w16(p, q->nnotes), p += 2;
-    for (i = 0; i < q->nnotes; i++, p += 7) {
+    for (i = 0; i < q->nnotes; i++, p += 8) {
         const rfm_move_note_t *n = &q->notes[i];
         p[0] = n->clip, p[1] = n->step, p[2] = n->note, p[3] = n->vel, p[4] = (uint8_t)n->micro;
         w16(p + 5, n->len);
+        p[7] = (uint8_t)(int8_t)kit_semis(n->clip, n->note, n->kw);
     }
     w16(p, q->nlocks), p += 2;
     for (i = 0; i < q->nlocks; i++, p += 4)
@@ -215,7 +225,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
     nn = r16(b + OFF_NOTES);
     if (nn > RFM_MOVE_SEQ_NOTES)
         return -4;
-    offl = OFF_NOTES + 2 + nn * 7;
+    offl = OFF_NOTES + 2 + nn * note_bytes(ver);
     if (offl + 2 + 4 > n)
         return -4;
     nl = r16(b + offl);
@@ -234,19 +244,25 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
     for (i = 0, p = b + OFF_LENS; i < RFM_MOVE_SEQ_CLIPS; i++, p += 2)
         if (r16(p) < 1 || r16(p) > RFM_MOVE_SEQ_MAXLEN)
             return -6;
-    for (i = 0, prev = 0, p = b + OFF_NOTES + 2; i < nn; i++, p += 7) {
+    for (i = 0, prev = 0, p = b + OFF_NOTES + 2; i < nn; i++, p += note_bytes(ver)) {
         const uint32_t key = (uint32_t)p[0] << 16 | (uint32_t)p[1] << 8 | p[2];
         const int micro = (int8_t)p[4];
         const unsigned len = r16(p + 5);
         if (p[2] > 127 || p[3] < 1 || p[3] > 127 || micro < -RFM_MOVE_SEQ_TPS / 2 || micro >= RFM_MOVE_SEQ_TPS / 2 ||
             len < 1 || len > RFM_MOVE_SEQ_MAXLEN * RFM_MOVE_SEQ_TPS || (i && key <= prev))
             return -7;
+        if (ver >= 16) {                                /* (the kit's semitones: the note's code, or 32 under it) */
+            const int ks = (int8_t)p[7], u = kit_semis(p[0], p[2], 0);
+            if (ks != u && !(ks == u - 32 && ks >= RFM_MOVE_KIT_SEMIS_LO && ks < 0))
+                return -7;
+        }
         prev = key;
     }
     {   /* at most RFM_MOVE_SEQ_POLY notes a step */
         uint32_t run = 0;
-        for (i = 0, p = b + OFF_NOTES + 2; i < nn; i++, p += 7) {
-            run = i && p[0] == p[-7] && p[1] == p[-6] ? run + 1 : 1;
+        const int nb = (int)note_bytes(ver);
+        for (i = 0, p = b + OFF_NOTES + 2; i < nn; i++, p += nb) {
+            run = i && p[0] == p[-nb] && p[1] == p[1 - nb] ? run + 1 : 1;
             if (run > RFM_MOVE_SEQ_POLY)
                 return -7;
         }
@@ -333,11 +349,13 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
     for (i = 0, p = b + OFF_LENS; i < RFM_MOVE_SEQ_CLIPS; i++, p += 2)
         q->len[i] = (uint16_t)r16(p);
     q->nnotes = (uint16_t)nn;
-    for (i = 0, p = b + OFF_NOTES + 2; i < nn; i++, p += 7) {
+    for (i = 0, p = b + OFF_NOTES + 2; i < nn; i++, p += note_bytes(ver)) {
         rfm_move_note_t *o = &q->notes[i];
         memset(o, 0, sizeof *o);
         o->clip = p[0], o->step = p[1], o->note = p[2], o->vel = p[3], o->micro = (int8_t)p[4];
         o->len = (uint16_t)r16(p + 5);
+        if (ver >= 16 && (int8_t)p[7] < 0)
+            o->kw = -32;                                /* (a kit note under its pad's pitch; older: none) */
     }
     q->nlocks = (uint16_t)nl;
     for (i = 0, p = b + offl + 2; i < nl; i++, p += 4)
@@ -469,10 +487,10 @@ int rfm_move_project_info(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
     if (b[4] >= 9)                                      /* (0.13.0) its firmwares */
         o->has_fw = 1, rfmv_pfw_ids(pfw_part(b, n), o->fw);
     nn = r16(b + OFF_NOTES);
-    for (i = 0, p = b + OFF_NOTES + 2; i < nn; i++, p += 7)
+    for (i = 0, p = b + OFF_NOTES + 2; i < nn; i++, p += note_bytes(b[4]))
         info_count(o, seen, p[0], 1);
-    nl = r16(b + OFF_NOTES + 2 + nn * 7);
-    for (i = 0, p = b + OFF_NOTES + 4 + nn * 7; i < nl; i++, p += 4)
+    nl = r16(b + OFF_NOTES + 2 + nn * note_bytes(b[4]));
+    for (i = 0, p = b + OFF_NOTES + 4 + nn * note_bytes(b[4]); i < nl; i++, p += 4)
         info_count(o, seen, p[0], 0);
     return 0;
 }
