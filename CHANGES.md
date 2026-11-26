@@ -5,6 +5,31 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## 0.16.0 (prepared 2026-11-26, not yet tagged): the kit, stages 3a, 3b and 3c, pages, engines, Warp; Exit; one-setting Shift menus
 
+### Step preview, locks on any step, ghost triggers (2026-11-26, the owner's)
+
+"Holding a step while stopped should preview it. You should be able to lock parameters on any step. If you lock a
+parameter on a step without notes it becomes a ghost trigger."
+
+- Stopped, a Kit view step's press plays the chosen pad's hits there once (KIT_NOTE with their velocity, pitch and the
+  step's locks: the sequencer's own voice path); its release lets them go (a Momentary or Loop hit stops). Nothing
+  toggles: the gated click / hold stays. While playing, the press plays nothing more.
+- A step held + a knob writes the lock whether or not the chosen pad has a hit there ("No Hit" is gone).
+- A ghost trigger (Elektron's trigless lock) is a pad's locks on a step without its hit. No new storage: locks were
+  always stored per (clip, step, cc) apart from the notes, so a ghost saves, loads, copies and pastes with the
+  pattern (project version 16 unchanged). When the sequencer passes it (at the step's start, its trig condition
+  allowing) the core sends RFM_MOVE_ACT_KIT_GHOST (81): the pad, and kp_mask / kp of its locks on the settings that
+  can change a sounding voice (Cutoff, Resonance, Morph, Env Amount, Level, Pan, Sends, Pitch, Speed, Warp Pitch;
+  note-on-only ones such as Start or the engine are left out). The host applies them to that pad's voices sounding
+  then; they stay on those voices until they end (the pad's next hit brings its own). Hosts that do not know the
+  action ignore it. The firmware tracks' trigless CC locks were already sent at the step's start; the kit's now are
+  too.
+- Its look: the step light in the pad's colour, dim and steady (GHOST_BR, a third of it outside the loop); a hit is
+  bright by its velocity, a locked hit blinks slowly, an empty step is a dim white.
+- Delete + the step clears a ghost with its locks, as a hit. Tapping a ghost's step makes it a hit that keeps its
+  locks (the Elektron way).
+- move_kit 51 (the preview), 52 (locks anywhere, the ghost's light, KIT_GHOST, save and load, Delete, the tap).
+  `rfm_move_kit_t` grows (the preview's notes): rebuild everything.
+
 ### One level popup, every level in dB (2026-11-26, the owner's)
 
 - Every volume level shows the same full-screen popup, drawn by one function (`rfmv_level_popup`, screen.c): the title

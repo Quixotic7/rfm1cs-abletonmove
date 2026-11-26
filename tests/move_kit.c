@@ -2133,6 +2133,87 @@ static void t_level_popups(void)
     CHECKF(scr_eq(a, b), "track popups differ (level %d)", M.fw.level[0]);
 }
 
+/* 51. (2026-11-26, the owner's: "Holding a step while stopped should preview it") stopped, a step's press plays the
+ * chosen pad's hits there once (KIT_NOTE with the step's locks), its release lets them go; nothing toggles; while
+ * playing the press plays nothing */
+static void t_step_preview(void)
+{
+    const int clip = SEQ_CLIP(12, 0);
+    const rfm_move_act_t *a;
+    int nn, i, ons = 0;
+    kit_view();
+    sound(1, "Snare", 4800, NULL, 0);
+    hit(kp(1)), tap_step(0), rest();
+    M.kit.page = RFM_MOVE_KIT_PG_PADMIX;
+    step(0, 1), knob(0, -4), step(0, 0), rest();         /* (a level lock on the hit) */
+    nn = M.seq.nnotes;
+    clear(), step(0, 1);
+    CHECKF((a = last(RFM_MOVE_ACT_KIT_NOTE)) && a->down && a->index == 1 && a->vel > 0 && (a->kp_mask >> RFM_MOVE_KIT_P_LEVEL & 1) &&
+           count(RFM_MOVE_ACT_KIT_NOTE) == 1, "notes %d", count(RFM_MOVE_ACT_KIT_NOTE));
+    adv_ms(RFM_MOVE_SEQ_HOLD_MS + 50), clear(), step(0, 0);
+    CHECK((a = last(RFM_MOVE_ACT_KIT_NOTE)) && !a->down && a->index == 1 && count(RFM_MOVE_ACT_KIT_NOTE) == 1);
+    CHECK(M.seq.nnotes == nn && rfmv_seq_find(&M, clip, 0, 37) >= 0);   /* (nothing toggled) */
+    clear(), step(5, 1), step(5, 0), rest();            /* (an empty step: nothing to play; its click puts a hit) */
+    for (i = 0; i < nact; i++)
+        ons += A[i].kind == RFM_MOVE_ACT_KIT_NOTE && A[i].down;
+    CHECK(!ons);
+    rfm_move_seq_play(&M, 1), adv_ms(5), clear();
+    step(0, 1);
+    CHECK(!count(RFM_MOVE_ACT_KIT_NOTE));               /* (playing: the press plays nothing more) */
+    step(0, 0), rfm_move_seq_play(&M, 0), rest();
+}
+
+/* 52. (2026-11-26, the owner's: "You should be able to lock parameters on any step. If you lock a parameter on a step
+ * without notes it becomes a ghost trigger") a lock on a step without the pad's hit is written (no "No Hit"); the step
+ * shows the ghost (the pad's colour, dim, steady); the sequencer sends KIT_GHOST with its continuous locks, no note;
+ * it saves and loads; Delete + the step clears it; a tap turns it into a hit that keeps its locks */
+static void t_ghost(void)
+{
+    const int clip = SEQ_CLIP(12, 0), lv = RFM_MOVE_KIT_LOCK0 + RFM_MOVE_KIT_LK_LEVEL * 4 + 1;
+    const rfm_move_act_t *a;
+    int nn, i, g = 0, ons = 0;
+    kit_view();
+    sound(1, "Snare", 4800, NULL, 0);
+    hit(kp(1)), tap_step(0), rest();
+    M.kit.page = RFM_MOVE_KIT_PG_PADMIX;
+    nn = M.seq.nnotes;
+    step(2, 1), touch(0, 1), knob(0, -6), knob(2, -10);   /* (Level and Cutoff on step 3: no hit there) */
+    screen();
+    CHECK(rfmv_seq_lock_get(&M, clip, 2, lv) >= 0 && M.seq.nnotes == nn && M.kit.lpop);
+    touch(0, 0), step(2, 0), rest();
+    CHECK(rfmv_seq_find(&M, clip, 2, 37) < 0 && rfmv_seq_lock_get(&M, clip, 2, lv) >= 0);   /* (no hit made) */
+    L(-1);
+    CHECKF(lit(L(L_STEP0 + 2)) && L(L_STEP0 + 2)[0] + L(L_STEP0 + 2)[1] + L(L_STEP0 + 2)[2] < L(L_STEP0)[0] + L(L_STEP0)[1] + L(L_STEP0)[2] &&
+           !is_rgb(L(L_STEP0 + 2), L(L_STEP0 + 5)[0], L(L_STEP0 + 5)[1], L(L_STEP0 + 5)[2]),
+           "ghost %d %d %d", L(L_STEP0 + 2)[0], L(L_STEP0 + 2)[1], L(L_STEP0 + 2)[2]);   /* (dimmer than a hit, not an
+                                                         * empty step's white) */
+    clear();
+    rfm_move_seq_play(&M, 1), adv_ms(600), rfm_move_seq_play(&M, 0);
+    for (i = 0; i < nact; i++)
+        if (A[i].kind == RFM_MOVE_ACT_KIT_GHOST && A[i].index == 1 && !g++)
+            CHECKF((A[i].kp_mask >> RFM_MOVE_KIT_P_LEVEL & 1) && (A[i].kp_mask >> RFM_MOVE_KIT_P_CUTOFF & 1) &&
+                   A[i].kp[RFM_MOVE_KIT_P_LEVEL] < 0 &&
+                   !(A[i].kp_mask >> RFM_MOVE_KIT_P_START & 1), "mask %llx", (unsigned long long)A[i].kp_mask);
+        else if (A[i].kind == RFM_MOVE_ACT_KIT_NOTE && A[i].down)
+            ons++;
+    CHECKF(g == 1 && ons == 1, "ghosts %d notes %d", g, ons);   /* (step 1's hit, step 3's ghost) */
+    {                                                   /* it saves and loads */
+        static uint8_t b[RFM_MOVE_PROJECT_MAX];
+        const int n = rfm_move_project_save(&M, b, sizeof b);
+        rfm_move_init(&M2, NULL, on_act, NULL);
+        rfm_move_fw_caps(&M2, KCAPS);
+        CHECK(n > 0 && rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0 && rfmv_seq_lock_get(&M2, clip, 2, lv) >= 0 &&
+              rfmv_seq_find(&M2, clip, 2, 37) < 0);
+    }
+    button(MR_CC_DELETE, 1), tap_step(2), button(MR_CC_DELETE, 0), rest();   /* Delete + the step: gone */
+    CHECK(rfmv_seq_lock_get(&M, clip, 2, lv) < 0 && M.seq.nnotes == nn);
+    step(2, 1), knob(0, -6), step(2, 0), rest();        /* again; a tap: a hit, its locks kept */
+    i = rfmv_seq_lock_get(&M, clip, 2, lv);
+    adv_ms(RFM_MOVE_DOUBLE_MS + 50), tap_step(2), rest();
+    CHECK(rfmv_seq_find(&M, clip, 2, 37) >= 0 && i >= 0 && rfmv_seq_lock_get(&M, clip, 2, lv) == i);
+    (void)a;
+}
+
 /* 48. (2026-11-26, the owner's: "the popup displays completely differently while holding a step") a held step's lock
  * popup is the knob's own popup (the S tag in the corner aside), for every lockable knob on every page and engine; a
  * locked cutoff draws as the pad at that cutoff */
@@ -2455,6 +2536,8 @@ int main(void)
     t_kit_level();
     t_pad_level();
     t_level_popups();
+    t_step_preview();
+    t_ghost();
     t_lock_popup();
     t_pitch_range();
     t_project_old();

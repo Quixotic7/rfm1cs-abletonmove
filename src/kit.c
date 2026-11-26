@@ -1438,6 +1438,85 @@ static void step_clear(rfm_move_t *m, int k, int abs)
             rfmv_seq_note_del(m, clip, abs, m->seq.notes[hi].note);
     locks_clear(m, k, clip, abs);                       /* (round B: its locks with them) */
 }
+/* ---- (2026-11-26, the owner's: "If you lock a parameter on a step without notes it becomes a ghost trigger") */
+#define GHOST_BR 40                                     /* a ghost's step light (a hit's: 30 + 1.9 vel) */
+static int has_at(const rfm_move_t *m, int k, int clip, int abs)
+{
+    const int tr = trk(k);
+    int lo, hi = rfmv_seq_range(m, clip, abs, &lo), i;
+    for (i = lo; i < hi; i++)
+        if (rfm_move_kit_pad_of(tr, m->seq.notes[i].note, NULL) == k)
+            return 1;
+    return 0;
+}
+/* a ghost's locks reach a sounding voice: the settings that can change one (not Start, the engine, the envelopes) */
+static int ghost_p(int p)
+{
+    return p == RFM_MOVE_KIT_P_CUTOFF || p == RFM_MOVE_KIT_P_RESO || p == RFM_MOVE_KIT_P_MORPH || p == RFM_MOVE_KIT_P_FENV ||
+           p == RFM_MOVE_KIT_P_LEVEL || p == RFM_MOVE_KIT_P_PAN || (p >= RFM_MOVE_KIT_P_SEND1 && p <= RFM_MOVE_KIT_P_SEND3) ||
+           p == RFM_MOVE_KIT_P_PITCH || p == RFM_MOVE_KIT_P_SPEED || p == RFM_MOVE_KIT_P_WPITCH;
+}
+void rfmv_kit_seq_ghosts(rfm_move_t *m, int track, int clip, int step)
+{
+    rfm_move_seq_t *q = &m->seq;
+    int k, p;
+    if (!rfmv_kit_cap(m) || track < RFM_MOVE_KIT_TRACK0 || track >= RFM_MOVE_KIT_TRACK0 + 4 || !(m->kit.route >> track & 1))
+        return;
+    for (k = (track - RFM_MOVE_KIT_TRACK0) * 4; k < (track - RFM_MOVE_KIT_TRACK0) * 4 + 4; k++) {
+        rfm_move_act_t a;
+        int16_t lk[RFM_MOVE_KIT_LK_N];
+        uint32_t us = 0;
+        if (has_at(m, k, clip, step))
+            continue;
+        memset(&a, 0, sizeof a);
+        q->kit_cok = 1, q->kit_cclip = (uint8_t)clip, q->kit_cstep = (uint16_t)step;
+        note_locks(m, k, lk, &a.kp_mask, a.kp, &us);
+        q->kit_cok = 0;
+        for (p = 0; p < RFM_MOVE_KIT_P_N; p++)
+            if (!ghost_p(p))
+                a.kp_mask &= ~(1ull << p);
+        if (!a.kp_mask)
+            continue;
+        a.kind = RFM_MOVE_ACT_KIT_GHOST, a.index = (uint8_t)k, a.frame = q->frame, a.track = (uint8_t)(track + 1);
+        if (m->fn)
+            m->fn(m->ctx, &a);
+    }
+}
+/* (2026-11-26, the owner's: "Holding a step while stopped should preview it") step s pressed while stopped: the chosen
+ * pad's hits there once, as the sequencer plays them (velocity, pitch, locks: the same voice path); its release lets
+ * them go (a Momentary or Loop hit stops) */
+static void step_preview(rfm_move_t *m, int s, int on)
+{
+    rfm_move_kit_t *t = K(m);
+    rfm_move_seq_t *q = &m->seq;
+    if (!on) {
+        int j;
+        if (!(t->pv_st >> s & 1))
+            return;
+        t->pv_st = (uint16_t)(t->pv_st & ~(1u << s));
+        for (j = 0; j < t->pv_n[s]; j++)
+            note_out(m, t->pv_pad[s], t->pv_sm[s][j], 0, trk(t->pv_pad[s]));
+        return;
+    }
+    {
+        const int k = t->cur, tr = trk(k), clip = edit_clip_of(m, tr), abs = q->page * RFM_MOVE_SEQ_PAGE + s;
+        int lo, hi = rfmv_seq_range(m, clip, abs, &lo), i, semis;
+        t->pv_n[s] = 0, t->pv_pad[s] = (uint8_t)k;
+        for (i = lo; i < hi; i++) {
+            const rfm_move_note_t n = q->notes[i];
+            if (rfm_move_kit_pad_of(tr, n.note, &semis) != k)
+                continue;
+            semis = semis ? semis + n.kw : 0;
+            q->kit_cok = 1, q->kit_cclip = (uint8_t)clip, q->kit_cstep = (uint16_t)abs;
+            note_out_lk(m, k, semis, n.vel ? n.vel : 100, tr, 1);
+            q->kit_cok = 0;
+            if (t->pv_n[s] < 4)
+                t->pv_sm[s][t->pv_n[s]++] = (int8_t)semis;
+        }
+        if (t->pv_n[s])
+            t->pv_st = (uint16_t)(t->pv_st | 1u << s);
+    }
+}
 /* a pad's own note in or out of step s of the page shown (one undo step) */
 static void step_toggle(rfm_move_t *m, int k, int s, int vel)
 {
@@ -2661,9 +2740,8 @@ static void lock_turn(rfm_move_t *m, int k, int n)
     for (s = 0; s < 16; s++)
         if (t->st_down >> s & 1) {
             const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
-            int e;
-            if (!step_has(m, pad, abs))
-                continue;                               /* (no hit of the pad there: nothing to lock) */
+            int e;                                      /* (2026-11-26: with no hit of the pad there,
+                                                         * the lock makes a ghost trigger) */
             if ((e = plock_get(m, clip, abs, pad, p)) < 0)
                 e = pk_enc(p, CPAD(m, pad)->v[p]);
             if (!t->lk_grp)
@@ -2674,7 +2752,7 @@ static void lock_turn(rfm_move_t *m, int k, int n)
         }
     t->st_used |= t->st_down;
 }
-/* the lock the popup shows: the first held step's (its value, else the pad's own); 0: no hit there */
+/* the lock the popup shows: the first held step's (its value, else the pad's own); 0: not lockable */
 static int lock_val(const rfm_move_t *m, int p, int *v)
 {
     const int s = held_step(m), pad = m->kit.cur, abs = m->seq.page * RFM_MOVE_SEQ_PAGE + (s < 0 ? 0 : s);
@@ -2682,7 +2760,7 @@ static int lock_val(const rfm_move_t *m, int p, int *v)
     if (kit_p(p))
         return 0;
     p = real_p(p);
-    if (!lockable(p) || s < 0 || !step_has(m, pad, abs))
+    if (!lockable(p) || s < 0)
         return 0;
     e = plock_get(m, edit_clip_of(m, trk(pad)), abs, pad, p);
     *v = e >= 0 ? pk_dec(p, e) : CPAD(m, pad)->v[p];
@@ -2944,6 +3022,7 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
     if (ev->type == MR_EV_STEP && !ev->value && i >= 0 && i < 16 && (t->st_down >> i & 1)) {
         const uint16_t bit = (uint16_t)(1u << i);
         t->st_down &= (uint16_t)~bit;
+        step_preview(m, i, 0);                          /* (a Momentary or Loop hit let go) */
         if (!t->st_down) {                              /* (round B: the next hold its own undo; its popups gone) */
             if (t->lpop)
                 t->kpop = -1;
@@ -2998,12 +3077,14 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
         if (q->mods & SEQ_M_DELETE) {                   /* Delete + a step: the chosen pad's notes there */
             const int abs = q->page * RFM_MOVE_SEQ_PAGE + i;
             q->mods_used |= SEQ_M_DELETE;
-            if (step_has(m, t->cur, abs))
+            if (step_has(m, t->cur, abs) || step_locks(m, t->cur, abs))   /* (a ghost trigger too) */
                 rfmv_seq_group(m), step_clear(m, t->cur, abs), rfmv_seq_dirty(m);
             return 1;
         }
         t->st_down |= (uint16_t)(1u << i);
         t->st_ms[i] = now(m);
+        if (!q->playing && !q->start_pending && rfmv_kit_active(m))
+            step_preview(m, i, 1);                      /* (2026-11-26: stopped, the step's hits once) */
         touched(m);
         return 1;
     case MR_EV_KNOB:
@@ -3321,6 +3402,9 @@ void rfmv_kit_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
             if (vel && (now(m) / 500u) % 2u && step_locks(m, k0, abs))
                 v = sc(ROWC[k0 / 4], (in ? br : 60) / 4);   /* (round B: locked: a slow
                                                          * blink, 1 s round) */
+            if (!vel && step_locks(m, k0, abs))         /* (2026-11-26) a ghost trigger: the pad's colour, dim and
+                                                         * steady (a hit is bright, a locked hit blinks) */
+                v = sc(ROWC[k0 / 4], in ? GHOST_BR : GHOST_BR / 3);
             if (in && pos == abs && (q->playing || q->start_pending))
                 v = sc(RFMV_WHITE, 200);                /* (the playhead) */
             if (lp)                                     /* (3b, board D) the steps the sound lasts, the first brightest */
@@ -4186,15 +4270,14 @@ static void knob_popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
 }
 /* (round B; 2026-11-26, the owner's: "the popup displays completely differently while holding a step") a held step's
  * lock: the knob's own popup, drawn by the same code with the setting at the hit's value (its lock, else the pad's
- * own), and a small tag in the top-left corner naming the step ("S5"). No hit of the pad there: "No Hit" */
+ * own), and a small tag in the top-left corner naming the step ("S5"). (2026-11-26: a step without a hit too: the lock
+ * makes a ghost trigger) */
 static void lock_popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
 {
     char t[8];
     int lv;
     if (!lock_val(m, p, &lv)) {
-        snprintf(t, sizeof t, "Step %d", held_step(m) + 1);
-        v2_TC(cv, 64, 3, t, 2, 1);
-        v2_TC(cv, 64, 34, "No Hit", 2, 1);
+        knob_popup(m, cv, p);
         return;
     }
     {                                                   /* (the screen is drawn on the core's one thread: the pad's

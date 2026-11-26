@@ -1122,6 +1122,7 @@ static void track_tick(rfm_move_t *m, int tr, int32_t T)
             hi = rfmv_seq_lock_range(m, clip, ps, &lo);
             for (i = lo; i < hi && q->locks[i].cc < 128; i++)
                 rfmv_emit_midi_t(m, tr + 1, 0xB0 | t->ch, q->locks[i].cc, q->locks[i].val);
+            rfmv_kit_seq_ghosts(m, tr, clip, ps);       /* (2026-11-26: a kit pad's locks without its hit) */
         }
     }
     if (t->next >= 0 && t->nfire && t->sub >= t->tps / 2 && !rfmv_seq_dead(m, tr, t->next)) {   /* the next step's

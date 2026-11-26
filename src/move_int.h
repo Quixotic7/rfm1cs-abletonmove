@@ -473,6 +473,7 @@ int rfmv_kit_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* 1 drawn */
 int rfmv_kit_timed(const rfm_move_t *m);
 void rfmv_kit_poll(rfm_move_t *m);                      /* (advance) */
 void rfmv_kit_seq_note(rfm_move_t *m, int track, int note, int vel, int kw);   /* (seq.c) a note of a track (vel 0: off) */
+void rfmv_kit_seq_ghosts(rfm_move_t *m, int track, int clip, int step);   /* (seq.c) a step passed: its ghost triggers */
 int rfmv_kit_route_flip(rfm_move_t *m, int fw, int track);   /* a held Track's hold on 13..16: kit <-> firmware; 1 done */
 int rfmv_kit_routed(const rfm_move_t *m, int track);
 int rfmv_kit_route_set(rfm_move_t *m, int track, int on);   /* (3b) Routing's kit: track 12..15 to it (off the

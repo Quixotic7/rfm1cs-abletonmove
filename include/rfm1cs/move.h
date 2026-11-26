@@ -346,6 +346,14 @@ enum {
  *    to neutral (one Undo: the pad as it was)
  *  - a path starting RFM_MOVE_KIT_OWN ("@/") is a file in the open project's own folder (the host's) */
 #define RFM_MOVE_ACT_KIT_KEEP 80
+/* (2026-11-26, the owner's: "If you lock a parameter on a step without notes it becomes a ghost trigger") a ghost
+ * trigger, Elektron's trigless lock: a kit pad's step locks on a step without a hit of that pad. It makes no sound.
+ *  - KIT_GHOST: the sequencer passes it (at the step's start, frame as KIT_NOTE's): index the pad, kp_mask / kp its
+ *    locks on the settings that can change a sounding voice (Cutoff, Resonance, Morph, Env Amount, Level, Pan, Sends
+ *    1..3, Pitch, Speed, Warp Pitch; note-on-only ones such as Start or the engine are left out). The host applies them
+ *    to that pad's voices sounding now; they stay on those voices (the pad's next hit has its own). Hosts that do not
+ *    know it ignore it */
+#define RFM_MOVE_ACT_KIT_GHOST 81
 #define RFM_MOVE_KIT_OWN "@/"
 #define RFM_MOVE_KIT_LAND_MS 120                        /* Files: the jog at rest so long on a sound: it is on the pad */
 #define RFM_MOVE_KIT_AUD_MS 150                         /* (unused since 2026-11-26: Start / End not heard at rest) */
@@ -1626,6 +1634,10 @@ typedef struct {                                        /* (kit.c) */
     /* (round C) */
     uint8_t br_own;                                     /* the browse's sound kept (KIT_KEEP sent) */
     uint32_t frz_ms;                                    /* a Freeze asked: its pad blinking from */
+    /* (2026-11-26) a step pressed while stopped plays its hits once: the steps that did, the pitches let go at release */
+    uint16_t pv_st;
+    uint8_t pv_n[16], pv_pad[16];
+    int8_t pv_sm[16][4];
 } rfm_move_kit_t;
 
 /* ---- the state */
