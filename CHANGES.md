@@ -3,7 +3,7 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
-## Unreleased: the kit, stages 3a, 3b and 3c
+## 0.16.0 (prepared 2026-11-26, not yet tagged): the kit, stages 3a, 3b and 3c, pages, engines, Warp; Exit; one-setting Shift menus
 
 ### Browser and sound (2026-11-26)
 
