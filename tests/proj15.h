@@ -20,7 +20,7 @@ static inline uint32_t proj_v15(uint8_t *b, uint32_t n)
     memmove(b + off + 2 + nn * 7, b + off + 2 + nn * 8, n - (off + 2 + nn * 8));
     n -= nn;
     b[4] = 15;
-    b[n - 4 - RFM_MOVE_KIT_BYTES + 12] = 0;
+    b[n - 4 - RFM_MOVE_KIT_BYTES + 12] = 0, b[n - 4 - RFM_MOVE_KIT_BYTES + 13] = 0;   /* (16's octave, Bits' tenths flag) */
     for (h = 2166136261u, i = 0; i < n - 4; i++)
         h = (h ^ b[i]) * 16777619u;
     for (i = 0; i < 4; i++)

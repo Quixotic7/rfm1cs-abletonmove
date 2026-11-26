@@ -289,7 +289,7 @@ static void defaults(int16_t v[RFM_MOVE_KIT_P_N])
     /* (pages v2: the loop the region's, Pitch Env's release 100 ms, LoFi 16 bits at the rate, Granular's grains 80 ms,
      * 4 at once; Warp Off, speed 1.00, its grains 50 ms, Beats' search 10 ms; the filter envelope's amount 0, morph LP) */
     v[RFM_MOVE_KIT_P_LOOPE] = RFM_MOVE_KIT_FRAC, v[RFM_MOVE_KIT_P_PRELEASE] = 100;
-    v[RFM_MOVE_KIT_P_BITS] = 16, v[RFM_MOVE_KIT_P_DOWNS] = 1, v[RFM_MOVE_KIT_P_GSIZE] = 80, v[RFM_MOVE_KIT_P_GDENS] = 4;
+    v[RFM_MOVE_KIT_P_BITS] = 160, v[RFM_MOVE_KIT_P_DOWNS] = 1, v[RFM_MOVE_KIT_P_GSIZE] = 80, v[RFM_MOVE_KIT_P_GDENS] = 4;
     v[RFM_MOVE_KIT_P_SPEED] = 100, v[RFM_MOVE_KIT_P_WGRAIN] = 50, v[RFM_MOVE_KIT_P_WSEARCH] = 10;
     v[RFM_MOVE_KIT_P_FDECAY] = 300, v[RFM_MOVE_KIT_P_FRELEASE] = 300;
 }
@@ -300,7 +300,7 @@ static int p_min(int p)
     case RFM_MOVE_KIT_P_WPITCH: return -2400;
     case RFM_MOVE_KIT_P_PDEPTH: return -48;
     case RFM_MOVE_KIT_P_FENV: return -100;
-    case RFM_MOVE_KIT_P_BITS:
+    case RFM_MOVE_KIT_P_BITS: return 10;                /* (2026-11-26: tenths) */
     case RFM_MOVE_KIT_P_DOWNS:
     case RFM_MOVE_KIT_P_GDENS:
     case RFM_MOVE_KIT_P_WSEARCH: return 1;
@@ -318,7 +318,7 @@ static int p_max(int p)
     case RFM_MOVE_KIT_P_PITCH:
     case RFM_MOVE_KIT_P_WPITCH: return 2400;
     case RFM_MOVE_KIT_P_PDEPTH: return 48;
-    case RFM_MOVE_KIT_P_BITS: return 16;
+    case RFM_MOVE_KIT_P_BITS: return 240;
     case RFM_MOVE_KIT_P_DOWNS: return 32;
     case RFM_MOVE_KIT_P_GSIZE: return 500;
     case RFM_MOVE_KIT_P_GDENS: return 16;
@@ -574,6 +574,7 @@ void rfmv_kit_write(const rfm_move_t *m, uint8_t *p)    /* RFM_MOVE_KIT_BYTES (v
     p[4 + RFM_MOVE_KIT_MIX_N] = t->trim ? 1 : 0;       /* (round A, version 13) */
     p[10] = t->bus[0], p[11] = t->bus[1];               /* (pages v2, version 15) the kit bus's low-pass */
     p[12] = (uint8_t)t->rh_oct;                         /* (version 16) the right half's octave */
+    p[13] = 1;                                          /* (version 16, 2026-11-26) LoFi's Bits in tenths */
     p += 16;
     memcpy(p, t->name, strlen(t->name) < RFM_MOVE_KIT_NAME ? strlen(t->name) : RFM_MOVE_KIT_NAME - 1);
     p += RFM_MOVE_KIT_NAME;
@@ -599,8 +600,11 @@ static int str_ok(const uint8_t *p, int cap)            /* printable, NUL padded
     }
     return end >= 0;
 }
+static int pk_max(int p);
+static int bits_tenths(const uint8_t *p, int ver) { return ver >= 16 && (p[13] & 1); }   /* (2026-11-26) */
 int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 15 kit part valid: 0 */
 {
+    const int tenths = bits_tenths(p, ver);
     const int np = ver >= 15 ? RFM_MOVE_KIT_P_N : ver >= 14 ? RFM_MOVE_KIT_P_N_V14 : ver >= 12 ? RFM_MOVE_KIT_P_N_V12
                  : RFM_MOVE_KIT_P_N_V11;
     int k, i;
@@ -616,7 +620,9 @@ int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 15 ki
             return -1;                                  /* (pages v2: the kit bus's low-pass) */
         if (ver >= 16 && ((int8_t)p[12] < RFM_MOVE_KIT_OCT_LO || (int8_t)p[12] > RFM_MOVE_KIT_OCT_HI))
             return -1;                                  /* (version 16: the right half's octave) */
-        for (i = ver >= 16 ? 13 : ver >= 15 ? 12 : 4 + RFM_MOVE_KIT_MIX_N + (ver >= 13); i < 16; i++)
+        if (ver >= 16 && p[13] > 1)
+            return -1;                                  /* (2026-11-26: the Bits-in-tenths flag) */
+        for (i = ver >= 16 ? 14 : ver >= 15 ? 12 : 4 + RFM_MOVE_KIT_MIX_N + (ver >= 13); i < 16; i++)
             if (p[i])
                 return -1;
         p += 16;
@@ -633,8 +639,9 @@ int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 15 ki
             return -1;
         p += RFM_MOVE_KIT_PATH;
         for (i = 0; i < np; i++)
-            if (r16s(p + 2 * i) < p_min(i) || r16s(p + 2 * i) > p_max(i))
-                return -1;
+            if (i == RFM_MOVE_KIT_P_BITS && !tenths ? r16s(p + 2 * i) < 1 || r16s(p + 2 * i) > p_max(i)
+                                                    : r16s(p + 2 * i) < p_min(i) || r16s(p + 2 * i) > p_max(i))
+                return -1;                              /* (Bits before its flag: whole 1..16, or tenths) */
         if (r16s(p + 2 * RFM_MOVE_KIT_P_START) >= r16s(p + 2 * RFM_MOVE_KIT_P_END))
             return -1;
         p += 2 * np;
@@ -648,6 +655,7 @@ void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver)   /* (checked) */
                  : RFM_MOVE_KIT_P_N_V11;                /* (round B: an older one's Decay 0, Sustain 100, the filter
                                                          * open; pages v2: Classic, speed 1.00, no filter envelope,
                                                          * morph LP, the kit bus open) */
+    const int tenths = bits_tenths(p, ver);
     int k, i;
     rfmv_kit_clear(m);
     t->rh = p[0], t->route = (uint16_t)r16s(p + 1), t->cur = p[3];
@@ -669,6 +677,9 @@ void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver)   /* (checked) */
         p += RFM_MOVE_KIT_PATH;
         for (i = 0; i < np; i++, p += 2)
             t->pad[k].v[i] = (int16_t)r16s(p);
+        if (!tenths && RFM_MOVE_KIT_P_BITS < np && t->pad[k].v[RFM_MOVE_KIT_P_BITS] <= 16)   /* (2026-11-26) whole bits
+                                                         * (16 at most) as tenths */
+            t->pad[k].v[RFM_MOVE_KIT_P_BITS] = (int16_t)(t->pad[k].v[RFM_MOVE_KIT_P_BITS] * 10);
         if (ver < 15) {                                 /* (pages v2) round A's Toggle loads as Loop; Stretch N (repitched
                                                          * to N steps) as Warp Repitch, Sync N */
             if (t->pad[k].v[RFM_MOVE_KIT_P_MODE] == 3)
@@ -677,6 +688,16 @@ void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver)   /* (checked) */
                 t->pad[k].v[RFM_MOVE_KIT_P_WARP] = RFM_MOVE_KIT_W_REPITCH;
         }
     }
+    if (!tenths)                                        /* (2026-11-26) the Bits locks (XLOCK pairs: the setting, then
+                                                         * its value, one after the other in the sorted list) as tenths:
+                                                         * whole bits b were b - 1, tenths are t - 10 */
+        for (i = 0; i + 1 < m->seq.nlocks; i++) {
+            rfm_move_lock_t *a = &m->seq.locks[i], *b = &m->seq.locks[i + 1];
+            if (a->cc >= RFM_MOVE_KIT_XLOCK0 && a->cc <= RFM_MOVE_KIT_LOCK_LAST && !((a->cc - RFM_MOVE_KIT_XLOCK0) & 1) &&
+                a->val == RFM_MOVE_KIT_P_BITS && b->clip == a->clip && b->step == a->step && b->cc == a->cc + 1 &&
+                b->val <= 15)
+                b->val = (uint8_t)clampi(b->val * 10, 0, pk_max(RFM_MOVE_KIT_P_BITS));
+        }
     if (ver < 15)                                       /* (pages v2) the right half: In Key (round A's, isomorphic) as
                                                          * In Key 4ths, Off as Pitches */
         t->rh = t->rh == 1 ? RFM_MOVE_KIT_RH_INKEY4 : RFM_MOVE_KIT_RH_PITCHES;
@@ -1054,7 +1075,7 @@ static void vtext(const rfm_move_t *m, int k, int p, int v, int row, char *o, in
     case RFM_MOVE_KIT_P_WPITCH: pitch_text(v, o, cap); break;
     case RFM_MOVE_KIT_P_WARP: snprintf(o, (size_t)cap, "%s", WARP_NAME[clampi(v, 0, RFM_MOVE_KIT_W_N - 1)]); break;
     case RFM_MOVE_KIT_P_PDEPTH: snprintf(o, (size_t)cap, v ? "%+d st" : "0 st", v); break;
-    case RFM_MOVE_KIT_P_BITS: snprintf(o, (size_t)cap, "%d Bit%s", v, v == 1 ? "" : "s"); break;
+    case RFM_MOVE_KIT_P_BITS: snprintf(o, (size_t)cap, "%d.%d bit", v / 10, v % 10); break;   /* (tenths: "12.5 bit") */
     case RFM_MOVE_KIT_P_DOWNS:
         if (v <= 1)
             snprintf(o, (size_t)cap, "Off");
@@ -4133,7 +4154,7 @@ static int page_pic(const rfm_move_t *m, mr_canvas_t *cv)
             return 1;
         }
         case RFM_MOVE_KIT_M_LOFI: {                     /* a wave as it comes out: held, in steps */
-            const int bits = clampi(d->v[RFM_MOVE_KIT_P_BITS], 1, 16), ds = clampi(d->v[RFM_MOVE_KIT_P_DOWNS], 1, 32);
+            const int bits = clampi((d->v[RFM_MOVE_KIT_P_BITS] + 5) / 10, 1, 24), ds = clampi(d->v[RFM_MOVE_KIT_P_DOWNS], 1, 32);
             const int lv = bits >= 5 ? 0 : 1 << bits;   /* (fewer than 5 bits: its levels shown) */
             int x, py = -1;
             for (x = 0; x < 128; x++) {

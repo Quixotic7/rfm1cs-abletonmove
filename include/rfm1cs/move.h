@@ -1380,7 +1380,9 @@ enum { RFM_MOVE_KIT_P_PITCH,                            /* cents -2400..2400 (a 
        RFM_MOVE_KIT_P_PDEPTH,                           /* Pitch Env: its depth in semitones -48..48 */
        RFM_MOVE_KIT_P_PATTACK, RFM_MOVE_KIT_P_PRELEASE, /* .. its attack (0 to the depth), release (back to 0): ms
                                                          * (RFM_MOVE_KIT_ENV_MS steps; 0, 100) */
-       RFM_MOVE_KIT_P_BITS,                             /* LoFi: bit depth 1..16 (16) */
+       RFM_MOVE_KIT_P_BITS,                             /* LoFi: bit depth in tenths 10..240 (1.0..24.0 bits; 160).
+                                                         * (2026-11-26) a version 16 kit part without the tenths flag
+                                                         * (its header byte 13 bit 0), and earlier: whole bits 1..16 */
        RFM_MOVE_KIT_P_DOWNS,                            /* LoFi: sample-rate reduction, a sample held 1..32 frames (1) */
        RFM_MOVE_KIT_P_GPOS,                             /* Granular: the grains' position 0..100 % of the region */
        RFM_MOVE_KIT_P_GSIZE,                            /* .. a grain's ms 10..500 (80) */

@@ -1529,11 +1529,11 @@ static void t_merge(void)
         static uint8_t kb[RFM_MOVE_KIT_BYTES];
         memset(M.kit.pad[6].path, 'x', sizeof M.kit.pad[6].path - 1);
         sound_at(6, "/s/a.wav", 4800, 48000);
-        rfmv_kit_write(&M, kb);
+        rfmv_kit_write(&M, kb), kb[13] = 0;              /* (as 15 had it) */
         CHECK(rfmv_kit_check(kb, 15) == 0 && !strcmp(M.kit.pad[6].path, "/s/a.wav"));
         M.kit.pad[6].path[0] = 0;
         memset(M.kit.pad[6].path + 1, 'y', 20);
-        rfmv_kit_write(&M, kb);
+        rfmv_kit_write(&M, kb), kb[13] = 0;
         CHECK(rfmv_kit_check(kb, 15) == 0);
         rfm_move_kit_loaded(&M, 6, RFM_MOVE_KIT_EMPTY, NULL, NULL, 0, 0, 0, NULL);
         memset(M.kit.pad[6].path, 0, sizeof M.kit.pad[6].path);
@@ -1804,10 +1804,10 @@ static void t_trim(void)
     M.kit.rec_pad = 0, M.kit.rec_held = 0;
     /* saved: version 13 its byte; 12 read as On; a bad byte refused */
     rfm_move_kit_set_trim(&M, 0);
-    rfmv_kit_write(&M, kb);
+    rfmv_kit_write(&M, kb), kb[13] = 0;
     CHECK(kb[9] == 0 && rfmv_kit_check(kb, 15) == 0);
     rfm_move_kit_set_trim(&M, 1);
-    rfmv_kit_write(&M, kb);
+    rfmv_kit_write(&M, kb), kb[13] = 0;
     CHECK(kb[9] == 1 && rfmv_kit_check(kb, 15) == 0 && rfmv_kit_check(kb, 12) != 0);
     kb[9] = 2;
     CHECK(rfmv_kit_check(kb, 14) != 0);
@@ -2016,6 +2016,48 @@ static void t_xlock(void)
     CHECK(!(a.kp_mask >> RFM_MOVE_KIT_P_SEND2 & 1));
 }
 
+/* 41b. (2026-11-26, the owner's "LoFi bits ... floating point ... up to 24bit") Bits in tenths 1.0..24.0: a detent
+ * 0.1, "12.5 bit"; a step's lock in tenths; a version 16 kit part without the tenths flag (whole bits, its locks) read
+ * as tenths */
+static void t_bits(void)
+{
+    static uint8_t b[RFM_MOVE_KIT_BYTES];
+    const int clip = SEQ_CLIP(12, 0), xs = RFM_MOVE_KIT_XLOCK0 + (0 * 4 + 1) * 2;
+    char w[96];
+    uint16_t subj;
+    uint32_t stamp;
+    const int at = 16 + RFM_MOVE_KIT_NAME + 1 * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N) + RFM_MOVE_KIT_PATH +
+                   2 * RFM_MOVE_KIT_P_BITS;           /* (pad 2's Bits in the kit part) */
+    kit_view();
+    sound(1, "Snare", 4800, NULL, 0);
+    hit(kp(1)), rest();
+    CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS] == 160);  /* (16.0 bits, as before) */
+    rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_MODE, RFM_MOVE_KIT_M_LOFI);
+    jog(RFM_MOVE_KIT_PG_SAMPLE2 - M.kit.page), rest();
+    CHECK(M.kit.page == RFM_MOVE_KIT_PG_SAMPLE2);
+    knob(0, 125);                                       /* (3 detents down) */
+    CHECKF(M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS] == 157, "bits %d", M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS]);
+    rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_BITS, 125);
+    knob(0, 1), knob(0, 127);
+    CHECK(rfmv_kit_pop_words(&M, w, sizeof w, &subj, &stamp) && strstr(w, "12.5 bit"));
+    rfm_move_kit_set(&M, 1, RFM_MOVE_KIT_P_BITS, 999);
+    CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS] == 240);   /* (24 bits at most) */
+    rest(), tap_step(0), rest();
+    step(0, 1), knob(0, 127), step(0, 0), rest();       /* (a lock: 23.9 bits) */
+    CHECKF(rfmv_seq_lock_get(&M, clip, 0, xs) == RFM_MOVE_KIT_P_BITS && rfmv_seq_lock_get(&M, clip, 0, xs + 1) == 239 - 10,
+           "lock %d = %d", rfmv_seq_lock_get(&M, clip, 0, xs), rfmv_seq_lock_get(&M, clip, 0, xs + 1));
+    /* a kit part saved before the tenths: the flag off, whole bits (12), a whole-bit lock (7 bits: 6) */
+    rfmv_kit_write(&M, b);
+    CHECK(b[13] == 1 && rfmv_kit_check(b, 16) == 0);
+    b[13] = 0, b[at] = 12, b[at + 1] = 0;
+    CHECK(rfmv_kit_check(b, 16) == 0);
+    rfmv_seq_lock_set(&M, clip, 0, xs + 1, 6);
+    rfmv_kit_read(&M, b, 16);
+    CHECKF(M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS] == 120 && rfmv_seq_lock_get(&M, clip, 0, xs + 1) == 60,
+           "bits %d lock %d", M.kit.pad[1].v[RFM_MOVE_KIT_P_BITS], rfmv_seq_lock_get(&M, clip, 0, xs + 1));
+    b[13] = 1, b[at] = 5;                               /* (tenths: 0.5 bits is out of range) */
+    CHECK(rfmv_kit_check(b, 16) != 0);
+}
 /* 42. the Kit view's Layout menu (Shift + step 8): the jog's turn sets the right half's mode, not the note layout */
 static void t_kit_layout(void)
 {
@@ -2650,6 +2692,7 @@ int main(void)
     t_gated();
     t_pitch_step();
     t_xlock();
+    t_bits();
     t_kit_layout();
     t_kit_level();
     t_pad_level();
