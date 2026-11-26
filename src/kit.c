@@ -1721,6 +1721,20 @@ int rfm_move_kit_loaded(rfm_move_t *m, int k, int status, const char *name, cons
                 d->fresh = d->keep != 1 && d->keep != 2;
                 memset(d->path, 0, sizeof d->path);
                 snprintf(d->path, sizeof d->path, "%s", path), rfmv_seq_dirty(m);
+                {   /* (2026-11-26, the owner's older project: its tracks 13..16 still went to firmwares, so the pad
+                     * played nothing) a new sound on a pad whose track the kit does not play: an empty track becomes
+                     * the kit's; one with notes stays, said */
+                    const int tr = trk(k);
+                    char tn[16];
+                    snprintf(tn, sizeof tn, "Track %d", tr + 1);
+                    if (!(m->kit.route >> tr & 1)) {
+                        if (!rfmv_seq_track_used(m, tr)) {
+                            rfmv_kit_route_set(m, tr, 1);
+                            msg(m, tn, "To Kit");
+                        } else
+                            msg(m, tn, "Not Kit");
+                    }
+                }
                 if (d->keep != 3)
                     d->cut = 0;                         /* (a join's seam: its own file's only) */
             }
