@@ -466,6 +466,13 @@ void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver);
 void rfmv_kit_loaded_project(rfm_move_t *m);            /* .. loaded or made: the host told */
 int rfmv_kit_base_words(const rfm_move_t *m, char *o, int cap);   /* (speech) */
 int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);
+/* (pages v2) the Kit view's Trig page shows (the sequencer's TRIG page for the chosen pad's track): its first held
+ * step 0..15, -1 none held; -2 not on it (screen.c's TRIG popup) */
+int rfmv_kit_trig_first(const rfm_move_t *m);
+void rfmv_kit_page_cells(const rfm_move_t *m, int *n, int *cur);   /* .. its pages shown, the one shown */
+/* (seq_ui.c) the TRIG page's knob k turned d on the held steps (bits of the page shown) of clip, or (none held) the
+ * selected track's defaults for new steps: its popup, as a firmware track's */
+void rfmv_seq_trig_knob(rfm_move_t *m, int clip, int k, int d, uint16_t held);
 void rfmv_mode_set(rfm_move_t *m, int mode);            /* (move.c) the mode (FM-1 / Sequencer) as a layout change */
 void rfmv_seq_step_enter(rfm_move_t *m, int clip, int abs, int note, int vel);   /* (seq_ui.c) a note into a step as a
                                                          * tap enters it (the TRIG defaults, the loop grown) */

@@ -368,7 +368,12 @@ enum { RFM_MOVE_KIT_SM_HITS, RFM_MOVE_KIT_SM_EQ16, RFM_MOVE_KIT_SM_EQ8, RFM_MOVE
  * track's four pads apart), l RFM_MOVE_KIT_LK_*; the value encoded 0..254: Pitch semitones + 24, Start of 254, Filter
  * and Resonance as they are, Level dB + 60, Pan + 50, Decay an index of the envelope's steps */
 enum { RFM_MOVE_KIT_LK_PITCH, RFM_MOVE_KIT_LK_START, RFM_MOVE_KIT_LK_CUTOFF, RFM_MOVE_KIT_LK_RESO, RFM_MOVE_KIT_LK_LEVEL,
-       RFM_MOVE_KIT_LK_PAN, RFM_MOVE_KIT_LK_DECAY, RFM_MOVE_KIT_LK_N };
+       RFM_MOVE_KIT_LK_PAN, RFM_MOVE_KIT_LK_DECAY,
+       RFM_MOVE_KIT_LK_MORPH, RFM_MOVE_KIT_LK_FENV,      /* (pages v2) Morph as it is, Env Amount + 100 */
+       RFM_MOVE_KIT_LK_CHOP, RFM_MOVE_KIT_LK_CHOPE,     /* (pages v2, the right half's Chop) the hit plays chops
+                                                         * CHOP..CHOPE (0..15) of the pad's region: one chop once, a
+                                                         * range looped while the note lasts */
+       RFM_MOVE_KIT_LK_N };
 #define RFM_MOVE_KIT_LOCK0 136
 #define RFM_MOVE_KIT_LOCK_LAST (RFM_MOVE_KIT_LOCK0 + RFM_MOVE_KIT_LK_N * 4 - 1)
 #define RFM_MOVE_KIT_SLICES 16                          /* slices a take gives at most */
@@ -417,8 +422,8 @@ typedef struct {
     uint32_t from, count;                               /* frames (SMP_ROWS: rows) */
     /* (round B, the kit) KIT_NOTE (a note-on from the sequencer): the step's locks on this hit, bit l of klk_mask
      * (RFM_MOVE_KIT_LK_*) set: klk[l] replaces the pad's setting for this voice only, in the setting's own units */
-    uint8_t klk_mask;
-    int16_t klk[7];
+    uint16_t klk_mask;                                  /* (pages v2: 11 locks, Morph, Env Amount, the Chop's) */
+    int16_t klk[11];
 } rfm_move_act_t;
 typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
@@ -808,7 +813,7 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 14                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
+#define RFM_MOVE_PROJECT_VERSION 15                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
                                                          * values a slot, 7 the firmwares' MIDI routes, 8 the launch
                                                          * quantization and each clip's launch settings, 9 (0.13.0) the
                                                          * firmwares: each slot's id, level, settings and track, the
@@ -818,7 +823,9 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
                                                          * (stage 3b) the kit's name, mix, stretch and sends, 13
                                                          * (round A) the kit's Trim silence, Toggle (no new bytes), 14
                                                          * (round B) Decay, Sustain, Filter, Resonance a pad; the kit
-                                                         * pads' step locks (RFM_MOVE_KIT_LOCK0..) */
+                                                         * pads' step locks (RFM_MOVE_KIT_LOCK0..), 15 (pages v2) a
+                                                         * pad's engines, Warp and filter envelope (46 settings), the
+                                                         * kit bus's low-pass */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7, locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -846,18 +853,23 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
  * 1..3: 0..127), 7 zero }, the kit's name RFM_MOVE_KIT_NAME (NUL padded, "" never saved), then 16 pads x { the path,
  * RFM_MOVE_KIT_P_N settings i16 }.
  * (version 13, round A: no new bytes) the header's byte 9 the Trim silence (0 / 1; before: 0, read as on), the Play
- * mode RFM_MOVE_KIT_M_TOGGLE */
+ * mode RFM_MOVE_KIT_M_TOGGLE.
+ * (version 14, round B) 20 settings a pad. (version 15, pages v2) 46 settings a pad (RFM_MOVE_KIT_P_N); the header's
+ * bytes 10, 11 the kit bus's low-pass: cutoff 0..100 (100 open), resonance 0..100 (before: open, 0) */
 #define RFM_MOVE_KIT_PADS 16
 #define RFM_MOVE_KIT_PATH 160                           /* a sound's path with its NUL (the host's) */
-#define RFM_MOVE_KIT_P_N 20                             /* a pad's settings (RFM_MOVE_KIT_P_*; 12 in version 11, 16 in
-                                                         * 12 and 13) */
+#define RFM_MOVE_KIT_P_N 46                             /* a pad's settings (RFM_MOVE_KIT_P_*; 12 in version 11, 16 in
+                                                         * 12 and 13, 20 in 14) */
+#define RFM_MOVE_KIT_P_N_V14 20
 #define RFM_MOVE_KIT_P_N_V11 12
 #define RFM_MOVE_KIT_P_N_V12 16
 #define RFM_MOVE_KIT_BYTES_V11 (8 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V11))   /* (2952) */
 #define RFM_MOVE_KIT_BYTES_V12 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V12))   /* (3112) */
-#define RFM_MOVE_KIT_BYTES (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N))   /* (3240) */
+#define RFM_MOVE_KIT_BYTES_V14 (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N_V14))   /* (3240) */
+#define RFM_MOVE_KIT_BYTES (16 + 24 + RFM_MOVE_KIT_PADS * (RFM_MOVE_KIT_PATH + 2 * RFM_MOVE_KIT_P_N))   /* (4072) */
 #define RFM_MOVE_PROJECT_EXT_V11 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V11)
 #define RFM_MOVE_PROJECT_EXT_V12 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V12)
+#define RFM_MOVE_PROJECT_EXT_V14 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V14)
 #define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES)
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 7 + RFM_MOVE_SEQ_LOCKS * 4)
@@ -1326,18 +1338,65 @@ enum { RFM_MOVE_KIT_P_PITCH,                            /* cents -2400..2400 (a 
        /* (round B, version 14) the envelope's Decay (ms, RFM_MOVE_KIT_ENV_MS steps) and Sustain (0..100 %, 100 at
         * first); the pad's low-pass filter: Filter (the cutoff 0..100: 20 Hz .. 20 kHz, 100 open: bypassed, the
         * default) and Resonance 0..100 */
-       RFM_MOVE_KIT_P_DECAY, RFM_MOVE_KIT_P_SUSTAIN, RFM_MOVE_KIT_P_CUTOFF, RFM_MOVE_KIT_P_RESO };
+       RFM_MOVE_KIT_P_DECAY, RFM_MOVE_KIT_P_SUSTAIN, RFM_MOVE_KIT_P_CUTOFF, RFM_MOVE_KIT_P_RESO,
+       /* (pages v2, 2026-11-26, version 15) the engines' own (Pad Sample 2), Warp, the filter's morph and envelope */
+       RFM_MOVE_KIT_P_LOOPS, RFM_MOVE_KIT_P_LOOPE,      /* Loop: its loop's start, end (of RFM_MOVE_KIT_FRAC, inside the
+                                                         * region: 0 / FRAC the region's own) */
+       RFM_MOVE_KIT_P_LOOPXF,                           /* Loop: the crossfade at the loop's end 0..100 % (of half the
+                                                         * loop; 0 none) */
+       RFM_MOVE_KIT_P_PDEPTH,                           /* Pitch Env: its depth in semitones -48..48 */
+       RFM_MOVE_KIT_P_PATTACK, RFM_MOVE_KIT_P_PRELEASE, /* .. its attack (0 to the depth), release (back to 0): ms
+                                                         * (RFM_MOVE_KIT_ENV_MS steps; 0, 100) */
+       RFM_MOVE_KIT_P_BITS,                             /* LoFi: bit depth 1..16 (16) */
+       RFM_MOVE_KIT_P_DOWNS,                            /* LoFi: sample-rate reduction, a sample held 1..32 frames (1) */
+       RFM_MOVE_KIT_P_GPOS,                             /* Granular: the grains' position 0..100 % of the region */
+       RFM_MOVE_KIT_P_GSIZE,                            /* .. a grain's ms 10..500 (80) */
+       RFM_MOVE_KIT_P_GDENS,                            /* .. grains at once 1..16 (4) */
+       RFM_MOVE_KIT_P_GSPRAY,                           /* .. the position's jitter 0..100 % (of the region) */
+       RFM_MOVE_KIT_P_GSPREAD,                          /* .. each grain's random pitch 0..24 semitones either way */
+       RFM_MOVE_KIT_P_WARP,                             /* Warp (not for Granular): RFM_MOVE_KIT_W_*; Sync is
+                                                         * RFM_MOVE_KIT_P_STRETCH (0 Off, 1..64 steps) */
+       RFM_MOVE_KIT_P_SPEED,                            /* Warp: the speed x 100, 25..400 (100); Sync on: one of 25 50 75
+                                                         * 100 150 200 300 400, the synced length's multiplier (2.00:
+                                                         * twice as fast, half as long) */
+       RFM_MOVE_KIT_P_WPITCH,                           /* Warp (Grains, Beats): its pitch in cents -2400..2400 */
+       RFM_MOVE_KIT_P_WGRAIN,                           /* Warp (Grains, Beats): a grain's ms 20..120 (50) */
+       RFM_MOVE_KIT_P_WJITTER,                          /* Warp Grains: the grains' jitter 0..100 % (of half a grain) */
+       RFM_MOVE_KIT_P_WSEARCH,                          /* Warp Beats: the alignment's search 1..30 ms (10) */
+       RFM_MOVE_KIT_P_MORPH,                            /* the filter: 0 LP .. 50 BP .. 100 HP, a continuous blend */
+       RFM_MOVE_KIT_P_FENV,                             /* the filter envelope's amount -100..100 (100: 8 octaves up) */
+       RFM_MOVE_KIT_P_FATTACK, RFM_MOVE_KIT_P_FDECAY,   /* .. its attack, decay (ms, RFM_MOVE_KIT_ENV_MS steps; 0, 300) */
+       RFM_MOVE_KIT_P_FSUSTAIN,                         /* .. its sustain 0..100 % (0) */
+       RFM_MOVE_KIT_P_FRELEASE };                       /* .. its release (ms; 300) */
+/* (pages v2) Warp's algorithms: Off; Repitch (the rate: Sync fits the region to its steps by pitch, Transpose and the
+ * notes' pitches then ignored); Grains (overlap-add of Hann grains: the pitch kept); Beats (WSOLA: each grain aligned to
+ * the last by cross-correlation, for drums and loops: the pitch kept) */
+enum { RFM_MOVE_KIT_W_OFF, RFM_MOVE_KIT_W_REPITCH, RFM_MOVE_KIT_W_GRAINS, RFM_MOVE_KIT_W_BEATS, RFM_MOVE_KIT_W_N };
+/* (pages v2) KIT_SET with index RFM_MOVE_KIT_BUS: the kit bus's low-pass (after the voices' mix, before the kit's
+ * level, pan and sends): param RFM_MOVE_KIT_BUS_CUTOFF (0..100, 100 open: bypassed) or _RESO (0..100) */
+#define RFM_MOVE_KIT_BUS 16
+enum { RFM_MOVE_KIT_BUS_CUTOFF, RFM_MOVE_KIT_BUS_RESO, RFM_MOVE_KIT_BUS_N };
 #define RFM_MOVE_KIT_STRETCH_MAX 64
 /* how a pad plays: One shot start..end to its end (Hold 0: the release a tail ending at the end; Hold > 0: the release
  * starts after attack + hold), Momentary while the pad (or the step's note) is held, Loop round start..end while held.
  * The envelope (attack, hold, release) on all three */
-/* (round A) Toggle: a tap (or a step's note) starts it, the next stops it (a short release); it loops while on */
-enum { RFM_MOVE_KIT_M_ONESHOT, RFM_MOVE_KIT_M_MOMENTARY, RFM_MOVE_KIT_M_LOOP, RFM_MOVE_KIT_M_TOGGLE, RFM_MOVE_KIT_M_N };
-enum { RFM_MOVE_KIT_RH_PITCHES, RFM_MOVE_KIT_RH_INKEY, RFM_MOVE_KIT_RH_OFF, RFM_MOVE_KIT_RH_N };   /* the right half */
-/* (pages, the owner's 2026-11-26 design) the Kit view's knob pages, the jog's turn: Sample Kit, Pad Sample, Pad
- * Sample 2 (the envelope), Stretch, Filter, Pad Mix, Kit Mix */
-enum { RFM_MOVE_KIT_PG_KIT, RFM_MOVE_KIT_PG_SAMPLE, RFM_MOVE_KIT_PG_ENV, RFM_MOVE_KIT_PG_STRETCH, RFM_MOVE_KIT_PG_FILTER,
-       RFM_MOVE_KIT_PG_PADMIX, RFM_MOVE_KIT_PG_KITMIX, RFM_MOVE_KIT_PG_N };
+/* (pages v2, the owner's 2026-11-26) the engines, Play's list: One Shot, Momentary, Loop (round its loop's start..end
+ * while held), Pitch Env (One Shot with an attack / release envelope on the pitch), LoFi (One Shot, bits and the rate
+ * reduced), Granular (grains of the region while held). Round A's Toggle is gone: a pad saved with it (mode 3 before
+ * version 15) loads as Loop */
+enum { RFM_MOVE_KIT_M_ONESHOT, RFM_MOVE_KIT_M_MOMENTARY, RFM_MOVE_KIT_M_LOOP, RFM_MOVE_KIT_M_PITCHENV, RFM_MOVE_KIT_M_LOFI,
+       RFM_MOVE_KIT_M_GRANULAR, RFM_MOVE_KIT_M_N };
+/* the right half (pages v2, the owner's 2026-11-26): Pitches (16 semitones up), In Key (16 notes of the key's scale in a
+ * row), Chromatic (rows a fourth apart, chromatic in a row), In Key 4ths (rows a fourth apart, four scale notes a row:
+ * round A's In Key), Chop (the chosen pad's region in 16 equal chops, the top left the first). Before version 15: 1 In
+ * Key loads as In Key 4ths, 2 Off as Pitches */
+enum { RFM_MOVE_KIT_RH_PITCHES, RFM_MOVE_KIT_RH_INKEY, RFM_MOVE_KIT_RH_CHROMA, RFM_MOVE_KIT_RH_INKEY4, RFM_MOVE_KIT_RH_CHOP,
+       RFM_MOVE_KIT_RH_N };
+#define RFM_MOVE_KIT_CHOPS 16
+/* (pages v2, the owner's 2026-11-26 design) the Kit view's knob pages, the jog's turn: Sample Kit, Pad Sample, Trig,
+ * Pad Sample 2 (the engine's own), Warp, Filter, Pad Mix, Kit Mix */
+enum { RFM_MOVE_KIT_PG_KIT, RFM_MOVE_KIT_PG_SAMPLE, RFM_MOVE_KIT_PG_TRIG, RFM_MOVE_KIT_PG_SAMPLE2, RFM_MOVE_KIT_PG_WARP,
+       RFM_MOVE_KIT_PG_FILTER, RFM_MOVE_KIT_PG_PADMIX, RFM_MOVE_KIT_PG_KITMIX, RFM_MOVE_KIT_PG_N };
 enum { RFM_MOVE_KIT_PL_TAKES = 1, RFM_MOVE_KIT_PL_SAMPLES = 2, RFM_MOVE_KIT_PL_KITS = 3 };   /* Files' places */
 enum { RFM_MOVE_KIT_ROW_DIR = 1, RFM_MOVE_KIT_ROW_FILE = 2, RFM_MOVE_KIT_ROW_KIT = 3 };   /* (KIT: a saved kit, Kits') */
 #define RFM_MOVE_KIT_SLOT 3                             /* (stage 3b) MIX's slot for the kit's own strip */
@@ -1488,6 +1547,12 @@ typedef struct {                                        /* (kit.c) */
     char sl_path[RFM_MOVE_KIT_PATH];                    /* the take's file (the pads' sound) */
     /* (round A) */
     uint8_t trim;                                       /* (saved, version 13) the Kit tab's Trim silence (1 on) */
+    uint8_t bus[RFM_MOVE_KIT_BUS_N];                    /* (saved, version 15) the kit bus's low-pass: cutoff, resonance */
+    uint8_t undk_bus[RFM_MOVE_KIT_BUS_N];
+    uint8_t chop_p, chop_c;                             /* (pages v2) Chop: the Move pad + 1 of the first slot held, its
+                                                         * chop */
+    uint8_t chop_a, chop_b;                             /* .. the chops sounding last (lit bright), since chop_ms */
+    uint32_t chop_ms;
     uint8_t undk_trim;
     uint8_t br_pad, br_kept;                            /* Files' browse: its pad + 1; its Undo kept (one for it all) */
     uint8_t land, land_pl;                              /* the jog moved in Files: a sound's load due (RFM_MOVE_KIT_LAND_MS) */
@@ -2229,6 +2294,10 @@ int rfm_move_kit_peaks(rfm_move_t *m, int pad, uint32_t from, uint32_t count, in
  * (after rfm_move_kit_apply: one Undo brings the one before back) */
 int rfm_move_kit_trim(const rfm_move_t *m);
 void rfm_move_kit_set_trim(rfm_move_t *m, int on);
+/* (pages v2) the kit bus's low-pass (RFM_MOVE_KIT_BUS_*: 0..100, -1 none; saved with the kit and kit.json "bus"); set:
+ * as a kit.json says (after rfm_move_kit_apply), its KIT_SET sent */
+int rfm_move_kit_bus(const rfm_move_t *m, int which);
+void rfm_move_kit_set_bus(rfm_move_t *m, int cutoff, int reso);
 /* (stage 3c, the page's Kit tab) a pad played (vel 1..127) or let go (0), as a pad press (its KIT_NOTE, its glow);
  * chosen (the Kit view's chosen pad; its track selected while the view shows); a setting set (RFM_MOVE_KIT_P_*, as
  * the knobs clamp it: its KIT_SET, the project edited). 1 done */

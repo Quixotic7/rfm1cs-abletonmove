@@ -671,15 +671,17 @@ static void steps_base(mr_canvas_t *cv)               /* a base line and the ste
 static void trig_popup(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_seq_t *q = &m->seq;
-    const int k = m->pop_i, clip = SEQ_CLIP(q->sel_track, q->tr[q->sel_track].sel);
-    int abs = q->page * RFM_MOVE_SEQ_PAGE + (q->step_first >= 0 ? q->step_first : 0), v, i;
+    const int k = m->pop_i, clip = SEQ_CLIP(q->sel_track, q->tr[q->sel_track].sel), kf = rfmv_kit_trig_first(m);
+    const int first = kf > -2 ? kf : q->step_first;     /* (pages v2: the Kit view's Trig page, its held step) */
+    const int trig_on = kf > -2 || rfmv_seq_trig_on(m), trig = kf > -2 || q->trig;
+    int abs = q->page * RFM_MOVE_SEQ_PAGE + (first >= 0 ? first : 0), v, i;
     char l[16], b[16];
-    if (q->step_first < 0) {                            /* none held: the clip's first step with notes */
+    if (first < 0) {                                    /* none held: the clip's first step with notes */
         int lo, hi = rfmv_seq_clip_range(m, clip, &lo);
         abs = hi > lo ? q->notes[lo].step : abs;
     }
-    v = q->trig && q->step_first < 0 ? rfmv_seq_tdef_val(m, k) : rfmv_seq_trig_val(m, clip, abs, k);   /* (none held:
-                                                         * the defaults for new steps) */
+    v = trig && first < 0 ? rfmv_seq_tdef_val(m, k) : rfmv_seq_trig_val(m, clip, abs, k);   /* (none held: the
+                                                         * defaults for new steps) */
     mr_gfx_clear(cv, 0);
     g_full = 1;
     if (k == 8) {                                       /* (0.12.0) a held step transposed (Up / Down): its notes now */
@@ -690,7 +692,7 @@ static void trig_popup(const rfm_move_t *m, mr_canvas_t *cv)
         rfmv_seq_page_strip(m, cv, abs);
         return;
     }
-    if (!rfmv_seq_trig_on(m)) {                         /* a held step's edit popup (V2Track's seq.micro / len / vel) */
+    if (!trig_on) {                                     /* a held step's edit popup (V2Track's seq.micro / len / vel) */
         if (k == 0)
             snprintf(l, sizeof l, "Nudge"), snprintf(b, sizeof b, v ? "%+d%%" : "0%%", v * 100 / RFM_MOVE_SEQ_TPS);
         else if (k == 6)
@@ -765,7 +767,7 @@ static void trig_popup(const rfm_move_t *m, mr_canvas_t *cv)
         }
         break;
     case 5: {                                           /* the function's amount */
-        const int f = q->step_first < 0 ? rfmv_seq_tdef_val(m, 4) : rfmv_seq_trig_val(m, clip, abs, 4);
+        const int f = first < 0 ? rfmv_seq_tdef_val(m, 4) : rfmv_seq_trig_val(m, clip, abs, 4);
         steps_base(cv);
         if (f == RFM_MOVE_FN_LEAP || f == RFM_MOVE_FN_JUMP) {
             v2_L(cv, 5, 38, 13, 20), v2_L(cv, 13, 20, 29, 20), v2_L(cv, 29, 20, 37, 38);
@@ -796,7 +798,10 @@ static void trig_popup(const rfm_move_t *m, mr_canvas_t *cv)
     {                                                   /* (0.12.x: the FM-1 page second; a step held on it: its
                                                          * TRIG knobs; 0.14.0: on ENGINE too) */
         int n, cur;
-        rfmv_kpage_cells(m, &n, &cur);
+        if (kf > -2)
+            rfmv_kit_page_cells(m, &n, &cur);           /* (pages v2: the Kit view's pages) */
+        else
+            rfmv_kpage_cells(m, &n, &cur);
         v2_strip(cv, n, 1u << cur, -1, 0, 128);
     }
 }

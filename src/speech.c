@@ -276,20 +276,21 @@ static void readout_words(const rfm_move_t *m, const rfm_move_readout_t *r, int 
 static void trig_words(const rfm_move_t *m, char *o, int cap)
 {
     const rfm_move_seq_t *q = &m->seq;
-    const int k = m->pop_i, clip = SEQ_CLIP(q->sel_track, q->tr[q->sel_track].sel);
-    int abs = q->page * RFM_MOVE_SEQ_PAGE + (q->step_first >= 0 ? q->step_first : 0), v;
+    const int k = m->pop_i, clip = SEQ_CLIP(q->sel_track, q->tr[q->sel_track].sel), kf = rfmv_kit_trig_first(m);
+    const int first = kf > -2 ? kf : q->step_first;     /* (pages v2: the Kit view's Trig page) */
+    int abs = q->page * RFM_MOVE_SEQ_PAGE + (first >= 0 ? first : 0), v;
     char b[32];
-    if (q->step_first < 0) {
+    if (first < 0) {
         int lo, hi = rfmv_seq_clip_range(m, clip, &lo);
         abs = hi > lo ? q->notes[lo].step : abs;
     }
-    v = q->trig && q->step_first < 0 ? rfmv_seq_tdef_val(m, k) : rfmv_seq_trig_val(m, clip, abs, k);
+    v = (kf > -2 || q->trig) && first < 0 ? rfmv_seq_tdef_val(m, k) : rfmv_seq_trig_val(m, clip, abs, k);
     if (k == 8) {                                       /* (0.12.0) a held step transposed: its notes */
         rfmv_seq_held_names(m, b, sizeof b, 0);
         snprintf(o, (size_t)cap, "Transposed: %s", b);
         return;
     }
-    if (!rfmv_seq_trig_on(m)) {
+    if (kf < -1 && !rfmv_seq_trig_on(m)) {
         if (k == 0)
             snprintf(o, (size_t)cap, "Nudge: %+d%%", v * 100 / RFM_MOVE_SEQ_TPS);
         else if (k == 6)
@@ -305,7 +306,7 @@ static void trig_words(const rfm_move_t *m, char *o, int cap)
     case 3: rfmv_cond_name(v, b, sizeof b), snprintf(o, (size_t)cap, "Condition: %s", b); break;
     case 4: snprintf(o, (size_t)cap, "Function: %s", FN_WORDS[clampi(v, 0, RFM_MOVE_FN_N - 1)]); break;
     case 5: {
-        const int f = q->step_first < 0 ? rfmv_seq_tdef_val(m, 4) : rfmv_seq_trig_val(m, clip, abs, 4);
+        const int f = first < 0 ? rfmv_seq_tdef_val(m, 4) : rfmv_seq_trig_val(m, clip, abs, 4);
         if (f == RFM_MOVE_FN_LEAP)
             snprintf(o, (size_t)cap, "Leap: %+d", v);
         else if (f == RFM_MOVE_FN_JUMP)

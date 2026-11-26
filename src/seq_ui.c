@@ -2809,6 +2809,25 @@ int rfmv_seq_menu_click(rfm_move_t *m)
  * while no step is held) */
 int rfmv_seq_trig_on(const rfm_move_t *m) { return m->seq.trig || ((m->seq.fwp || m->seq.eng) && m->seq.step_held); }
 
+/* (pages v2: the Kit view's Trig page too) the TRIG page's knob k on the held steps of clip */
+void rfmv_seq_trig_knob(rfm_move_t *m, int clip, int k, int d, uint16_t held)
+{
+    rfm_move_seq_t *q = Q(m);
+    int s;
+    if (k > 6)
+        return;                                         /* (0.12.0, a12: knob 8: dark, dead, no popup) */
+    rfmv_pop(m, POP_TRIG, k);
+    if ((k == 3 || k == 4) && !(d = rfmv_list_ticks(m, k, d)))
+        return;                                         /* (COND, FUNC: lists, one item a few ticks) */
+    if (!held) {                                        /* none held: the track's defaults for new steps (the owner's:
+                                                         * steps already there keep theirs) */
+        tdef_turn(m, k, d);
+        return;
+    }
+    for (s = 0; s < RFM_MOVE_NSTEPS; s++)
+        if (held >> s & 1)
+            trig_turn(m, clip, q->page * RFM_MOVE_SEQ_PAGE + s, k, d);
+}
 void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now)
 {
     rfm_move_seq_t *q = Q(m);
@@ -2841,36 +2860,11 @@ void rfmv_seq_knob(rfm_move_t *m, int k, int d, uint32_t now)
         smenu_turn(m, k, d, 0);
         return;
     }
-    if (rfmv_seq_trig_on(m) && !q->view && !q->projects) {   /* the TRIG page: the held steps' (none held: every step
-                                                         * with notes in the clip) */
-        const int clip = edit_clip(m);
-        int s;
-        if (k > 6)
-            return;                                     /* (0.12.0, a12: knob 8: dark, dead, no popup) */
-        rfmv_pop(m, POP_TRIG, k);
-        if ((k == 3 || k == 4) && !(d = rfmv_list_ticks(m, k, d)))
-            return;                                     /* (COND, FUNC: lists, one item a few ticks) */
-        if (!q->step_held) {                            /* none held: the track's defaults for new steps (the
-                                                         * owner's: steps already there keep theirs) */
-            tdef_turn(m, k, d);
-            return;
-        }
-        if (q->step_held) {
-            for (s = 0; s < RFM_MOVE_NSTEPS; s++)
-                if (q->step_held >> s & 1) {
-                    trig_turn(m, clip, q->page * RFM_MOVE_SEQ_PAGE + s, k, d);
-                    q->step_edit |= (uint16_t)(1u << s);
-                }
-        } else {
-            int lo, hi = rfmv_seq_clip_range(m, clip, &lo), prev = -1, i;
-            uint8_t steps[RFM_MOVE_SEQ_MAXLEN];
-            int ns = 0;
-            for (i = lo; i < hi; i++)
-                if (q->notes[i].step != prev)
-                    steps[ns++] = (uint8_t)(prev = q->notes[i].step);
-            for (i = 0; i < ns; i++)
-                trig_turn(m, clip, steps[i], k, d);
-        }
+    if (rfmv_seq_trig_on(m) && !q->view && !q->projects) {   /* the TRIG page: the held steps' (none held: the
+                                                         * track's defaults for new steps) */
+        rfmv_seq_trig_knob(m, edit_clip(m), k, d, q->step_held);
+        if (k <= 6)
+            q->step_edit |= q->step_held;
         return;
     }
     rfmv_pop(m, POP_CC, k);
