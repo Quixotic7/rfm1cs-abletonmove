@@ -2110,8 +2110,132 @@ static int view_takes(const rfm_move_t *m, const mr_event_t *ev)
     default: return 0;
     }
 }
+/* ---- (2026-11-26, the owner's) the power button: "Push power button, screen says "Shut Down?" Click the Jogwheel to
+ * confirm shutdown. Press back or another button or click power again to cancel/close popup." Move's manual (2. Setup):
+ * "To turn Move off, first press the power button, then press the wheel. You can press the Back button to cancel." */
+void rfm_move_power(rfm_move_t *m, int down)
+{
+    if (!down)
+        return;
+    if (m->pw_ms && m->in_ms - m->pw_ms < RFM_MOVE_POWER_DEBOUNCE_MS)
+        return;                                         /* (a bounce: one press) */
+    m->pw_ms = m->in_ms ? m->in_ms : 1;
+    if (m->pw_ask) {                                    /* (the power button again: closed) */
+        m->pw_ask = 0;
+        return;
+    }
+    m->pw_ask = 1;
+    rfmv_say_text_always(m, "Shut Down?");
+}
+int rfm_move_power_asked(const rfm_move_t *m) { return m->pw_ask; }
+
+/* the surface's power report, F0 00 21 1D 01 01 3A <bits> <battery> 00 F7 in four packets (Move Remote's power_feed):
+ * bit 3 of <bits> going on is a press */
+static void power_sysex(rfm_move_t *m, const uint8_t p[4])
+{
+    static const int16_t WANT[4][4] = { { 0x04, 0xF0, 0x00, 0x21 }, { 0x04, 0x1D, 0x01, 0x01 },
+                                        { 0x04, 0x3A, -1, -1 }, { 0x06, 0x00, 0xF7, -1 } };
+    int i, held;
+    for (i = 0; i < 4; i++) {
+        const int got = i == 0 ? p[0] & 0x0F : p[i];
+        if (WANT[m->pw_stage][i] >= 0 && got != WANT[m->pw_stage][i]) {
+            m->pw_stage = (uint8_t)((p[0] & 0x0F) == 0x04 && p[1] == 0xF0 && p[2] == 0x00 && p[3] == 0x21);
+            return;
+        }
+    }
+    if (m->pw_stage == 2)
+        m->pw_cmd = p[2];
+    if (++m->pw_stage < 4)
+        return;
+    m->pw_stage = 0;
+    held = (m->pw_cmd & 0x08) != 0;
+    if (held && !m->pw_held)
+        rfm_move_power(m, 1);
+    m->pw_held = (uint8_t)held;
+}
+
+/* the popup up: 1 the event is its (taken or ignored), 0 it goes on as ever (a release of what was held before) */
+static int power_input(rfm_move_t *m, const mr_event_t *ev)
+{
+    const int i = ev->index;
+    int bit = 0;
+    uint8_t *eb = NULL;
+    switch (ev->type) {                                 /* (a press it took: its release goes nowhere either) */
+    case MR_EV_BUTTON:
+        if (i >= 0 && i < 128)
+            eb = &m->pw_eat_btn[i >> 3], bit = 1 << (i & 7);
+        break;
+    case MR_EV_PAD:
+        if (i >= 0 && i < RFM_MOVE_NPADS && !ev->value && (m->pw_eat_pad >> i & 1u)) {
+            m->pw_eat_pad &= ~(1u << i);
+            return 1;
+        }
+        break;
+    case MR_EV_STEP:
+        if (i >= 0 && i < RFM_MOVE_NSTEPS && !ev->value && (m->pw_eat_step >> i & 1u)) {
+            m->pw_eat_step = (uint16_t)(m->pw_eat_step & ~(1u << i));
+            return 1;
+        }
+        break;
+    case MR_EV_JOG_CLICK:
+        if (!ev->value && m->pw_eat_jog) {
+            m->pw_eat_jog = 0;
+            return 1;
+        }
+        break;
+    default: break;
+    }
+    if (eb && !ev->value && (*eb & bit)) {
+        *eb = (uint8_t)(*eb & ~bit);
+        return 1;
+    }
+    if (!m->pw_ask)
+        return 0;
+    switch (ev->type) {
+    case MR_EV_JOG_CLICK:
+        if (ev->value) {                                /* (the click: shut down) */
+            rfm_move_act_t a;
+            m->pw_ask = 0, m->pw_eat_jog = 1;
+            memset(&a, 0, sizeof a);
+            a.frame = m->seq.frame, a.kind = RFM_MOVE_ACT_POWEROFF;
+            rfmv_say_text_always(m, "Shutting down");
+            if (m->fn)
+                m->fn(m->ctx, &a);
+            return 1;
+        }
+        return 0;
+    case MR_EV_BUTTON:
+    case MR_EV_PAD:
+    case MR_EV_STEP:
+        if (!ev->value)
+            return 0;                                   /* (held from before the popup: let go as ever) */
+        m->pw_ask = 0;                                  /* (Back or any other: closed, nothing else) */
+        if (eb)
+            *eb = (uint8_t)(*eb | bit);
+        else if (ev->type == MR_EV_PAD && i >= 0 && i < RFM_MOVE_NPADS)
+            m->pw_eat_pad |= 1u << i;
+        else if (ev->type == MR_EV_STEP && i >= 0 && i < RFM_MOVE_NSTEPS)
+            m->pw_eat_step = (uint16_t)(m->pw_eat_step | 1u << i);
+        return 1;
+    case MR_EV_TOUCH:
+        return ev->value != 0;                          /* (a touch's release passes: nothing left touched) */
+    case MR_EV_KNOB:
+    case MR_EV_JOG:
+    case MR_EV_PAD_PRESSURE:
+    case MR_EV_PRESSURE:
+        return 1;
+    default:
+        return 0;                                       /* (jacks, MIDI, SysEx) */
+    }
+}
+
 static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
 {
+    if (ev->type == MR_EV_SYSEX)                        /* (2026-11-26) the power button's reports */
+        power_sysex(m, ev->raw);
+    if (power_input(m, ev))                             /* (2026-11-26) "Shut Down?" up: it owns the controls, over
+                                                         * every mode, view, menu and takeover */
+        return;
     if (ev->type == MR_EV_TOUCH && ev->index == 9) {   /* (0.6.12) the jog's touch, wherever it goes: Jog speech */
         if (ev->value && !m->jog_touch)
             m->say_jogstart = 1;

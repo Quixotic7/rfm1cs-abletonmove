@@ -5,6 +5,16 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## 0.16.0 (prepared 2026-11-26, not yet tagged): the kit, stages 3a, 3b and 3c, pages, engines, Warp; Exit; one-setting Shift menus
 
+### The power button: "Shut Down?" (2026-11-26, the owner's)
+
+"We should have a power feature that matches default Move software. Push power button, screen says "Shut Down?"
+Click the Jogwheel to confirm shutdown. Press back or another button or click power again to cancel/close popup."
+
+- The power button's press (its SysEx report's bit 3 going on, matched in rfm_move_input; or `rfm_move_power`) puts
+  up "Shut Down?" over every screen, said too. The jog click sends RFM_MOVE_ACT_POWEROFF (82); Back, the power button
+  again or any other button, pad or step closes it and is taken (its release too); turns and touches are ignored.
+  README "The power button". Test: move_power.
+
 ### Clearing automation: Delete + a knob, and a held step's lock with Delete (2026-11-26, the owner's)
 
 "We should match how Move does automation step lock deletion. Hold delete then tap a knob and it should delete all

@@ -1514,6 +1514,12 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
     int t, x, y;
     if (rgb565)
         thumb_from(m, rgb565);
+    if (m->pw_ask) {                                    /* (2026-11-26) the power button: "Shut Down?" over everything,
+                                                         * until the jog click, Back or any press */
+        rfmv_pop_screen(&cv, NULL, "Shut Down?", 0, 0, NULL);
+        mr_gfx_pack(&cv, out);
+        return;
+    }
     if (m->pop == POP_HOST && rfmv_pop_up(m, POP_HOST)) {   /* (0.5.4) a host's message: over any screen */
         host_popup(m, &cv);
         mr_gfx_pack(&cv, out);

@@ -766,6 +766,22 @@ The owner's layout: Back flips, Up is the FM-1's SEQ. (0.15.0, the owner's 2026-
 
 (0.8.0) In the Sequencer, a firmware Track held + Up / Down is the selected track's rate.
 
+## The power button (2026-11-26)
+
+As Move's own software has it (the manual, 2. Setup: "To turn Move off, first press the power button, then press the
+wheel. You can press the Back button to cancel."): a press of the power button puts up "Shut Down?" over every screen
+(any mode, view, menu or takeover), said too when speech is on. While it is up it owns the controls:
+
+- the jog click: RFM_MOVE_ACT_POWEROFF; the host stops as for Exit (everything saved) and powers the Move off;
+- Back, the power button again, or any other button, pad or step: closed, nothing else (that press and its release
+  go nowhere);
+- knob and jog turns, touches, pressure: ignored. Releases of what was held before the popup pass as ever.
+
+The press comes from the surface's own power report, a SysEx (`F0 00 21 1D 01 01 3A bits battery 00 F7`, bit 3 the
+button held) that Move Remote passes in its INPUT like any event: the core matches it (MR_EV_SYSEX) and takes bit 3
+going on as one press (presses closer than RFM_MOVE_POWER_DEBOUNCE_MS, 120 ms, are one). `rfm_move_power(m, 1)` is
+the same for a host that learns of a press another way. Move Remote's own 2 s hold still powers off by itself.
+
 ## Takeover (0.7.0)
 
 A firmware can bring its own Move interface (FM1VST `docs/RFM1-TAKEOVER.md`, `tk1`): it draws the screen and its

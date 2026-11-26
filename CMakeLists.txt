@@ -131,6 +131,12 @@ if(RFM1CS_TESTS)
     target_link_libraries(move_tracks PRIVATE rfm1cs_move moveremote)
     target_compile_options(move_tracks PRIVATE -Wall -Wextra)
     add_test(NAME move_tracks COMMAND move_tracks)
+    # (2026-11-26) the power button: "Shut Down?", the jog click confirms
+    add_executable(move_power tests/move_power.c)
+    target_include_directories(move_power PRIVATE src tests)
+    target_link_libraries(move_power PRIVATE rfm1cs_move moveremote)
+    target_compile_options(move_power PRIVATE -Wall -Wextra)
+    add_test(NAME move_power COMMAND move_power)
     # Session view through the Track buttons: scenes, the selected clip, the screen and the pads, clip cut / copy
     add_executable(move_sessview tests/move_sessview.c)
     target_include_directories(move_sessview PRIVATE src tests)
