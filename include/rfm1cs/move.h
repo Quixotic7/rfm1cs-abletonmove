@@ -1435,7 +1435,9 @@ enum { RFM_MOVE_KIT_PG_KIT, RFM_MOVE_KIT_PG_SAMPLE, RFM_MOVE_KIT_PG_TRIG, RFM_MO
  * Library (CORE: Move's factory sounds, read-only, only folders with sounds). TAKES stays the sampler's To Kit's
  * place (KIT_LOAD), KITS Sample Kit's Load; neither is in the root */
 enum { RFM_MOVE_KIT_PL_TAKES = 1, RFM_MOVE_KIT_PL_SAMPLES = 2, RFM_MOVE_KIT_PL_KITS = 3, RFM_MOVE_KIT_PL_CORE = 4 };
-enum { RFM_MOVE_KIT_ROW_DIR = 1, RFM_MOVE_KIT_ROW_FILE = 2, RFM_MOVE_KIT_ROW_KIT = 3 };   /* (KIT: a saved kit, Kits') */
+enum { RFM_MOVE_KIT_ROW_DIR = 1, RFM_MOVE_KIT_ROW_FILE = 2, RFM_MOVE_KIT_ROW_KIT = 3,   /* (KIT: a saved kit, Kits') */
+       RFM_MOVE_KIT_ROW_NOTE = 4 };   /* (2026-11-26) a dead row, its name only ("Reading...", "120 .ogg (unsupported)"):
+                                       * shown without an icon, nothing on the jog's landing or the click */
 #define RFM_MOVE_KIT_SLOT 3                             /* (stage 3b) MIX's slot for the kit's own strip */
 enum { RFM_MOVE_KIT_MIX_LEVEL, RFM_MOVE_KIT_MIX_PAN, RFM_MOVE_KIT_MIX_SEND1, RFM_MOVE_KIT_MIX_N = 5 };   /* its values */
 /* rfm_move_kit_loaded's status (and a pad's): */

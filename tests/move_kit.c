@@ -1294,6 +1294,24 @@ static void t_folder(void)
     jog(-1), clear(), jog_click();
     CHECKF(M.kit.depth == 1 && M.kit.folder[1] == 70 && !count(RFM_MOVE_ACT_KIT_FOLDER), "depth %d", M.kit.depth);
 }
+/* 21b. (2026-11-26) a dead row (the host's "Reading..." or "120 .ogg (unsupported)"): shown, nothing loaded on the
+ * jog's landing nor on the click, Files stays open in its folder */
+static void t_note_row(void)
+{
+    rfm_move_kit_row_t r[2];
+    kit_view();
+    jog_click(), jog(1), jog_click();                   /* (Files, Samples) */
+    CHECK(M.kit.place == RFM_MOVE_KIT_PL_SAMPLES);
+    memset(r, 0, sizeof r);
+    r[0].kind = RFM_MOVE_KIT_ROW_NOTE, snprintf(r[0].name, sizeof r[0].name, "3 .ogg (unsupported)");
+    r[1].id = 72, r[1].kind = RFM_MOVE_KIT_ROW_FILE, snprintf(r[1].name, sizeof r[1].name, "Clap");
+    rfm_move_kit_rows(&M, 2, 0, 2, 0, 2, r);
+    clear(), rest(), jog_click(), rest();
+    CHECK(!count(RFM_MOVE_ACT_KIT_LOAD) && M.kit.tab == 2 && M.kit.place == RFM_MOVE_KIT_PL_SAMPLES && M.kit.depth == 0);
+    jog(1), rest();                                     /* (the next row, a sound: loaded as before) */
+    CHECK(count(RFM_MOVE_ACT_KIT_LOAD) == 1);
+    back(), back();
+}
 /* 22. kits: the Kit tab's Save ("Saved / Kit 3", board R), Load (Files' Kits), a kit applied, its Undo; Files' Kits */
 static void t_kits(void)
 {
@@ -2593,6 +2611,7 @@ int main(void)
     t_sends();
     t_mixer();
     t_folder();
+    t_note_row();
     t_kits();
     t_smp_kit();
     t_project12();

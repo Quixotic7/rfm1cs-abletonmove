@@ -2569,8 +2569,8 @@ static void click(rfm_move_t *m)
     }
     {
         const rfm_move_kit_row_t *r = row_get(m, t->place, t->folder[t->depth], t->fsel[t->depth]);
-        if (!r)
-            return;                                     /* (not come yet) */
+        if (!r || r->kind == RFM_MOVE_KIT_ROW_NOTE)
+            return;                                     /* (not come yet; a dead row: nothing) */
         if (r->kind == RFM_MOVE_KIT_ROW_DIR && (m->seq.mods & SEQ_M_SHIFT)) {   /* (3b) Shift: its actions */
             m->seq.mods_used |= SEQ_M_SHIFT;
             preview_stop(m);
@@ -3767,9 +3767,9 @@ static void brow(mr_canvas_t *cv, int y, const char *name)
     if (y > -BR_H && y < 64)
         v2_T(cv, 16, y + 3, nm, 2, 1);
 }
-static icon_t *row_icon(const rfm_move_kit_row_t *r)
+static icon_t *row_icon(const rfm_move_kit_row_t *r)   /* (a dead row: none) */
 {
-    return r->kind == RFM_MOVE_KIT_ROW_KIT ? &I_KIT : r->kind == RFM_MOVE_KIT_ROW_DIR ? &I_TRR : &I_SND;
+    return r->kind == RFM_MOVE_KIT_ROW_NOTE ? NULL : r->kind == RFM_MOVE_KIT_ROW_KIT ? &I_KIT : r->kind == RFM_MOVE_KIT_ROW_DIR ? &I_TRR : &I_SND;
 }
 static void files_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
