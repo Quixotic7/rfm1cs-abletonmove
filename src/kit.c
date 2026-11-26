@@ -4300,15 +4300,13 @@ static void popup_t(const rfm_move_t *m, mr_canvas_t *cv, int p, const char *ttl
         v2_R(cv, 4 + d->v[p] * 118 / 100, 55, 2, 2, 1);
         return;
     }
-    if (p == RFM_MOVE_KIT_P_LEVEL) {                    /* (2026-11-26) the one level popup: the 16 pads' bars */
-        int sib[RFM_MOVE_KIT_PADS], i;
-        char tt[20], nm[40];
-        for (i = 0; i < RFM_MOVE_KIT_PADS; i++)
-            sib[i] = has_sound(CPAD(m, i)) ? pad_db10(i == k ? d->v[p] : CPAD(m, i)->v[p]) : RFMV_DB_INF;
+    if (p == RFM_MOVE_KIT_P_LEVEL) {                    /* (2026-11-26, the owner's) the one level popup: this pad's
+                                                         * own bar only, no other pads, no sound's name */
+        const int sib = pad_db10(d->v[p]);
+        char tt[20];
         if (!ttl)
             snprintf(tt, sizeof tt, "Pad %d Level", k % RFM_MOVE_KIT_PADS + 1), ttl = tt;
-        snprintf(nm, sizeof nm, "%s", has_sound(d) ? (d->name[0] ? d->name : "Sound") : "empty");
-        rfmv_level_popup(cv, ttl, pad_db10(d->v[p]), nm, sib, RFM_MOVE_KIT_PADS, k % RFM_MOVE_KIT_PADS);
+        rfmv_level_popup(cv, ttl, sib, NULL, &sib, 1, 0);
         return;
     }
     if (p == KP_KLEVEL) {                               /* (2026-11-26) the kit's level: the tracks' one popup */
