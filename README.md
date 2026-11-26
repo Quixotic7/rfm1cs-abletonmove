@@ -1366,6 +1366,62 @@ edited) for the host's Kit tab.
 Nothing new is saved with the project (a pad's path and region, as before). Tests: `move_kit` 25..29 (the tools, mix
 and join, slicing, the page's calls) and boards N, O, P and V whole (O's one wave column at the seam masked).
 
+## The kit (round A)
+
+The owner tried the kit (2026-11-25) and asked for a rethink of loading sounds: "I'd like to press a pad and then the
+sample on that pad should be selected. If I have a pad selected and then select a new sample it should immediately be
+on that pad so I can use the pad itself to preview." The look stays (tabs, rows, the pad number top right).
+
+**Pad-first loading.** Opening Files (its tab chosen, the view opened on it) is a browse for the chosen pad: the core
+sends `KIT_FIND` with the pad's path and the host answers `rfm_move_kit_found` (the place, its folders, the row in
+each, the sound's row id); Files moves there, the jog on the pad's row. An empty pad (or a sound not found) leaves
+Files where the last load was. The jog at rest `RFM_MOVE_KIT_LAND_MS` (120 ms) on a sound puts it on the chosen pad
+(`KIT_LOAD` with the row; a fast spin: one load, the sound it rests on) and, once the host's answer comes, the pad
+plays it once (a held mode let go after 400 ms; Toggle: a second tap); the pad's settings stay, its region whole as
+for any new sound. A folder or a kit loads nothing, and the row the pad already has neither. Files no longer sends
+`KIT_PREVIEW`. A pad pressed in Files plays and is the target (blinking white): another pad starts a new browse for
+it (the list goes to its sound), the same pad only plays (it is how you hear what landed). The jog's click on a sound
+keeps it (loaded at once if the jog had not rested yet) and goes to the Pad tab (the Sound row); Back goes up a
+folder, then the places, then the tabs, as before. **One Undo for the whole browse:** the pad's undo is kept at the
+browse's first load, so Undo brings back what the pad held before Files was opened for it, however many sounds
+landed; a pad pressed meanwhile starts a new browse, so Undo restores the last target's pad.
+
+**The close-up of Start and End.** Start (knob 2, or its row's popup) and End (its row's popup) draw the value large
+(3x) over the frames round the point: 8 times nearer than the whole sound (`RFM_MOVE_KIT_ZOOM`), 32 with Shift held
+(`_ZOOM_FINE`; Shift also makes the turn fine, 4 of 32767 a detent). The point is a line down the middle with a notch
+on top; the columns outside start..end are dithered (half lit), past the sound's ends nothing. The peaks are the
+host's: `KIT_PEAKS` (`index` the pad, `from` / `count` the window's frames inside the sound, `value` 64) asked again
+when the window moves a sixteenth or the zoom changes; `rfm_move_kit_peaks` answers. 150 ms after the last turn
+(`RFM_MOVE_KIT_AUD_MS`) the core sends `KIT_AUDITION`: a moved start plays from it (a second at most), a moved end the
+region's last second; a further turn cancels the pending one.
+
+**Hits' sensitivity.** In the slicing screen with Hits, knob 3 (dark and dead until now; free in the layout) is the
+sensitivity 1..100 (50 at first, lit in the menu's colour; its row shows "Sens 55"); 100 ms after a turn
+(`RFM_MOVE_KIT_SENS_MS`) the cuts are asked again (`KIT_SLICE` `_ASK` with `count` the sensitivity). With Equal or
+Steps it is dark and dead.
+
+**Trim silence.** The Kit tab's fourth row (I_TRIM, "Trim On" / "Trim Off"; three rows shown, scrolling): its click a
+popup, the jog On / Off (default On), kept with the kit (version 13) and in a saved kit's `kit.json`
+(`rfm_move_kit_trim`, `_set_trim`). `KIT_REC`'s `param` carries it; the host moves the pad's Start to just before the
+take's first sound (`rfm_move_kit_set`), the file whole.
+
+**Toggle.** Play mode's fourth (`RFM_MOVE_KIT_M_TOGGLE`, I_TOGGLE): a tap starts the pad, the next tap stops it (a
+short release); it loops while on; a step's note toggles it the same way (the host toggles on each note-on, its
+note-off ignored). The Play popup draws the four modes (board E redrawn in the mock).
+
+| Action | Fields | Answer |
+|---|---|---|
+| `RFM_MOVE_ACT_KIT_FIND` (77) | `index` the pad, `data` / `len` its path | `rfm_move_kit_found(m, pad, place, depth, folder[], sel[], id)` |
+| `RFM_MOVE_ACT_KIT_PEAKS` (78) | `index` the pad, `from` / `count` frames, `value` the peaks | `rfm_move_kit_peaks(m, pad, from, count, n, peaks)` |
+| `RFM_MOVE_ACT_KIT_AUDITION` (79) | `index` the pad, `from` / `count` frames | none (heard once) |
+| `RFM_MOVE_ACT_KIT_REC` (69) | (round A) `param` 1: Trim silence on | as before |
+| `RFM_MOVE_ACT_KIT_SLICE` (75) | (round A) `_ASK`'s `count`: the Hits' sensitivity 1..100 (0: 50) | as before |
+
+The project is version 13: the kit's header byte 9 is the Trim silence (0 / 1); 12 and 11 still load (as On); the
+Play mode may be 3. Tests: `move_kit` 9 (Files, rewritten: the landing, one load for a fast spin, the click, one Undo,
+`KIT_FIND` and its answer, a pad pressed there), 30 (the close-up: `KIT_PEAKS`, Shift's zoom, the point, the
+dithering, the 150 ms audition), 31 (the sensitivity knob), 32 (Toggle), 33 (Trim silence saved).
+
 ## FX parameter pages (0.5.0)
 
 A module's own parameter pages, as Schwung's `ui_hierarchy` lays them out: each level's 8 knobs a page, its overflow
