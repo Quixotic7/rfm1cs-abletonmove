@@ -354,6 +354,11 @@ enum {
  *    to that pad's voices sounding now; they stay on those voices (the pad's next hit has its own). Hosts that do not
  *    know it ignore it */
 #define RFM_MOVE_ACT_KIT_GHOST 81
+/* (2026-11-26, the owner's: "a power feature that matches default Move software") POWEROFF: the power button pressed,
+ * "Shut Down?" up, the jog clicked: the host stops as for EXIT (everything saved) and then powers the Move off (on the
+ * Move: Move Remote's own power off, Move's power service). No fields. Hosts that do not know it ignore it */
+#define RFM_MOVE_ACT_POWEROFF 82
+#define RFM_MOVE_POWER_DEBOUNCE_MS 120                  /* a press this soon after the last one taken: a bounce */
 #define RFM_MOVE_KIT_OWN "@/"
 #define RFM_MOVE_KIT_LAND_MS 120                        /* Files: the jog at rest so long on a sound: it is on the pad */
 #define RFM_MOVE_KIT_AUD_MS 150                         /* (unused since 2026-11-26: Start / End not heard at rest) */
@@ -1707,6 +1712,13 @@ typedef struct {
     uint8_t vel_last;                                   /* the last velocity a pad played (Fixed starts from it) */
     int16_t battery;                                    /* the Move's battery, 0..100 %, from its STATUS; -1 not yet */
     uint8_t power;                                      /* its power bits (STATUS byte 5; bit 3: the power button held) */
+    /* (2026-11-26, the owner's) the power button as Move has it: a press asks "Shut Down?" (rfm_move_power) */
+    uint8_t pw_ask;                                     /* the popup is up: it owns the controls */
+    uint8_t pw_stage, pw_cmd, pw_held;                  /* the surface's power SysEx matched packet by packet; held */
+    uint32_t pw_ms;                                     /* the last press taken (the debounce) */
+    uint8_t pw_eat_btn[16], pw_eat_jog;                 /* presses the popup took: their releases go nowhere too */
+    uint32_t pw_eat_pad;
+    uint16_t pw_eat_step;
     int8_t edit_pad;                                    /* the drum pad the jog wheel is editing, -1 none */
     uint8_t shift_down;                                 /* Shift is down (MIDI mode: Shift + step 9) */
     int8_t knob_acc[RFM_MOVE_NKNOBS];
@@ -1947,6 +1959,15 @@ void rfm_move_set_master(rfm_move_t *m, int value);    /* MASTER as the host has
 /* the Move's battery from Move Remote's STATUS (battery8, byte 4, as the surface reports it: taken as a percentage,
  * clamped to 100; power8, byte 5); shown in the Global Settings menu. Returns 1 when it changed (a redraw) */
 int rfm_move_set_battery(rfm_move_t *m, int battery, int power_bits);
+/* (2026-11-26) the power button, as Move's own software has it: a press (down 1; up 0 does nothing) puts up "Shut Down?"
+ * over every screen, said too. While it is up it owns the controls: the jog click sends RFM_MOVE_ACT_POWEROFF; Back,
+ * the power button again or any other button, pad or step closes it and does nothing else (that press and its release
+ * go nowhere); knob and jog turns, touches and pressure are ignored; releases of what was held before pass. The power
+ * button's own SysEx reports (MR_EV_SYSEX, F0 00 21 1D 01 01 3A bits battery 00 F7, bit 3 held) reach this through
+ * rfm_move_input by themselves: a host calls it only for a press it learns of another way. Presses closer than
+ * RFM_MOVE_POWER_DEBOUNCE_MS to the last are one. rfm_move_power_asked: the popup is up */
+void rfm_move_power(rfm_move_t *m, int down);
+int rfm_move_power_asked(const rfm_move_t *m);
 /* Sample's audio loop: the recorded audio's peaks, 0..255 each (the web page: one a ~16 ms window of the take, from
  * the worklet), drawn as the Sampling screen's scrolling waveform. Taken only while the loop records (armed and
  * waiting for its bar: flat); a new take starts empty. Returns how many were taken (a redraw when > 0). */
