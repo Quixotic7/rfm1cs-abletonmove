@@ -3828,6 +3828,21 @@ static void pad_wave_n(const rfm_move_t *m, mr_canvas_t *cv, int k, int y0, int 
         a = (pk * h + 127) / 255;
         v2_R(cv, c * 2, y0 - a, 1, a ? a * 2 : 1, 1);
     }
+    if (mode_of(d) == RFM_MOVE_KIT_M_LOOP && e > s) {  /* (2026-11-26, the owner's) the Loop engine's markers over the
+                                                         * wave, always: a dotted line each, its bracket's ticks top and
+                                                         * bottom turned inwards */
+        int j, y;
+        for (j = 0; j < 2; j++) {
+            const int lp = clampi(d->v[j ? RFM_MOVE_KIT_P_LOOPE : RFM_MOVE_KIT_P_LOOPS], d->v[RFM_MOVE_KIT_P_START],
+                                  d->v[RFM_MOVE_KIT_P_END]);
+            const int x = clampi((int)((int64_t)(clampi(lp, s, e) - s) * (2 * n - 1) / (e - s)), 0, 2 * n - 1);
+            const int dx = j ? -1 : 1;
+            for (y = y0 - h; y <= y0 + h; y += 2)
+                v2_px(cv, x, y, 1);
+            v2_px(cv, x, y0 - h - 1, 1), v2_px(cv, x + dx, y0 - h - 1, 1), v2_px(cv, x + 2 * dx, y0 - h - 1, 1);
+            v2_px(cv, x, y0 + h + 1, 1), v2_px(cv, x + dx, y0 + h + 1, 1), v2_px(cv, x + 2 * dx, y0 + h + 1, 1);
+        }
+    }
 }
 static void pad_wave(const rfm_move_t *m, mr_canvas_t *cv, int k, int y0, int h, int whole)
 {
@@ -4383,11 +4398,19 @@ static void popup_t(const rfm_move_t *m, mr_canvas_t *cv, int p, const char *ttl
     const rfm_move_kit_pad_t *d = CPAD(m, k);
     char v[32];
     int pt[5];
-    if (p == RFM_MOVE_KIT_P_START || p == RFM_MOVE_KIT_P_END || p == RFM_MOVE_KIT_P_LOOPS || p == RFM_MOVE_KIT_P_LOOPE) {
-        zoom_screen(m, cv, p);                          /* (round A) the close-up (pages v2: the loop's points too) */
+    if (p == RFM_MOVE_KIT_P_START || p == RFM_MOVE_KIT_P_END) {
+        zoom_screen(m, cv, p);                          /* (round A) the close-up */
         return;
     }
     val_text(m, k, p, 0, v, sizeof v);
+    if (p == RFM_MOVE_KIT_P_LOOPS || p == RFM_MOVE_KIT_P_LOOPE) {   /* (2026-11-26, the owner's: no close-up) the
+                                                         * region's wave, its loop markers over it */
+        v2_TC(cv, 64, 0, P_NAME[p], 2, 1);
+        v2_valTC(cv, 64, 17, v, 2);
+        if (ready(d))
+            pad_wave(m, cv, k, 48, 12, 0);
+        return;
+    }
     if (p == RFM_MOVE_KIT_P_MODE) {                     /* (board E) how it plays, with its envelope (pages v2: the six
                                                          * engines) */
         const int x = mode_of(d);
