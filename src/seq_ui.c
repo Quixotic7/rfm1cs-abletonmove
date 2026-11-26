@@ -2602,7 +2602,9 @@ static void smenu_turn(rfm_move_t *m, int k, int d, int jog)   /* (jog: the jog 
         }
         break;
     case RFM_MOVE_SM_LAYOUT:
-        if (k <= 0) {
+        if (k <= 0 && rfmv_kit_rh_of(m) >= 0)
+            rfmv_kit_rh_turn(m, d);                     /* (2026-11-26: the Kit view's: the right half's mode) */
+        else if (k <= 0) {
             const int l = clampi(m->s.layout + d, 0, 3);
             if (l != m->s.layout)
                 m->s.layout = (uint8_t)l, rfmv_changed(m);
@@ -4247,7 +4249,12 @@ static void smenu_head(const rfm_move_t *m, int k, char *o, int cap)   /* knob k
         else
             snprintf(o, (size_t)cap, "For %s", t->own & 1 ? "Track" : "Global");
         break;
-    case RFM_MOVE_SM_LAYOUT: snprintf(o, (size_t)cap, "Layout %s", LN[m->s.layout & 3]); break;
+    case RFM_MOVE_SM_LAYOUT:
+        if (rfmv_kit_rh_of(m) >= 0)
+            snprintf(o, (size_t)cap, "Right half %s", rfmv_kit_rh_name(rfmv_kit_rh_of(m)));
+        else
+            snprintf(o, (size_t)cap, "Layout %s", LN[m->s.layout & 3]);
+        break;
     case RFM_MOVE_SM_KEYS:
         if (k == 0)
             snprintf(o, (size_t)cap, "Root %s", rfmv_note_names[m->s.root % 12]);
@@ -4413,6 +4420,19 @@ static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
     case RFM_MOVE_SM_LAYOUT: {                          /* Move's icon row: the chosen one underlined and named */
         static const int IC[4] = { V2I_INKEY, V2I_CHROM, V2I_DRUM, V2I_OCT };
         static const char *const NM[4] = { "In-Key", "Chromatic", "Drum", "Octaves" };
+        if (rfmv_kit_rh_of(m) >= 0) {                   /* (2026-11-26) the Kit view: the right half's five modes */
+            static const int RI[RFM_MOVE_KIT_RH_N] = { V2I_KEYS, V2I_INKEY, V2I_CHROM, V2I_OCT, V2I_WAVE };
+            const int rh = rfmv_kit_rh_of(m);
+            for (i = 0; i < RFM_MOVE_KIT_RH_N; i++)
+                if (i == rh)
+                    v2_icSel(cv, RI[i], 6 + i * 24, 1);
+                else
+                    v2_ic(cv, RI[i], 6 + i * 24, 1, 1);
+            v2_TC(cv, 64, 30, rfmv_kit_rh_name(rh), 2, 1);
+            v2_strip(cv, 2, 1, -1, 0, 128);
+            smenu_top(m, cv, hk);
+            break;
+        }
         for (i = 0; i < 4; i++)
             if (i == m->s.layout)
                 v2_icSel(cv, IC[i], 22 + i * 24, 1);

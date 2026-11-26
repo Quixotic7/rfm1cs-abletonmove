@@ -1516,6 +1516,18 @@ remoteFM14Move-kit KIT-SPEC.md "Browser, 2026-11-26".
 - **The marquee**: the chosen row's name wider than its 112 px scrolls as a ping-pong: 1 s still, 25 px a second (whole
   pixels) to its end, 1 s, back, again; from its start whenever the choice changes. Files keeps the kit timed, so the
   host's redraws carry it.
+- **Steps** (UX-RULES R2): a step's click toggles at its release; held `RFM_MOVE_SEQ_HOLD_MS` or more, or a knob, the
+  volume knob or a pad used while it is down, its release toggles nothing. A click with right-half pitch pads held
+  (Chop: slots) puts the chosen pad's hit there at each (again: out); a step held lights the pitches (chops) the
+  chosen pad plays on it in its row's colour; a step held + a pitch pad toggles that pitch there.
+- **Layout** (Shift + step 8) in the Kit view sets the right half's mode (its five icons, the jog and knob 1), as
+  Sample Kit's knob 1; elsewhere the note layout as before.
+- **Every pad setting locks** (a step held + the knob): all of Pad Sample, Pad Sample 2, Warp, Filter and Pad Mix (not
+  Mute, Hold; the kit-wide pages and Trig as before). The nine round B ones keep their LK locks; any other takes one of
+  the hit's `RFM_MOVE_KIT_XSLOTS` (9) slots: a pair of sequencer locks (cc `RFM_MOVE_KIT_XLOCK0 + (j * 4 + pad % 4) *
+  2`: the setting, cc + 1: its value 0..254). No format change (project version 15). KIT_NOTE carries them decoded:
+  `kp_mask` (bit per `RFM_MOVE_KIT_P_*`), `kp[]`, a locked Sync's microseconds in `from`. A tenth extra lock on one hit:
+  "Locks full".
 
 ## FX parameter pages (0.5.0)
 

@@ -375,7 +375,16 @@ enum { RFM_MOVE_KIT_LK_PITCH, RFM_MOVE_KIT_LK_START, RFM_MOVE_KIT_LK_CUTOFF, RFM
                                                          * range looped while the note lasts */
        RFM_MOVE_KIT_LK_N };
 #define RFM_MOVE_KIT_LOCK0 136
-#define RFM_MOVE_KIT_LOCK_LAST (RFM_MOVE_KIT_LOCK0 + RFM_MOVE_KIT_LK_N * 4 - 1)
+/* (2026-11-26, the owner's "every step needs to support step locks") every pad setting on the pad pages locks
+ * (RFM_MOVE_KIT_P_* but Mute and Hold). The nine with a RFM_MOVE_KIT_LK_* keep their round B lock (old projects load as
+ * they are); every other one takes a slot of the step's pad: XLOCK slot j (0..RFM_MOVE_KIT_XSLOTS - 1) of pad k is the
+ * pair of locks cc RFM_MOVE_KIT_XLOCK0 + (j * 4 + k % 4) * 2 = the setting (RFM_MOVE_KIT_P_*), cc + 1 = its value
+ * encoded 0..254 (as the LK ones: a setting's own steps from its least; envelope times an index of their steps;
+ * pitches semitones + 24; points of 254; Grain Size 10 + 2 e ms; Speed 25 + 5 e). So a hit locks the nine and up to
+ * RFM_MOVE_KIT_XSLOTS more; the lock records and the project format are as before (version 15) */
+#define RFM_MOVE_KIT_XLOCK0 180
+#define RFM_MOVE_KIT_XSLOTS 9
+#define RFM_MOVE_KIT_LOCK_LAST (RFM_MOVE_KIT_XLOCK0 + RFM_MOVE_KIT_XSLOTS * 8 - 1)
 #define RFM_MOVE_KIT_SLICES 16                          /* slices a take gives at most */
 enum { RFM_MOVE_SMP_OP_DELETE = 1, RFM_MOVE_SMP_OP_TRIM, RFM_MOVE_SMP_OP_NORMALIZE, RFM_MOVE_SMP_OP_REVERSE,
        RFM_MOVE_SMP_OP_FADE_IN, RFM_MOVE_SMP_OP_FADE_OUT, RFM_MOVE_SMP_OP_UNDO };   /* SMP_EDIT's index; _UNDO: answers */
@@ -424,6 +433,10 @@ typedef struct {
      * (RFM_MOVE_KIT_LK_*) set: klk[l] replaces the pad's setting for this voice only, in the setting's own units */
     uint16_t klk_mask;                                  /* (pages v2: 11 locks, Morph, Env Amount, the Chop's) */
     int16_t klk[11];
+    /* (2026-11-26) .. and every other locked setting: bit p of kp_mask (RFM_MOVE_KIT_P_*) set, kp[p] replaces the pad's
+     * setting p for this hit (its units); a locked Sync (RFM_MOVE_KIT_P_STRETCH): `from` its microseconds */
+    uint64_t kp_mask;
+    int16_t kp[48];
 } rfm_move_act_t;
 typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
@@ -1561,6 +1574,8 @@ typedef struct {                                        /* (kit.c) */
     int8_t br_dir;
     uint8_t core_lib;                                   /* (2026-11-26) the host has the Move Library (PL_CORE) */
     uint32_t mq_key, mq_f, mq_ms;                       /* .. the chosen row's marquee: the row, since */
+    uint32_t st_ms[16];                                 /* (2026-11-26) each step's press (its click gated: a hold
+                                                         * toggles nothing) */
     uint8_t lv_on, lv_pad, lv_cut, lv_fe;               /* (pages v2) the chosen pad's voice as it sounds (the Filter
                                                          * page's live bars and envelope; rfm_move_kit_live) */
     int8_t lv_fst;

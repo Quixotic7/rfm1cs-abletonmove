@@ -437,6 +437,11 @@ void rfmv_kit_init(rfm_move_t *m);                      /* (rfm_move_init) an em
 void rfmv_kit_caps(rfm_move_t *m, int was);             /* the caps set (was: the kit's before) */
 int rfmv_kit_active(const rfm_move_t *m);               /* the Kit view is the view (the sequencer's track view) */
 int rfmv_kit_shown(const rfm_move_t *m);                /* .. and its screen shows (no menu, States, sampler over it) */
+/* (2026-11-26, the owner's) the Kit view's Layout menu sets the right half's mode: it (-1: not the Kit view), a turn,
+ * its name */
+int rfmv_kit_rh_of(const rfm_move_t *m);
+void rfmv_kit_rh_turn(rfm_move_t *m, int d);
+const char *rfmv_kit_rh_name(int rh);
 void rfmv_kit_open(rfm_move_t *m);                      /* Track 4's Kit view */
 void rfmv_kit_close(rfm_move_t *m, int restore);        /* .. left (restore: what it was opened over) */
 void rfmv_kit_to(rfm_move_t *m, uint32_t take);         /* the sampler's To Kit: the take waits for its pad */

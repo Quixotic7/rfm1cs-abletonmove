@@ -13,6 +13,12 @@ long name scrolls (`mq_*` in `rfm_move_kit_t`). No KIT_AUDITION is sent any more
 landing never plays: a sound is heard only from its pad or the sequencer. `rfm_move_kit_t` grows: rebuild everything.
 move_kit adapted (the root, Kits' Back, the close-up silent).
 
+Then (same day): a step's click gated (a hold, or a knob / pad used meanwhile, toggles nothing at the release:
+`st_ms[]`); a pitch (Chop slot) held + a step's click enters that pitch (chop); a held step lights its pitches; the Kit
+view's Layout menu sets the right half (`rfmv_kit_rh_*`, seq_ui.c's Layout branch); every pad setting lockable through
+`RFM_MOVE_KIT_XLOCK0` slot pairs (`RFM_MOVE_KIT_LOCK_LAST` now 251; `rfm_move_act_t` gains `kp_mask`, `kp[48]`: rebuild
+everything).
+
 ### Pages v2 (2026-11-26): engines, Warp, Trig, the filter's morph and envelope, the kit bus, the right half
 
 README "The kit (pages v2)". Project version 15: 45 settings a pad (`RFM_MOVE_KIT_P_LOOPS` .. `_FRELEASE` after
