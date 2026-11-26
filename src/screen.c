@@ -240,20 +240,16 @@ void rfmv_level_popup(mr_canvas_t *cv, const char *title, int db10, const char *
     }
     if (n < 1)
         return;
-    {                                                   /* the siblings: a bar each from the bottom, the one set
-                                                         * solid, the rest outlined */
-        const int cw = 128 / n, gap = n > 8 ? 2 : 4, bw = cw - gap, x0 = (128 - cw * n) / 2 + gap / 2;
+    {                                                   /* (2026-11-26, the owner's: thin, as before) the siblings:
+                                                         * a level line each along the bottom, as long as its
+                                                         * level; the one set 5 px tall, the rest 2 px */
+        const int cw = 128 / n, gap = n > 8 ? 2 : 3, bw = cw - gap, x0 = (128 - cw * n) / 2 + gap / 2;
         for (i = 0; i < n; i++) {
-            const int x = x0 + i * cw, h = (int)(rfmv_db_frac(sib[i]) * 13 + 0.5);
+            const int x = x0 + i * cw, w = (int)(rfmv_db_frac(sib[i]) * bw + 0.5);
             if (i == cur)
-                fill(cv, x, 63 - h, bw, h + 1, 1);
-            else {
-                fill(cv, x, 63, bw, 1, 1);
-                if (h > 0) {
-                    fill(cv, x, 63 - h, bw, 1, 1);
-                    fill(cv, x, 63 - h, 1, h + 1, 1), fill(cv, x + bw - 1, 63 - h, 1, h + 1, 1);
-                }
-            }
+                fill(cv, x, 59, w > 1 ? w : 1, 5, 1);
+            else
+                fill(cv, x, 62, w > 1 ? w : 1, 2, 1);
         }
     }
 }
