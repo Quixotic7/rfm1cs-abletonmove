@@ -1173,137 +1173,6 @@ static void val_text(const rfm_move_t *m, int k, int p, int row, char *o, int ca
 {
     vtext(m, k, p, kval(m, k, p), row, o, cap);
 }
-/* (pages) a cell's words for value v, 5 characters at most (29 px at 1x) */
-static void cell_text(const rfm_move_t *m, int k, int p, int v, char *o, int cap)
-{
-    static const char *const MS[RFM_MOVE_KIT_M_N] = { "Shot", "Mom", "Loop", "PEnv", "LoFi", "Grain" };
-    static const char *const WS[RFM_MOVE_KIT_W_N] = { "Off", "Repch", "Grain", "Beats" };
-    static const char *const RS[RFM_MOVE_KIT_RH_N] = { "Pitch", "Key", "Chrom", "Key4", "Chop" };
-    const rfm_move_kit_pad_t *d = CPAD(m, k);
-    switch (p) {
-    case RFM_MOVE_KIT_P_PITCH:
-    case RFM_MOVE_KIT_P_WPITCH:
-        if (p == RFM_MOVE_KIT_P_PITCH && fitted(d))
-            snprintf(o, (size_t)cap, "Fit");            /* (stretched: the Pitch ignored) */
-        else if (v % 100)
-            snprintf(o, (size_t)cap, "%c%d.%02d", v < 0 ? '-' : '+', (v < 0 ? -v : v) / 100, (v < 0 ? -v : v) % 100);
-        else
-            snprintf(o, (size_t)cap, v / 100 ? "%+d" : "0", v / 100);   /* (whole semitones; Shift: the cents) */
-        break;
-    case RFM_MOVE_KIT_P_WARP: snprintf(o, (size_t)cap, "%s", WS[clampi(v, 0, RFM_MOVE_KIT_W_N - 1)]); break;
-    case RFM_MOVE_KIT_P_PDEPTH: snprintf(o, (size_t)cap, v ? "%+d" : "0", v); break;
-    case RFM_MOVE_KIT_P_BITS: snprintf(o, (size_t)cap, "%d", v); break;
-    case RFM_MOVE_KIT_P_GSIZE:
-    case RFM_MOVE_KIT_P_WGRAIN:
-    case RFM_MOVE_KIT_P_WSEARCH: snprintf(o, (size_t)cap, "%dms", v); break;
-    case RFM_MOVE_KIT_P_GSPREAD: snprintf(o, (size_t)cap, v ? "+-%d" : "0", v); break;
-    case RFM_MOVE_KIT_P_SPEED:
-        speed_text(d, v, o, cap);
-        if (strlen(o) > 5 && o[strlen(o) - 1] == 'x')
-            o[strlen(o) - 1] = 0;
-        break;
-    case RFM_MOVE_KIT_P_MORPH:
-        if (v <= 0 || v == 50 || v >= 100)
-            morph_text(v, o, cap);
-        else
-            snprintf(o, (size_t)cap, "%d", v);
-        break;
-    case RFM_MOVE_KIT_P_FENV: snprintf(o, (size_t)cap, v ? "%+d" : "0", v); break;
-    case RFM_MOVE_KIT_P_LOOPXF:
-    case RFM_MOVE_KIT_P_GPOS:
-    case RFM_MOVE_KIT_P_GSPRAY:
-    case RFM_MOVE_KIT_P_WJITTER:
-    case RFM_MOVE_KIT_P_FSUSTAIN:
-        if (!v && p == RFM_MOVE_KIT_P_LOOPXF)
-            snprintf(o, (size_t)cap, "Off");
-        else
-            snprintf(o, (size_t)cap, "%d%%", v);
-        break;
-    case RFM_MOVE_KIT_P_LOOPS:
-    case RFM_MOVE_KIT_P_LOOPE: cell_text(m, k, RFM_MOVE_KIT_P_START, v, o, cap); break;
-    case KP_FINE: snprintf(o, (size_t)cap, v % 100 ? "%+dc" : "0c", v % 100); break;
-    case RFM_MOVE_KIT_P_START:
-    case RFM_MOVE_KIT_P_END: {
-        const int ms = frac_ms(d, v);
-        if (!d->rate || ms < 0)
-            snprintf(o, (size_t)cap, "%d%%", (int)(v * 100L / RFM_MOVE_KIT_FRAC));
-        else if (ms < 10000)
-            snprintf(o, (size_t)cap, "%d.%02d", ms / 1000, ms % 1000 / 10);
-        else if (ms < 100000)
-            snprintf(o, (size_t)cap, "%d.%d", ms / 1000, ms % 1000 / 100);
-        else
-            snprintf(o, (size_t)cap, "%d", ms / 1000);
-        break;
-    }
-    case RFM_MOVE_KIT_P_MODE: snprintf(o, (size_t)cap, "%s", MS[clampi(v, 0, RFM_MOVE_KIT_M_N - 1)]); break;
-    case RFM_MOVE_KIT_P_DOWNS:
-    case RFM_MOVE_KIT_P_STRETCH:
-        if (v > (p == RFM_MOVE_KIT_P_DOWNS))
-            snprintf(o, (size_t)cap, "%d", v);
-        else
-            snprintf(o, (size_t)cap, "Off");
-        break;
-    case RFM_MOVE_KIT_P_LEVEL:
-        if (v <= LEVEL_MIN)
-            snprintf(o, (size_t)cap, "-inf");
-        else
-            snprintf(o, (size_t)cap, v > 0 ? "+%ddB" : "%ddB", v);
-        break;
-    case RFM_MOVE_KIT_P_PAN:
-        if (v)
-            snprintf(o, (size_t)cap, "%c%d", v < 0 ? 'L' : 'R', v < 0 ? -v : v);
-        else
-            snprintf(o, (size_t)cap, "C");
-        break;
-    case RFM_MOVE_KIT_P_ATTACK:
-    case RFM_MOVE_KIT_P_HOLD:
-    case RFM_MOVE_KIT_P_DECAY:
-    case RFM_MOVE_KIT_P_RELEASE:
-    case RFM_MOVE_KIT_P_PATTACK:
-    case RFM_MOVE_KIT_P_PRELEASE:
-    case RFM_MOVE_KIT_P_FATTACK:
-    case RFM_MOVE_KIT_P_FDECAY:
-    case RFM_MOVE_KIT_P_FRELEASE:
-        if (v < 1000)
-            snprintf(o, (size_t)cap, "%dms", v);
-        else if (v % 1000)
-            snprintf(o, (size_t)cap, "%d.%ds", v / 1000, v % 1000 / 100);
-        else
-            snprintf(o, (size_t)cap, "%ds", v / 1000);
-        break;
-    case RFM_MOVE_KIT_P_CHOKE:
-        if (v)
-            snprintf(o, (size_t)cap, "%d", v);
-        else
-            snprintf(o, (size_t)cap, "Off");
-        break;
-    case KP_KCUT:
-    case RFM_MOVE_KIT_P_CUTOFF: {
-        const int hz = cutoff_hz(v);
-        if (v >= 100)
-            snprintf(o, (size_t)cap, "Open");
-        else if (hz >= 1000)
-            snprintf(o, (size_t)cap, "%d.%dk", hz / 1000, hz % 1000 / 100);
-        else
-            snprintf(o, (size_t)cap, "%d", hz);
-        break;
-    }
-    case RFM_MOVE_KIT_P_SUSTAIN:
-    case RFM_MOVE_KIT_P_RESO:
-    case KP_KRES:
-    case RFM_MOVE_KIT_P_SEND1:
-    case RFM_MOVE_KIT_P_SEND2:
-    case RFM_MOVE_KIT_P_SEND3: snprintf(o, (size_t)cap, "%d%%", v); break;
-    case KP_KPAN:
-        if (v == 64)
-            snprintf(o, (size_t)cap, "C");
-        else
-            snprintf(o, (size_t)cap, "%c%d", v < 64 ? 'L' : 'R', v < 64 ? 64 - v : v - 64);
-        break;
-    case KP_RH: snprintf(o, (size_t)cap, "%s", RS[clampi(v, 0, RFM_MOVE_KIT_RH_N - 1)]); break;
-    default: vtext(m, k, p, v, 0, o, cap); break;      /* (Reverse, Mute, Trim: On / Off; the kit's strip: a number) */
-    }
-}
 static void sound_text(const rfm_move_t *m, int k, char *o, int cap)
 {
     const rfm_move_kit_pad_t *d = CPAD(m, k);
@@ -2028,14 +1897,12 @@ static int rec_running(const rfm_move_t *m)
 }
 
 /* ================================================================ Files' rows === */
-static int first_of(int sel, int total) { return total <= 3 ? 0 : clampi(sel - 1, 0, total - 3); }
 /* (pages, the owner's browser) a folder's rows: Back (row -1, drawn first) then its own; the first shown (visual: 0 Back)
  * and the first of its own shown */
-static int list_vfirst(const rfm_move_kit_t *t)
-{
-    return first_of(t->fsel[t->depth] + 1, (t->known ? t->total : 0x7FFE) + 1);
-}
-static int list_first(const rfm_move_kit_t *t) { const int v = list_vfirst(t); return v ? v - 1 : 0; }
+/* (pages v2: the chosen row fixed in the middle, a row more each way for the slide) the first of the folder's own rows
+ * wanted, five from it */
+#define LIST_N 5
+static int list_first(const rfm_move_kit_t *t) { return t->fsel[t->depth] > 2 ? t->fsel[t->depth] - 2 : 0; }
 static const rfm_move_kit_row_t *row_get(const rfm_move_t *m, int pl, uint32_t f, int i)
 {
     int k;
@@ -2064,12 +1931,12 @@ static void need(rfm_move_t *m)
         return;
     (void)sel;
     first = list_first(t);
-    for (i = first; i < first + (list_vfirst(t) ? 3 : 2) && (!t->known || i < t->total); i++)
+    for (i = first; i < first + LIST_N && (!t->known || i < t->total); i++)
         miss |= !row_get(m, t->place, f, i);
     if (!miss || (t->ask_pl == t->place && t->ask_f == f && t->ask_i == first))
         return;
     t->ask_pl = t->place, t->ask_f = f, t->ask_i = (uint16_t)first;
-    act(m, RFM_MOVE_ACT_KIT_ROWS, 0, 0, 0, t->place, f, (uint32_t)first, 3, NULL);
+    act(m, RFM_MOVE_ACT_KIT_ROWS, 0, 0, 0, t->place, f, (uint32_t)first, LIST_N, NULL);
 }
 int rfm_move_kit_rows(rfm_move_t *m, int place, uint32_t folder, int total, int from, int n, const rfm_move_kit_row_t *rows)
 {
@@ -2094,7 +1961,7 @@ int rfm_move_kit_rows(rfm_move_t *m, int place, uint32_t folder, int total, int 
         if (v < 0) {                                    /* (one the screen does not show) */
             const int c0 = list_first(t);
             for (k = 0; k < RFM_MOVE_KIT_CACHE && v < 0; k++)
-                if (!(t->rc[k].pl == place && t->rc[k].f == folder && t->rc[k].i >= c0 && t->rc[k].i < c0 + 3))
+                if (!(t->rc[k].pl == place && t->rc[k].f == folder && t->rc[k].i >= c0 && t->rc[k].i < c0 + LIST_N))
                     v = k;
             if (v < 0)
                 v = 0;
@@ -2306,12 +2173,18 @@ static void files_turn(rfm_move_t *m, int d)
 {
     rfm_move_kit_t *t = K(m);
     if (!t->place) {                                    /* the places */
+        const int was = t->psel;
         t->psel = (uint8_t)clampi(t->psel + d, 0, PL_N - 1);
+        if (t->psel != was)                             /* (pages v2: the list slides a row) */
+            t->br_ms = now(m) ? now(m) : 1, t->br_dir = (int8_t)(d > 0 ? 1 : -1);
         return;
     }
     {
         int16_t *sel = &t->fsel[t->depth];
+        const int was = *sel;
         *sel = (int16_t)clampi(*sel + d, -1, t->known ? t->total - 1 : 0x7FFE);   /* (-1: the Back row) */
+        if (*sel != was)
+            t->br_ms = now(m) ? now(m) : 1, t->br_dir = (int8_t)(d > 0 ? 1 : -1);
         need(m);
         land_mark(m);                                   /* (round A: at rest, the sound onto the pad) */
     }
@@ -3394,151 +3267,70 @@ static void filter_curve(mr_canvas_t *cv, int x0, int w, int yb, int ylo, int yh
 {
     filter_curve_m(cv, x0, w, yb, ylo, yhi, c, q, mark, 0);
 }
-/* (pages v2) the filter envelope's amount: an arrow from the cutoff's place, up (positive) or down, its length */
-static void env_arrow(mr_canvas_t *cv, int x, int y, int amt, int len)
-{
-    const int n = (amt < 0 ? -amt : amt) * len / 100, dir = amt < 0 ? 1 : -1;
-    int i;
-    if (!n)
-        return;
-    v2_R(cv, x, dir < 0 ? y - n : y, 1, n, 1);
-    for (i = 1; i <= 2; i++)
-        v2_px(cv, x - i, y + dir * (n - i), 1), v2_px(cv, x + i, y + dir * (n - i), 1);
-}
-/* (pages v2, the owner's 2026-11-26 browser) exactly three rows over the whole screen (21 px each, 2x text), nothing
- * else: the chosen row's icon only (Back a left arrow, a folder a right arrow, a sample a small wave, a saved kit the
- * kit), no inverted row; the others their text alone, where the text would be */
+/* (pages v2, the owner's 2026-11-26 browser) three rows over the whole screen (21 px each, 2x text), nothing else: the
+ * chosen row fixed in the middle, its icon there (Back a left arrow, a folder a right arrow, a sample a small wave, a
+ * saved kit the kit), no inverted row; the others their text alone. A turn slides the list a row under the icon
+ * (BR_SLIDE_MS, eased; the next turn starts its own); at a folder's top or end the row past it empty */
 #define BR_H 21
-static void brow(mr_canvas_t *cv, int i, icon_t ic_, const char *name, int chosen)
+#define BR_SLIDE_MS 100
+static int br_off(const rfm_move_t *m)                  /* the slide's offset now (px, toward the turn's way) */
+{
+    const rfm_move_kit_t *t = &m->kit;
+    const uint32_t el = now(m) - t->br_ms;
+    float x;
+    if (!t->br_ms || el >= BR_SLIDE_MS)
+        return 0;
+    x = 1.0f - (float)el / BR_SLIDE_MS;                 /* (ease out: the cube of what is left) */
+    return (int)(t->br_dir * BR_H * x * x * x + (t->br_dir > 0 ? 0.5f : -0.5f));
+}
+static void brow(mr_canvas_t *cv, int y, const char *name)
 {
     char nm[RFM_MOVE_KIT_NAME];
-    const int maxc = (128 - 16) / 12, y = i * BR_H;
+    const int maxc = (128 - 16) / 12;
     snprintf(nm, sizeof nm, "%s", name);
     if ((int)strlen(nm) > maxc)
         nm[maxc] = 0;
-    if (chosen)
-        ic(cv, ic_, 1, y + 5, 1);
-    v2_T(cv, 16, y + 3, nm, 2, 1);
+    if (y > -BR_H && y < 64)
+        v2_T(cv, 16, y + 3, nm, 2, 1);
 }
-static void file_row(mr_canvas_t *cv, int i, const rfm_move_kit_row_t *r, int chosen)
+static icon_t *row_icon(const rfm_move_kit_row_t *r)
 {
-    if (!r)
-        return;
-    brow(cv, i, r->kind == RFM_MOVE_KIT_ROW_KIT ? I_KIT : r->kind == RFM_MOVE_KIT_ROW_DIR ? I_IN : I_SND, r->name, chosen);
+    return r->kind == RFM_MOVE_KIT_ROW_KIT ? &I_KIT : r->kind == RFM_MOVE_KIT_ROW_DIR ? &I_IN : &I_SND;
 }
 static void files_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_kit_t *t = &m->kit;
+    const int off = br_off(m);
+    icon_t *chosen = NULL;
     int i;
     if (!t->place) {                                    /* the root: Takes, Samples, Kits (folders) */
         static const char *const PN[PL_N] = { "Takes", "Samples", "Kits" };
         for (i = 0; i < PL_N; i++)
-            brow(cv, i, I_IN, PN[i], i == t->psel);
-        return;
-    }
-    {                                                   /* Back first, then the folder's own */
-        const int sel = t->fsel[t->depth], v0 = list_vfirst(t);
-        for (i = 0; i < 3; i++) {
-            const int v = v0 + i, r = v - 1;
-            if (t->known && r >= t->total)
-                break;
-            if (v == 0)
-                brow(cv, i, I_UP, "Back", sel < 0);
-            else
-                file_row(cv, i, row_get(m, t->place, t->folder[t->depth], r), r == sel);
+            brow(cv, BR_H + (i - t->psel) * BR_H + off, PN[i]);
+        chosen = &I_IN;
+    } else {                                            /* Back first (visual row 0), then the folder's own */
+        const int sv = t->fsel[t->depth] + 1;
+        for (i = sv - 2; i <= sv + 2; i++) {
+            const int r = i - 1, y = BR_H + (i - sv) * BR_H + off;
+            const rfm_move_kit_row_t *row;
+            if (i < 0 || (t->known && r >= t->total))
+                continue;
+            if (i == 0) {
+                brow(cv, y, "Back");
+                if (i == sv)
+                    chosen = &I_UP;
+                continue;
+            }
+            if (!(row = row_get(m, t->place, t->folder[t->depth], r)))
+                continue;
+            brow(cv, y, row->name);
+            if (i == sv)
+                chosen = row_icon(row);
         }
     }
-}
-/* ---- (pages) a knob's cell, as the FX pages' 8 cells (fw.c, 0.5.0): its short name, its value under it, both at 1x
- * and 5 characters at most, 32 px wide, four across, two rows (knobs 1..4 above 5..8); a knob with none: a dash */
-static const char *const P_SHORT[KP_ALL] = {
-    [RFM_MOVE_KIT_P_PITCH] = "Trans", [RFM_MOVE_KIT_P_START] = "Start", [RFM_MOVE_KIT_P_END] = "End",
-    [RFM_MOVE_KIT_P_MODE] = "Eng", [RFM_MOVE_KIT_P_ATTACK] = "Att", [RFM_MOVE_KIT_P_HOLD] = "Hold",
-    [RFM_MOVE_KIT_P_RELEASE] = "Rel", [RFM_MOVE_KIT_P_CHOKE] = "Choke", [RFM_MOVE_KIT_P_REVERSE] = "Rev",
-    [RFM_MOVE_KIT_P_LEVEL] = "Level", [RFM_MOVE_KIT_P_PAN] = "Pan", [RFM_MOVE_KIT_P_MUTE] = "Mute",
-    [RFM_MOVE_KIT_P_STRETCH] = "Sync", [RFM_MOVE_KIT_P_SEND1] = "Send1", [RFM_MOVE_KIT_P_SEND2] = "Send2",
-    [RFM_MOVE_KIT_P_SEND3] = "Send3", [RFM_MOVE_KIT_P_DECAY] = "Decay", [RFM_MOVE_KIT_P_SUSTAIN] = "Sus",
-    [RFM_MOVE_KIT_P_CUTOFF] = "Cut", [RFM_MOVE_KIT_P_RESO] = "Reso", [RFM_MOVE_KIT_P_LOOPS] = "LpSt",
-    [RFM_MOVE_KIT_P_LOOPE] = "LpEnd", [RFM_MOVE_KIT_P_LOOPXF] = "LpFad", [RFM_MOVE_KIT_P_PDEPTH] = "Depth",
-    [RFM_MOVE_KIT_P_PATTACK] = "Att", [RFM_MOVE_KIT_P_PRELEASE] = "Rel", [RFM_MOVE_KIT_P_BITS] = "Bits",
-    [RFM_MOVE_KIT_P_DOWNS] = "Rate", [RFM_MOVE_KIT_P_GPOS] = "Pos", [RFM_MOVE_KIT_P_GSIZE] = "Size",
-    [RFM_MOVE_KIT_P_GDENS] = "Dens", [RFM_MOVE_KIT_P_GSPRAY] = "Spray", [RFM_MOVE_KIT_P_GSPREAD] = "Sprd",
-    [RFM_MOVE_KIT_P_WARP] = "Warp", [RFM_MOVE_KIT_P_SPEED] = "Speed", [RFM_MOVE_KIT_P_WPITCH] = "Pitch",
-    [RFM_MOVE_KIT_P_WGRAIN] = "Grain", [RFM_MOVE_KIT_P_WJITTER] = "Jittr", [RFM_MOVE_KIT_P_WSEARCH] = "Srch",
-    [RFM_MOVE_KIT_P_MORPH] = "Morph", [RFM_MOVE_KIT_P_FENV] = "EnvAm", [RFM_MOVE_KIT_P_FATTACK] = "FAtt",
-    [RFM_MOVE_KIT_P_FDECAY] = "FDec", [RFM_MOVE_KIT_P_FSUSTAIN] = "FSus", [RFM_MOVE_KIT_P_FRELEASE] = "FRel",
-    [KP_FINE] = "Fine", [KP_KLEVEL] = "Level", [KP_KPAN] = "Pan", [KP_KSEND1] = "Send1", [KP_KSEND2] = "Send2",
-    [KP_KSEND3] = "Send3", [KP_RH] = "Right", [KP_TRIM] = "Trim", [KP_KCUT] = "Cut", [KP_KRES] = "Reso" };
-/* (pages v2) the Trig page's cells: the sequencer's TRIG knobs, the first held step's values (none held: the track's
- * defaults for new steps) */
-static void trig_cells(const rfm_move_t *m, mr_canvas_t *cv)
-{
-    static const char *const TN[7] = { "Micro", "Ratch", "Chnce", "Cond", "Func", "Amt", "Len" };
-    static const char *const FN[RFM_MOVE_FN_N] = { "-", "Rst", "Rev", "Fwd", "Flip", "Rnd", "RFn", "Leap", "Jump", "Rpt" };
-    const int s = held_step(m), clip = edit_clip_of(m, trk(m->kit.cur)), abs = m->seq.page * RFM_MOVE_SEQ_PAGE + s;
-    int k;
-    for (k = 0; k < 8; k++) {
-        const int x = (k % 4) * 32, y = k < 4 ? 25 : 45;
-        char v[16];
-        int val, f;
-        if (k == 7) {
-            v2_R(cv, x + 12, y + 9, 7, 1, 1);
-            continue;
-        }
-        val = s < 0 ? rfmv_seq_tdef_val(m, k) : rfmv_seq_trig_val(m, clip, abs, k);
-        f = s < 0 ? rfmv_seq_tdef_val(m, 4) : rfmv_seq_trig_val(m, clip, abs, 4);
-        switch (k) {
-        case 0: snprintf(v, sizeof v, val ? "%+d" : "0", val); break;
-        case 1: snprintf(v, sizeof v, "x%d", val); break;
-        case 2: snprintf(v, sizeof v, "%d%%", val); break;
-        case 3: rfmv_cond_name(val, v, sizeof v); break;
-        case 4: snprintf(v, sizeof v, "%s", FN[clampi(val, 0, RFM_MOVE_FN_N - 1)]); break;
-        case 5:
-            if (f == RFM_MOVE_FN_LEAP)
-                snprintf(v, sizeof v, "%+d", val);
-            else if (f == RFM_MOVE_FN_JUMP)
-                snprintf(v, sizeof v, "%d", val + 1);
-            else if (f == RFM_MOVE_FN_REPEAT)
-                snprintf(v, sizeof v, "x%d", val);
-            else
-                snprintf(v, sizeof v, "-");
-            break;
-        default:
-            if (rfmv_seq_len_inf(val))
-                snprintf(v, sizeof v, "Inf");
-            else if (val % RFM_MOVE_SEQ_TPS)
-                snprintf(v, sizeof v, "%d.%d", val / RFM_MOVE_SEQ_TPS, val % RFM_MOVE_SEQ_TPS * 10 / RFM_MOVE_SEQ_TPS);
-            else
-                snprintf(v, sizeof v, "%d", val / RFM_MOVE_SEQ_TPS);
-            break;
-        }
-        v[5] = 0;
-        v2_TC(cv, x + 16, y, TN[k], 1, 1);
-        v2_TC(cv, x + 16, y + 10, v, 1, 1);
-    }
-}
-static void cells(const rfm_move_t *m, mr_canvas_t *cv)
-{
-    const int lk = lock_layer(m);
-    int k;
-    for (k = 0; k < 8; k++) {
-        const int p = knob_p(m, k), x = (k % 4) * 32, y = k < 4 ? 25 : 45;
-        char v[16];
-        if (p < 0 || (lk && lk_of(p) < 0)) {            /* (dark and dead: a dash; a step held: the lockable ones) */
-            v2_R(cv, x + 12, y + 9, 7, 1, 1);
-            continue;
-        }
-        v2_TC(cv, x + 16, y, P_SHORT[p], 1, 1);
-        if (lk) {                                       /* (the held step's hit: its lock, else the pad's own) */
-            int lv;
-            if (lock_val(m, p, &lv))
-                cell_text(m, m->kit.cur, p, lv, v, sizeof v);
-            else
-                snprintf(v, sizeof v, "-");
-        } else
-            cell_text(m, m->kit.cur, p, kval(m, m->kit.cur, p), v, sizeof v);
-        v[5] = 0;
-        v2_TC(cv, x + 16, y + 10, v, 1, 1);
+    if (chosen) {                                       /* (the icon still: the middle row's) */
+        v2_R(cv, 0, BR_H, 15, BR_H, 0);
+        ic(cv, *chosen, 1, BR_H + 5, 1);
     }
 }
 /* (pages v2, the owner's 2026-11-26) the page switcher (while the jog turns pages, and on a blank page): the eight
@@ -3590,32 +3382,184 @@ static void lanes(const rfm_move_t *m, mr_canvas_t *cv)
             v2_R(cv, 3, y + 1, 1, 3, 1), v2_px(cv, 4, y + 2, 1);
     }
 }
-/* (pages v2) the Trig page's picture: the chosen pad's track over the 16 steps shown (6 px a step): its hits (the
+/* (pages v2) the Trig page's picture: the chosen pad's track over the 16 steps shown (8 px a step): its hits (the
  * chosen pad's tall), a step with trigs (ratchet, chance, condition, function) marked above it, a held one underlined */
 static void trig_pic(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const int k = m->kit.cur, tr = trk(k), clip = edit_clip_of(m, tr);
     int st;
     for (st = 0; st < 16; st++) {
-        const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + st, x = st * 6;
+        const int abs = m->seq.page * RFM_MOVE_SEQ_PAGE + st, x = st * 8 + 1;
         int lo, hi = rfmv_seq_range(m, clip, abs, &lo), c;
         if (step_has(m, k, abs))
-            v2_R(cv, x, 8, 5, 10, 1);
+            v2_R(cv, x, 16, 6, 28, 1);
         else if (hi > lo)
-            v2_R(cv, x, 14, 5, 4, 1);
+            v2_R(cv, x, 34, 6, 10, 1);
         else
-            v2_px(cv, x + 2, 16, 1);
+            v2_R(cv, x + 2, 42, 2, 1, 1);
         for (c = RFM_MOVE_TRIG_RATCHET; c <= RFM_MOVE_TRIG_FUNC; c++)
             if (rfmv_seq_lock_get(m, clip, abs, c) >= 0) {
-                v2_R(cv, x + 1, 3, 3, 3, 1);
+                v2_R(cv, x + 1, 6, 4, 4, 1);
                 break;
             }
         if (m->kit.st_down >> st & 1)
-            v2_R(cv, x, 20, 5, 2, 1);
+            v2_R(cv, x, 50, 6, 3, 1);
     }
 }
-/* the page's picture, compact, in x 0..101, y 0..22 (the pad's number top right) */
-static void page_pic(const rfm_move_t *m, mr_canvas_t *cv)
+/* (pages v2, the owner's: as the sequencer's track pages) the chosen pad's 16 steps at the bottom, drawn as
+ * rfmv_seq_steps_at draws a track's (its hits filled, empty outlined, outside the loop a dashed line, the held ones
+ * marked), Move's strip under them (the pages, the playhead) */
+static void pad_steps(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    const rfm_move_seq_t *q = &m->seq;
+    const int k = m->kit.cur, clip = edit_clip_of(m, trk(k)), y = 47;
+    const int hi = rfmv_seq_loop_hi(m, clip), lo0 = rfmv_seq_loop_lo(m, clip);
+    int i;
+    for (i = 0; i < RFM_MOVE_NSTEPS; i++) {
+        const int abs = q->page * RFM_MOVE_SEQ_PAGE + i, x = i * 8, hit = step_has(m, k, abs) > 0;
+        if ((abs < lo0 || abs >= hi) && !hit)
+            v2_dotH(cv, x, y + 10, 7);
+        else if (hit)
+            v2_R(cv, x, y, 7, 11, 1);
+        else
+            v2_O(cv, x, y, 7, 11, 1);
+        if (m->kit.st_down >> i & 1)
+            v2_R(cv, x, y - 3, 7, 2, 1);
+    }
+    rfmv_seq_page_strip(m, cv, -1);
+}
+/* the wave of the region over the whole width (64 columns, 2 px apart) about y0, its marks under it: [a, b) of the
+ * region (of FRAC) at y, h px tall */
+static void region_mark(const rfm_move_kit_pad_t *d, mr_canvas_t *cv, int a, int b, int y, int h)
+{
+    const int s = d->v[RFM_MOVE_KIT_P_START], e = d->v[RFM_MOVE_KIT_P_END] > s ? d->v[RFM_MOVE_KIT_P_END] : s + 1;
+    const int x0 = (int)((int64_t)(clampi(a, s, e) - s) * 127 / (e - s)), x1 = (int)((int64_t)(clampi(b, s, e) - s) * 127 / (e - s));
+    v2_R(cv, x0, y, x1 - x0 > 1 ? x1 - x0 : 1, h, 1);
+}
+/* ---- (pages v2, the owner's Filter page, after Fever Dream's filter_bars and env_shape) no libm: 2^x by pitch_q16,
+ * log2 by its mantissa */
+static float log2_f(float x)
+{
+    int e = 0;
+    if (x <= 0)
+        return -30.0f;
+    while (x >= 2.0f)
+        x *= 0.5f, e++;
+    while (x < 1.0f)
+        x *= 2.0f, e--;
+    return (float)e + (x - 1.0f) * (1.3466f - 0.3466f * (x - 1.0f));
+}
+/* the filter as spaced 2 px bars every 3 px over ten octaves: the corner at cut (0..100), the peak as tall as the
+ * resonance, the shape LP -> BP -> HP by the morph (0..100); a tick above where the knob has the corner (set; thick:
+ * its knob touched), a dot above where the envelope takes it (amount -100..100) */
+static void filter_bars(mr_canvas_t *cv, int x, int y, int w, int h, int cut, int res, int mo, int set, int amt, int thick)
+{
+    const int n = w / 3;
+    const float q = 1.0f / (2.0f - 1.94f * (float)clampi(res, 0, 100) / 100.0f);
+    int k;
+    for (k = 0; k < n; k++) {
+        const int cents = (int)(((float)k / (float)(n - 1) - (float)cut / 100.0f) * 10.0f * 1200.0f);
+        const float r = (float)pitch_q16(clampi(cents, -14400, 14400)) / 65536.0f, r2 = r * r;
+        const float den2 = (1 - r2) * (1 - r2) + (r / q) * (r / q);
+        const float lp = 1.0f / den2, bp = (r / q) * (r / q) / den2, hp = r2 * r2 / den2;   /* (squared) */
+        const float m2 = mo <= 50 ? lp + (bp - lp) * (float)mo / 50.0f : bp + (hp - bp) * (float)(mo - 50) / 50.0f;
+        float db = 3.0103f * log2_f(m2 < 1e-6f ? 1e-6f : m2);
+        int bh;
+        db = db < -30 ? -30 : db > 18 ? 18 : db;
+        bh = 1 + (int)((db + 30) / 48 * (float)(h - 1));
+        v2_R(cv, x + k * 3, y + h - bh, 2, bh, 1);
+    }
+    {
+        const int xs = x + clampi(set, 0, 100) * (n - 1) / 100 * 3;
+        v2_R(cv, xs, y - (thick ? 5 : 3), 2, thick ? 4 : 2, 1);
+    }
+    if (amt) {                                          /* (8 octaves of the 10 drawn at full) */
+        const int c2 = clampi(set + amt * 80 / 100, 0, 100);
+        v2_R(cv, x + c2 * (n - 1) / 100 * 3, y - 8, 2, 2, 1);
+    }
+}
+/* an envelope in a box of w x h: attack, decay and release up to a quarter of the width each (their roots: short ones
+ * show), the sustain a sixth; two dots thick, the part touched (1 A, 2 D, 3 S, 4 R) four; the voice's place on it (st
+ * 0..3, lvl 0..255; st < 0 none) a hollow box */
+static void env_shape(mr_canvas_t *cv, int x, int y, int w, int h, int a, int d, int su, int r, int thick, int st, int lvl)
+{
+    const int hold = w / 6, seg = (w - 6 - hold) / 3, base = y + h - 1;
+    const int x1 = x + 2 + isqrt(clampi(a, 0, 10000)) * seg / 100, x2 = x1 + 2 + isqrt(clampi(d, 0, 10000)) * seg / 100;
+    const int x3 = x2 + hold, x4 = x3 + 2 + isqrt(clampi(r, 0, 10000)) * seg / 100;
+    const int ys = y + (100 - clampi(su, 0, 100)) * (h - 1) / 100, yb = ys + 1 > base ? base : ys + 1;
+    int k;
+    for (k = 0; k < 4; k++) {
+        if (k < 2 || thick == 1)
+            v2_L(cv, x, base - k, x1, y - k + 1);
+        if (k < 2 || thick == 2)
+            v2_L(cv, x1, y - k + 1, x2, ys - k + 1 > base ? base : ys - k + 1);
+        if (k < 2 || thick == 3)
+            v2_R(cv, x2, yb - k, x3 - x2 + 1, 1, 1);
+        if (k < 2 || thick == 4)
+            v2_L(cv, x3, yb - k, x4, base - k);
+    }
+    v2_dotH(cv, x, base + 2, w);
+    if (st >= 0 && !(st == 2 && lvl < 3)) {
+        const int l = clampi(lvl, 0, 255);
+        int px, f;
+        if (st == 0)
+            px = x + l * (x1 - x) / 255;
+        else if (st == 1) {
+            f = su < 99 ? (255 - l) * 100 / ((100 - su) * 255 / 100 + 1) : 100;
+            px = f > 97 ? x2 + hold / 2 : x1 + clampi(f, 0, 100) * (x2 - x1) / 100;
+        } else {
+            f = su > 1 ? 100 - l * 100 / (su * 255 / 100 + 1) : 100;
+            px = x3 + clampi(f, 0, 100) * (x4 - x3) / 100;
+        }
+        {
+            const int py = base - l * (h - 1) / 255;
+            v2_R(cv, px - 2, py - 2, 5, 5, 0);
+            v2_R(cv, px - 2, py - 2, 5, 1, 1), v2_R(cv, px - 2, py + 2, 5, 1, 1);
+            v2_R(cv, px - 2, py - 2, 1, 5, 1), v2_R(cv, px + 2, py - 2, 1, 5, 1);
+        }
+    }
+}
+/* the Filter page: the bars on the left (live: the voice's cutoff as it sounds), the filter envelope on the right; a
+ * knob of the page touched: its name and value in one line at the top, the part it changes emphasised */
+static void filter_page(const rfm_move_t *m, mr_canvas_t *cv, int p)
+{
+    const rfm_move_kit_t *t = &m->kit;
+    const rfm_move_kit_pad_t *d = CPAD(m, t->cur);
+    const int live = t->lv_on && t->lv_pad == t->cur && now(m) - t->lv_ms < 300 && p < 0;
+    const int cut = live ? t->lv_cut : d->v[RFM_MOVE_KIT_P_CUTOFF];
+    filter_bars(cv, 1, 14, 62, 33, cut, d->v[RFM_MOVE_KIT_P_RESO], d->v[RFM_MOVE_KIT_P_MORPH], d->v[RFM_MOVE_KIT_P_CUTOFF],
+                d->v[RFM_MOVE_KIT_P_FENV], p == RFM_MOVE_KIT_P_CUTOFF);
+    env_shape(cv, 68, 13, 58, 32, d->v[RFM_MOVE_KIT_P_FATTACK], d->v[RFM_MOVE_KIT_P_FDECAY], d->v[RFM_MOVE_KIT_P_FSUSTAIN],
+              d->v[RFM_MOVE_KIT_P_FRELEASE], p == RFM_MOVE_KIT_P_FATTACK ? 1 : p == RFM_MOVE_KIT_P_FDECAY ? 2
+              : p == RFM_MOVE_KIT_P_FSUSTAIN ? 3 : p == RFM_MOVE_KIT_P_FRELEASE ? 4 : 0,
+              live ? t->lv_fst : -1, t->lv_fe);
+    if (p >= 0) {
+        char v[24], l[40];
+        val_text(m, t->cur, p, 0, v, sizeof v);
+        snprintf(l, sizeof l, "%s %s", P_NAME[p], v);
+        v2_TC(cv, 64, 0, l, 1, 1);
+    }
+}
+/* the Filter page's knobs keep it (the owner's exception to the full-screen popup) */
+static int filter_knob(int p)
+{
+    return p == RFM_MOVE_KIT_P_CUTOFF || p == RFM_MOVE_KIT_P_RESO || p == RFM_MOVE_KIT_P_MORPH || p == RFM_MOVE_KIT_P_FENV ||
+           (p >= RFM_MOVE_KIT_P_FATTACK && p <= RFM_MOVE_KIT_P_FRELEASE);
+}
+int rfm_move_kit_live(rfm_move_t *m, int pad, int on, int cut, int fe, int fe_st, int amp, int amp_st)
+{
+    rfm_move_kit_t *t = K(m);
+    const int was = t->lv_on;
+    if (!rfmv_kit_cap(m) || pad < 0 || pad >= RFM_MOVE_KIT_PADS)
+        return 0;
+    (void)amp, (void)amp_st;
+    t->lv_on = (uint8_t)(on != 0), t->lv_pad = (uint8_t)pad, t->lv_ms = now(m) ? now(m) : 1;
+    t->lv_cut = (uint8_t)clampi(cut, 0, 100), t->lv_fe = (uint8_t)clampi(fe, 0, 255), t->lv_fst = (int8_t)fe_st;
+    return (on || was) && rfm_move_kit_shown(m) && cur_page(m) == RFM_MOVE_KIT_PG_FILTER && pad == t->cur;
+}
+/* (pages v2, the owner's: a page is its picture, no list of its settings) the page's picture over the whole screen;
+ * 0: nothing to draw (the page switcher instead) */
+static int page_pic(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_kit_t *t = &m->kit;
     const int k = t->cur;
@@ -3623,82 +3567,120 @@ static void page_pic(const rfm_move_t *m, mr_canvas_t *cv)
     char nm[24];
     int i;
     switch (cur_page(m)) {
-    case RFM_MOVE_KIT_PG_TRIG: trig_pic(m, cv); break;
-    case RFM_MOVE_KIT_PG_SAMPLE2:                       /* (pages v2) the engine's icon and the wave; Loop: its loop
-                                                         * (and fade) under it; Granular: the position and spray */
-        pad_wave_n(m, cv, k, 10, 9, 0, 44);
-        ic(cv, *ENG_ICON[mode_of(d)], 90, 4, 1);
-        if (mode_of(d) == RFM_MOVE_KIT_M_LOOP || mode_of(d) == RFM_MOVE_KIT_M_GRANULAR) {
-            const int a = d->v[RFM_MOVE_KIT_P_START], b = d->v[RFM_MOVE_KIT_P_END] > a ? d->v[RFM_MOVE_KIT_P_END] : a + 1;
-            if (mode_of(d) == RFM_MOVE_KIT_M_LOOP) {
-                const int x0 = (int)((int64_t)(loop_pt(d, RFM_MOVE_KIT_P_LOOPS) - a) * 87 / (b - a));
-                const int x1 = (int)((int64_t)(loop_pt(d, RFM_MOVE_KIT_P_LOOPE) - a) * 87 / (b - a));
-                v2_R(cv, x0, 21, x1 - x0 > 1 ? x1 - x0 : 1, 2, 1);
-                v2_R(cv, x1 - (x1 - x0) * d->v[RFM_MOVE_KIT_P_LOOPXF] / 200, 19, (x1 - x0) * d->v[RFM_MOVE_KIT_P_LOOPXF] / 200, 1, 1);
-            } else {
-                const int x = d->v[RFM_MOVE_KIT_P_GPOS] * 87 / 100, w = d->v[RFM_MOVE_KIT_P_GSPRAY] * 87 / 100;
-                v2_R(cv, clampi(x - w / 2, 0, 87), 21, w > 1 ? w : 1, 1, 1);
-                v2_R(cv, x, 18, 1, 5, 1);
-            }
-        }
-        break;
-    case RFM_MOVE_KIT_PG_SAMPLE:                        /* the wave over the region (a join's seam); no name (the
-                                                         * click's browser opens on it) */
-    case RFM_MOVE_KIT_PG_WARP:                          /* .. (pages v2) Warp: and the steps it lasts */
-        if (cur_page(m) == RFM_MOVE_KIT_PG_SAMPLE)
-            pad_wave_n(m, cv, k, 11, 10, 0, 50);
-        else
-            pad_wave_n(m, cv, k, 8, 7, 0, 50);
-        {
+    case RFM_MOVE_KIT_PG_TRIG: trig_pic(m, cv); return 1;
+    case RFM_MOVE_KIT_PG_SAMPLE:                        /* the wave over the region (a join's seam) above the pad's
+                                                         * steps (the owner's: no text) */
+        if (ready(d)) {
             const int a = d->v[RFM_MOVE_KIT_P_START], b = d->v[RFM_MOVE_KIT_P_END];
-            if (d->cut && d->st == RFM_MOVE_KIT_OK && d->cut > a && d->cut < b)
-                v2_dotV(cv, (int)((int64_t)(d->cut - a) * 100 / (b - a)), 0, 22);
+            pad_wave(m, cv, k, 21, 19, 0);
+            if (d->cut && d->cut > a && d->cut < b)
+                v2_dotV(cv, (int)((int64_t)(d->cut - a) * 127 / (b - a)), 0, 42);
         }
-        if (cur_page(m) == RFM_MOVE_KIT_PG_WARP) {
-            const int n = region_steps(m, k);
-            for (i = 0; i <= 16; i++)
-                v2_R(cv, i * 99 / 16, 17, 1, i % 4 == 0 ? 4 : 2, 1);
-            v2_R(cv, 0, 21, n * 99 / 16, 2, 1);
+        pad_steps(m, cv);
+        return 1;
+    case RFM_MOVE_KIT_PG_SAMPLE2:                       /* (pages v2) the engine's own: Loop its loop and fade, Pitch
+                                                         * Env its curve, LoFi its steps, Granular its position and
+                                                         * spray; One Shot, Momentary: nothing */
+        switch (mode_of(d)) {                           /* (above the pad's steps, as Pad Sample) */
+        case RFM_MOVE_KIT_M_LOOP:
+        case RFM_MOVE_KIT_M_GRANULAR:
+            if (ready(d)) {
+                pad_wave(m, cv, k, 18, 16, 0);
+                if (mode_of(d) == RFM_MOVE_KIT_M_LOOP) {
+                    const int ls = loop_pt(d, RFM_MOVE_KIT_P_LOOPS), le = loop_pt(d, RFM_MOVE_KIT_P_LOOPE);
+                    region_mark(d, cv, ls, le, 37, 3);
+                    region_mark(d, cv, le - (le - ls) * d->v[RFM_MOVE_KIT_P_LOOPXF] / 200, le, 41, 1);
+                } else {
+                    const int s0 = d->v[RFM_MOVE_KIT_P_START], e0 = d->v[RFM_MOVE_KIT_P_END];
+                    const int at = s0 + (int)((int64_t)(e0 - s0) * d->v[RFM_MOVE_KIT_P_GPOS] / 100);
+                    const int sp = (int)((int64_t)(e0 - s0) * d->v[RFM_MOVE_KIT_P_GSPRAY] / 200);
+                    region_mark(d, cv, at - sp, at + sp, 39, 2);
+                    region_mark(d, cv, at, at + 1, 34, 9);
+                }
+            }
+            pad_steps(m, cv);
+            return 1;
+        case RFM_MOVE_KIT_M_PITCHENV: {                 /* the pitch over time: up (or down) by the depth, back */
+            const int dp = d->v[RFM_MOVE_KIT_P_PDEPTH], ya = 21 - dp * 18 / 48;
+            const int wa = isqrt(d->v[RFM_MOVE_KIT_P_PATTACK]), wr = isqrt(d->v[RFM_MOVE_KIT_P_PRELEASE]);
+            const int xa = 4 + 120 * wa / (wa + wr + 1), xr = 4 + 120 * (wa + wr) / (wa + wr + 1);
+            v2_dotH(cv, 0, 21, 128);
+            v2_L(cv, 4, 21, xa, ya), v2_L(cv, xa, ya, xr, 21), v2_L(cv, xr, 21, 124, 21);
+            v2_L(cv, 4, 22, xa, ya + 1), v2_L(cv, xa, ya + 1, xr, 22);
+            pad_steps(m, cv);
+            return 1;
         }
-        break;
-    case RFM_MOVE_KIT_PG_FILTER:                        /* (round B) the filter's curve; (pages v2) its morph, the
-                                                         * envelope's amount an arrow from the cutoff */
-        filter_curve_m(cv, 0, 98, 12, 1, 22, d->v[RFM_MOVE_KIT_P_CUTOFF], d->v[RFM_MOVE_KIT_P_RESO], 0,
-                       d->v[RFM_MOVE_KIT_P_MORPH]);
-        env_arrow(cv, clampi(d->v[RFM_MOVE_KIT_P_CUTOFF] * 98 / 100, 3, 95), 12, d->v[RFM_MOVE_KIT_P_FENV], 11);
-        break;
-    case RFM_MOVE_KIT_PG_PADMIX:                        /* the pad's level as a bar, its pan a mark on it */
-        {
-            const int lv = d->v[RFM_MOVE_KIT_P_LEVEL], w = lv <= LEVEL_MIN ? 0 : (lv - LEVEL_MIN) * 98 / (6 - LEVEL_MIN);
-            v2_R(cv, 0, 12, 98, 1, 1);
-            v2_R(cv, 0, 9, w, 7, 1);
-            v2_R(cv, 49 + d->v[RFM_MOVE_KIT_P_PAN] * 48 / 50, 4, 1, 17, 1);
-            if (d->v[RFM_MOVE_KIT_P_MUTE])              /* (muted: the bar hollow) */
-                v2_R(cv, 1, 10, w > 2 ? w - 2 : 0, 5, 0);
+        case RFM_MOVE_KIT_M_LOFI: {                     /* a wave as it comes out: held, in steps */
+            const int bits = clampi(d->v[RFM_MOVE_KIT_P_BITS], 1, 16), ds = clampi(d->v[RFM_MOVE_KIT_P_DOWNS], 1, 32);
+            const int lv = bits >= 5 ? 0 : 1 << bits;   /* (fewer than 5 bits: its levels shown) */
+            int x, py = -1;
+            for (x = 0; x < 128; x++) {
+                const int xs = x - x % (ds > 1 ? ds * 2 : 1);
+                const uint32_t ph = (uint32_t)(xs * 65536 / 64) & 0xFFFF;
+                int y = ph < 32768 ? (int)(ph * 36 / 32768) - 18 : 18 - (int)((ph - 32768) * 36 / 32768);   /* (a
+                                                         * triangle: no libm) */
+                if (lv)
+                    y = (y + 18) * lv / 37 * 36 / (lv > 1 ? lv - 1 : 1) - 18;
+                y = 21 - y;
+                if (py >= 0)
+                    v2_L(cv, x - 1, py, x, y);
+                py = y;
+            }
+            pad_steps(m, cv);
+            return 1;
         }
-        break;
-    default:                                            /* Kit Mix: the kit's name, its 16 pads (a sound filled, empty a
-                                                         * line, muted dithered, the chosen underlined) */
+        default:                                        /* (One Shot, Momentary: none of their own: the wave) */
+            if (ready(d))
+                pad_wave(m, cv, k, 21, 19, 0);
+            pad_steps(m, cv);
+            return 1;
+        }
+    case RFM_MOVE_KIT_PG_WARP: {                        /* (pages v2) the wave, the steps it lasts */
+        const int n = region_steps(m, k);
+        if (!warp_of(d) || !ready(d))
+            return 0;
+        pad_wave(m, cv, k, 24, 20, 0);
+        for (i = 0; i <= 16; i++)
+            v2_R(cv, i * 127 / 16, 50, 1, i % 4 == 0 ? 5 : 3, 1);
+        v2_R(cv, 0, 58, n * 127 / 16, 4, 1);
+        return 1;
+    }
+    case RFM_MOVE_KIT_PG_FILTER: filter_page(m, cv, -1); return 1;   /* (the bars, the envelope) */
+    case RFM_MOVE_KIT_PG_PADMIX: {                      /* the pad's level as a bar, its pan a mark on it (muted:
+                                                         * hollow) */
+        const int lv = d->v[RFM_MOVE_KIT_P_LEVEL], w = lv <= LEVEL_MIN ? 0 : (lv - LEVEL_MIN) * 124 / (6 - LEVEL_MIN);
+        v2_R(cv, 2, 31, 124, 1, 1);
+        v2_R(cv, 2, 22, w, 20, 1);
+        if (d->v[RFM_MOVE_KIT_P_MUTE])
+            v2_R(cv, 4, 24, w > 4 ? w - 4 : 0, 16, 0);
+        v2_R(cv, 63 + d->v[RFM_MOVE_KIT_P_PAN] * 60 / 50, 12, 2, 40, 1);
+        v2_R(cv, 63 + d->v[RFM_MOVE_KIT_P_PAN] * 60 / 50, 12, 2, 40, 1);
+        return 1;
+    }
+    case RFM_MOVE_KIT_PG_KITMIX:                        /* the kit's name, its 16 pads (a sound filled, empty a line,
+                                                         * muted dithered, the chosen underlined), its level */
         snprintf(nm, sizeof nm, "%s", t->name[0] ? t->name : "Kit");
-        nm[16] = 0;
-        v2_T(cv, 0, 0, nm, 1, 1);
+        nm[10] = 0;
+        v2_TC(cv, 64, 0, nm, 2, 1);
         for (i = 0; i < RFM_MOVE_KIT_PADS; i++) {
             const rfm_move_kit_pad_t *e = CPAD(m, i);
-            const int x = i * 6;
+            const int x = (i % 8) * 16 + 2, y = i < 8 ? 44 : 22;
             if (!has_sound(e))
-                v2_R(cv, x, 19, 5, 1, 1);
+                v2_R(cv, x, y + 15, 12, 1, 1);
             else if (e->v[RFM_MOVE_KIT_P_MUTE]) {
                 int xx, yy;
-                for (yy = 11; yy < 20; yy++)
-                    for (xx = x; xx < x + 5; xx++)
+                for (yy = y; yy < y + 16; yy++)
+                    for (xx = x; xx < x + 12; xx++)
                         if (((xx + yy) & 1) == 0)
                             v2_px(cv, xx, yy, 1);
             } else
-                v2_R(cv, x, 11, 5, 9, 1);
+                v2_R(cv, x, y, 12, 16, 1);
             if (i == k)
-                v2_R(cv, x, 22, 5, 1, 1);
+                v2_R(cv, x, y + 17, 12, 2, 1);
         }
-        break;
+        v2_R(cv, 0, 63, t->mix[RFM_MOVE_KIT_MIX_LEVEL] * 128 / 127, 1, 1);
+        return 1;
+    default: return 0;
     }
 }
 static void page_screen(const rfm_move_t *m, mr_canvas_t *cv)
@@ -3711,12 +3693,8 @@ static void page_screen(const rfm_move_t *m, mr_canvas_t *cv)
             lanes(m, cv);
         return;
     }
-    page_pic(m, cv);
-    pad_no(cv, m->kit.cur + 1);
-    if (cur_page(m) == RFM_MOVE_KIT_PG_TRIG)
-        trig_cells(m, cv);
-    else
-        cells(m, cv);
+    if (!page_pic(m, cv))                               /* (pages v2: no cells; nothing to draw: the switcher) */
+        page_switch(m, cv);
 }
 /* (round A) the close-up of Start / End: the value large, the frames round the point (a column every 2 px, the
  * host's peaks), the point a line down the middle with a notch on top, what does not play dithered */
@@ -3847,6 +3825,13 @@ static void popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
         const int x = kval(m, k, p);
         v2_titleBox(cv, P_NAME[p], v, 64, 124);
         v2_vbar(cv, p == KP_KPAN ? (x - 64) / 63.0 : x / 127.0, p == KP_KPAN, 4, 120, 52);
+        return;
+    }
+    if (p == RFM_MOVE_KIT_P_PITCH || p == RFM_MOVE_KIT_P_WPITCH || p == RFM_MOVE_KIT_P_PDEPTH) {   /* (pages v2, the
+                                                         * owner's: up or down, a bar from the middle) */
+        v2_titleBox(cv, P_NAME[p], v, 64, 124);
+        if (!(p == RFM_MOVE_KIT_P_PITCH && fitted(d)))
+            v2_vbar(cv, (double)d->v[p] / (p == RFM_MOVE_KIT_P_PDEPTH ? 48.0 : 2400.0), 1, 4, 120, 52);
         return;
     }
     v2_titleBox(cv, P_NAME[p], v, 64, 128);
@@ -4041,6 +4026,8 @@ int rfmv_kit_screen(const rfm_move_t *m, mr_canvas_t *cv)
     if (kpop_up(m)) {
         if (t->lpop)
             lock_popup(m, cv, knob_p(m, t->kpop));
+        else if (cur_page(m) == RFM_MOVE_KIT_PG_FILTER && filter_knob(knob_p(m, t->kpop)))
+            filter_page(m, cv, knob_p(m, t->kpop));     /* (pages v2: the Filter page stays, a line says the knob) */
         else
             popup(m, cv, knob_p(m, t->kpop));
         return 1;
@@ -4090,6 +4077,7 @@ int rfmv_kit_timed(const rfm_move_t *m)
             return 1;
     if (t->land || t->aud || t->sl_ask || msg_up(m) || rec_running(m) || t->pend_take || merge_up(m) || t->sl_on || t->tab == 2 || t->tool_note || to_kit(m) ||
         (t->tab == 0 && cur_page(m) == RFM_MOVE_KIT_PG_KIT && (m->seq.playing || m->seq.start_pending)) ||
+        (t->tab == 0 && cur_page(m) == RFM_MOVE_KIT_PG_FILTER && t->lv_on) || br_off(m) ||
         (t->turned && now(m) - t->turn_ms < RFM_MOVE_POPUP_MS) || (t->kpop >= 0 && now(m) - t->kpop_ms < RFM_MOVE_POPUP_MS))
         return 1;
     for (i = 0; i < 16; i++)

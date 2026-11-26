@@ -632,7 +632,7 @@ static void t_files(void)
     CHECK(M.kit.tab == 2 && M.kit.place == 0 && M.kit.psel == 0 && !count(RFM_MOVE_ACT_KIT_FIND));
     jog(1), clear(), jog_click();                       /* Samples */
     CHECK(M.kit.place == RFM_MOVE_KIT_PL_SAMPLES && (a = last(RFM_MOVE_ACT_KIT_ROWS)) && a->value == 2 && a->take == 0 &&
-          a->from == 0 && a->count == 3);
+          a->from == 0 && a->count == 5);              /* (pages v2: the chosen row and two each way, for the slide) */
     memset(r, 0, sizeof r);
     r[0].id = 7, r[0].kind = RFM_MOVE_KIT_ROW_DIR, snprintf(r[0].name, sizeof r[0].name, "Drums");
     r[1].id = 8, r[1].kind = RFM_MOVE_KIT_ROW_FILE, snprintf(r[1].name, sizeof r[1].name, "Clap");
@@ -695,7 +695,8 @@ static void t_files(void)
         clear();
         rfm_move_kit_found(&M, 6, 2, 1, F, S, 9);
         CHECK(M.kit.place == 2 && M.kit.depth == 1 && M.kit.folder[1] == 7 && M.kit.fsel[1] == 2 && M.kit.fsel[0] == 0);
-        CHECK((a = last(RFM_MOVE_ACT_KIT_ROWS)) && a->take == 7 && a->from == 1);   /* (on Hat, the pad's own) */
+        CHECK((a = last(RFM_MOVE_ACT_KIT_ROWS)) && a->take == 7 && a->from == 0);   /* (on Hat, the pad's own: pages
+                                                         * v2, two rows before it) */
         r[0].id = 11, snprintf(r[0].name, sizeof r[0].name, "Kick"), r[0].kind = RFM_MOVE_KIT_ROW_FILE;
         r[1].id = 12, snprintf(r[1].name, sizeof r[1].name, "Snare");
         CHECK(rfm_move_kit_rows(&M, 2, 7, 3, 0, 3, r) == 1);

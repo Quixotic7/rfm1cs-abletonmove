@@ -1553,6 +1553,12 @@ typedef struct {                                        /* (kit.c) */
                                                          * chop */
     uint8_t chop_a, chop_b;                             /* .. the chops sounding last (lit bright), since chop_ms */
     uint32_t chop_ms;
+    uint32_t br_ms;                                     /* (pages v2) the browser's slide: since, its way (+1 down) */
+    int8_t br_dir;
+    uint8_t lv_on, lv_pad, lv_cut, lv_fe;               /* (pages v2) the chosen pad's voice as it sounds (the Filter
+                                                         * page's live bars and envelope; rfm_move_kit_live) */
+    int8_t lv_fst;
+    uint32_t lv_ms;
     uint8_t undk_trim;
     uint8_t br_pad, br_kept;                            /* Files' browse: its pad + 1; its Undo kept (one for it all) */
     uint8_t land, land_pl;                              /* the jog moved in Files: a sound's load due (RFM_MOVE_KIT_LAND_MS) */
@@ -2296,6 +2302,10 @@ int rfm_move_kit_trim(const rfm_move_t *m);
 void rfm_move_kit_set_trim(rfm_move_t *m, int on);
 /* (pages v2) the kit bus's low-pass (RFM_MOVE_KIT_BUS_*: 0..100, -1 none; saved with the kit and kit.json "bus"); set:
  * as a kit.json says (after rfm_move_kit_apply), its KIT_SET sent */
+/* (pages v2) the pad's newest voice as it sounds, from the host (a few times a second at least while one sounds): on 0
+ * none; cut its cutoff now 0..100 (its envelope, a lock); fe, amp its filter and amp envelopes' levels 0..255 and their
+ * stages fe_st, amp_st (0 attack, 1 decay, 2 sustain, 3 release). Returns 1 when the screen shows it (redraw) */
+int rfm_move_kit_live(rfm_move_t *m, int pad, int on, int cut, int fe, int fe_st, int amp, int amp_st);
 int rfm_move_kit_bus(const rfm_move_t *m, int which);
 void rfm_move_kit_set_bus(rfm_move_t *m, int cutoff, int reso);
 /* (stage 3c, the page's Kit tab) a pad played (vel 1..127) or let go (0), as a pad press (its KIT_NOTE, its glow);
