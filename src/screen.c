@@ -230,11 +230,11 @@ void rfmv_level_popup(mr_canvas_t *cv, const char *title, int db10, const char *
     fit_row(a, 1);
     ctext(cv, 1, a, 1);
     rfmv_db_text(v, sizeof v, db10, 0);                 /* (the number at 3x, "dB" at 2x on its baseline) */
-    k = v2_tw(v, 3) + 6 + v2_tw("dB", 2);
+    k = v2_valW(v, 3) + 6 + v2_tw("dB", 2);             /* (2026-11-26: a held step's padlock before it, or hollow) */
     {                                                   /* (2026-11-26, the owner's: no name under it, the value in the
                                                          * middle between the title and the bar) */
         const int y = name && name[0] ? 12 : 24;
-        i = v2_T(cv, 64 - k / 2, y, v, 3, 1);
+        i = v2_valT(cv, 64 - k / 2, y, v, 3);
         v2_T(cv, i + 3, y + 7, "dB", 2, 1);
     }
     if (name && name[0]) {
@@ -584,16 +584,6 @@ static void value_pop(mr_canvas_t *cv, const char *label, const char *val, doubl
         v2_vbar(cv, frac, bar == 2, 4, 120, 52);
 }
 
-/* (2026-11-26) a step held, a knob touched, Delete: the knob's popup tagged in its top-left corner (the Kit view's
- * step tag's look) */
-static void lkc_tag(const rfm_move_t *m, mr_canvas_t *cv, int k)
-{
-    const char *t = rfmv_seq_lkc_tag(m, k);
-    if (!t || g_half)
-        return;
-    v2_R(cv, 0, 0, v2_tw(t, 1) + 3, 9, 1);
-    v2_T(cv, 2, 1, t, 1, 0);
-}
 static const char *enc_label(const rfm_move_t *m, int e)
 {
     return e >= 0 && e <= RFM_MOVE_NENC && m->label[e][0] ? m->label[e] : rfm_move_enc_name(e);
@@ -671,23 +661,24 @@ static void value_popup(const rfm_move_t *m, mr_canvas_t *cv)
         const int cc = notes ? m->s.slot[sl].cc[i & 7] : m->s.cc[b][i & 7];   /* (0.8.0: a note layout: the slot's) */
         int val = notes ? m->slot_ccv[sl][i & 7] : m->cc_val[b][i & 7], lock = 0;
         snprintf(l, sizeof l, "CC %d", cc);
-        if (m->s.mode == RFM_MOVE_MODE_SEQ && !q->view && q->step_first >= 0) {   /* a held step's lock */
+        if (m->s.mode == RFM_MOVE_MODE_SEQ && !q->view && q->step_first >= 0) {   /* a held step's lock (2026-11-26,
+                                                         * the owner's: locked on any held step: its value and a
+                                                         * padlock; none: the track's own, hollow) */
             const int clip = SEQ_CLIP(q->sel_track, q->tr[q->sel_track].sel);
-            val = rfmv_seq_lock_get(m, clip, q->page * RFM_MOVE_SEQ_PAGE + q->step_first, cc);
-            lock = 1;
+            int st, lv = -1;
+            for (st = 0; st < 16 && lv < 0; st++)
+                if (q->step_held >> st & 1)
+                    lv = rfmv_seq_lock_get(m, clip, q->page * RFM_MOVE_SEQ_PAGE + st, cc);
+            lock = lv >= 0 ? V2_VAL_LOCKED : V2_VAL_HOLLOW;
+            if (lv >= 0)
+                val = lv;
         }
-        if (val < 0)
-            snprintf(v, sizeof v, "--"), val = 0;
-        else
-            snprintf(v, sizeof v, "%d", val);
+        snprintf(v, sizeof v, "%d", val);
+        v2_valMode(lock);
         value_pop(cv, l, v, val / 127.0, 1);
-        lkc_tag(m, cv, i);
-        if (!g_half) {
-            if (lock)
-                v2_ic(cv, V2I_LOCK, 114, 4, 1);         /* (a padlock: the step's lock) */
-            if (!notes)
-                bank_strip(m, cv);
-        }
+        v2_valMode(V2_VAL_PLAIN);
+        if (!g_half && !notes)
+            bank_strip(m, cv);
         return;
     }
     case POP_DRUM: {
@@ -892,8 +883,21 @@ static void trig_popup(const rfm_move_t *m, mr_canvas_t *cv)
         break;
     default: snprintf(l, sizeof l, "--"); break;
     }
+    if (first >= 0 && k >= 1 && k <= 5) {               /* (2026-11-26) a held step's trig: set there (a padlock) or the
+                                                         * default (hollow) */
+        static const int8_t TL[6] = { -1, RFM_MOVE_TRIG_RATCHET, RFM_MOVE_TRIG_CHANCE, RFM_MOVE_TRIG_COND,
+                                      RFM_MOVE_TRIG_FUNC, -1 };
+        int id = TL[k];
+        if (k == 5) {
+            const int f = rfmv_seq_trig_val(m, clip, abs, 4);
+            id = f == RFM_MOVE_FN_LEAP ? RFM_MOVE_TRIG_LEAP : f == RFM_MOVE_FN_JUMP ? RFM_MOVE_TRIG_JUMP
+               : f == RFM_MOVE_FN_REPEAT ? RFM_MOVE_TRIG_REPEAT : -1;
+        }
+        if (id >= 0)
+            v2_valMode(rfmv_seq_trig(m, clip, abs, id) >= 0 ? V2_VAL_LOCKED : V2_VAL_HOLLOW);
+    }
     v2_titleBox(cv, l, b, 88, 80);
-    lkc_tag(m, cv, k);
+    v2_valMode(V2_VAL_PLAIN);
     {                                                   /* (0.12.x: the FM-1 page second; a step held on it: its
                                                          * TRIG knobs; 0.14.0: on ENGINE too) */
         int n, cur;

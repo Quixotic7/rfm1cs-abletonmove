@@ -188,13 +188,67 @@ void v2_ghostStrip(mr_canvas_t *b, int real, int total)
     v2_R(b, 122, 61, 5, 1, 1);
     v2_R(b, 124, 59, 1, 5, 1);
 }
+/* ---- (2026-11-26, the owner's "a clear locked / not-locked language") a value while a step is held: locked, a padlock
+ * before it (its own room, the value moved over); not locked, the track's or pad's own value hollow (a 50 % checker),
+ * no padlock. V2_VAL_PLAIN: as ever */
+static int g_vmode;
+void v2_valMode(int mode) { g_vmode = mode; }
+int v2_valModeGet(void) { return g_vmode; }
+static const uint8_t PADLOCK[V2_LOCK_H] = { 0x1C, 0x22, 0x22, 0x7F, 0x7F, 0x77, 0x77, 0x7F, 0x7F };   /* 7 x 9 */
+void v2_padlock(mr_canvas_t *b, int x, int y)
+{
+    int i, j;
+    for (j = 0; j < V2_LOCK_H; j++)
+        for (i = 0; i < V2_LOCK_W; i++)
+            if (PADLOCK[j] >> (V2_LOCK_W - 1 - i) & 1)
+                v2_px(b, x + i, y + j, 1);
+}
+int v2_valW(const char *s, int k) { return v2_tw(s, k) + (g_vmode != V2_VAL_PLAIN ? V2_LOCK_W + V2_LOCK_GAP : 0); }
+static void hollowT(mr_canvas_t *b, int x, int y, const char *s, int k)
+{
+    static mr_canvas_t t;                               /* (the screen's one thread) */
+    const int w = v2_tw(s, k), h = 8 * k;
+    int i, j;
+    for (j = y - 1; j <= y + h; j++)
+        for (i = x - 1; i <= x + w; i++)
+            if (i >= 0 && i < MR_SCREEN_W && j >= 0 && j < MR_SCREEN_H)
+                t.px[j][i] = 0;
+    v2_T(&t, x, y, s, k, 1);
+#define TP(a, c) ((a) >= 0 && (a) < MR_SCREEN_W && (c) >= 0 && (c) < MR_SCREEN_H && t.px[c][a])
+    for (j = y; j < y + h; j++)
+        for (i = x; i < x + w; i++) {
+            if (!TP(i, j))
+                continue;
+            if (!((i + j) & 1))                         /* (a 50 % checker: an outline of the blocky glyphs
+                                                         * drew their joins inside them) */
+                v2_px(b, i, j, 1);
+        }
+#undef TP
+}
+int v2_valT(mr_canvas_t *b, int x, int y, const char *s, int k)
+{
+    if (g_vmode == V2_VAL_PLAIN)
+        return v2_T(b, x, y, s, k, 1);
+    if (g_vmode == V2_VAL_LOCKED)
+        v2_padlock(b, x, y + (7 * k - V2_LOCK_H) / 2 < 0 ? 0 : y + (7 * k - V2_LOCK_H) / 2);
+    x += V2_LOCK_W + V2_LOCK_GAP;
+    if (g_vmode == V2_VAL_HOLLOW) {
+        hollowT(b, x, y, s, k);
+        return x + 6 * k * (int)strlen(s);
+    }
+    return v2_T(b, x, y, s, k, 1);
+}
+int v2_valTC(mr_canvas_t *b, double cx, int y, const char *s, int k)
+{
+    return v2_valT(b, jround(cx - v2_valW(s, k) / 2.0), y, s, k);
+}
 void v2_titleBox(mr_canvas_t *b, const char *title, const char *val, int cx, int w)
 {
     v2_TC(b, cx, 3, title, 2, 1);
-    if (v2_tw(val, 4) <= w)
-        v2_TC(b, cx, 21, val, 4, 1);
+    if (v2_valW(val, 4) <= w)
+        v2_valTC(b, cx, 21, val, 4);
     else
-        v2_TC(b, cx, 27, val, 2, 1);
+        v2_valTC(b, cx, 27, val, 2);
 }
 void v2_vbar(mr_canvas_t *b, double frac, int bip, int x, int w, int y)
 {

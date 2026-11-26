@@ -2795,17 +2795,23 @@ static void lock_turn(rfm_move_t *m, int k, int n)
     t->st_used |= t->st_down;
 }
 /* the lock the popup shows: the first held step's (its value, else the pad's own); 0: not lockable */
+/* a held step's value of setting p: 0 none (no step held, a setting that does not lock); 1 not locked (*v the pad's
+ * own); 2 locked (2026-11-26: several steps held, locked on any: the first locked one's) */
 static int lock_val(const rfm_move_t *m, int p, int *v)
 {
-    const int s = held_step(m), pad = m->kit.cur, abs = m->seq.page * RFM_MOVE_SEQ_PAGE + (s < 0 ? 0 : s);
-    int e;
+    const int pad = m->kit.cur, clip = edit_clip_of(m, trk(pad));
+    int e, s;
     if (kit_p(p))
         return 0;
     p = real_p(p);
-    if (!lockable(p) || s < 0)
+    if (!lockable(p) || held_step(m) < 0)
         return 0;
-    e = plock_get(m, edit_clip_of(m, trk(pad)), abs, pad, p);
-    *v = e >= 0 ? pk_dec(p, e) : CPAD(m, pad)->v[p];
+    for (s = 0; s < 16; s++)
+        if ((m->kit.st_down >> s & 1) && (e = plock_get(m, clip, m->seq.page * RFM_MOVE_SEQ_PAGE + s, pad, p)) >= 0) {
+            *v = pk_dec(p, e);
+            return 2;
+        }
+    *v = CPAD(m, pad)->v[p];
     return 1;
 }
 /* (round B) a step held + the volume knob: the chosen pad's hits there, their velocity */
@@ -4091,7 +4097,20 @@ static void filter_page(const rfm_move_t *m, mr_canvas_t *cv, int p)
         char v[24], l[40];
         val_text(m, t->cur, p, 0, v, sizeof v);
         snprintf(l, sizeof l, "%s %s", P_NAME[p], v);
-        v2_TC(cv, 64, 0, l, 1, 1);
+        if (v2_valModeGet() == V2_VAL_PLAIN)
+            v2_TC(cv, 64, 0, l, 1, 1);
+        else {                                          /* (a held step: the padlock at the line's start, the value
+                                                         * locked or hollow, the name as ever) */
+            const int x = v2_valT(cv, 64 - (v2_valW(l, 1)) / 2, 0, "", 1) - 0;
+            const int nx = v2_T(cv, x, 0, P_NAME[p], 1, 1) + 6;
+            const int mode = v2_valModeGet();
+            v2_valMode(mode == V2_VAL_HOLLOW ? V2_VAL_HOLLOW : V2_VAL_PLAIN);
+            if (mode == V2_VAL_HOLLOW)
+                v2_valT(cv, nx - V2_LOCK_W - V2_LOCK_GAP, 0, v, 1);
+            else
+                v2_T(cv, nx, 0, v, 1, 1);
+            v2_valMode(mode);
+        }
     }
 }
 /* the Filter page's knobs keep it (the owner's exception to the full-screen popup) */
@@ -4272,8 +4291,8 @@ static void zoom_screen(const rfm_move_t *m, mr_canvas_t *cv, int p)
     uint32_t span;
     int c, y, sc3;
     val_text(m, t->cur, p, 0, v, sizeof v);
-    sc3 = v2_tw(v, 3) <= 128 ? 3 : 2;
-    v2_TC(cv, 64, 0, v, sc3, 1);
+    sc3 = v2_valW(v, 3) <= 128 ? 3 : 2;
+    v2_valTC(cv, 64, 0, v, sc3);
     if (!zoom_win(m, p, &lo, &span))
         return;
     s0 = (int64_t)((uint64_t)d->frames * (uint32_t)d->v[RFM_MOVE_KIT_P_START] / RFM_MOVE_KIT_FRAC);
@@ -4319,14 +4338,14 @@ static void popup_t(const rfm_move_t *m, mr_canvas_t *cv, int p, const char *ttl
         const int x = mode_of(d);
         v2_TC(cv, 64, 4, "Engine", 2, 1);              /* (the owner's: no envelope here) */
         icon_row(cv, ENG_ICON, RFM_MOVE_KIT_M_N, x, NULL, 26);
-        v2_TC(cv, 64, 44, MODE_NAME[x], 2, 1);
+        v2_valTC(cv, 64, 44, MODE_NAME[x], 2);
         return;
     }
     if (p >= RFM_MOVE_KIT_P_FATTACK && p <= RFM_MOVE_KIT_P_FRELEASE) {   /* (pages v2) the filter envelope, its stage
                                                          * thick */
         int w[5], tot, j, used = 0;
         v2_TC(cv, 64, 0, P_NAME[p], 2, 1);
-        v2_TC(cv, 64, 17, v, 2, 1);
+        v2_valTC(cv, 64, 17, v, 2);
         w[0] = isqrt(d->v[RFM_MOVE_KIT_P_FATTACK]), w[1] = 0, w[2] = isqrt(d->v[RFM_MOVE_KIT_P_FDECAY]);
         w[4] = isqrt(d->v[RFM_MOVE_KIT_P_FRELEASE]), w[3] = (w[0] + w[2] + w[4]) / 2 > 10 ? (w[0] + w[2] + w[4]) / 2 : 10;
         tot = w[0] + w[2] + w[3] + w[4];
@@ -4339,7 +4358,7 @@ static void popup_t(const rfm_move_t *m, mr_canvas_t *cv, int p, const char *ttl
     }
     if (p == RFM_MOVE_KIT_P_MORPH) {                    /* (pages v2) the curve as it morphs, LP BP HP under it */
         v2_TC(cv, 64, 0, P_NAME[p], 2, 1);
-        v2_TC(cv, 64, 17, v, 2, 1);
+        v2_valTC(cv, 64, 17, v, 2);
         filter_curve_m(cv, 4, 120, 44, 34, 54, d->v[RFM_MOVE_KIT_P_CUTOFF] >= 100 ? 50 : d->v[RFM_MOVE_KIT_P_CUTOFF],
                        d->v[RFM_MOVE_KIT_P_RESO], 0, d->v[p]);
         v2_T(cv, 4, 57, "LP", 1, 1), v2_TC(cv, 64, 57, "BP", 1, 1), v2_T(cv, 112, 57, "HP", 1, 1);
@@ -4368,14 +4387,14 @@ static void popup_t(const rfm_move_t *m, mr_canvas_t *cv, int p, const char *ttl
     }
     if (p == KP_KCUT || p == KP_KRES) {                 /* (pages v2) the kit bus's low-pass */
         v2_TC(cv, 64, 0, P_NAME[p], 2, 1);
-        v2_TC(cv, 64, 17, v, 2, 1);
+        v2_valTC(cv, 64, 17, v, 2);
         filter_curve(cv, 4, 120, 50, 34, 63, m->kit.bus[0], m->kit.bus[1], p == KP_KCUT);
         return;
     }
     if (p == RFM_MOVE_KIT_P_ATTACK || p == RFM_MOVE_KIT_P_HOLD || p == RFM_MOVE_KIT_P_DECAY ||
         p == RFM_MOVE_KIT_P_SUSTAIN || p == RFM_MOVE_KIT_P_RELEASE) {   /* (board F; round B: the five stages) */
         v2_TC(cv, 64, 0, P_NAME[p], 2, 1);
-        v2_TC(cv, 64, 17, v, 2, 1);
+        v2_valTC(cv, 64, 17, v, 2);
         env_parts(m, k, pt);
         ahdsr(cv, 4, 60, 120, 22, pt, d->v[RFM_MOVE_KIT_P_SUSTAIN],
               p == RFM_MOVE_KIT_P_ATTACK ? 1 : p == RFM_MOVE_KIT_P_HOLD ? 2 : p == RFM_MOVE_KIT_P_DECAY ? 3
@@ -4384,7 +4403,7 @@ static void popup_t(const rfm_move_t *m, mr_canvas_t *cv, int p, const char *ttl
     }
     if (p == RFM_MOVE_KIT_P_CUTOFF || p == RFM_MOVE_KIT_P_RESO) {   /* (round B) the filter's curve, the cutoff's place */
         v2_TC(cv, 64, 0, P_NAME[p], 2, 1);
-        v2_TC(cv, 64, 17, v, 2, 1);
+        v2_valTC(cv, 64, 17, v, 2);
         filter_curve_m(cv, 4, 120, 50, 34, 63, d->v[RFM_MOVE_KIT_P_CUTOFF], d->v[RFM_MOVE_KIT_P_RESO],
                        p == RFM_MOVE_KIT_P_CUTOFF, d->v[RFM_MOVE_KIT_P_MORPH]);
         return;
@@ -4431,17 +4450,19 @@ static void knob_popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
         popup(m, cv, p);
 }
 /* (round B; 2026-11-26, the owner's: "the popup displays completely differently while holding a step") a held step's
- * lock: the knob's own popup, drawn by the same code with the setting at the hit's value (its lock, else the pad's
- * own), and a small tag in the top-left corner naming the step ("S5"). (2026-11-26: a step without a hit too: the lock
+ * lock: the knob's own popup, drawn by the same code with the setting at the step's value; (the owner's "a clear
+ * locked / not-locked language") locked: the value solid with a padlock before it; not locked: the pad's own value
+ * hollow, no padlock. No step name, no "Lock Cleared": the change is the feedback. (A step without a hit too: the lock
  * makes a ghost trigger) */
 static void lock_popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
 {
-    char t[16];
     int lv;
-    if (!lock_val(m, p, &lv)) {
+    const int st = lock_val(m, p, &lv);
+    if (!st) {
         knob_popup(m, cv, p);
         return;
     }
+    v2_valMode(st == 2 ? V2_VAL_LOCKED : V2_VAL_HOLLOW);
     {                                                   /* (the screen is drawn on the core's one thread: the pad's
                                                          * value stands in for the lock while its popup draws) */
         rfm_move_kit_pad_t *d = &((rfm_move_t *)m)->kit.pad[m->kit.cur & 15];
@@ -4451,11 +4472,7 @@ static void lock_popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
         knob_popup(m, cv, p);
         d->v[rp] = was;
     }
-    snprintf(t, sizeof t, "S%d", held_step(m) + 1);
-    if (m->kit.lkc_ms && now(m) - m->kit.lkc_ms < RFM_MOVE_POPUP_MS && m->kit.lk_knob == m->kit.kpop + 1)
-        snprintf(t, sizeof t, "%s", m->kit.lkc_none ? "No Lock" : "Lock Cleared");   /* (2026-11-26) */
-    v2_R(cv, 0, 0, v2_tw(t, 1) + 3, 9, 1);
-    v2_T(cv, 2, 1, t, 1, 0);
+    v2_valMode(V2_VAL_PLAIN);
 }
 static int held_vel(const rfm_move_t *m)
 {
@@ -4614,7 +4631,7 @@ int rfmv_kit_screen(const rfm_move_t *m, mr_canvas_t *cv)
     if (vpop_up(m)) {                                   /* (round B) a held step + the volume knob */
         char ttl[16], b[8];
         const int v = held_vel(m);
-        snprintf(ttl, sizeof ttl, "Step %d Velo", held_step(m) + 1);
+        snprintf(ttl, sizeof ttl, "Velocity");          /* (2026-11-26, the owner's: no step name) */
         snprintf(b, sizeof b, "%d", v);
         v2_titleBox(cv, ttl, v ? b : "-", 64, 124);
         v2_vbar(cv, v / 127.0, 0, 4, 120, 52);

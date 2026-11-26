@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "padlock.h"
 #include "proj15.h"
 #include "move_int.h"
 #include "moveremote/client.h"
@@ -1109,6 +1110,25 @@ static void test_edits(void)
  * notes and the other knobs' locks kept, one undo step ("Cleared" "CC n", said); again: "No Automation"; the TRIG page:
  * the knob's trig; the volume knob: nothing. (the owner's) a step held, a knob touched, then Delete: that step's lock
  * only, the knob's popup tagged "Lock Cleared", its own undo step; a plain Delete with a step held: nothing */
+/* (2026-11-26, the owner's "a clear locked / not-locked language") a firmware track's CC knob with a step held: locked
+ * there, the value and a padlock; not, the track's own value hollow (no padlock, a part of the locked one's pixels at
+ * the same value); no step held: plain; cleared (step + knob + Delete): hollow at once, no tag */
+static void test_lock_padlock(void)
+{
+    static uint8_t a[MR_SCREEN_BYTES], b[MR_SCREEN_BYTES], c[MR_SCREEN_BYTES];
+    rfm_move_t *m = &M;
+    fresh(m);
+    pad(m, 0, 100), tap_step(m, 0), tap_step(m, 4), pad(m, 0, 0);
+    raw(m, 0x90, 2, 127), rfm_move_screen(m, NULL, a), raw(m, 0x80, 2, 0), rest(m);
+    CHECK(m->pop == POP_CC && !scr_padlock(a));
+    step(m, 4, 1), raw(m, 0x90, 2, 127), rfm_move_screen(m, NULL, b);
+    CHECK(!scr_padlock(b) && memcmp(a, b, sizeof a));   /* (not locked: hollow) */
+    knob(m, 2, 1), knob(m, 2, -1), rfm_move_screen(m, NULL, c);   /* (locked at the track's value) */
+    CHECK(rfmv_seq_lock_get(m, 0, 4, m->s.cc[m->s.bank][2]) >= 0 && scr_padlock(c) && scr_subset(b, c, MR_SCREEN_BYTES));
+    press(m, MR_CC_DELETE), rfm_move_screen(m, NULL, c);
+    CHECK(rfmv_seq_lock_get(m, 0, 4, m->s.cc[m->s.bank][2]) < 0 && !scr_padlock(c) && !memcmp(b, c, sizeof b));
+    raw(m, 0x80, 2, 0), step(m, 4, 0), rest(m);
+}
 static void test_auto_clear(void)
 {
     static rfm_move_lock_t before[RFM_MOVE_SEQ_LOCKS];
@@ -3692,6 +3712,7 @@ int main(void)
     test_repeat();
     test_edits();
     test_auto_clear();
+    test_lock_padlock();
     test_scale_root();
     test_blob();
     test_project_grid();

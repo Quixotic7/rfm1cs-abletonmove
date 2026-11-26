@@ -36,6 +36,17 @@ void v2_knobs(mr_canvas_t *b, int mask, int touched);                /* the knob
 void v2_strip(mr_canvas_t *b, int n, uint32_t sel, double tick, int x0, int w);
 void v2_ghostStrip(mr_canvas_t *b, int real, int total);             /* the real pages a line, a + at the far end */
 void v2_titleBox(mr_canvas_t *b, const char *title, const char *val, int cx, int w);   /* the edit popup, no box */
+/* (2026-11-26) a step held: its values locked (a padlock before them) or not (hollow); titleBox follows it */
+enum { V2_VAL_PLAIN, V2_VAL_LOCKED, V2_VAL_HOLLOW };
+#define V2_LOCK_W 7
+#define V2_LOCK_H 9
+#define V2_LOCK_GAP 3
+void v2_valMode(int mode);
+int v2_valModeGet(void);
+void v2_padlock(mr_canvas_t *b, int x, int y);                       /* the 7 x 9 padlock */
+int v2_valW(const char *s, int k);                                    /* a value's width, the padlock's room too */
+int v2_valT(mr_canvas_t *b, int x, int y, const char *s, int k);     /* a value at k x as the mode says */
+int v2_valTC(mr_canvas_t *b, double cx, int y, const char *s, int k);
 void v2_vbar(mr_canvas_t *b, double frac, int bip, int x, int w, int y);   /* a value bar (bipolar: from the middle) */
 void v2_msg(mr_canvas_t *b, const char *a, const char *c);           /* a message: one or two centred rows at 2x */
 void v2_modeName(mr_canvas_t *b, const char *s, int n, int cur);     /* the full-screen mode name and the strip */

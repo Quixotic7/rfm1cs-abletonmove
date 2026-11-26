@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "check.h"
+#include "padlock.h"
 #include "move_int.h"
 #include "v2.h"
 #include "moveremote/client.h"
@@ -2363,8 +2364,8 @@ static void t_auto_clear(void)
           rfmv_seq_lock_get(&M, clip, 0, x0) == RFM_MOVE_KIT_P_SEND1);
     CHECK(M.kit.lpop == 5 && M.kit.kpop == 4 && M.kit.lkc_ms && !M.kit.lkc_none);   /* (its popup, "Lock Cleared") */
     CHECKF(rfmv_kit_pop_words(&M, w, sizeof w, &subj, &stamp) && !strncmp(w, "Step 6 Send 1: ", 15), "words %s", w);
-    screen();                                           /* (the corner tag: "Lock Cleared", wider than "S6") */
-    CHECK(px(40, 4) || px(41, 4) || px(42, 4) || px(43, 4) || px(44, 4) || px(45, 4));
+    screen();                                           /* (2026-11-26: no tag; cleared: no padlock) */
+    CHECK(!px(0, 0) && !scr_padlock(SCR));
     step(5, 0), rest();
     CHECKF(strstr(said, "Lock cleared, Send 1") != NULL, "said %s", said);
     CHECK(rfmv_seq_find(&M, clip, 5, 37) < 0);         /* (the release toggled nothing) */
@@ -2388,17 +2389,14 @@ static void t_auto_clear(void)
 /* 48. (2026-11-26, the owner's: "the popup displays completely differently while holding a step") a held step's lock
  * popup is the knob's own popup (the S tag in the corner aside), for every lockable knob on every page and engine; a
  * locked cutoff draws as the pad at that cutoff */
-static void tagless(uint8_t *b)                         /* (the corner tag: x < 24 on the first two rows of bytes) */
-{
-    int x;
-    for (x = 0; x < 24; x++)
-        b[x] = 0, b[128 + x] &= (uint8_t)~1u;
-}
+/* (2026-11-26, the owner's "a clear locked / not-locked language") every knob's popup with a step held: not locked,
+ * no padlock and hollow (its pixels a part of the locked one's); locked (a turn there and back), the padlock; no step's
+ * name either way; without a step held, no padlock */
 static void t_lock_popup(void)
 {
-    static uint8_t a[MR_SCREEN_BYTES], b[MR_SCREEN_BYTES];
+    static uint8_t a[MR_SCREEN_BYTES], b[MR_SCREEN_BYTES], c[MR_SCREEN_BYTES];
     const int clip = SEQ_CLIP(12, 0);
-    int pg, k, md, n = 0, bad = 0;
+    int pg, k, md, n = 0, bad = 0, nlk = 0;
     kit_view();
     sound(1, "Snare", 48000, NULL, 0);
     hit(kp(1)), tap_step(0), rest();
@@ -2410,6 +2408,7 @@ static void t_lock_popup(void)
             M.kit.pad[1].v[RFM_MOVE_KIT_P_WARP] = (int16_t)(md % RFM_MOVE_KIT_W_N);
             M.kit.page = (uint8_t)pg;
             for (k = 0; k < 8; k++) {
+                const int nl = M.seq.nlocks;
                 touch(k, 1);
                 if (M.kit.kpop != k) {
                     touch(k, 0), rest();
@@ -2420,24 +2419,41 @@ static void t_lock_popup(void)
                 step(0, 1), touch(k, 1);
                 if (M.kit.kpop == k && M.kit.lpop) {
                     screen(), memcpy(b, SCR, sizeof b);
-                    CHECKF(b[0] & 1, "page %d knob %d: no tag", pg, k);
-                    tagless(a), tagless(b);
+                    knob(k, 4), knob(k, 124);              /* (a lock, there and back) */
+                    screen(), memcpy(c, SCR, sizeof c);
                     n++;
-                    if (!scr_eq(a, b) && bad++ < 4)
-                        CHECKF(0, "mode %d page %d knob %d: the lock's popup differs", md, pg, k);
+                    if ((scr_padlock(a) || scr_padlock(b) || (M.seq.nlocks > nl && !scr_padlock(c)) || px(0, 0) ||
+                         !memcmp(a, b, sizeof a)) && bad++ < 4)
+                        CHECKF(0, "mode %d page %d knob %d: plain %d, held %d, locked %d (locks %d -> %d), tag %d, held = plain %d",
+                               md, pg, k, scr_padlock(a), scr_padlock(b), scr_padlock(c), nl, M.seq.nlocks, px(0, 0),
+                               !memcmp(a, b, sizeof a));
+                    nlk += M.seq.nlocks > nl;
                 }
                 touch(k, 0), step(0, 0), rest();
+                if (M.seq.nlocks != nl)
+                    press(MR_CC_UNDO), rest();
             }
         }
-    CHECKF(n >= 40 && !bad, "%d compared, %d differ", n, bad);
-    /* a locked cutoff: the pad drawn at the lock's value */
+    CHECKF(n >= 40 && nlk >= 40 && !bad, "%d compared, %d locked, %d bad", n, nlk, bad);
+    /* Pad Mix's Send 1 (its big value): the hollow one's pixels a part of the locked one's at the same value */
+    M.kit.pad[1].v[RFM_MOVE_KIT_P_MODE] = 0, M.kit.pad[1].v[RFM_MOVE_KIT_P_WARP] = 0;
+    M.kit.page = RFM_MOVE_KIT_PG_PADMIX;
+    step(0, 1), touch(4, 1), screen(), memcpy(b, SCR, sizeof b);
+    knob(4, 1), knob(4, 127), screen(), memcpy(c, SCR, sizeof c);
+    CHECK(!scr_padlock(b) && scr_padlock(c) && scr_subset(b, c, MR_SCREEN_BYTES) && memcmp(b, c, sizeof b));
+    touch(4, 0), step(0, 0), rest(), press(MR_CC_UNDO), rest();
+    /* a locked cutoff: the pad drawn at the lock's value, the padlock; cleared (step held + knob + Delete): hollow */
     M.kit.pad[1].v[RFM_MOVE_KIT_P_MODE] = 0, M.kit.pad[1].v[RFM_MOVE_KIT_P_WARP] = 0;
     M.kit.page = RFM_MOVE_KIT_PG_FILTER;
     {
         rfm_move_act_t x;
         int c0 = M.kit.pad[1].v[RFM_MOVE_KIT_P_CUTOFF], lk;
         step(0, 1), touch(0, 1), knob(0, -40);
-        screen(), memcpy(b, SCR, sizeof b);
+        screen();
+        CHECK(scr_padlock(SCR));
+        press(MR_CC_DELETE), screen();
+        CHECK(!scr_padlock(SCR) && !px(0, 0));          /* (cleared: hollow at once, no "Lock Cleared") */
+        press(MR_CC_UNDO), screen();
         touch(0, 0), step(0, 0), rest();
         CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_CUTOFF] == c0 && rfmv_seq_find(&M, clip, 0, 37) >= 0);
         M.seq.tr[12].active = 0;
@@ -2445,11 +2461,8 @@ static void t_lock_popup(void)
         CHECK(play_ons(1, 200, &x) >= 1);
         lk = x.kp[RFM_MOVE_KIT_P_CUTOFF];
         CHECKF((x.kp_mask >> RFM_MOVE_KIT_P_CUTOFF & 1) && lk < c0, "cutoff lock %d (pad %d)", lk, c0);
-        M.kit.pad[1].v[RFM_MOVE_KIT_P_CUTOFF] = (int16_t)lk;
-        rest(), touch(0, 1), screen(), memcpy(a, SCR, sizeof a), touch(0, 0);
-        M.kit.pad[1].v[RFM_MOVE_KIT_P_CUTOFF] = (int16_t)c0;
-        tagless(a), tagless(b);
-        CHECK(scr_eq(a, b));
+        rest(), touch(0, 1), screen(), touch(0, 0);
+        CHECK(!scr_padlock(SCR));                       /* (no step held: plain) */
     }
 }
 
