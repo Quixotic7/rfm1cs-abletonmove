@@ -3782,11 +3782,9 @@ static void popup(const rfm_move_t *m, mr_canvas_t *cv, int p)
     if (p == RFM_MOVE_KIT_P_MODE) {                     /* (board E) how it plays, with its envelope (pages v2: the six
                                                          * engines) */
         const int x = mode_of(d);
-        v2_TC(cv, 64, 0, "Engine", 2, 1);
-        icon_row(cv, ENG_ICON, RFM_MOVE_KIT_M_N, x, NULL, 18);
-        v2_TC(cv, 64, 32, MODE_NAME[x], 2, 1);
-        env_parts(m, k, pt);
-        ahdsr(cv, 14, 63, 100, 12, pt, d->v[RFM_MOVE_KIT_P_SUSTAIN], 0);
+        v2_TC(cv, 64, 4, "Engine", 2, 1);              /* (the owner's: no envelope here) */
+        icon_row(cv, ENG_ICON, RFM_MOVE_KIT_M_N, x, NULL, 26);
+        v2_TC(cv, 64, 44, MODE_NAME[x], 2, 1);
         return;
     }
     if (p >= RFM_MOVE_KIT_P_FATTACK && p <= RFM_MOVE_KIT_P_FRELEASE) {   /* (pages v2) the filter envelope, its stage
