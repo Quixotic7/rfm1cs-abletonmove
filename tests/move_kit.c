@@ -593,8 +593,12 @@ static void t_rows(void)
     CHECK(rfmv_kit_active(&M) && M.kit.tab == 0);
     jog_click();                                        /* (Files, its own layer) */
     CHECK(M.kit.tab == 2 && M.kit.place == 0);
-    jog(1);
-    CHECK(M.kit.tab == 2 && M.kit.psel == 1 && M.kit.page == RFM_MOVE_KIT_PG_SAMPLE);
+    jog(1);                                             /* (2026-11-26: the root My Samples alone: no further) */
+    CHECK(M.kit.tab == 2 && M.kit.psel == 0 && M.kit.page == RFM_MOVE_KIT_PG_SAMPLE);
+    rfm_move_kit_core_lib(&M, 1), jog(1);               /* (.. and the Move Library when the host has it) */
+    CHECK(M.kit.psel == 1);
+    rfm_move_kit_core_lib(&M, 0);
+    CHECK(M.kit.psel == 0);
     back();
     CHECK(M.kit.tab == 0 && rfmv_kit_active(&M));
     /* Sample Kit's click: Kits (Load, Save) */
@@ -724,14 +728,20 @@ static void t_files(void)
     back();
     CHECK(M.kit.depth == 0);
     back();
-    CHECK(M.kit.place == 0 && M.kit.psel == 1);
+    CHECK(M.kit.place == 0 && M.kit.psel == 0);         /* (2026-11-26: My Samples, the root's first) */
     back();
     CHECK(M.kit.tab == 0 && rfmv_kit_active(&M));
     back();
     CHECK(M.kit.tab == 0 && rfmv_kit_active(&M));
-    /* Takes: every take, the newest first (the host's) */
+    /* (2026-11-26) no Takes in the root: My Samples, the Move Library (its rows asked as a place's) */
+    rfm_move_kit_core_lib(&M, 1);
     jog_click(), jog(-1), clear(), jog_click();
-    CHECK(M.kit.place == RFM_MOVE_KIT_PL_TAKES && (a = last(RFM_MOVE_ACT_KIT_ROWS)) && a->value == 1);
+    CHECK(M.kit.place == RFM_MOVE_KIT_PL_SAMPLES && (a = last(RFM_MOVE_ACT_KIT_ROWS)) && a->value == RFM_MOVE_KIT_PL_SAMPLES);
+    back(), jog(1), clear(), jog_click();
+    CHECK(M.kit.place == RFM_MOVE_KIT_PL_CORE && (a = last(RFM_MOVE_ACT_KIT_ROWS)) && a->value == RFM_MOVE_KIT_PL_CORE);
+    rfm_move_kit_core_lib(&M, 0);                       /* (gone: the root) */
+    CHECK(M.kit.place == 0 && M.kit.psel == 0);
+    back();
 }
 
 /* 10. Delete / Mute held + a pad; Undo */
@@ -1025,6 +1035,7 @@ static void t_mock(void)
     dump("inkey");
     touch(0, 0), rest(), jog(1), rest();
     /* I, the places (3b: Kits the third); J, a folder: three sounds, their pictures */
+    rfm_move_kit_core_lib(&M, 1);                       /* (2026-11-26: My Samples, the Move Library) */
     jog_click(), jog(1), rest();
     CHECK(M.kit.tab == 2 && M.kit.psel == 1);
     dump("places");                                     /* (pages: the owner's browser: arrows, no tabs; boards I
@@ -1335,10 +1346,10 @@ static void t_kits(void)
           !M.kit.pad[2].path[0]);
     CHECK(rfm_move_kit_apply(&M, "x", 0, NULL, NULL, NULL) >= 0 && !strcmp(M.kit.msg, "Not Loaded") && !strcmp(M.kit.name, "Kit 3"));
     /* the places: Kits the third */
-    rest(), back();
-    CHECK(M.kit.place == 0 && M.kit.tab == 2);
-    jog(5), clear(), jog_click();
-    CHECK(M.kit.place == RFM_MOVE_KIT_PL_KITS && last(RFM_MOVE_ACT_KIT_ROWS));
+    rest(), back();                                     /* (2026-11-26: the kits not in the root: Back to Load) */
+    CHECK(M.kit.place == 0 && M.kit.tab == 1 && M.kit.kitrow == 0);
+    clear(), jog_click();
+    CHECK(M.kit.place == RFM_MOVE_KIT_PL_KITS && M.kit.tab == 2 && last(RFM_MOVE_ACT_KIT_ROWS));
 }
 /* 23. the sampler's To Kit: the next empty pad (its To "Kit Pad 8", the pad lit white, board U), claimed, filled */
 static void t_smp_kit(void)
@@ -1678,10 +1689,8 @@ static void t_zoom(void)
     CHECK(M.kit.pad[1].v[RFM_MOVE_KIT_P_START] == 160 && !count(RFM_MOVE_ACT_KIT_AUDITION));
     adv_ms(100), knob(0, 1), adv_ms(100);               /* (a turn more: the pending one later) */
     CHECK(!count(RFM_MOVE_ACT_KIT_AUDITION));
-    adv_ms(70);
-    CHECKF(count(RFM_MOVE_ACT_KIT_AUDITION) == 1 && (a = last(RFM_MOVE_ACT_KIT_AUDITION)) && a->index == 1 &&
-           a->from == (uint32_t)(96000ull * 164 / RFM_MOVE_KIT_FRAC) && a->count == 48000, "audition from %u count %u",
-           a ? (unsigned)a->from : 0u, a ? (unsigned)a->count : 0u);
+    adv_ms(400);
+    CHECK(!count(RFM_MOVE_ACT_KIT_AUDITION));           /* (2026-11-26: never heard at rest; the pad plays it) */
     button(MR_CC_SHIFT, 0), touch(0, 0), rest(), clear();
     /* End (pages v2: Pad Sample's knob 2): the close-up at the sound's end; the part after the point dithered */
     touch(1, 1);
@@ -1695,13 +1704,10 @@ static void t_zoom(void)
     screen();
     dump("zoom_end");
     CHECK(px(40, 44) && px(40, 45) && px(80, 44) && !px(80, 45) && px(64, 40));   /* (played left, dithered right) */
-    adv_ms(RFM_MOVE_KIT_AUD_MS);
-    {
-        const uint32_t e = (uint32_t)(96000ull * (RFM_MOVE_KIT_FRAC - 1280) / RFM_MOVE_KIT_FRAC);
-        CHECK((a = last(RFM_MOVE_ACT_KIT_AUDITION)) && a->count == 48000 && a->from == e - 48000);   /* (its last second) */
-    }
+    adv_ms(400);
+    CHECK(!count(RFM_MOVE_ACT_KIT_AUDITION));           /* (not heard at rest) */
     touch(1, 0);
-    printf("  ok    the close-up: KIT_PEAKS round Start (x8, Shift x32) and End, the point and notch, dithered; heard at rest\n");
+    printf("  ok    the close-up: KIT_PEAKS round Start (x8, Shift x32) and End, the point and notch, dithered; not heard at rest\n");
 }
 /* 31. Slice's Hits: knob 3 the sensitivity (lit), the cuts asked again at rest; dead with Equal */
 static void t_sens(void)

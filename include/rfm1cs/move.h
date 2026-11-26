@@ -327,8 +327,8 @@ enum {
  *  - KIT_PEAKS: the close-up of Start / End: index the pad, from / count its sound's frames (the window round the
  *    point, inside the sound), value the columns wanted (RFM_MOVE_KIT_PEAKS). Off the audio thread. Answer:
  *    rfm_move_kit_peaks
- *  - KIT_AUDITION: a Start or End moved, the knob at rest RFM_MOVE_KIT_AUD_MS: index the pad, its frames [from, from +
- *    count) heard once on the preview path (never recorded; the latest replaces one sounding)
+ *  - KIT_AUDITION: (2026-11-26: no longer sent; a moved Start / End is heard by playing the pad) index the pad, its
+ *    frames [from, from + count) heard once on the preview path (never recorded; the latest replaces one sounding)
  *  - KIT_REC (down 1) also carries param 1: the Kit tab's Trim silence is on (the take's start moved past its silence:
  *    the host's rfm_move_kit_set of RFM_MOVE_KIT_P_START once it is on the pad)
  *  - KIT_SLICE's RFM_MOVE_KIT_SL_ASK also carries count: the Hits' sensitivity 1..100 (0: 50) */
@@ -348,7 +348,7 @@ enum {
 #define RFM_MOVE_ACT_KIT_KEEP 80
 #define RFM_MOVE_KIT_OWN "@/"
 #define RFM_MOVE_KIT_LAND_MS 120                        /* Files: the jog at rest so long on a sound: it is on the pad */
-#define RFM_MOVE_KIT_AUD_MS 150                         /* Start / End at rest so long: heard */
+#define RFM_MOVE_KIT_AUD_MS 150                         /* (unused since 2026-11-26: Start / End not heard at rest) */
 #define RFM_MOVE_KIT_SENS_MS 100                        /* the Hits' sensitivity at rest so long: the cuts asked again */
 #define RFM_MOVE_KIT_ZOOM 8                             /* the close-up: 8 times nearer than the whole sound (Shift: 32) */
 #define RFM_MOVE_KIT_ZOOM_FINE 32
@@ -1397,7 +1397,11 @@ enum { RFM_MOVE_KIT_RH_PITCHES, RFM_MOVE_KIT_RH_INKEY, RFM_MOVE_KIT_RH_CHROMA, R
  * Pad Sample 2 (the engine's own), Warp, Filter, Pad Mix, Kit Mix */
 enum { RFM_MOVE_KIT_PG_KIT, RFM_MOVE_KIT_PG_SAMPLE, RFM_MOVE_KIT_PG_TRIG, RFM_MOVE_KIT_PG_SAMPLE2, RFM_MOVE_KIT_PG_WARP,
        RFM_MOVE_KIT_PG_FILTER, RFM_MOVE_KIT_PG_PADMIX, RFM_MOVE_KIT_PG_KITMIX, RFM_MOVE_KIT_PG_N };
-enum { RFM_MOVE_KIT_PL_TAKES = 1, RFM_MOVE_KIT_PL_SAMPLES = 2, RFM_MOVE_KIT_PL_KITS = 3 };   /* Files' places */
+/* Files' places. (2026-11-26, the owner's "just make it select a Sample") the browser's root: My Samples (SAMPLES: the
+ * Move's UserLibrary/Samples, RemoteFM1's takes in it) and, when the host has it (rfm_move_kit_core_lib), the Move
+ * Library (CORE: Move's factory sounds, read-only, only folders with sounds). TAKES stays the sampler's To Kit's
+ * place (KIT_LOAD), KITS Sample Kit's Load; neither is in the root */
+enum { RFM_MOVE_KIT_PL_TAKES = 1, RFM_MOVE_KIT_PL_SAMPLES = 2, RFM_MOVE_KIT_PL_KITS = 3, RFM_MOVE_KIT_PL_CORE = 4 };
 enum { RFM_MOVE_KIT_ROW_DIR = 1, RFM_MOVE_KIT_ROW_FILE = 2, RFM_MOVE_KIT_ROW_KIT = 3 };   /* (KIT: a saved kit, Kits') */
 #define RFM_MOVE_KIT_SLOT 3                             /* (stage 3b) MIX's slot for the kit's own strip */
 enum { RFM_MOVE_KIT_MIX_LEVEL, RFM_MOVE_KIT_MIX_PAN, RFM_MOVE_KIT_MIX_SEND1, RFM_MOVE_KIT_MIX_N = 5 };   /* its values */
@@ -1555,6 +1559,8 @@ typedef struct {                                        /* (kit.c) */
     uint32_t chop_ms;
     uint32_t br_ms;                                     /* (pages v2) the browser's slide: since, its way (+1 down) */
     int8_t br_dir;
+    uint8_t core_lib;                                   /* (2026-11-26) the host has the Move Library (PL_CORE) */
+    uint32_t mq_key, mq_f, mq_ms;                       /* .. the chosen row's marquee: the row, since */
     uint8_t lv_on, lv_pad, lv_cut, lv_fe;               /* (pages v2) the chosen pad's voice as it sounds (the Filter
                                                          * page's live bars and envelope; rfm_move_kit_live) */
     int8_t lv_fst;
@@ -2293,6 +2299,8 @@ int rfm_move_kit_slices(rfm_move_t *m, uint32_t take, const char *path, uint32_t
  * folders in (0..RFM_MOVE_KIT_DEPTH), folder[0..depth] their ids (folder[0] 0, the place's top), sel[0..depth] the row
  * chosen in each (sel[depth] the sound's), id the sound's row id (the jog landing there loads nothing). Returns 1 when
  * shown */
+/* (2026-11-26) the host has the Move Library: the browser's root shows it after My Samples (0: My Samples alone) */
+void rfm_move_kit_core_lib(rfm_move_t *m, int on);
 int rfm_move_kit_found(rfm_move_t *m, int pad, int place, int depth, const uint32_t *folder, const int16_t *sel,
                        uint32_t id);
 /* (round A) KIT_PEAKS' answer: the pad's frames [from, from + count) as n peaks 0..255 (scaled as its whole wave's).

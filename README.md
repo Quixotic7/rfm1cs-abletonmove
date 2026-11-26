@@ -1503,6 +1503,20 @@ as does a page with nothing to draw. The browser's chosen row is fixed in the mi
 Chop: the hit is the pad's own note with the Chop locks (`RFM_MOVE_KIT_LK_CHOP`, `_CHOPE`); KIT_NOTE carries them.
 `rfm_move_kit_live` (the host's: the pad's newest voice) feeds the Filter page's live bars and envelope dot.
 
+## The kit (browser and sound, 2026-11-26)
+
+remoteFM14Move-kit KIT-SPEC.md "Browser, 2026-11-26".
+
+- **One way to hear a sound** (the owner's standing rule): a sample plays only from its pad or the sequencer. The core
+  sends no KIT_AUDITION (Start / End / loop points at rest are silent), a landing in Files never plays, and the slicing
+  screen's slices (KIT_SLICE `RFM_MOVE_KIT_SL_PLAY`) are the host's kit voices on the kit's bus.
+- **The browser's root**: My Samples (`RFM_MOVE_KIT_PL_SAMPLES`) and, when the host calls `rfm_move_kit_core_lib(m, 1)`,
+  the Move Library (`RFM_MOVE_KIT_PL_CORE`). Takes and Kits are not in it: a take is a file in My Samples, Kits stay
+  Sample Kit's Load (Back from them returns to Load / Save). KIT_FIND answers only the root's places.
+- **The marquee**: the chosen row's name wider than its 112 px scrolls as a ping-pong: 1 s still, 25 px a second (whole
+  pixels) to its end, 1 s, back, again; from its start whenever the choice changes. Files keeps the kit timed, so the
+  host's redraws carry it.
+
 ## FX parameter pages (0.5.0)
 
 A module's own parameter pages, as Schwung's `ui_hierarchy` lays them out: each level's 8 knobs a page, its overflow

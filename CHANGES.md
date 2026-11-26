@@ -5,6 +5,14 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## Unreleased: the kit, stages 3a, 3b and 3c
 
+### Browser and sound (2026-11-26)
+
+README "The kit (browser and sound, 2026-11-26)". `RFM_MOVE_KIT_PL_CORE` (the Move Library) and
+`rfm_move_kit_core_lib`; the browser's root is My Samples and the Move Library (Takes and Kits left it); the chosen row's
+long name scrolls (`mq_*` in `rfm_move_kit_t`). No KIT_AUDITION is sent any more (`RFM_MOVE_KIT_AUD_MS` unused) and a
+landing never plays: a sound is heard only from its pad or the sequencer. `rfm_move_kit_t` grows: rebuild everything.
+move_kit adapted (the root, Kits' Back, the close-up silent).
+
 ### Pages v2 (2026-11-26): engines, Warp, Trig, the filter's morph and envelope, the kit bus, the right half
 
 README "The kit (pages v2)". Project version 15: 45 settings a pad (`RFM_MOVE_KIT_P_LOOPS` .. `_FRELEASE` after

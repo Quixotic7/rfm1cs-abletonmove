@@ -32,7 +32,7 @@
  * is the target (the list jumps to its sound), the click keeps it and goes to the Pad tab; one Undo for the whole
  * browse (what the pad held when Files was opened for it). The close-up of Start (knob 2, its row) and End (its row's
  * popup): the value large over the frames round the point (KIT_PEAKS), 8 times nearer (Shift: 32, fine), the point a
- * line with a notch, what does not play dithered; heard at rest RFM_MOVE_KIT_AUD_MS (KIT_AUDITION). Slice's Hits: knob 3
+ * line with a notch, what does not play dithered; not heard (2026-11-26: the pad plays it). Slice's Hits: knob 3
  * the sensitivity (the cuts asked again). The Kit tab's Trim silence (KIT_REC's param). Play mode Toggle.
  *
  * (pages, the owner's 2026-11-26; README "The kit (pages)") no rows and no tabs: the jog turns the knob pages Sample
@@ -244,7 +244,11 @@ static const int16_t ENV_MS[] = { 0, 1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50, 75, 
 #define GAP 16                                          /* START and END keep this much (of RFM_MOVE_KIT_FRAC) apart */
 #define NOASK 0xFFFFu
 #define GLOW_MS 150                                     /* a pad sounds: bright so long after its note */
-enum { PL_N = 3 };                                      /* Files' places: Takes, Samples, Kits */
+/* (2026-11-26) the browser's root: My Samples, then the Move Library when the host has it */
+static int root_n(const rfm_move_t *m) { return m->kit.core_lib ? 2 : 1; }
+static int root_pl(int i) { return i ? RFM_MOVE_KIT_PL_CORE : RFM_MOVE_KIT_PL_SAMPLES; }
+static int root_of(int pl) { return pl == RFM_MOVE_KIT_PL_CORE ? 1 : 0; }
+static const char *root_name(int i) { return i ? "Move Library" : "My Samples"; }
 enum { KT_LOAD, KT_SAVE, KT_N };                        /* Kits' rows (pages: the right half, Trim on the KIT page) */
 #define MIX_LEVEL0 100                                  /* the kit's strip at first: as a firmware slot's */
 /* (3c) the Sound row's tools (board V): Play, Trim, Normalize, Reverse, Delete */
@@ -932,9 +936,8 @@ static void turn_p(rfm_move_t *m, int p, int d, int fine)
     put(m, k, p, step_val(m, k, p, d, fine));
     if (p == RFM_MOVE_KIT_P_STRETCH && CPAD(m, k)->v[p])   /* (pages v2) Sync on: Speed one of its multipliers */
         put(m, k, RFM_MOVE_KIT_P_SPEED, step_val(m, k, RFM_MOVE_KIT_P_SPEED, 0, 0));
-    if (p == RFM_MOVE_KIT_P_START || p == RFM_MOVE_KIT_P_END || p == RFM_MOVE_KIT_P_LOOPS || p == RFM_MOVE_KIT_P_LOOPE)
-        m->kit.aud = 1, m->kit.aud_p = (uint8_t)p, m->kit.aud_ms = now(m);   /* (round A) heard once the knob rests (a
-                                                         * turn more: later) */
+    /* (2026-11-26, the owner's: "refiring the sample at full volume") a moved Start / End / loop point no longer
+     * heard at rest (round A's KIT_AUDITION gone): the pad plays it */
 }
 /* the region's seconds (ms) */
 static int frac_ms(const rfm_move_kit_pad_t *d, int frac)
@@ -2053,10 +2056,10 @@ int rfm_move_kit_found(rfm_move_t *m, int pad, int place, int depth, const uint3
     if (!rfmv_kit_cap(m) || pad < 0 || pad >= RFM_MOVE_KIT_PADS || t->find_pad != pad + 1)
         return 0;                                       /* (an older ask's) */
     t->find_pad = 0;
-    if (place < RFM_MOVE_KIT_PL_TAKES || place > RFM_MOVE_KIT_PL_KITS || depth < 0 || depth > RFM_MOVE_KIT_DEPTH ||
-        !folder || !sel || t->tab != 2)
-        return 0;
-    t->place = (uint8_t)place, t->psel = (uint8_t)(place - 1), t->depth = (uint8_t)depth;
+    if ((place != RFM_MOVE_KIT_PL_SAMPLES && !(place == RFM_MOVE_KIT_PL_CORE && t->core_lib)) || depth < 0 ||
+        depth > RFM_MOVE_KIT_DEPTH || !folder || !sel || t->tab != 2)
+        return 0;                                       /* (2026-11-26: the root's places only) */
+    t->place = (uint8_t)place, t->psel = (uint8_t)root_of(place), t->depth = (uint8_t)depth;
     for (i = 0; i <= depth; i++)
         t->folder[i] = i ? folder[i] : 0, t->fsel[i] = sel[i] < 0 ? 0 : sel[i];
     t->land_id = id, t->land_pl = (uint8_t)place, t->land = 0;
@@ -2065,6 +2068,15 @@ int rfm_move_kit_found(rfm_move_t *m, int pad, int place, int depth, const uint3
     touched(m);
     rfmv_say_check(m);
     return rfm_move_kit_shown(m);
+}
+void rfm_move_kit_core_lib(rfm_move_t *m, int on)
+{
+    rfm_move_kit_t *t = K(m);
+    t->core_lib = on ? 1 : 0;
+    if (!t->core_lib && t->place == RFM_MOVE_KIT_PL_CORE)   /* (gone: the root) */
+        t->place = 0, t->depth = 0, rows_forget(m);
+    if ((int)t->psel >= root_n(m))
+        t->psel = 0;
 }
 int rfm_move_kit_loaded(rfm_move_t *m, int k, int status, const char *name, const char *path, uint32_t frames,
                         uint32_t rate, int n, const uint8_t *peaks)
@@ -2147,12 +2159,8 @@ int rfm_move_kit_loaded(rfm_move_t *m, int k, int status, const char *name, cons
             snprintf(pn, sizeof pn, "Pad %d", k + 1);
             msg(m, "Frozen", pn);
         }
-        if (m->kit.aud_pad == k + 1) {                  /* (round A) a landed sound: the pad plays it once */
-            m->kit.aud_pad = 0;
-            note_out(m, k, 0, 100, trk(k));
-            if (d->v[RFM_MOVE_KIT_P_MODE] != RFM_MOVE_KIT_M_ONESHOT)
-                m->kit.tool_note = (uint8_t)(k + 1), m->kit.tool_ms = now(m);
-        }
+        m->kit.aud_pad = 0;                             /* (2026-11-26, the owner's rule: a sound plays only by its
+                                                         * pad or the sequencer; a landing never heard by itself) */
     } else if ((d->fresh || d->keep) && d->frames) {    /* (a new sound refused: the pad keeps the one it had) */
         d->fresh = 0, d->keep = 0, d->st = RFM_MOVE_KIT_OK;
         msg(m, status == RFM_MOVE_KIT_TOO_LONG ? "Too Long" : "Not Loaded", NULL);
@@ -2173,7 +2181,7 @@ static void files_turn(rfm_move_t *m, int d)
     rfm_move_kit_t *t = K(m);
     if (!t->place) {                                    /* the places */
         const int was = t->psel;
-        t->psel = (uint8_t)clampi(t->psel + d, 0, PL_N - 1);
+        t->psel = (uint8_t)clampi(t->psel + d, 0, root_n(m) - 1);
         if (t->psel != was)                             /* (pages v2: the list slides a row) */
             t->br_ms = now(m) ? now(m) : 1, t->br_dir = (int8_t)(d > 0 ? 1 : -1);
         return;
@@ -2320,7 +2328,7 @@ static void click(rfm_move_t *m)
     if (t->tab == 1) {                                  /* (3b) Load: Files' Kits; Save */
         if (t->kitrow == KT_LOAD) {
             preview_stop(m);
-            t->tab = 2, t->place = RFM_MOVE_KIT_PL_KITS, t->psel = RFM_MOVE_KIT_PL_KITS - 1;
+            t->tab = 2, t->place = RFM_MOVE_KIT_PL_KITS, t->psel = 0;
             t->depth = 0, t->folder[0] = 0, t->fsel[0] = 0;
             files_open(m, k), t->find_pad = 0;          /* (round A: the kits; no sound looked for) */
             rows_forget(m);
@@ -2335,7 +2343,7 @@ static void click(rfm_move_t *m)
         return;
     }
     if (!t->place) {                                    /* a place */
-        t->place = (uint8_t)(t->psel + 1), t->depth = 0, t->folder[0] = 0, t->fsel[0] = 0;
+        t->place = (uint8_t)root_pl(clampi(t->psel, 0, root_n(m) - 1)), t->depth = 0, t->folder[0] = 0, t->fsel[0] = 0;
         rows_forget(m);
         need(m);
         return;
@@ -2344,8 +2352,10 @@ static void click(rfm_move_t *m)
         preview_stop(m);
         if (t->depth)
             t->depth--, rows_forget(m), need(m);
+        else if (t->place == RFM_MOVE_KIT_PL_KITS)      /* (2026-11-26: the kits not in the root: back to Load) */
+            files_close(m), t->tab = 1, t->place = 0, rows_forget(m);
         else
-            t->psel = (uint8_t)(t->place - 1), t->place = 0, rows_forget(m);
+            t->psel = (uint8_t)root_of(t->place), t->place = 0, rows_forget(m);
         return;
     }
     {
@@ -2414,8 +2424,10 @@ int rfmv_kit_back(rfm_move_t *m)
         preview_stop(m);
         if (t->depth)
             t->depth--, rows_forget(m), need(m);
+        else if (t->place == RFM_MOVE_KIT_PL_KITS)      /* (2026-11-26: the kits not in the root: back to Load) */
+            files_close(m), t->tab = 1, t->place = 0, rows_forget(m);
         else if (t->place)
-            t->psel = (uint8_t)(t->place - 1), t->place = 0, rows_forget(m);
+            t->psel = (uint8_t)root_of(t->place), t->place = 0, rows_forget(m);
         else
             files_close(m), t->tab = 0;
     } else if (t->tab == 1)
@@ -2918,24 +2930,6 @@ int rfm_move_kit_peaks(rfm_move_t *m, int pad, uint32_t from, uint32_t count, in
     memcpy(t->zpk, peaks, t->zn);
     return zoom_p(m) >= 0 && pad == t->cur;
 }
-/* Start / End at rest: a moved start heard from it (a second at most), a moved end the region's last second */
-static void audition(rfm_move_t *m)
-{
-    rfm_move_kit_t *t = K(m);
-    const rfm_move_kit_pad_t *d = CPAD(m, t->cur);
-    uint32_t s, e, sec, from, count;
-    t->aud = 0;
-    if (!ready(d))
-        return;
-    s = (uint32_t)((uint64_t)d->frames * (uint32_t)d->v[RFM_MOVE_KIT_P_START] / RFM_MOVE_KIT_FRAC);
-    e = (uint32_t)((uint64_t)d->frames * (uint32_t)d->v[RFM_MOVE_KIT_P_END] / RFM_MOVE_KIT_FRAC);
-    sec = d->rate ? d->rate : 48000;
-    if (e <= s)
-        return;
-    count = e - s < sec ? e - s : sec;
-    from = t->aud_p == RFM_MOVE_KIT_P_END ? e - count : s;
-    act(m, RFM_MOVE_ACT_KIT_AUDITION, t->cur, 0, 0, 0, 0, from, count, NULL);
-}
 /* (seq advance) the timed parts: a tool's held-mode audition let go */
 void rfmv_kit_poll(rfm_move_t *m)
 {
@@ -2950,8 +2944,15 @@ void rfmv_kit_poll(rfm_move_t *m)
     if (!rfmv_kit_cap(m))
         return;
     land_poll(m);                                       /* (round A) the jog at rest on a sound: onto the pad */
-    if (t->aud && now(m) - t->aud_ms >= RFM_MOVE_KIT_AUD_MS)
-        audition(m);                                    /* .. Start / End at rest: heard */
+    {                                                   /* (2026-11-26) the chosen row changed: its marquee from the
+                                                         * start */
+        const uint32_t key = t->tab == 2 ? 1u | (uint32_t)t->place << 1 | (uint32_t)t->depth << 4 |
+                                               (uint32_t)(uint16_t)(t->place ? t->fsel[t->depth] : t->psel) << 8
+                                         : 0;
+        const uint32_t f = t->place ? t->folder[t->depth] : 0;
+        if (key != t->mq_key || f != t->mq_f)
+            t->mq_key = key, t->mq_f = f, t->mq_ms = now(m);
+    }
     if (t->sl_ask && t->sl_on && now(m) - t->sl_ms >= RFM_MOVE_KIT_SENS_MS)
         slice_ask(m);                                   /* .. the sensitivity at rest: the cuts again */
     zoom_need(m);
@@ -3284,6 +3285,33 @@ static int br_off(const rfm_move_t *m)                  /* the slide's offset no
     x = 1.0f - (float)el / BR_SLIDE_MS;                 /* (ease out: the cube of what is left) */
     return (int)(t->br_dir * BR_H * x * x * x + (t->br_dir > 0 ? 0.5f : -0.5f));
 }
+/* (2026-11-26, the owner's) the chosen row's name too long for its 112 px: a slow ping-pong marquee: MQ_PAUSE_MS still
+ * at its start, MQ_PX_S px a second (whole pixels) until its end shows, MQ_PAUSE_MS, back, again; from the start when
+ * the choice changes (mq_ms); drawn with the screen's own redraws (Files keeps the kit timed) */
+#define MQ_PAUSE_MS 1000
+#define MQ_PX_S 25
+static int mq_off(const rfm_move_t *m, int over)
+{
+    uint32_t run, el;
+    if (over <= 0)
+        return 0;
+    run = (uint32_t)over * 1000u / MQ_PX_S;
+    el = (now(m) - m->kit.mq_ms) % (2u * (MQ_PAUSE_MS + run));
+    if (el < MQ_PAUSE_MS)
+        return 0;
+    if ((el -= MQ_PAUSE_MS) < run)
+        return (int)(el * MQ_PX_S / 1000u);
+    if ((el -= run) < MQ_PAUSE_MS)
+        return over;
+    el -= MQ_PAUSE_MS;
+    return over - (int)(el * MQ_PX_S / 1000u);
+}
+static void brow_sel(const rfm_move_t *m, mr_canvas_t *cv, int y, const char *name)   /* the chosen row (the middle) */
+{
+    const int w = 12 * (int)strlen(name) - 2;
+    if (y > -BR_H && y < 64)
+        v2_T(cv, 16 - mq_off(m, w - 112), y + 3, name, 2, 1);   /* (the icon's cell cleared over it after) */
+}
 static void brow(mr_canvas_t *cv, int y, const char *name)
 {
     char nm[RFM_MOVE_KIT_NAME];
@@ -3304,10 +3332,13 @@ static void files_screen(const rfm_move_t *m, mr_canvas_t *cv)
     const int off = br_off(m);
     icon_t *chosen = NULL;
     int i;
-    if (!t->place) {                                    /* the root: Takes, Samples, Kits (folders) */
-        static const char *const PN[PL_N] = { "Takes", "Samples", "Kits" };
-        for (i = 0; i < PL_N; i++)
-            brow(cv, BR_H + (i - t->psel) * BR_H + off, PN[i]);
+    if (!t->place) {                                    /* the root (2026-11-26): My Samples, the Move Library */
+        for (i = 0; i < root_n(m); i++) {
+            if (i == t->psel)
+                brow_sel(m, cv, BR_H + off, root_name(i));
+            else
+                brow(cv, BR_H + (i - t->psel) * BR_H + off, root_name(i));
+        }
         chosen = &I_TRR;
     } else {                                            /* Back first (visual row 0), then the folder's own */
         const int sv = t->fsel[t->depth] + 1;
@@ -3324,13 +3355,16 @@ static void files_screen(const rfm_move_t *m, mr_canvas_t *cv)
             }
             if (!(row = row_get(m, t->place, t->folder[t->depth], r)))
                 continue;
-            brow(cv, y, row->name);
+            if (i == sv)
+                brow_sel(m, cv, y, row->name);
+            else
+                brow(cv, y, row->name);
             if (i == sv)
                 chosen = row_icon(row);
         }
     }
     if (chosen) {                                       /* (the icon still: the middle row's) */
-        v2_R(cv, 0, BR_H, 15, BR_H, 0);
+        v2_R(cv, 0, BR_H, 16, BR_H, 0);                 /* (2026-11-26: over the marquee's left part too) */
         ic(cv, *chosen, 1, BR_H + 5, 1);
     }
 }
@@ -4113,7 +4147,7 @@ int rfmv_kit_timed(const rfm_move_t *m)
     for (i = 0; i < 16; i++)                            /* (round B: a locked step blinks) */
         if (step_locks(m, t->cur, m->seq.page * RFM_MOVE_SEQ_PAGE + i) && step_has(m, t->cur, m->seq.page * RFM_MOVE_SEQ_PAGE + i))
             return 1;
-    if (t->land || t->aud || t->sl_ask || msg_up(m) || rec_running(m) || t->pend_take || merge_up(m) || t->sl_on || t->tab == 2 || t->tool_note || to_kit(m) ||
+    if (t->land || t->sl_ask || msg_up(m) || rec_running(m) || t->pend_take || merge_up(m) || t->sl_on || t->tab == 2 || t->tool_note || to_kit(m) ||
         (t->tab == 0 && cur_page(m) == RFM_MOVE_KIT_PG_KIT && (m->seq.playing || m->seq.start_pending)) ||
         (t->tab == 0 && cur_page(m) == RFM_MOVE_KIT_PG_FILTER && t->lv_on) || br_off(m) || pg_off(m) ||
         (t->turned && now(m) - t->turn_ms < RFM_MOVE_POPUP_MS) || (t->kpop >= 0 && now(m) - t->kpop_ms < RFM_MOVE_POPUP_MS))
@@ -4190,7 +4224,7 @@ int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
     } else if (t->tab == 2) {
         const rfm_move_kit_row_t *r = t->place ? row_get(m, t->place, t->folder[t->depth], t->fsel[t->depth]) : NULL;
         if (!t->place)
-            snprintf(o, (size_t)cap, "%s", t->psel == 2 ? "Kits" : t->psel ? "Samples" : "Takes");
+            snprintf(o, (size_t)cap, "%s", root_name(t->psel));
         else if (t->known && !t->total)
             snprintf(o, (size_t)cap, "Empty");
         else if (r)
