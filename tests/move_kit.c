@@ -2243,10 +2243,22 @@ static void t_ghost(void)
     touch(0, 0), step(2, 0), rest();
     CHECK(rfmv_seq_find(&M, clip, 2, 37) < 0 && rfmv_seq_lock_get(&M, clip, 2, lv) >= 0);   /* (no hit made) */
     L(-1);
-    CHECKF(lit(L(L_STEP0 + 2)) && L(L_STEP0 + 2)[0] + L(L_STEP0 + 2)[1] + L(L_STEP0 + 2)[2] < L(L_STEP0)[0] + L(L_STEP0)[1] + L(L_STEP0)[2] &&
-           !is_rgb(L(L_STEP0 + 2), L(L_STEP0 + 5)[0], L(L_STEP0 + 5)[1], L(L_STEP0 + 5)[2]),
-           "ghost %d %d %d", L(L_STEP0 + 2)[0], L(L_STEP0 + 2)[1], L(L_STEP0 + 2)[2]);   /* (dimmer than a hit, not an
-                                                         * empty step's white) */
+    {   /* (the owner's 2026-11-26: a ghost read as an empty step) a pastel of the row's colour: every channel lit, at
+         * least 3x an empty step's light, paler than a hit, not white; steady */
+        const uint8_t *g = L(L_STEP0 + 2), *e = L(L_STEP0 + 5), *h = L(L_STEP0);
+        uint8_t g0[3];
+        const int gs = g[0] + g[1] + g[2], es = e[0] + e[1] + e[2];
+        memcpy(g0, g, 3);
+#define MX(c) ((c)[0] > (c)[1] ? ((c)[0] > (c)[2] ? (c)[0] : (c)[2]) : ((c)[1] > (c)[2] ? (c)[1] : (c)[2]))
+#define MN(c) ((c)[0] < (c)[1] ? ((c)[0] < (c)[2] ? (c)[0] : (c)[2]) : ((c)[1] < (c)[2] ? (c)[1] : (c)[2]))
+        CHECKF(g[0] && g[1] && g[2] && gs >= 3 * es && !(g[0] == g[1] && g[1] == g[2]) && !is_rgb(g, h[0], h[1], h[2]) &&
+               (MX(g) - MN(g)) * MX(h) < (MX(h) - MN(h)) * MX(g), "ghost %d %d %d, empty %d %d %d, hit %d %d %d", g[0], g[1], g[2],
+               e[0], e[1], e[2], h[0], h[1], h[2]);
+        adv_ms(500), L(-1);
+        CHECK(is_rgb(L(L_STEP0 + 2), g0[0], g0[1], g0[2]));
+#undef MX
+#undef MN
+    }
     clear();
     rfm_move_seq_play(&M, 1), adv_ms(600), rfm_move_seq_play(&M, 0);
     for (i = 0; i < nact; i++)

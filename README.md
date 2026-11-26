@@ -1255,7 +1255,9 @@ gets an empty kit. A firmware Track held shows a track the kit plays in its row'
 blue, 16 violet); a hold there routes it to the firmware, again back to the kit.
 
 **The lights.** Each kit row its track's colour: a pad with a sound dim, bright while it sounds, the chosen one white,
-empty dark, muted grey, recorded into red. Track 4 pink; the knobs pink (3 and 8 dark); Sample dim white (its job: a
+empty dark, muted grey, recorded into red. The chosen pad's steps (2026-11-26): an empty step dim white, a hit the
+row's colour by its velocity, a locked hit blinking slowly, a ghost trigger (locks, no hit) the row's colour as a
+steady pastel (half way to white, brighter than an empty step), the playhead white. Track 4 pink; the knobs pink (3 and 8 dark); Sample dim white (its job: a
 pad held + Sample).
 
 **The host's part.** `rfm_move_fw_caps(m, ... | RFM_MOVE_CAP_KIT)`: every pad's `KIT_LOAD` and `KIT_SET`s once (and

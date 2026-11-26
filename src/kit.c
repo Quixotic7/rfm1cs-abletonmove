@@ -1460,7 +1460,16 @@ static void step_clear(rfm_move_t *m, int k, int abs)
     locks_clear(m, k, clip, abs);                       /* (round B: its locks with them) */
 }
 /* ---- (2026-11-26, the owner's: "If you lock a parameter on a step without notes it becomes a ghost trigger") */
-#define GHOST_BR 40                                     /* a ghost's step light (a hit's: 30 + 1.9 vel) */
+/* a ghost's step light (the owner's 2026-11-26: the dim one read as an empty step): the row's colour half way to white
+ * (a pastel: no hit's colour is), brighter than an empty step's dim white, steady (a locked hit blinks) */
+#define GHOST_BR 150
+#define GHOST_OUT 48                                    /* .. outside the loop */
+static rgb_t ghost_rgb(rgb_t c, int br)
+{
+    rgb_t w;
+    w.r = (uint8_t)((c.r + 255) / 2), w.g = (uint8_t)((c.g + 255) / 2), w.b = (uint8_t)((c.b + 255) / 2);
+    return sc(w, br);
+}
 static int has_at(const rfm_move_t *m, int k, int clip, int abs)
 {
     const int tr = trk(k);
@@ -3556,9 +3565,10 @@ void rfmv_kit_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
             if (vel && (now(m) / 500u) % 2u && step_locks(m, k0, abs))
                 v = sc(ROWC[k0 / 4], (in ? br : 60) / 4);   /* (round B: locked: a slow
                                                          * blink, 1 s round) */
-            if (!vel && step_locks(m, k0, abs))         /* (2026-11-26) a ghost trigger: the pad's colour, dim and
-                                                         * steady (a hit is bright, a locked hit blinks) */
-                v = sc(ROWC[k0 / 4], in ? GHOST_BR : GHOST_BR / 3);
+            if (!vel && step_locks(m, k0, abs))         /* (2026-11-26) a ghost trigger: the row's colour as a pastel,
+                                                         * steady (an empty step dim white, a hit its colour by
+                                                         * velocity, a locked hit blinks, the playhead white) */
+                v = ghost_rgb(ROWC[k0 / 4], in ? GHOST_BR : GHOST_OUT);
             if (in && pos == abs && (q->playing || q->start_pending))
                 v = sc(RFMV_WHITE, 200);                /* (the playhead) */
             if (lp)                                     /* (3b, board D) the steps the sound lasts, the first brightest */
