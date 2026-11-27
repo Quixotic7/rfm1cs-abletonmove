@@ -518,6 +518,8 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
         return -1;
     }
     rfmv_latch_drop_all(m);                             /* (0.5.3: a load lets the latched notes go) */
+    rfmv_loop_drop_live(m);                             /* (hf_looper_10: no recording or overdub of the old project goes
+                                                         * on into this one) */
     const int was = q->playing || q->start_pending;     /* (the transport stays as it was: only Play starts or
                                                          * stops it, the owner's) */
     rfmv_seq_stop(m);
@@ -708,6 +710,7 @@ void rfmv_proj_delete(rfm_move_t *m, int slot)
     if (slot == q->proj_cur) {                          /* the open one: it empties (and is not saved again; the
                                                          * transport as it was) */
         const int was = q->playing || q->start_pending;
+        rfmv_loop_drop_live(m);                         /* (hf_looper_10) */
         rfmv_seq_stop(m);
         rfmv_seq_ui_release(m);
         rfmv_seq_project_clear(m);

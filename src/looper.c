@@ -181,6 +181,7 @@ static void act(rfm_move_t *m, int kind, int index, int down, int vel, int value
     a.kind = (uint8_t)kind, a.index = (uint8_t)index, a.down = (uint8_t)down, a.vel = (uint8_t)vel;
     a.value = (int16_t)value, a.param = (uint8_t)param, a.take = take;
     a.slot = m->fw.active < RFM_MOVE_FW_SLOTS ? m->fw.active : 0;
+    a.ago_ms = m->loop.act_ago;                         /* (the step looper: its key's press, acted at its release) */
     if (data) {
         a.data = (const uint8_t *)data;
         a.len = (uint32_t)strlen(data);
@@ -289,6 +290,9 @@ int rfm_move_loop_status(rfm_move_t *m, const rfm_move_loop_status_t *st)
         return 0;
     changed = !t->st_ok || memcmp(&t->st, st, sizeof *st) != 0;
     t->st = *st, t->st_ok = 1;
+    for (l = 0; l < LANES; l++)                         /* (the step looper's key 4: the loop it brings back) */
+        if (st->lane[l].play >= 0 && st->lane[l].play < SCENES)
+            t->to_last[l] = (uint8_t)(st->lane[l].play + 1);
     for (l = 0; l < LANES; l++) {                       /* (an ask the host now has: its own state from here on) */
         const int a = t->ask[l], pl = st->lane[l].play, nx = st->lane[l].next;
         if (a < 0)
@@ -467,6 +471,25 @@ static void live_reset(rfm_move_t *m)                   /* what was asked or hel
         rfmv_kit_lbr_close(m);
     t->br = 0, t->ld_slot = 0, t->zslot = 0, t->za_slot = 0;
     memset(t->to_dub, 0, sizeof t->to_dub), memset(t->to_target, 0, sizeof t->to_target);
+    memset(t->to_last, 0, sizeof t->to_last);
+    t->to_used = 0, t->to_held = 0, t->act_ago = 0;
+}
+/* (hf_looper_10) before a project load or switch: every recording and overdub cancelled at the host (R_CANCEL, Dub off),
+ * so none writes into the next project's Loops/ (the host drops their answers too) */
+void rfmv_loop_drop_live(rfm_move_t *m)
+{
+    rfm_move_loop_t *t = LP(m);
+    int s, l;
+    if (!rfmv_loop_cap(m))
+        return;
+    t->act_ago = 0;
+    for (s = 0; s < NSLOT; s++)
+        if (rec_state(m, s))
+            act(m, RFM_MOVE_ACT_LOOP_REC, s, 0, 0, 0, RFM_MOVE_LOOP_R_CANCEL, 0, NULL), t->rs[s] = 0;
+    for (l = 0; l < LANES; l++)
+        if (t->to_dub[l])
+            act(m, RFM_MOVE_ACT_LOOP_DUB, t->to_dub[l] - 1, 0, 0, 0, 0, 0, NULL), t->to_dub[l] = 0;
+    t->dubq = 0, t->und_rec = 0;
 }
 void rfmv_loop_loaded_project(rfm_move_t *m)
 {
@@ -1353,6 +1376,7 @@ int rfmv_loop_input(rfm_move_t *m, const mr_event_t *ev)
     }
 }
 static void zoom_need(rfm_move_t *m);
+static void to_poll(rfm_move_t *m);
 void rfmv_loop_poll(rfm_move_t *m)
 {
     rfm_move_loop_t *t = LP(m);
@@ -1363,6 +1387,7 @@ void rfmv_loop_poll(rfm_move_t *m)
     if (t->br)
         rfmv_kit_lbr_poll(m);
     zoom_need(m);
+    to_poll(m);
 }
 
 /* ================================================================ the answers === */
@@ -2414,9 +2439,13 @@ int rfmv_loop_tab_timed(const rfm_move_t *m)
  * 1-4, 5-8, 9-12, 13-16 are lanes 1..4, each group in its own Okabe-Ito colour (blue, orange, bluish green, reddish
  * purple: neighbours far apart for colour-blind players). In a group: key 1 the pedal (empty or stopped: records at the
  * bar, over the lane's slot (Undo), stopped: the transport with the Count-in; armed: cancelled; recording: it ends at
- * the bar and plays at once; playing: an overdub ends), key 2 Overdub (on / off, one Undo), key 3 Replace (records
- * over the playing loop from the next bar), key 4 Next (the lane's next empty slot is the pedal's; the old loop stops
- * when the new recording starts), a double tap: Stop. A group key held + the volume knob: the lane's level. Over every
+ * the bar and plays at once; playing: an overdub ends), key 2 Overdub (on / off from the press, one Undo), key 3
+ * Replace (records over the playing loop from the next bar), key 4 a tap: play / stop the lane at the launch time (a
+ * stopped lane: its loop played last), held: Next (the lane's next empty slot is the pedal's; the old loop stops when
+ * the new recording starts). (2026-11-27, the musician's review) Each key's job is decided before it acts (R2): at
+ * its release (key 4's Next: at its hold), its quantization from its press (act_ago: a press up to a 16th after a bar
+ * line counts for it, the host's grace window). A group key held + the volume knob: the lane's level, and the keys
+ * held do nothing. Over every
  * mode and layout but the Looper view (its steps are the scenes) and the menus; Shift + a step (Track 4 held + a step
  * in the FM-1 layout) stays the shortcuts. On / off: Shift + step 4, the cylinder icon (the FM-1 layout: Track 4 held + step 4) or the
  * Record page's knob 6; a full-screen card says it and the keys. The group shows its loop's place: a key a quarter of
@@ -2425,7 +2454,7 @@ int rfmv_loop_tab_timed(const rfm_move_t *m)
 static const rgb_t TO_RGB[LANES] = { { 0, 114, 178 }, { 230, 159, 0 }, { 0, 158, 115 }, { 204, 121, 167 } };
 #define TO_CARD_MS 1500
 #define TO_OVL_MS 1200
-static const char *const TO_KEY[4] = { "Rec", "Dub", "Replace", "Next" };
+static const char *const TO_KEY[4] = { "Rec", "Dub", "Replace", "Play" };   /* (key 4 held: Next) */
 int rfmv_loop_to_steps(const rfm_move_t *m)
 {
     return rfmv_loop_cap(m) && m->loop.to_on && !rfmv_loop_active(m) && !m->seq.smenu && !m->seq.projects;
@@ -2526,38 +2555,79 @@ static void to_key(rfm_move_t *m, int i)
         to_rec(m, l, s);
         to_say(m, l, "Replace");
         break;
-    default:                                            /* Next; a double tap: Stop */
-        if (t->to_tap_ms[l] && now(m) - t->to_tap_ms[l] < RFM_MOVE_DOUBLE_MS) {
-            t->to_tap_ms[l] = 0;
-            t->to_target[l] = t->to_prev[l];
+    default:                                            /* (hf_steplooper_3, _4) a tap: play / stop the lane at the
+                                                         * launch time (Next is the hold: to_next) */
+        if (rs == RFM_MOVE_LOOP_RS_ARMED || rs == RFM_MOVE_LOOP_RS_RECORDING) {
             to_dub_off(m, l);
-            if (rs == RFM_MOVE_LOOP_RS_ARMED || rs == RFM_MOVE_LOOP_RS_RECORDING)
-                rec_cancel(m, s);
+            rec_cancel(m, s);
             if (lane_play(m, l) >= 0 || lane_next(m, l) >= 0)
                 stop_lane(m, l, 0);
             to_say(m, l, "Stop");
+        } else if (rs)
             break;
-        }
-        t->to_tap_ms[l] = now(m) ? now(m) : 1;
-        t->to_prev[l] = t->to_target[l];
-        {
+        else if (plays || (lane_next(m, l) >= 0 && lane_next(m, l) != STOP)) {
+            to_dub_off(m, l);
+            stop_lane(m, l, 0);
+            to_say(m, l, "Stop");
+        } else {                                        /* (stopped: its loop played last, else the pedal's, else the
+                                                         * lane's first) */
+            int c = t->to_last[l] && has_loop(CSL(m, l * SCENES + t->to_last[l] - 1)) ? l * SCENES + t->to_last[l] - 1
+                    : has_loop(CSL(m, s))                                              ? s
+                                                                                       : -1;
             int j;
-            for (j = 1; j <= SCENES; j++) {
-                const int c = l * SCENES + (scene_of(s) + j) % SCENES;
-                if (!has_loop(CSL(m, c)) && !rec_state(m, c)) {
-                    char w[12];
-                    t->to_target[l] = (uint8_t)(scene_of(c) + 1);
-                    snprintf(w, sizeof w, "> %d-%d", l + 1, scene_of(c) + 1);
-                    to_say(m, l, w);
-                    break;
-                }
+            for (j = l * SCENES; c < 0 && j < (l + 1) * SCENES; j++)
+                if (has_loop(CSL(m, j)))
+                    c = j;
+            if (c < 0) {
+                to_say(m, l, "Nothing");
+                break;
             }
-            if (j > SCENES)
-                to_say(m, l, "Full");
+            launch(m, c, 0);
+            if (!running(m))
+                rfmv_seq_start(m);
+            to_say(m, l, "Play");
         }
         break;
     }
     touched(m);
+}
+/* key 4 held (RFM_MOVE_SEQ_HOLD_MS): Next: the lane's next empty slot is the pedal's (the old loop stops when the new
+ * recording starts) */
+static void to_next(rfm_move_t *m, int l)
+{
+    rfm_move_loop_t *t = LP(m);
+    const int s = to_slot(m, l);
+    int j;
+    for (j = 1; j <= SCENES; j++) {
+        const int c = l * SCENES + (scene_of(s) + j) % SCENES;
+        if (!has_loop(CSL(m, c)) && !rec_state(m, c)) {
+            char w[12];
+            t->to_target[l] = (uint8_t)(scene_of(c) + 1);
+            snprintf(w, sizeof w, "> %d-%d", l + 1, scene_of(c) + 1);
+            to_say(m, l, w);
+            break;
+        }
+    }
+    if (j > SCENES)
+        to_say(m, l, "Full");
+    touched(m);
+}
+/* (hf_steplooper_5) the takeover's timed part: key 4 held long enough is Next (decided then: its release does
+ * nothing), unless the volume knob was used meanwhile */
+static void to_poll(rfm_move_t *m)
+{
+    rfm_move_loop_t *t = LP(m);
+    int l;
+    if (!t->to_down || !rfmv_loop_to_steps(m))
+        return;
+    for (l = 0; l < LANES; l++) {
+        const int i = 4 * l + 3;
+        const uint16_t b = (uint16_t)(1u << i);
+        if ((t->to_down & b) && !((t->to_used | t->to_held) & b) && now(m) - t->to_pms[i] >= RFM_MOVE_SEQ_HOLD_MS) {
+            t->to_held |= b;
+            to_next(m, l);
+        }
+    }
 }
 int rfmv_loop_to_input(rfm_move_t *m, const mr_event_t *ev)
 {
@@ -2566,9 +2636,18 @@ int rfmv_loop_to_input(rfm_move_t *m, const mr_event_t *ev)
     if (!rfmv_loop_cap(m))
         return 0;
     if (ev->type == MR_EV_STEP && !ev->value && i >= 0 && i < 16 && (t->to_down >> i & 1)) {
-        t->to_down &= (uint16_t)~(1u << i);
+        const uint16_t b = (uint16_t)(1u << i);
+        t->to_down &= (uint16_t)~b;
         if (!t->to_down)
             t->to_lvl = 0;
+        if (!((t->to_used | t->to_held) & b) && rfmv_loop_to_steps(m)) {   /* (hf_steplooper_5: the key's job at its
+                                                         * release, quantized from its press) */
+            const uint32_t ago = now(m) - t->to_pms[i];
+            t->act_ago = (uint16_t)(ago > 60000u ? 60000u : ago);
+            to_key(m, i);
+            t->act_ago = 0;
+        }
+        t->to_used &= (uint16_t)~b, t->to_held &= (uint16_t)~b;
         return 1;                                       /* (a key the takeover took: its release too) */
     }
     if (!rfmv_loop_to_steps(m))
@@ -2576,8 +2655,10 @@ int rfmv_loop_to_input(rfm_move_t *m, const mr_event_t *ev)
     if (ev->type == MR_EV_STEP && ev->value && i >= 0 && i < 16) {
         if ((m->seq.mods & SEQ_M_SHIFT) || m->track_held)
             return 0;                                   /* (the shortcuts) */
-        t->to_down |= (uint16_t)(1u << i);
-        to_key(m, i);
+        t->to_down |= (uint16_t)(1u << i);              /* (R2: nothing acts at the press; the key lights white) */
+        t->to_used &= (uint16_t)~(1u << i), t->to_held &= (uint16_t)~(1u << i);
+        t->to_pms[i] = now(m);
+        touched(m);
         return 1;
     }
     if (t->to_down && ((ev->type == MR_EV_KNOB && i == 8) || (ev->type == MR_EV_TOUCH && i == 8))) {
@@ -2585,6 +2666,7 @@ int rfmv_loop_to_input(rfm_move_t *m, const mr_event_t *ev)
         for (l = 0; l < LANES && !(t->to_down >> (4 * l) & 15); l++) {}
         if (l < LANES) {
             t->to_lvl = (uint8_t)(l + 1);
+            t->to_used |= t->to_down;                   /* (hf_steplooper_5: the keys held do nothing) */
             if (ev->type == MR_EV_KNOB && ev->value)
                 level_set(m, KL_LVL0 + l, rfmv_lvl_step(t->lane[l][RFM_MOVE_LOOP_L_LEVEL], ev->value));
             t->to_ms = now(m) ? now(m) : 1;
@@ -2648,7 +2730,7 @@ int rfmv_loop_to_screen(const rfm_move_t *m, mr_canvas_t *cv)
         v2_TC(cv, 64, 0, t->to_on ? "Step Looper On" : "Step Looper Off", v2_tw("Step Looper Off", 2) <= 128 ? 2 : 1, 1);
         if (t->to_on)
             for (k = 0; k < 4; k++) {                   /* (a group, a lane: its four keys' jobs) */
-                static const char *const J[4] = { "1 Rec", "2 Dub", "3 Rpl", "4 Nxt" };
+                static const char *const J[4] = { "1 Rec", "2 Dub", "3 Rpl", "4 Ply" };
                 int j;
                 char n[8];
                 v2_O(cv, k * 32, 18, 31, 46, 1);
@@ -2693,7 +2775,7 @@ int rfmv_loop_to_timed(const rfm_move_t *m)
         return 1;
     if (!rfmv_loop_to_steps(m))
         return 0;
-    if (rec_any(m) >= 0)
+    if (rec_any(m) >= 0 || t->to_down)                  /* (a key held: key 4's hold) */
         return 1;
     for (l = 0; l < LANES; l++)
         if (lane_next(m, l) >= 0 || (lane_play(m, l) >= 0 && running(m)))

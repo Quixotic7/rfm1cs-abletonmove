@@ -1243,7 +1243,7 @@ stay the sequencer's; Up and Down are dark and dead.
 | steps | the chosen pad's notes on its track (the page shown): a click toggles its own note at the release; a step held + pads: their notes in or out of it (the click then nothing); Delete + a step: the chosen pad's notes there |
 | Delete held + a pad | its notes in its track's clip go first; a pad with none is emptied (the file stays). Undo brings either back (the pad's own undo while no sequencer edit came after it) |
 | Mute held + a pad | the pad muted (grey), saved with the kit |
-| a pad held + Sample | records into that pad with the sampler's own settings (`KIT_REC`) until the pad is let go (or the length, or the threshold): the pad red, Sample red, the kit's screen the take (boards L armed, M recording) |
+| a pad held + Sample | records into that pad with the sampler's own settings (`KIT_REC`) until the pad is let go (or the length, or the threshold): the pad red, Sample red, the kit's screen the take (boards L armed, M recording). (2026-11-27) Its source is the kit's own (default Input, saved), its sign big at the top right; armed, the jog or knob 1 changes it |
 | knobs | the chosen pad's, lit pink: 1 Pitch (a semitone; Shift: a cent), 2 Start, 3 Stretch (3b), 4 Play mode, 5 Attack, 6 Release, 7 Level, 8 Send 1 (3b). Touch: the popup, its name and value; turn: changed |
 | the jog | the tab's rows: one at rest (under the pad's wave and the steps it lasts), three for a second while it turns; up past the first: the tabs (click, turn, click). A row's click: its popup (the jog its value; Shift fine). Back: a popup, the tools, a folder, the tabs; never out of the view |
 
@@ -1648,10 +1648,24 @@ load with an empty looper; a bad looper part is refused. `rfm_move_t` grows by `
 | the jog's click | **Files for the chosen slot**: the kit's own browser (`rfmv_kit_lbr_*`: its rows, screen, Back), the root Takes (with the take library), My Samples, the Move Library; a pad picks the slot; a sound's click: `LOOP_FILE`, answered by `rfm_move_loop_recorded` ("Loaded"; Undo: what the slot had) |
 | Loop page | 1 Start, 2 End (markers 0..`RFM_MOVE_LOOP_MK_ONE` of the sound, in `LOOP_SET`'s take; a column of the close-up a detent, Shift a frame; the close-up's peaks: `LOOP_PEAKS` -> `rfm_move_loop_peaks`), 3 Steps (1..1024: the region fills them at the tempo), 4 Pitch, 5 Reverse, 6 Warp (Off, Repitch, Grains, Beats) |
 | Record page | 1 Source, 2 Length, 3 Count-in (Off, 1, 2 bars: a loop armed while stopped, Play counts in, `rfm_move_loop_count_in`, `rfmv_seq_count_in_bars`), 4 In Level and 5 Monitor (Off, On, Auto: the sampler's own settings, `rfm_move_smp_set`), 6 Step Looper |
-| Shift + step 4, the cylinder (FM-1 layout: Track 4 held + step 4) | the **step looper** on / off (its card): steps 1-4 .. 13-16 lanes 1..4 (Okabe-Ito blue, orange, bluish green, reddish purple), keys 1 Rec (the pedal), 2 Dub (`LOOP_DUB`), 3 Replace, 4 Next (a double tap: Stop); a group key + the volume knob: the lane's level. Every mode but the Looper view and the menus; Shift / Track held + a step stay the shortcuts |
+| Shift + step 4, the cylinder (FM-1 layout: Track 4 held + step 4) | the **step looper** on / off (its card): steps 1-4 .. 13-16 lanes 1..4 (Okabe-Ito blue, orange, bluish green, reddish purple), keys 1 Rec (the pedal), 2 Dub (`LOOP_DUB`, from the press), 3 Replace, 4 a tap: play / stop the lane at the launch time (stopped: the loop it played last), held: Next; a group key + the volume knob: the lane's level (the key does nothing). Every key acts at its release (key 4's Next at its hold), its quantization from its press (`ago_ms`). Every mode but the Looper view and the menus; Shift / Track held + a step stay the shortcuts |
 
 The project is version 20 (`RFM_MOVE_LOOP_BYTES` 4160: the Count-in and the step looper in the part's header, each
 slot's markers; version 19 loads, its Start / Length as the markers). The sampler's Monitor is 0..2 (Auto).
+
+### The musician's review (2026-11-27)
+
+- **Keys decided before they act (UX rule R2).** The step looper's keys act at their release; key 4's Next at its
+  300 ms hold. A key held while the volume knob is touched or turned does nothing (the lane's level only). Each
+  action carries `ago_ms`, the press's age, so the host's grace window and next bar line count from the press.
+- **The host's grace window** (remoteFM14Move): a press up to a 16th after a bar line counts for that line: a start
+  records from it (a pre-roll ring), an end ends on it, a launch starts in phase, a stop stops at once. Overdub starts
+  at the press.
+- **A project load or switch** cancels every recording and overdub first (`rfmv_loop_drop_live`: `R_CANCEL`,
+  `LOOP_DUB` 0).
+- **The kit's pad recording** has its own Source (`rfm_move_kit_t.rec_src`, saved; default Input), shown big on the
+  armed / recording screen and set there while armed (the jog, knob 1); `KIT_REC` vel = source + 1, down 2 = a change
+  while armed.
 
 ## FX parameter pages (0.5.0)
 

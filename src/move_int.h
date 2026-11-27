@@ -539,6 +539,8 @@ void rfmv_loop_clear(rfm_move_t *m);                    /* (project.c) an empty 
 void rfmv_loop_write(const rfm_move_t *m, uint8_t *p);  /* .. RFM_MOVE_LOOP_BYTES */
 int rfmv_loop_check(const uint8_t *p, int ver);         /* .. 0 valid (version 19 or 20) */
 void rfmv_loop_read(rfm_move_t *m, const uint8_t *p, int ver);
+void rfmv_loop_drop_live(rfm_move_t *m);                /* (hf_looper_10) before a project load: recordings and
+                                                         * overdubs cancelled at the host */
 void rfmv_loop_loaded_project(rfm_move_t *m);           /* .. loaded or made: the host told */
 int rfmv_loop_base_words(const rfm_move_t *m, char *o, int cap);   /* (speech) */
 int rfmv_loop_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);

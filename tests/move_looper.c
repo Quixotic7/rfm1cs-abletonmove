@@ -894,30 +894,71 @@ static void t_steploop(void)
     rfm_move_loop_recorded(&M, 0, RFM_MOVE_LOOP_OK, "@/Loops/1-1 120bpm 1b 2.wav", 88200, 44100, 1, 1200, 0, NULL);
     CHECK(!strcmp(M.loop.slot[0].path, "@/Loops/1-1 120bpm 1b 2.wav") && M.loop.slot[0].v[RFM_MOVE_LOOP_P_LEVEL] == 90 &&
           M.loop.und && !(M.loop.dubq & 1));
-    /* key 4: Next (the lane's next empty slot is the pedal's); a double tap: Stop */
+    /* (hf_steplooper_3, _4) key 4 held: Next (the lane's next empty slot is the pedal's), at the hold; its release
+     * nothing more */
     rest(), clear();
-    tap_step(3);
+    step(3, 1);
+    CHECK(!count(RFM_MOVE_ACT_LOOP_LAUNCH) && M.loop.to_target[0] == 1);
+    adv_ms(RFM_MOVE_SEQ_HOLD_MS + 20);
     CHECK(M.loop.to_target[0] == 2 && !count(RFM_MOVE_ACT_LOOP_LAUNCH));
-    now_ms += 50;
+    step(3, 0);
+    CHECK(M.loop.to_target[0] == 2 && !count(RFM_MOVE_ACT_LOOP_LAUNCH));
+    /* key 4 tapped: the playing lane stops at the launch time, quantized from the press (ago) */
+    rest(), clear();
+    step(3, 1), adv_ms(80), step(3, 0);
+    a = last(RFM_MOVE_ACT_LOOP_LAUNCH);
+    CHECKF(a && a->down == 0 && a->index / 8 == 0 && a->value == RFM_MOVE_LQ_BAR && a->ago_ms >= 80 && a->ago_ms <= 90,
+           "down %d ago %d", a ? a->down : -1, a ? a->ago_ms : -1);
+    /* stopped: a tap brings back the loop it played last (not Next's empty slot), the transport running */
+    st_reset();
+    st_send();
+    rest(), clear();
     tap_step(3);
     a = last(RFM_MOVE_ACT_LOOP_LAUNCH);
-    CHECK(a && a->down == 0 && a->index / 8 == 0 && M.loop.to_target[0] == 1);   /* (the pedal's slot as before Next) */
+    CHECK(a && a->down == 1 && a->index == 0);
+    ST.lane[0].play = 0, ST.lane[0].pos = 40000;
+    st_send();
     /* key 3: Replace: records over the playing loop from the next bar */
     rest(), clear();
+    M.loop.to_target[0] = 0;
     st_send();
     tap_step(2);
     a = last(RFM_MOVE_ACT_LOOP_REC);
     CHECK(a && a->index == 0 && a->param == RFM_MOVE_LOOP_R_START);
     tap_step(0);                                        /* (armed: the pedal cancels) */
     CHECK(last(RFM_MOVE_ACT_LOOP_REC)->param == RFM_MOVE_LOOP_R_CANCEL);
-    /* a group key held + the volume knob: the lane's level */
-    rest(), clear();
-    step(7, 1), raw(0xB0, MR_CC_VOLUME, 2);
-    a = last(RFM_MOVE_ACT_LOOP_SET);
-    CHECK(a && a->index == RFM_MOVE_LOOP_LANE0 + 1 && M.loop.lane[1][RFM_MOVE_LOOP_L_LEVEL] > 100);
-    screen();
-    dump("to_level");
-    step(7, 0);
+    /* (hf_steplooper_5) a group key held + the volume knob: the lane's level, and the key does nothing: keys 1..4 of
+     * lane 2 (key 4 held past its hold too: no Next) */
+    {
+        int k, lv = M.loop.lane[1][RFM_MOVE_LOOP_L_LEVEL];
+        for (k = 0; k < 4; k++) {
+            rest(), clear();
+            step(4 + k, 1), raw(0xB0, MR_CC_VOLUME, k & 1 ? 126 : 2);
+            a = last(RFM_MOVE_ACT_LOOP_SET);
+            CHECKF(a && a->index == RFM_MOVE_LOOP_LANE0 + 1 && M.loop.lane[1][RFM_MOVE_LOOP_L_LEVEL] != lv, "key %d level %d was %d",
+                   k + 1, M.loop.lane[1][RFM_MOVE_LOOP_L_LEVEL], lv);
+            lv = M.loop.lane[1][RFM_MOVE_LOOP_L_LEVEL];
+            if (k == 0) {
+                screen();
+                dump("to_level");
+            }
+            adv_ms(k == 3 ? RFM_MOVE_SEQ_HOLD_MS + 50 : 100);
+            step(4 + k, 0);
+            CHECKF(!count(RFM_MOVE_ACT_LOOP_REC) && !count(RFM_MOVE_ACT_LOOP_DUB) && !count(RFM_MOVE_ACT_LOOP_LAUNCH) &&
+                   M.loop.to_target[1] == 0, "key %d acted", k + 1);
+        }
+        /* the volume touched alone (no key) then a key: the key acts as ever */
+        rest(), clear();
+        step(4, 1);
+        CHECK(!count(RFM_MOVE_ACT_LOOP_REC));           /* (R2: nothing at the press) */
+        adv_ms(120);
+        step(4, 0);
+        a = last(RFM_MOVE_ACT_LOOP_REC);
+        CHECKF(a && a->index == 8 && a->param == RFM_MOVE_LOOP_R_START && a->ago_ms >= 120 && a->ago_ms <= 130,
+               "ago %d", a ? a->ago_ms : -1);           /* (Rec at the release, quantized from the press) */
+        step(4, 1), step(4, 0);                         /* (armed: cancelled) */
+        CHECK(last(RFM_MOVE_ACT_LOOP_REC)->param == RFM_MOVE_LOOP_R_CANCEL);
+    }
     /* Shift-less shortcuts: Track 4 held + a step stays the shortcuts; off again: the steps are the FM-1's */
     rest(), clear();
     hold_track(3), step(3, 1), step(3, 0), track(3, 0);
@@ -930,6 +971,28 @@ static void t_steploop(void)
     jog(2), rest();
     knob(5, 5);
     CHECK(M.loop.to_on && !rfmv_loop_to_steps(&M));     /* (the Looper view keeps its scenes on the steps) */
+    /* (hf_looper_10) a project loaded mid-recording and mid-overdub: both cancelled at the host first */
+    rfmv_loop_close(&M, 1);                             /* (out of the Looper view: the step looper's keys) */
+    rest(), clear();
+    CHECK(rfmv_loop_to_steps(&M));
+    tap_step(8);                                        /* (lane 3: a take armed) */
+    M.loop.to_dub[0] = 1;                               /* (lane 1: an overdub on) */
+    clear();
+    CHECK(rfm_move_project_load(&M, 2, NULL, 0) == 0);
+    {
+        int i, cancel = 0, dub = 0, first_loop = -1, first_load = -1;
+        for (i = 0; i < nact; i++) {
+            if (A[i].kind == RFM_MOVE_ACT_LOOP_REC && A[i].param == RFM_MOVE_LOOP_R_CANCEL && A[i].index == 16)
+                cancel++, first_loop = first_loop < 0 ? i : first_loop;
+            if (A[i].kind == RFM_MOVE_ACT_LOOP_DUB && A[i].down == 0 && A[i].index == 0)
+                dub++, first_loop = first_loop < 0 ? i : first_loop;
+            if (A[i].kind == RFM_MOVE_ACT_LOOP_LOAD && first_load < 0)
+                first_load = i;
+        }
+        CHECKF(cancel == 1 && dub == 1 && first_loop >= 0 && first_loop < first_load, "cancel %d dub %d at %d, load at %d",
+               cancel, dub, first_loop, first_load);
+        CHECK(!M.loop.to_dub[0] && !rfmv_loop_recording(&M));
+    }
 }
 
 int main(void)

@@ -5,6 +5,22 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## Unreleased
 
+- **The musician's review of the looper and the kit (2026-11-27; remoteFM14Move `AbletonMove/hf-review-20261127`).**
+  - The step looper's keys act at their release, never at the press (UX rule R2), so a group key held + the volume
+    knob (touched or turned) sets the lane's level and the key does nothing (hf_steplooper_5). The action carries the
+    press's age (`rfm_move_act_t.ago_ms`, new at the end): the host quantizes from the press, so a quick tap is not
+    late.
+  - Key 4: a tap plays / stops the lane at the launch time (a stopped lane brings back the loop it played last); held
+    300 ms (`RFM_MOVE_SEQ_HOLD_MS`) it is Next. The double tap's Stop is gone (hf_steplooper_3, _4). Card "4 Ply".
+  - Overdub starts at the press, at once (the host's part, hf_steplooper_2).
+  - A project load or switch first cancels every recording and overdub at the host (`R_CANCEL`, `LOOP_DUB` 0;
+    `rfmv_loop_drop_live`), so nothing records into the next project (hf_looper_10).
+  - The kit's pad recording (a pad held + Sample) has its own Source, saved with the project (default Input; the
+    kit part's header byte 14, no new version): shown big on the armed and recording screen, set there while armed
+    with the jog or knob 1 (Input, Master, Track 1-3, Kit); `KIT_REC` vel the source + 1, down 2 a change while
+    armed. The sampler's own Source is untouched (hf_kit_3).
+  - Tests: move_looper (keys 1-4 held + the volume knob do nothing; release-decided keys and their `ago_ms`; key 4's
+    tap and hold; a project load mid-recording), move_kit (the source: its sign, the jog, knob 1, saved).
 - **The looper, round 2 (the owner's first try).** A slot loads a take or a sound from the kit's own Files (the
   jog's click; `LOOP_FILE`); a tap on an empty slot records only on the Record page (elsewhere it picks the slot);
   the Record page's Count-in (Off, 1, 2 bars: Play counts in, everything starts together after it), In Level and

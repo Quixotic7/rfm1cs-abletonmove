@@ -67,8 +67,8 @@ static icon_t I_PLAY = { "...........", "..##.......", "..####.....", "..######.
                          "..######...", "..####.....", "..##.......", "...........", "..........." };
 static icon_t I_X = { "...........", ".##.....##.", "..##...##..", "...##.##...", "....###....", "....###....",
                       "...##.##...", "..##...##..", ".##.....##.", "...........", "..........." };
-static icon_t I_SRC = { "........##.", "....#...##.", ".....#..##.", "......#.##.", "#######.##.", "#######.##.",
-                        "......#.##.", ".....#..##.", "....#...##.", "........##.", "..........." };
+static icon_t I_IN = { "....###....", "....###....", "....###....", "....###....", "..#.###.#..", "..#.###.#..",
+                       "..#.....#..", "...#####...", ".....#.....", ".....#.....", "...#####..." };   /* (the sampler's) */
 static icon_t I_DIR = { "...........", ".####......", "#....#####.", "#.........#", "#.........#", "#.........#",
                         "#.........#", "#.........#", "###########", "...........", "..........." };
 static icon_t I_REV = { "......#....", "......##...", "##########.", "......##...", "......#....", "....#......",
@@ -554,6 +554,7 @@ void rfmv_kit_clear(rfm_move_t *m)                      /* an empty kit (an olde
         t->pad[k].st = RFM_MOVE_KIT_EMPTY;
     }
     t->rh = RFM_MOVE_KIT_RH_PITCHES, t->route = 0, t->cur = 0, t->und = 0, t->undk = 0, t->trim = 1, t->rh_oct = 0;
+    t->rec_src = RFM_MOVE_SMP_SRC_INPUT;                /* (hf_kit_3) */
     t->name[0] = 0;
     memset(t->mix, 0, sizeof t->mix);
     t->mix[RFM_MOVE_KIT_MIX_LEVEL] = MIX_LEVEL0, t->mix[RFM_MOVE_KIT_MIX_PAN] = 64;
@@ -598,6 +599,8 @@ void rfmv_kit_write(const rfm_move_t *m, uint8_t *p)    /* RFM_MOVE_KIT_BYTES (v
     p[10] = t->bus[0], p[11] = t->bus[1];               /* (pages v2, version 15) the kit bus's low-pass */
     p[12] = (uint8_t)t->rh_oct;                         /* (version 16) the right half's octave */
     p[13] = 1;                                          /* (version 16, 2026-11-26) LoFi's Bits in tenths */
+    p[14] = (uint8_t)(t->rec_src == RFM_MOVE_SMP_SRC_INPUT ? 0 : t->rec_src + 1);   /* (2026-11-27, hf_kit_3) a pad
+                                                         * recording's source (0: Input, the default; else source + 1) */
     p += 16;
     memcpy(p, t->name, strlen(t->name) < RFM_MOVE_KIT_NAME ? strlen(t->name) : RFM_MOVE_KIT_NAME - 1);
     p += RFM_MOVE_KIT_NAME;
@@ -627,6 +630,18 @@ static int str_ok(const uint8_t *p, int cap)            /* printable, NUL padded
     return end >= 0;
 }
 static int pk_max(int p);
+/* (2026-11-27, hf_kit_3) a pad recording's sources, in the jog's order */
+static const uint8_t REC_SRCS[] = { RFM_MOVE_SMP_SRC_INPUT, RFM_MOVE_SMP_SRC_MASTER, RFM_MOVE_SMP_SRC_SLOT1,
+                                    RFM_MOVE_SMP_SRC_SLOT2, RFM_MOVE_SMP_SRC_SLOT3, RFM_MOVE_SMP_SRC_KIT };
+#define NREC_SRCS ((int)sizeof REC_SRCS)
+static int rec_src_ok(int s)
+{
+    int i;
+    for (i = 0; i < NREC_SRCS; i++)
+        if (REC_SRCS[i] == s)
+            return 1;
+    return 0;
+}
 static int bits_tenths(const uint8_t *p, int ver) { return ver >= 16 && (p[13] & 1); }   /* (2026-11-26) */
 int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 18 kit part valid: 0 */
 {
@@ -648,7 +663,9 @@ int rfmv_kit_check(const uint8_t *p, int ver)           /* a version 11 .. 18 ki
             return -1;                                  /* (version 16: the right half's octave) */
         if (ver >= 16 && p[13] > 1)
             return -1;                                  /* (2026-11-26: the Bits-in-tenths flag) */
-        for (i = ver >= 16 ? 14 : ver >= 15 ? 12 : 4 + RFM_MOVE_KIT_MIX_N + (ver >= 13); i < 16; i++)
+        if (ver >= 16 && p[14] && !rec_src_ok(p[14] - 1))
+            return -1;                                  /* (2026-11-27: a pad recording's source) */
+        for (i = ver >= 16 ? 15 : ver >= 15 ? 12 : 4 + RFM_MOVE_KIT_MIX_N + (ver >= 13); i < 16; i++)
             if (p[i])
                 return -1;
         p += 16;
@@ -695,6 +712,8 @@ void rfmv_kit_read(rfm_move_t *m, const uint8_t *p, int ver)   /* (checked) */
             t->bus[0] = p[10], t->bus[1] = p[11];
         if (ver >= 16)
             t->rh_oct = (int8_t)p[12];
+        if (ver >= 16 && p[14])
+            t->rec_src = (uint8_t)(p[14] - 1);          /* (hf_kit_3; 0, before it: Input) */
         p += 16;
         memcpy(t->name, p, RFM_MOVE_KIT_NAME), t->name[RFM_MOVE_KIT_NAME - 1] = 0;
         p += RFM_MOVE_KIT_NAME;
@@ -2587,14 +2606,33 @@ static void files_turn(rfm_move_t *m, int d)
 static void len_turn(rfm_move_t *m, int d);
 static void len_pop_off(rfm_move_t *m);
 static void nudge_turn(rfm_move_t *m, int d);
+/* (2026-11-27, hf_kit_3) a pad recording armed (before its take starts): its source a step on (the jog, knob 1),
+ * sent to the host */
+static void rec_src_step(rfm_move_t *m, int d)
+{
+    rfm_move_kit_t *t = K(m);
+    int i, j = 0;
+    if (!d || !t->rec_pad || m->smp.st.state != RFM_MOVE_SMP_ST_ARMED)
+        return;
+    for (i = 0; i < NREC_SRCS; i++)
+        if (REC_SRCS[i] == t->rec_src)
+            j = i;
+    j = ((j + (d > 0 ? 1 : -1)) % NREC_SRCS + NREC_SRCS) % NREC_SRCS;
+    t->rec_src = REC_SRCS[j];
+    act(m, RFM_MOVE_ACT_KIT_REC, t->rec_pad - 1, 2, (uint8_t)(t->rec_src + 1), m->s.smp[RFM_MOVE_SMP_MODE], 0, 0, 0, NULL);
+    rfmv_seq_dirty(m);
+    touched(m);
+}
 static void turn(rfm_move_t *m, int d)
 {
     rfm_move_kit_t *t = K(m);
     t->msg_ms = 0;
     touched(m);
     t->kpop = -1;
-    if (rec_running(m))
+    if (rec_running(m)) {
+        rec_src_step(m, d);                             /* (hf_kit_3: armed: its source) */
         return;
+    }
     if (merge_up(m)) {                                  /* (2026-11-26) Copy held: the mode (Copy, Mix, Join) */
         t->mg_i = (uint8_t)clampi(t->mg_i + d, 0, RFM_MOVE_KIT_MG_N - 1);
         m->seq.mods_used |= SEQ_M_COPY;
@@ -3673,6 +3711,14 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
         }
         if (i < 0 || i > 7 || q->smenu)
             return 0;
+        if (i == 0 && rec_running(m)) {                 /* (hf_kit_3) armed: knob 1 the source, a step every few */
+            if (m->smp.st.state == RFM_MOVE_SMP_ST_ARMED) {
+                t->rsrc_acc = (int8_t)clampi(t->rsrc_acc + ev->value, -8, 8);
+                if (t->rsrc_acc >= 4 || t->rsrc_acc <= -4)
+                    rec_src_step(m, t->rsrc_acc), t->rsrc_acc = 0;
+            }
+            return 1;
+        }
         knob_turn(m, i, ev->value);
         return 1;
     case MR_EV_TOUCH:
@@ -3722,13 +3768,14 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
                 return 0;
             t->sdown = 1;
             choose(m, k);
-            t->rec_pad = (uint8_t)(k + 1), t->rec_held = 1;
+            t->rec_pad = (uint8_t)(k + 1), t->rec_held = 1, t->rsrc_acc = 0;
             {                                           /* (round A: param, the Trim silence) */
                 rfm_move_act_t a;
                 memset(&a, 0, sizeof a);
                 a.frame = m->seq.frame;
                 a.kind = RFM_MOVE_ACT_KIT_REC, a.index = (uint8_t)k, a.down = 1, a.value = m->s.smp[RFM_MOVE_SMP_MODE];
                 a.param = (uint8_t)(t->trim ? 1 : 0);
+                a.vel = (uint8_t)(t->rec_src + 1);      /* (hf_kit_3: the kit's own source) */
                 if (m->fn)
                     m->fn(m->ctx, &a);
             }
@@ -4892,12 +4939,30 @@ static int held_vel(const rfm_move_t *m)
     return s < 0 ? 0 : step_vel(m, m->kit.cur, m->seq.page * RFM_MOVE_SEQ_PAGE + s);
 }
 static int vpop_up(const rfm_move_t *m) { return m->kit.vpop && (m->kit.st_down || now(m) - m->kit.vpop_ms < RFM_MOVE_POPUP_MS); }
+/* (2026-11-27, hf_kit_3) the pad recording's source, big at the top right (x 94..116, y 0..21): Input's icon twice
+ * its size, else the sampler's sign (M, 1, 2, 3, K) */
+static void rec_sign(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    const int src = m->kit.rec_src;
+    if (src == RFM_MOVE_SMP_SRC_INPUT) {
+        int r, c;
+        for (r = 0; r < 11; r++)
+            for (c = 0; c < 11 && I_IN[r][c]; c++)
+                if (I_IN[r][c] == '#')
+                    v2_R(cv, 94 + 2 * c, 2 * r, 2, 2, 1);
+    } else {
+        const char *g = src == RFM_MOVE_SMP_SRC_MASTER ? "M" : src == RFM_MOVE_SMP_SRC_KIT ? "K"
+                        : src == RFM_MOVE_SMP_SRC_SLOT1 ? "1" : src == RFM_MOVE_SMP_SRC_SLOT2 ? "2" : "3";
+        v2_T(cv, 105 - v2_tw(g, 3) / 2, 0, g, 3, 1);
+    }
+}
 static void rec_screen(const rfm_move_t *m, mr_canvas_t *cv)   /* (boards L, M) a take into the pad */
 {
     const rfm_move_smp_status_t *s = &m->smp.st;
     const int armed = s->state == RFM_MOVE_SMP_ST_ARMED;
     char b[16];
     int c;
+    rec_sign(m, cv);
     if (!armed || now(m) % 500u < 250u)
         ic(cv, I_DOT, 2, 1, 1);
     snprintf(b, sizeof b, "%d", m->kit.rec_pad);
@@ -4909,9 +4974,8 @@ static void rec_screen(const rfm_move_t *m, mr_canvas_t *cv)   /* (boards L, M) 
         v2_dotV(cv, 124, 17, 28);
     }
     if (armed) {
-        ic(cv, I_SRC, 117, 1, 1);
         for (c = 0; c < 58; c++)
-            v2_R(cv, c * 2, 34, 1, 1, 1);
+            v2_R(cv, c * 2, 36, 1, 1, 1);
         if (m->s.smp[RFM_MOVE_SMP_MODE] == RFM_MOVE_SMP_M_THRESHOLD) {
             const int db = m->s.smp[RFM_MOVE_SMP_THRESHOLD];
             v2_R(cv, 117, 45 - clampi(((db + 60) * 56 + 60) / 120, 0, 28), 11, 1, 1);
@@ -4926,11 +4990,11 @@ static void rec_screen(const rfm_move_t *m, mr_canvas_t *cv)   /* (boards L, M) 
     }
     for (c = 0; c < 58; c++) {                          /* the take's wave growing from the left, the line after it */
         const int i = s->span ? c * s->span / 58 : c;
-        if (i < s->npeaks) {
-            const int a = (s->peaks[i] * 15 + 127) / 255;
-            v2_R(cv, c * 2, 34 - a, 1, a ? a * 2 : 1, 1);
+        if (i < s->npeaks) {                            /* (under the source's sign: 23..49) */
+            const int a = (s->peaks[i] * 13 + 127) / 255;
+            v2_R(cv, c * 2, 36 - a, 1, a ? a * 2 : 1, 1);
         } else
-            v2_R(cv, c * 2, 34, 1, 1, 1);
+            v2_R(cv, c * 2, 36, 1, 1, 1);
     }
 }
 /* (2026-11-26) Copy held: the three modes (board N's icons), the jog's marked and named; the source's number and an
@@ -5145,7 +5209,10 @@ int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
         snprintf(o, (size_t)cap, "%s%s%s", t->msg, t->msg2[0] ? " " : "", t->msg2);
         *subj = 0xA00, *stamp = t->msg_ms;
     } else if (rec_running(m)) {
-        snprintf(o, (size_t)cap, "%s pad %d", m->smp.st.state == RFM_MOVE_SMP_ST_ARMED ? "Armed," : "Recording,", t->rec_pad);
+        static const char *const SRCW[RFM_MOVE_SMP_SRC_N] = { "Master", "Track 1", "Track 2", "Track 3", "Input", "Stems",
+                                                               "Looper", "Kit" };
+        snprintf(o, (size_t)cap, "%s pad %d, %s", m->smp.st.state == RFM_MOVE_SMP_ST_ARMED ? "Armed," : "Recording,",
+                 t->rec_pad, SRCW[t->rec_src % RFM_MOVE_SMP_SRC_N]);
         *subj = 0xA01, *stamp = 0;
     } else if (merge_up(m)) {                           /* (3c) */
         if (t->mg_a)

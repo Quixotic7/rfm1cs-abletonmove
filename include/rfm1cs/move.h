@@ -279,7 +279,9 @@ enum {
  *    recorded; one at a time), down 0 stops it
  *  - KIT_REC: a kit pad held + Sample (down 1, value the sampler's mode RFM_MOVE_SMP_M_*): the recorder as at
  *    SMP_PRESS with the sampler's own settings; the take, once saved, goes onto the pad (rfm_move_kit_loaded). down 0:
- *    the pad let go (a take recording ends and is saved; an armed one is dropped)
+ *    the pad let go (a take recording ends and is saved; an armed one is dropped). (2026-11-27, hf_kit_3) vel: the
+ *    kit's own source + 1 (RFM_MOVE_SMP_SRC_*; 0: the sampler's), used for this take only, the sampler's Source as it
+ *    was after it; down 2: the source changed while armed (vel as at down 1)
  * (stage 3b) shaping and sharing (README "The kit (stage 3b)"):
  *  - KIT_SET of RFM_MOVE_KIT_P_STRETCH also carries `from`: the microseconds the pad's start..end must last (its
  *    value's steps at the tempo and its track's rate; 0 Off: its Pitch then). Sent again whenever the tempo or the
@@ -541,6 +543,9 @@ typedef struct {
      * setting p for this hit (its units); a locked Sync (RFM_MOVE_KIT_P_STRETCH): `from` its microseconds */
     uint64_t kp_mask;
     int16_t kp[48];
+    /* (2026-11-27) LOOP_REC, LOOP_LAUNCH, LOOP_DUB from the step looper (acted at a key's release): the key was pressed
+     * this many ms before the action; its quantization (the grace window, the next line) from the press. 0: now */
+    uint16_t ago_ms;
 } rfm_move_act_t;
 typedef void (*rfm_move_act_fn)(void *ctx, const rfm_move_act_t *a);
 /* pressure 0..127 as emu_hal_t / fm1panel_t key_lean 0..100 (as rfm_panel_lean) */
@@ -1726,6 +1731,11 @@ typedef struct {                                        /* (kit.c) */
     char sl_path[RFM_MOVE_KIT_PATH];                    /* the take's file (the pads' sound) */
     /* (round A) */
     uint8_t trim;                                       /* (saved, version 13) the Kit tab's Trim silence (1 on) */
+    uint8_t rec_src;                                    /* (saved, 2026-11-27: hf_kit_3) a pad recording's own source
+                                                         * (RFM_MOVE_SMP_SRC_ INPUT, MASTER, SLOT1..3, KIT; default
+                                                         * Input), shown big while armed and recording, set there with
+                                                         * the jog or knob 1 while armed; the sampler's Source untouched */
+    int8_t rsrc_acc;                                    /* .. knob 1's turn so far (a step every few) */
     uint8_t bus[RFM_MOVE_KIT_BUS_N];                    /* (saved, version 15) the kit bus's low-pass: cutoff, resonance */
     uint8_t undk_bus[RFM_MOVE_KIT_BUS_N];
     uint8_t chop_p, chop_c;                             /* (pages v2) Chop: the Move pad + 1 of the first slot held, its
@@ -1880,12 +1890,17 @@ typedef struct {                                        /* (RAM, looper.c) */
     uint16_t to_down;                                   /* the steps the takeover took */
     uint32_t to_ms;                                     /* its overlay: since this */
     char to_msg[20];
-    uint32_t to_tap_ms[RFM_MOVE_LOOP_LANES];            /* key 4's tap (a double tap: Stop) */
     uint32_t card_ms;                                   /* the takeover's full-screen card since this */
-    uint8_t to_prev[RFM_MOVE_LOOP_LANES];               /* Next's target before key 4's first tap (a double: Stop) */
     uint32_t dubq;                                      /* an overdub's answer on its way: the slot's bit (its
                                                          * settings kept) */
     uint8_t to_lvl;                                     /* a group key held + the volume knob: its lane + 1 */
+    /* (2026-11-27, the musician's review) a key's job decided before it acts (UX rule R2): at its release, or key 4's
+     * hold; a key held while the volume knob was touched or turned does nothing (hf_steplooper_5) */
+    uint32_t to_pms[16];                                /* a key's press (ms): its action's quantization from it */
+    uint16_t to_used;                                   /* the keys held while the volume knob was used */
+    uint16_t to_held;                                   /* key 4s whose hold (Next) has acted */
+    uint8_t to_last[RFM_MOVE_LOOP_LANES];               /* the lane's loop played last (scene + 1): key 4 brings it back */
+    uint16_t act_ago;                                   /* (looper.c act) the press this many ms before the action */
 } rfm_move_loop_t;
 
 /* ---- the state */

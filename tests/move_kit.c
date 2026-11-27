@@ -1117,14 +1117,54 @@ static void t_mock(void)
         memset(&st, 0, sizeof st);
         M.s.smp[RFM_MOVE_SMP_MODE] = RFM_MOVE_SMP_M_THRESHOLD, M.s.smp[RFM_MOVE_SMP_THRESHOLD] = -30;
         button(MR_CC_SHIFT, 1), hit(kp(6)), button(MR_CC_SHIFT, 0);
+        /* (2026-11-27, hf_kit_3) the mock-ups less the source's sign, big at the top right (for the small one), and the
+         * wave under it */
+        static const box_t SIGN[2] = { { 94, 0, 34, 23 }, { 0, 19, 117, 31 } };
+        const rfm_move_act_t *a;
+        int lit = 0, x, y;
+        const int ssrc = M.s.smp[RFM_MOVE_SMP_SOURCE];
+        clear();
         pad(kp(6), 100), press(MR_CC_SAMPLE);
+        a = last(RFM_MOVE_ACT_KIT_REC);
+        CHECKF(a && a->down == 1 && a->vel == RFM_MOVE_SMP_SRC_INPUT + 1 && M.s.smp[RFM_MOVE_SMP_SOURCE] == ssrc,
+               "vel %d", a ? a->vel : -1);              /* (the kit's own source: Input; the sampler's untouched) */
         st.state = RFM_MOVE_SMP_ST_ARMED, st.level = (uint16_t)level_for(6, 28);
         rfm_move_smp_status(&M, &st);
         while (rfmv_now_ms(&M) % 500u >= 250u)
             adv_ms(10);
-        out = vs_ref("armed", NULL, 0);
+        out = vs_ref("armed", SIGN, 2);
         CHECKF(out == 0, "armed: %d differ", out);
+        for (y = 0; y < 22; y++)
+            for (x = 94; x < 117; x++)
+                lit += px(x, y);
+        CHECKF(lit > 60, "Input's sign: %d px", lit);   /* (its icon twice its size) */
         dump("armed");
+        /* armed: the jog, then knob 1, step the source (Master, Track 1), sent to the host; saved with the project */
+        clear();
+        jog(1);
+        a = last(RFM_MOVE_ACT_KIT_REC);
+        CHECK(a && a->down == 2 && a->vel == RFM_MOVE_SMP_SRC_MASTER + 1 && M.kit.rec_src == RFM_MOVE_SMP_SRC_MASTER);
+        screen();
+        dump("armed_master");
+        knob(0, 2);
+        CHECK(M.kit.rec_src == RFM_MOVE_SMP_SRC_MASTER);   /* (a step every few) */
+        knob(0, 2);
+        a = last(RFM_MOVE_ACT_KIT_REC);
+        CHECK(a && a->down == 2 && a->vel == RFM_MOVE_SMP_SRC_SLOT1 + 1 && M.kit.rec_src == RFM_MOVE_SMP_SRC_SLOT1);
+        knob(0, -2), knob(0, -2);
+        CHECK(M.kit.rec_src == RFM_MOVE_SMP_SRC_MASTER);
+        CHECK(M.s.smp[RFM_MOVE_SMP_SOURCE] == ssrc && !count(RFM_MOVE_ACT_SMP_SET));   /* (the sampler's untouched) */
+        {
+            static uint8_t b[RFM_MOVE_PROJECT_MAX];
+            const int n = rfm_move_project_save(&M, b, sizeof b);
+            rfm_move_init(&M2, NULL, on_act, NULL);
+            rfm_move_fw_caps(&M2, KCAPS);
+            CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0 && M2.kit.rec_src == RFM_MOVE_SMP_SRC_MASTER);
+            rfm_move_init(&M2, NULL, on_act, NULL);
+            rfm_move_fw_caps(&M2, KCAPS);
+            CHECK(M2.kit.rec_src == RFM_MOVE_SMP_SRC_INPUT);   /* (a new kit: Input) */
+        }
+        M.kit.rec_src = RFM_MOVE_SMP_SRC_INPUT;
         st.state = RFM_MOVE_SMP_ST_RECORDING, st.level = (uint16_t)level_for(22, 28), st.rate = 48000, st.frames = 2 * 48000;
         {
             uint8_t w70[64];
@@ -1134,7 +1174,10 @@ static void t_mock(void)
             st.npeaks = (uint8_t)nw, st.span = 0;
         }
         rfm_move_smp_status(&M, &st);
-        out = vs_ref("recording", NULL, 0);
+        clear();
+        jog(1);
+        CHECK(!last(RFM_MOVE_ACT_KIT_REC) && M.kit.rec_src == RFM_MOVE_SMP_SRC_INPUT);   /* (recording: fixed) */
+        out = vs_ref("recording", SIGN, 2);
         CHECKF(out == 0, "recording: %d differ", out);
         dump("recording");
         pad(kp(6), 0);
