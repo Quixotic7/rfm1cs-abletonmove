@@ -1908,6 +1908,11 @@ enum {
     RFM_MOVE_TK_ALL = 0x0FF,
 };
 #define RFM_MOVE_TKF_SPEECH 1                           /* TK_STATE's flags: the screen reader is on */
+/* (0.17.0) a takeover's firmware asks for the Move's tempo with this SysEx from its MIDI out (the host hands it to
+ * rfm1cs_session_midi_in): F0 7D 52 54 (non-commercial, "RT"), the tempo x 10 in two 7-bit bytes (high first), F7.
+ * Taken only while its takeover is shown and the clock is not EXT (as its Start / Continue / Stop: README "Takeover") */
+#define RFM_MOVE_TEMPO_REQ "\xF0\x7D\x52\x54"
+#define RFM_MOVE_TEMPO_REQ_LEN 7
 #define RFM_MOVE_TK_NAME 16                             /* a takeover's name with its NUL (15 printable ASCII) */
 typedef struct {
     uint16_t claims;                                    /* RFM_MOVE_TK_*, 0: none (no takeover) */

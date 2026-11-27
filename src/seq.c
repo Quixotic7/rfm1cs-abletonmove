@@ -1236,15 +1236,16 @@ void rfmv_seq_preview(rfm_move_t *m, int clip, int step)
 /* (0.9.0, the owner's) the sequencer's clock to every firmware: Start as it begins, a clock every 4 ticks (24 PPQN)
  * while it plays, Stop as it stops; never while it follows a firmware's clock. MIDI actions, dest RFM_MOVE_DEST_ALL,
  * frame-stamped */
-static void clk_out(rfm_move_t *m, uint8_t st)
+static void clk_to(rfm_move_t *m, uint8_t st, uint8_t dest)
 {
     rfm_move_act_t a;
     memset(&a, 0, sizeof a);
     a.frame = m->seq.frame;
-    a.kind = RFM_MOVE_ACT_MIDI, a.n = 1, a.bytes[0] = st, a.dest = RFM_MOVE_DEST_ALL;
+    a.kind = RFM_MOVE_ACT_MIDI, a.n = 1, a.bytes[0] = st, a.dest = dest;
     if (m->fn)
         m->fn(m->ctx, &a);
 }
+static void clk_out(rfm_move_t *m, uint8_t st) { clk_to(m, st, RFM_MOVE_DEST_ALL); }
 static void begin(rfm_move_t *m)
 {
     rfm_move_seq_t *q = &m->seq;
@@ -1653,6 +1654,10 @@ static void tick(rfm_move_t *m, uint32_t frame)
                                                          * first accented) */
     if (q->playing && m->clk_on && !q->following && (q->T + 1) % 4 == 0)
         clk_out(m, 0xF8);                               /* (0.9.0: 24 PPQN, the first with Start) */
+    else if (!q->playing && !q->following && q->tl % 4 == 0 && rfmv_tk_on(m))
+        clk_to(m, 0xF8, (uint8_t)(rfm_move_tk_shown(m) + 1));   /* (0.17.0) a takeover shown, stopped: the clock
+                                                         * goes on to its firmware alone, so it follows the Move's tempo
+                                                         * (shown, and ready at Play) and knows the Move leads */
     if (q->playing)
         play_tick(m, ++q->T);
     arp_tick(m);                                        /* (0.14.0: after the clips, so their notes feed it this tick) */
@@ -1928,19 +1933,50 @@ static void relocate(rfm_move_t *m, int32_t tl, int32_t clocks)
     q->ncap = 0;
 }
 
+/* (0.17.0, the owner's "ChoralRoot takeover should always match the RemoteFM1 tempo and sync the playhead") a takeover
+ * shown, the clock not EXT: the Move leads. Its firmware gets the sequencer's clock (Start, 24 PPQN, Stop; stopped,
+ * the clock alone: tick), and what it sends asks the Move's transport: Start (from stopped: Play; playing: from the
+ * top, Shift + Play), Continue (Play), Stop; its own clock and song position are not followed (0.8.1 .. 0.16: they
+ * led, and the looper's and the kit's time, the Move's, fought them). RFM_MOVE_TEMPO_REQ: the tempo it asks for */
+static void tk_transport(rfm_move_t *m, const uint8_t *msg, int n)
+{
+    rfm_move_seq_t *q = &m->seq;
+    switch (msg[0]) {
+    case 0xFA:
+        if (!q->playing) {
+            rfm_move_seq_play(m, 1);
+            break;
+        }
+        rfmv_seq_restart(m);
+        rfmv_say_check(m);
+        break;
+    case 0xFB: rfm_move_seq_play(m, 1); break;
+    case 0xFC:
+        if (q->playing || q->start_pending)
+            rfm_move_seq_play(m, 0);
+        break;
+    case 0xF0:
+        if (n == RFM_MOVE_TEMPO_REQ_LEN && !memcmp(msg, RFM_MOVE_TEMPO_REQ, 4) && msg[6] == 0xF7)
+            rfm_move_seq_set_bpm(m, (msg[4] & 127) << 7 | (msg[5] & 127));
+        break;
+    default: break;                                     /* (F8, F2: the Move's clock is the one) */
+    }
+}
+
 void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
 {
     rfm_move_seq_t *q = &m->seq;
-    const int tk = q->clock_mode != RFM_MOVE_CLOCK_EXTERNAL && rfmv_tk_on(m);   /* (0.8.1) a takeover shown: its
-                                                         * clock leads as EXT does (its Play is the Move's: the
-                                                         * sequencer starts and stops with it, at its tempo) */
-    if (!msg || n < 1 || (q->clock_mode == RFM_MOVE_CLOCK_INTERNAL && !tk))
+    if (msg && n >= 1 && q->clock_mode != RFM_MOVE_CLOCK_EXTERNAL && rfmv_tk_on(m)) {
+        tk_transport(m, msg, n);
+        return;
+    }
+    if (!msg || n < 1 || q->clock_mode == RFM_MOVE_CLOCK_INTERNAL || msg[0] == 0xF0)
         return;
     q->frame = 0;
     switch (msg[0]) {
     case 0xF8: {
         int32_t target;
-        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following && !tk) {
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following) {
             if (!q->ext_arm)
                 break;                                  /* (0.5.1) AUTO: a clock with no start (FA / FB) is not
                                                          * followed: a firmware that sends clock unasked, at its own
@@ -1995,7 +2031,7 @@ void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
         break;
     }
     case 0xFA:                                          /* start: bar 1 on the next clock */
-        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following && !tk) {
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following) {
             q->ext_arm = 1, q->ext_arm_n = 0;           /* (0.5.5: a master only once its clocks come) */
             break;
         }
@@ -2006,7 +2042,7 @@ void rfm_move_seq_midi_in(rfm_move_t *m, const uint8_t *msg, int n)
         q->start_pending = 2;
         break;
     case 0xFB:                                          /* continue: from the song position, at its next bar */
-        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following && !tk) {
+        if (q->clock_mode == RFM_MOVE_CLOCK_AUTO && !q->following) {
             q->ext_arm = 2, q->ext_arm_n = 0;
             break;
         }

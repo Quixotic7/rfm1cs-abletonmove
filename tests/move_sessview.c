@@ -632,7 +632,7 @@ static void test_led_writes(void)
     CHECKF(n <= 8 * 6 * 5 + 120, "%d LED writes in 2 s", n);
 }
 
-/* ================================================================ from a takeover whose clock led the sequencer === */
+/* ================================================================ from a takeover whose Play started the sequencer === */
 static void test_from_takeover(void)
 {
     static const uint8_t fa = 0xFA, f8 = 0xF8;
@@ -641,10 +641,11 @@ static void test_from_takeover(void)
     rfm_move_set_takeover(&M, 0, 0x5F, "ChoralRoot");
     hold_track(0), hit(25), track(0, 0), rest();        /* (Track 1 held + pad 2: the takeover) */
     CHECK(m_tk_shown() == 0);
-    rfm_move_seq_midi_in(&M, &fa, 1);                   /* its Play: Start, then its clock: the sequencer follows */
+    rfm_move_seq_midi_in(&M, &fa, 1);                   /* its Play: Start, then its clock: the sequencer plays on
+                                                         * its own clock (0.17.0: the Move leads; its clock ignored) */
     for (i = 0; i < 96; i++)
         rfm_move_seq_midi_in(&M, &f8, 1), adv_ms(20);
-    CHECK(M.seq.playing && M.seq.following);
+    CHECK(M.seq.playing && !M.seq.following);
     owners_grid();
     hold_track(1), hit(26), track(1, 0);                /* Track 2: the Scale layout, tapped, Menu */
     tap_track(1);

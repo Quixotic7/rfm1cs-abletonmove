@@ -17,6 +17,7 @@
 #define NFW ((int)(sizeof FWB / sizeof FWB[0]))
 
 static char logb[16384];
+static int clk[5][3];                                   /* F8..FC x (every firmware, slot 1's alone, another) */
 static int bad_pkt;
 static void logf_(const char *s) { snprintf(logb + strlen(logb), sizeof logb - strlen(logb), "%s|", s); }
 static void on_act(void *ctx, const rfm_move_act_t *a)
@@ -45,6 +46,10 @@ static void on_act(void *ctx, const rfm_move_act_t *a)
         if (a->down)
             strcat(b, "!");
         break;
+    case RFM_MOVE_ACT_MIDI:                             /* (0.17.0) the clock: counted by message and dest */
+        if (a->n == 1 && a->bytes[0] >= 0xF8 && a->bytes[0] <= 0xFC)
+            clk[a->bytes[0] - 0xF8][a->dest == RFM_MOVE_DEST_ALL ? 0 : a->dest == 1 ? 1 : 2]++;
+        return;
     default: return;                                    /* (settings, the library, FW_ACTIVE ..) */
     }
     logf_(b);
@@ -645,6 +650,59 @@ static void test_menu(void)
     LOG("S0:2/0|");
 }
 
+/* 10. (0.17.0) the Move leads a takeover's clock: stopped, the clock to its firmware alone; its Start / Stop ask for
+ * the transport (playing: Start from the top), its own clock is not followed; its tempo request sets the tempo; gone,
+ * nothing of it is taken */
+static void clk_clear(void) { memset(clk, 0, sizeof clk); }
+static void fw_rt(uint8_t b) { rfm_move_seq_midi_in(&M, &b, 1); }
+static void test_clock(void)
+{
+    static const uint8_t req[] = { 0xF0, 0x7D, 0x52, 0x54, 1000 >> 7, 1000 & 127, 0xF7 };   /* 100.0 BPM */
+    static const uint8_t req2[] = { 0xF0, 0x7D, 0x52, 0x54, 900 >> 7, 900 & 127, 0xF7 };
+    int i;
+    fresh(0);
+    rfm_move_set_takeover(&M, 0, RFM_MOVE_TK_ALL, "Clock");
+    tk_enter(0);
+    CHECK(rfm_move_tk_shown(&M) == 0 && !M.seq.playing && M.seq.bpm10 == 1200);
+    clk_clear();
+    adv_ms(1000);                                       /* 120 BPM: 48 clocks a second */
+    CHECKF(clk[0][1] >= 47 && clk[0][1] <= 49 && !clk[0][0] && !clk[0][2], "stopped: %d clocks to slot 1, %d to all",
+           clk[0][1], clk[0][0]);
+    clk_clear();
+    fw_rt(0xFA);                                        /* its Play: the Move's transport starts */
+    for (i = 0; i < 50; i++)                            /* (its own clock at 125 BPM meanwhile: not followed) */
+        fw_rt(0xF8), adv_ms(20);
+    CHECKF(M.seq.playing && !M.seq.following && rfm_move_seq_bpm10(&M) == 1200 && clk[2][0] == 1,
+           "playing %d following %d bpm10 %d starts %d", M.seq.playing, M.seq.following, rfm_move_seq_bpm10(&M),
+           clk[2][0]);
+    CHECKF(clk[0][0] >= 47 && clk[0][0] <= 50 && clk[0][1] <= 1, "playing: %d clocks to all, %d to slot 1", clk[0][0],
+           clk[0][1]);
+    rfm_move_seq_midi_in(&M, req, sizeof req);          /* its tempo knob: the Move's tempo */
+    CHECK(M.seq.bpm10 == 1000 && rfm_move_seq_bpm10(&M) == 1000);
+    clk_clear();
+    adv_ms(1500);
+    CHECKF(clk[0][0] >= 59 && clk[0][0] <= 61, "at 100 BPM: %d clocks in 1.5 s", clk[0][0]);
+    i = M.seq.T;
+    fw_rt(0xFA);                                        /* Start while playing (its Shift + Play): from the top */
+    adv_ms(10);
+    CHECKF(M.seq.playing && M.seq.T < i && clk[4][0] == 1 && clk[2][0] == 1, "restart: T %d (was %d), stops %d starts %d",
+           M.seq.T, i, clk[4][0], clk[2][0]);
+    fw_rt(0xFC);                                        /* its Stop: the Move's */
+    CHECK(!M.seq.playing && clk[4][0] == 2);
+    fw_rt(0xFB);                                        /* Continue from stopped: Play */
+    adv_ms(10);
+    CHECK(M.seq.playing && clk[2][0] == 2);
+    fw_rt(0xFC);
+    adv_ms(100);
+    rfm_move_set_takeover(&M, 0, 0, NULL);              /* gone: nothing of its transport taken (INTERNAL) */
+    CHECK(rfm_move_tk_shown(&M) == -1);
+    clk_clear();
+    fw_rt(0xFA);
+    rfm_move_seq_midi_in(&M, req2, sizeof req2);
+    adv_ms(500);
+    CHECK(!M.seq.playing && !clk[0][1] && !clk[0][0] && M.seq.bpm10 == 1000);
+}
+
 int main(void)
 {
     test_entry();
@@ -656,5 +714,6 @@ int main(void)
     test_speech();
     test_claims();
     test_menu();
+    test_clock();
     return check_done("move_takeover");
 }

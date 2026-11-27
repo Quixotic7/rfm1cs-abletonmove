@@ -18,6 +18,14 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
   `rfm_move_loop_status`, `_recorded`, `_loaded`, `_refs`. Project version 19 (the looper's part after the kit's;
   18 and older load with an empty looper). README "The looper (stage 1)"; tests `move_looper`.
 
+- **A takeover follows the Move's clock (the owner's "ChoralRoot takeover should always match the RemoteFM1 tempo and
+  sync the playhead").** 0.8.1 .. 0.16 let a shown takeover's MIDI clock lead the sequencer, so the looper's and the
+  kit's time (the Move's song position) fought the firmware's tempo. Now, the clock not EXT, the Move leads: the
+  sequencer's clock goes to every firmware as before, and while it is stopped to the takeover's firmware alone (24
+  PPQN at the tempo: it shows the Move's tempo and knows the Move leads); the firmware's Start asks for Play (playing:
+  from the top), Continue for Play, Stop for Stop; its F8 and song position are not followed; its SysEx
+  `RFM_MOVE_TEMPO_REQ` (F0 7D 52 54, tempo x 10, F7) sets the tempo. tests/move_takeover.c test 10; move_sessview's
+  takeover case plays on the Move's clock.
 - **Levels: 100 is 0 dB (the owner's, 2026-11-26).** A 0..127 level (a firmware slot's, the kit's strip) reads as the
   hosts now play it, a gain of level / 100: 20 log10(v / 100) dB, so 100 (the default) is 0 dB, 127 is +2.1 dB, 1 is
   -40 dB, 0 -inf (screen.c `LVL_DB10`; `rfmv_lvl_db10`, `rfmv_lvl_step`'s 0.5 dB detents, the popups, the Mixer's
