@@ -1241,7 +1241,7 @@ static void t_mixer(void)
     L(-1);
     CHECK(lit(L(L_RING0 + 3)) && !lit(L(L_RING0 + 4)) && lit(L(L_PAD0 + 3)) && lit(L(L_PAD0 + 24 + 3)));   /* (knob 4; the
                                                          * kit's column at 100 of 127: four pads) */
-    clear(), touch(3, 1), knob(3, -12);                /* (2026-11-26: 0.5 dB a detent: -2.1 -> -8.1 dB, 50) */
+    clear(), touch(3, 1), knob(3, -12);                /* (2026-11-26: 0.5 dB a detent: 0 -> -6 dB, 50) */
     CHECK((a = last(RFM_MOVE_ACT_MIX)) && a->slot == RFM_MOVE_KIT_SLOT && a->mix[0] == 50 && M.kit.mix[0] == 50 && M.seq.dirty);
     dump("mixer_kit_pop");
     touch(3, 0), rest();
@@ -2309,8 +2309,12 @@ static void t_level_popups(void)
     CHECK(scr_eq(a, b) && M.kit.pad[1].v[RFM_MOVE_KIT_P_LEVEL] == 0);   /* (Pad Mix's knob 1 = the held pad's) */
     rfmv_db_text(v, sizeof v, 0, 1);
     CHECK(!strcmp(v, "0 dB"));
-    rfmv_db_text(v, sizeof v, rfmv_lvl_db10(100), 1);
-    CHECK(!strcmp(v, "-2.1 dB"));
+    rfmv_db_text(v, sizeof v, rfmv_lvl_db10(100), 1);   /* (2026-11-26, the owner's: 100, the default, is 0 dB) */
+    CHECK(!strcmp(v, "0 dB"));
+    rfmv_db_text(v, sizeof v, rfmv_lvl_db10(127), 1);
+    CHECK(!strcmp(v, "+2.1 dB"));
+    rfmv_db_text(v, sizeof v, rfmv_lvl_db10(50), 1);
+    CHECK(!strcmp(v, "-6.0 dB"));
     rfmv_db_text(v, sizeof v, -120, 1);
     CHECK(!strcmp(v, "-12 dB"));
     rfmv_db_text(v, sizeof v, 20, 1);

@@ -3,6 +3,15 @@
 Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a submodule pinned to one.
 `RFM1CS_VERSION` in `include/rfm1cs/move.h` and `rfm_move_version()` name it.
 
+## Unreleased
+
+- **Levels: 100 is 0 dB (the owner's, 2026-11-26).** A 0..127 level (a firmware slot's, the kit's strip) reads as the
+  hosts now play it, a gain of level / 100: 20 log10(v / 100) dB, so 100 (the default) is 0 dB, 127 is +2.1 dB, 1 is
+  -40 dB, 0 -inf (screen.c `LVL_DB10`; `rfmv_lvl_db10`, `rfmv_lvl_step`'s 0.5 dB detents, the popups, the Mixer's
+  texts and bars and the spoken words all follow). Saved values are unchanged: the same number now plays 2.1 dB louder
+  on a host with the new law. A pad's level (whole dB) is unchanged. move_kit 50 checks 100 = "0 dB", 127 = "+2.1 dB",
+  50 = "-6.0 dB".
+
 ## 0.16.0 (2026-11-26): the kit, stages 3a, 3b and 3c, pages, engines, Warp; Exit; one-setting Shift menus
 
 ### The kit: Copy's modes on the jog, a held step's length and timing, polyphony checked (2026-11-26, the owner's)

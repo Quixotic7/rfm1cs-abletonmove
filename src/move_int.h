@@ -397,8 +397,9 @@ enum { POP_LAYOUT = 40, POP_JOG, POP_T4, POP_CCNUM, POP_LOCK, POP_SEQ, POP_SLOT,
 enum { LK_LOCKED, LK_SOLO, LK_UNSOLO, LK_OFF, LK_ON, LK_MUTE, LK_UNMUTE, LK_CLEARED };   /* the lock menu's word */
 void rfmv_pop_screen(mr_canvas_t *cv, const char *top, const char *big, int n, int cur, const char *bottom);
 /* ---- (2026-11-26, the owner's: "each volume level adjustment feels like it's all part of the whole") one level popup
- * and one unit for every level (screen.c). A 0..127 level (a firmware slot's, the kit's strip) is a linear gain, 127
- * unity (the host's pan_gains and kit_render_bus: level / 127), so its dB is 20 log10(v / 127): 100 = -2.1 dB, 0 = -inf.
+ * and one unit for every level (screen.c). A 0..127 level (a firmware slot's, the kit's strip) is a linear gain, 100
+ * unity (the owner's, 2026-11-26; the host's pan_gains and kit_render_bus: level / 100), so its dB is 20 log10(v / 100):
+ * 100 (the default) = 0 dB, 127 = +2.1 dB, 0 = -inf.
  * A pad's level is whole dB (-60 = -inf .. +6). Levels are shown in tenths of a dB (RFMV_DB_INF: -inf). */
 #define RFMV_DB_INF (-32000)
 int rfmv_lvl_db10(int v);                               /* a 0..127 level in tenths of a dB */
