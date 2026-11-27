@@ -17,8 +17,9 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
     `rfmv_loop_drop_live`), so nothing records into the next project (hf_looper_10).
   - The kit's pad recording (a pad held + Sample) has its own Source, saved with the project (default Input; the
     kit part's header byte 14, no new version): shown big on the armed and recording screen, set there while armed
-    with the jog or knob 1 (Input, Master, Track 1-3, Kit); `KIT_REC` vel the source + 1, down 2 a change while
-    armed. The sampler's own Source is untouched (hf_kit_3).
+    with the jog or knob 1 (Input, Master, Track 1-3, Kit), and in a kit track's settings (Shift + step 3, the sixth
+    row, Rec Source: for Manual and Capture takes, which never arm); a running take's source never changes. `KIT_REC`
+    vel the source + 1, down 2 a change while armed. The sampler's own Source is untouched (hf_kit_3).
   - Tests: move_looper (keys 1-4 held + the volume knob do nothing; release-decided keys and their `ago_ms`; key 4's
     tap and hold; a project load mid-recording), move_kit (the source: its sign, the jog, knob 1, saved).
 - **The looper, round 2 (the owner's first try).** A slot loads a take or a sound from the kit's own Files (the

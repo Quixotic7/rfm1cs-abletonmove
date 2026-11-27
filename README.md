@@ -1243,7 +1243,7 @@ stay the sequencer's; Up and Down are dark and dead.
 | steps | the chosen pad's notes on its track (the page shown): a click toggles its own note at the release; a step held + pads: their notes in or out of it (the click then nothing); Delete + a step: the chosen pad's notes there |
 | Delete held + a pad | its notes in its track's clip go first; a pad with none is emptied (the file stays). Undo brings either back (the pad's own undo while no sequencer edit came after it) |
 | Mute held + a pad | the pad muted (grey), saved with the kit |
-| a pad held + Sample | records into that pad with the sampler's own settings (`KIT_REC`) until the pad is let go (or the length, or the threshold): the pad red, Sample red, the kit's screen the take (boards L armed, M recording). (2026-11-27) Its source is the kit's own (default Input, saved), its sign big at the top right; armed, the jog or knob 1 changes it |
+| a pad held + Sample | records into that pad with the sampler's own settings (`KIT_REC`) until the pad is let go (or the length, or the threshold): the pad red, Sample red, the kit's screen the take (boards L armed, M recording). (2026-11-27) Its source is the kit's own (default Input, saved), its sign big at the top right; armed, the jog or knob 1 changes it; also a kit track's settings' Rec Source row |
 | knobs | the chosen pad's, lit pink: 1 Pitch (a semitone; Shift: a cent), 2 Start, 3 Stretch (3b), 4 Play mode, 5 Attack, 6 Release, 7 Level, 8 Send 1 (3b). Touch: the popup, its name and value; turn: changed |
 | the jog | the tab's rows: one at rest (under the pad's wave and the steps it lasts), three for a second while it turns; up past the first: the tabs (click, turn, click). A row's click: its popup (the jog its value; Shift fine). Back: a popup, the tools, a folder, the tabs; never out of the view |
 
@@ -1664,8 +1664,9 @@ slot's markers; version 19 loads, its Start / Length as the markers). The sample
 - **A project load or switch** cancels every recording and overdub first (`rfmv_loop_drop_live`: `R_CANCEL`,
   `LOOP_DUB` 0).
 - **The kit's pad recording** has its own Source (`rfm_move_kit_t.rec_src`, saved; default Input), shown big on the
-  armed / recording screen and set there while armed (the jog, knob 1); `KIT_REC` vel = source + 1, down 2 = a change
-  while armed.
+  armed / recording screen and set there while armed (the jog, knob 1), or in a kit track's settings (Shift + step 3,
+  Rec Source, the sixth row: Manual and Capture never arm); a running take's never changes. `KIT_REC` vel = source + 1,
+  down 2 = a change while armed.
 
 ## FX parameter pages (0.5.0)
 
