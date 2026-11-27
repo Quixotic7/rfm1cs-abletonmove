@@ -5,6 +5,14 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## Unreleased
 
+- **The looper, round 2 (the owner's first try).** A slot loads a take or a sound from the kit's own Files (the
+  jog's click; `LOOP_FILE`); a tap on an empty slot records only on the Record page (elsewhere it picks the slot);
+  the Record page's Count-in (Off, 1, 2 bars: Play counts in, everything starts together after it), In Level and
+  Monitor (the sampler's own input settings; Monitor Off / On / Auto); Warp Grains and Beats; the Loop page's Start
+  and End markers (sample-accurate, a close-up from `LOOP_PEAKS`) and Steps (the region fills them at the tempo);
+  the step looper (Shift + step 13; in the FM-1 layout Track 4 held + step 13): the step keys as a looper pedal,
+  four lanes of Rec, Dub (`LOOP_DUB`), Replace, Next / Stop, in Okabe-Ito colours, the loops' places on the keys.
+  Project version 20 (19 loads). README "The looper, round 2".
 - **The looper, stage 1 (the owner's 2026-11-26 design round: every card `lp_*` its option a; `lp_scene` "A and b and
   c").** `src/looper.c`, `RFM_MOVE_CAP_LOOPER` (64): Track 4's fourth view (the round Mixer, Routing, Kit, Looper;
   held: pad 4): 4 lanes (the pad rows, lane 1 on top) x 8 scenes. A tap on an empty slot records from the next bar

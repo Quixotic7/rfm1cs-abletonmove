@@ -1599,7 +1599,7 @@ blinking teal, armed blinking red, recording red, muted grey, the chosen slot wh
 | Undo | one step: the last recording, delete, copy or scene cleared (the slots as they were: `LOOP_LOAD` and `LOOP_SET`s) |
 | Mute held + a loop | its Mute |
 | a slot held + the volume knob | its Level; Track 4 held + the volume knob: the Loops strip (`rfmv_loop_volume`, before the kit's) |
-| the jog | the pages, as the kit's (the switcher's 2x icons); the click: nothing (stage 2) |
+| the jog | the pages, as the kit's (the switcher's 2x icons); (round 2) the click: Files for the chosen slot |
 
 **Pages.** Loops (lanes 1..4's levels), Loop (Start in steps, Length: a beat, half a bar or whole bars of those
 recorded, Pitch in cents (a semitone a step; Shift: a cent), Reverse, Warp Repitch / Off), Record (the lane's Source,
@@ -1639,6 +1639,19 @@ the bar's `pk`; the memory); what the core asked and the host has not shown yet 
 the chosen slot, the page, the strip, the lanes, each slot's path, bars, recorded tempo and 11 settings); 18 and older
 load with an empty looper; a bad looper part is refused. `rfm_move_t` grows by `rfm_move_loop_t`. Tests: `move_looper`
 (dumps `loop_*.pbm`).
+
+### The looper, round 2 (the owner's first try; remoteFM14Move `docs/design/LOOPER-SPEC.md` "Round 2")
+
+| Gesture | What |
+|---|---|
+| tap an empty slot | on the **Record page** it records (as above); on the other pages it picks the slot |
+| the jog's click | **Files for the chosen slot**: the kit's own browser (`rfmv_kit_lbr_*`: its rows, screen, Back), the root Takes (with the take library), My Samples, the Move Library; a pad picks the slot; a sound's click: `LOOP_FILE`, answered by `rfm_move_loop_recorded` ("Loaded"; Undo: what the slot had) |
+| Loop page | 1 Start, 2 End (markers 0..`RFM_MOVE_LOOP_MK_ONE` of the sound, in `LOOP_SET`'s take; a column of the close-up a detent, Shift a frame; the close-up's peaks: `LOOP_PEAKS` -> `rfm_move_loop_peaks`), 3 Steps (1..1024: the region fills them at the tempo), 4 Pitch, 5 Reverse, 6 Warp (Off, Repitch, Grains, Beats) |
+| Record page | 1 Source, 2 Length, 3 Count-in (Off, 1, 2 bars: a loop armed while stopped, Play counts in, `rfm_move_loop_count_in`, `rfmv_seq_count_in_bars`), 4 In Level and 5 Monitor (Off, On, Auto: the sampler's own settings, `rfm_move_smp_set`), 6 Step Looper |
+| Shift + step 13 (FM-1 layout: Track 4 held + step 13) | the **step looper** on / off (its card): steps 1-4 .. 13-16 lanes 1..4 (Okabe-Ito blue, orange, bluish green, reddish purple), keys 1 Rec (the pedal), 2 Dub (`LOOP_DUB`), 3 Replace, 4 Next (a double tap: Stop); a group key + the volume knob: the lane's level. Every mode but the Looper view and the menus; Shift / Track held + a step stay the shortcuts |
+
+The project is version 20 (`RFM_MOVE_LOOP_BYTES` 4160: the Count-in and the step looper in the part's header, each
+slot's markers; version 19 loads, its Start / Length as the markers). The sampler's Monitor is 0..2 (Auto).
 
 ## FX parameter pages (0.5.0)
 
