@@ -2263,6 +2263,9 @@ static void input(rfm_move_t *m, const mr_event_t *ev, uint32_t now_ms)
     }
     if (rfmv_global_input(m, ev))                       /* (0.6.2) Global settings owns the controls while open */
         return;
+    if (rfmv_loop_to_input(m, ev))                      /* (looper round 2, item 9) the step looper: the step keys (not
+                                                         * with Shift or a Track held), a group key + the volume knob */
+        return;
     if (rfmv_tk_route(m, ev))                           /* (0.7.0) a takeover: its claimed controls, volume + Back */
         return;
     if (m->s.mode == RFM_MOVE_MODE_SEQ && ev->value &&
@@ -2677,6 +2680,7 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
                 c[L_PAD0 + i] = fc;
         wv[W_LOOP] = (uint8_t)((rfmv_now_ms(m) - m->seq.fill_ms) / 100 % 2 ? 0 : 127);
     }
+    rfmv_loop_to_leds(m, c);                            /* (looper round 2, item 9) the step looper's groups */
     rfmv_track_leds(m, c);
     for (i = 0; i < L_WHITE0; i++)
         w[i][0] = c[i].r, w[i][1] = c[i].g, w[i][2] = c[i].b;

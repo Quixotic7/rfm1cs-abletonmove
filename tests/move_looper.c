@@ -233,6 +233,7 @@ static void t_record(void)
     uint8_t w[RFM_MOVE_NLEDS][3];
     const rfm_move_act_t *a;
     looper_view();
+    M.loop.page = 2;                                    /* (round 2: a tap records on the Record page) */
     M.loop.lane[1][RFM_MOVE_LOOP_L_SOURCE] = RFM_MOVE_LOOP_SRC_TRACK2;
     tap(1, 2);                                          /* (lane 2, scene 3: an empty slot) */
     a = last(RFM_MOVE_ACT_LOOP_REC);
@@ -422,6 +423,7 @@ static void t_scenes(void)
     rest(), clear();
     st_send();                                          /* (the host: as before) */
     M.loop.ask[0] = M.loop.ask[1] = M.loop.ask[2] = -1;
+    M.loop.page = 2;                                    /* (round 2: the Record page's tap records) */
     pad(sp(0, 5), 100);                                 /* (an empty slot: armed by its tap ..) */
     CHECK(M.loop.rs[5] == RFM_MOVE_LOOP_RS_ARMED);
     adv_ms(40);
@@ -485,28 +487,66 @@ static void t_pages(void)
     screen();
     dump("loop");
     CHECK(lit_n(96, 0, 128, 12) > 5 && lit_n(0, 16, 128, 46) > 60);   /* (board C: the locator, the wave) */
-    /* the Loop page's knobs: 1 Start, 2 Length, 3 Pitch, 4 Reverse, 5 Warp; 6..8 dark */
+    /* the Loop page's knobs (round 2): 1 Start, 2 End (the markers), 3 Steps, 4 Pitch, 5 Reverse, 6 Warp; 7, 8 dark */
     leds(w);
-    CHECK(lit(w[L_RING0 + 0]) && lit(w[L_RING0 + 4]) && !lit(w[L_RING0 + 5]) && !lit(w[L_RING0 + 7]));
+    CHECK(lit(w[L_RING0 + 0]) && lit(w[L_RING0 + 5]) && !lit(w[L_RING0 + 6]) && !lit(w[L_RING0 + 7]));
     clear();
-    touch(2, 1), knob(2, 2), touch(2, 0);
+    touch(3, 1), knob(3, 2), touch(3, 0);
     CHECK(M.loop.slot[9].v[RFM_MOVE_LOOP_P_PITCH] == 100 && last(RFM_MOVE_ACT_LOOP_SET) &&
           last(RFM_MOVE_ACT_LOOP_SET)->param == RFM_MOVE_LOOP_P_PITCH && last(RFM_MOVE_ACT_LOOP_SET)->value == 100);
-    knob(2, 4);
+    knob(3, 4);
     screen();
     dump("pitch");
     CHECK(lit_n(0, 0, 128, 16) > 40);                   /* (board D: "Pitch", "+3 st") */
-    button(MR_CC_SHIFT, 1), knob(2, 5), button(MR_CC_SHIFT, 0);
+    button(MR_CC_SHIFT, 1), knob(3, 5), button(MR_CC_SHIFT, 0);
     CHECK(M.loop.slot[9].v[RFM_MOVE_LOOP_P_PITCH] == 305);   /* (Shift: cents) */
-    knob(1, -2);
-    CHECK(M.loop.slot[9].v[RFM_MOVE_LOOP_P_LENGTH] == 16); /* (2 bars -> 1 bar) */
+    /* (item 8) Steps: a bar a detent past 64, a beat past 16, a step below */
+    knob(2, -2);
+    CHECK(M.loop.slot[9].v[RFM_MOVE_LOOP_P_LENGTH] == 28); /* (32 -> 28: a beat) */
+    knob(2, -6);
+    CHECK(M.loop.slot[9].v[RFM_MOVE_LOOP_P_LENGTH] == 16);
+    knob(2, -4);
+    CHECK(M.loop.slot[9].v[RFM_MOVE_LOOP_P_LENGTH] == 14 && last(RFM_MOVE_ACT_LOOP_SET)->param == RFM_MOVE_LOOP_P_LENGTH &&
+          last(RFM_MOVE_ACT_LOOP_SET)->value == 14);
+    knob(2, 4);
     screen();
     dump("length");
-    knob(0, 6);
-    CHECK(M.loop.slot[9].v[RFM_MOVE_LOOP_P_START] == 3);
+    /* (item 8) the markers: a column of the close-up a detent, Shift a frame; sent in take; its peaks asked */
+    clear();
+    touch(0, 1), knob(0, 1);
+    {
+        const int32_t v = M.loop.slot[9].v[RFM_MOVE_LOOP_P_MSTART];
+        const uint32_t f = (uint32_t)((uint64_t)v * 176400u / RFM_MOVE_LOOP_MK_ONE + 0) ;
+        CHECK(v > 0 && f >= 340 && f <= 350 && last(RFM_MOVE_ACT_LOOP_SET)->param == RFM_MOVE_LOOP_P_MSTART &&
+              last(RFM_MOVE_ACT_LOOP_SET)->take == (uint32_t)v);   /* (176400 / 8 / 64 = 344 frames) */
+        adv_ms(20);
+        CHECK(last(RFM_MOVE_ACT_LOOP_PEAKS) && last(RFM_MOVE_ACT_LOOP_PEAKS)->index == 9 &&
+              last(RFM_MOVE_ACT_LOOP_PEAKS)->from == 0 && last(RFM_MOVE_ACT_LOOP_PEAKS)->count < 176400 / 8);   /* (near the start: the window from 0) */
+        button(MR_CC_SHIFT, 1), knob(0, 1), button(MR_CC_SHIFT, 0);
+        CHECKF((uint64_t)M.loop.slot[9].v[RFM_MOVE_LOOP_P_MSTART] * 176400u / RFM_MOVE_LOOP_MK_ONE == f + 1, "%d",
+               M.loop.slot[9].v[RFM_MOVE_LOOP_P_MSTART]);   /* (Shift: one frame) */
+        {
+            uint8_t pk[64];
+            memset(pk, 200, sizeof pk);
+            rfm_move_loop_peaks(&M, 9, last(RFM_MOVE_ACT_LOOP_PEAKS)->from, last(RFM_MOVE_ACT_LOOP_PEAKS)->count, 64, pk);
+        }
+        screen();
+        dump("mstart");
+        CHECK(lit_n(0, 24, 128, 64) > 100 && lit_n(64, 20, 65, 64) > 30);   /* (the close-up, the marker's line) */
+    }
+    touch(0, 0);
+    knob(1, -64);                                       /* (End: before the whole sound's end) */
+    CHECK(M.loop.slot[9].v[RFM_MOVE_LOOP_P_MEND] < RFM_MOVE_LOOP_MK_ONE &&
+          M.loop.slot[9].v[RFM_MOVE_LOOP_P_MEND] > M.loop.slot[9].v[RFM_MOVE_LOOP_P_MSTART]);
+    rest();
     screen();
-    dump("start");
-    knob(4, 5);
+    dump("markers");
+    /* (item 7) Warp: Off, Repitch, Grains, Beats in the knob's order */
+    knob(5, 5);
+    CHECK(M.loop.slot[9].v[RFM_MOVE_LOOP_P_WARP] == RFM_MOVE_LOOP_W_GRAINS);
+    knob(5, 5);
+    CHECK(M.loop.slot[9].v[RFM_MOVE_LOOP_P_WARP] == RFM_MOVE_LOOP_W_BEATS);
+    knob(5, -15);
     CHECK(M.loop.slot[9].v[RFM_MOVE_LOOP_P_WARP] == RFM_MOVE_LOOP_W_OFF);
     /* Record: the lane's Source and Length */
     jog(1), rest(), clear();
@@ -536,10 +576,14 @@ static void t_pages(void)
           last(RFM_MOVE_ACT_MIX)->mix[0] == M.loop.mix[0]);
     knob(1, 2);
     CHECK(M.loop.lane[1][RFM_MOVE_LOOP_L_LEVEL] > 100 && last(RFM_MOVE_ACT_LOOP_SET)->index == 33);
-    /* an empty slot chosen on the Loop page: Record shows, its knobs 1, 2 */
-    jog(-3), rest();
+    /* (round 2) an empty slot chosen on the Loop page: the page stays (it shows the slot empty); a tap there chooses */
+    jog(-3), rest(), clear();
     button(MR_CC_LOOP, 1), hit(sp(3, 7)), button(MR_CC_LOOP, 0);
-    CHECK(M.loop.page == 2);
+    CHECK(M.loop.page == 1);
+    hit(sp(3, 6));
+    CHECK(M.loop.cur == 30 && !count(RFM_MOVE_ACT_LOOP_REC) && !M.loop.rs[30]);
+    screen();
+    dump("empty");
     /* a slot held + the volume knob: its level */
     rest(), clear();
     pad(sp(1, 1), 100);
@@ -651,13 +695,16 @@ static void t_project(void)
     M.loop.slot[5].v[RFM_MOVE_LOOP_P_REVERSE] = 1;
     M.loop.lane[2][RFM_MOVE_LOOP_L_SOURCE] = RFM_MOVE_LOOP_SRC_KIT, M.loop.mix[1] = 20;
     n = rfm_move_project_save(&M, b, sizeof b);
-    CHECK(n > 0 && b[4] == 19 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    M.loop.slot[5].v[RFM_MOVE_LOOP_P_MEND] = RFM_MOVE_LOOP_MK_ONE / 2, M.loop.cin = 2;
+    n = rfm_move_project_save(&M, b, sizeof b);
+    CHECK(n > 0 && b[4] == 20 && rfm_move_project_check(b, (uint32_t)n) == 0);
     rfm_move_init(&M2, NULL, on_act, NULL);
     rfm_move_fw_caps(&M2, LCAPS);
     clear();
     CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0 && !strcmp(M2.loop.slot[5].path, M.loop.slot[5].path) &&
           M2.loop.slot[5].bars == 4 && M2.loop.slot[5].v[RFM_MOVE_LOOP_P_REVERSE] == 1 && M2.loop.slot[5].bpm10 == 1200 &&
           M2.loop.lane[2][RFM_MOVE_LOOP_L_SOURCE] == RFM_MOVE_LOOP_SRC_KIT && M2.loop.mix[1] == 20 &&
+          M2.loop.slot[5].v[RFM_MOVE_LOOP_P_MEND] == RFM_MOVE_LOOP_MK_ONE / 2 && M2.loop.cin == 2 &&
           M2.loop.slot[5].st == RFM_MOVE_LOOP_LOADING);
     {
         int i, loads = 0;
@@ -695,6 +742,196 @@ static void t_project(void)
     dump("mixer");
 }
 
+/* ---- 9. (round 2) items 1..4, 6: the browser (Files for a slot), the page decides a tap, Count-in, the input */
+static void t_round2(void)
+{
+    rfm_move_kit_row_t rows[2];
+    const rfm_move_act_t *a;
+    int i, n;
+    looper_view();
+    loop_in(0, 1);
+    rest(), clear();
+    /* item 2: on the Loops page an empty slot's tap chooses it; the Record page's records */
+    CHECK(M.loop.page == 0);
+    tap(1, 4);
+    CHECK(M.loop.cur == 12 && !count(RFM_MOVE_ACT_LOOP_REC));
+    /* item 1: the jog's click: Files for the chosen slot (the kit's rows); a pad chooses where it lands */
+    rest(), clear();
+    jog_click();
+    CHECK(M.loop.br && M.kit.lbr && !M.kit.place);
+    screen();
+    dump("browser");
+    CHECK(lit_n(16, 20, 128, 40) > 40);                 /* ("My Samples") */
+    jog_click();                                        /* (My Samples: its rows asked) */
+    a = last(RFM_MOVE_ACT_KIT_ROWS);
+    CHECK(M.kit.place == RFM_MOVE_KIT_PL_SAMPLES && a);
+    memset(rows, 0, sizeof rows);
+    rows[0].id = 77, rows[0].kind = RFM_MOVE_KIT_ROW_FILE, snprintf(rows[0].name, sizeof rows[0].name, "Breakbeat");
+    rows[1].id = 78, rows[1].kind = RFM_MOVE_KIT_ROW_DIR, snprintf(rows[1].name, sizeof rows[1].name, "Drums");
+    CHECK(rfm_move_kit_rows(&M, RFM_MOVE_KIT_PL_SAMPLES, 0, 2, 0, 2, rows) == 1);   /* (shown: draw again) */
+    hit(sp(2, 6));                                      /* (a pad: the target, nothing records or plays) */
+    CHECK(M.loop.cur == 22 && !count(RFM_MOVE_ACT_LOOP_REC) && !count(RFM_MOVE_ACT_LOOP_LAUNCH));
+    adv_ms(300);
+    CHECK(!count(RFM_MOVE_ACT_KIT_LOAD));               /* (no landing on a kit pad) */
+    screen();
+    dump("browser_rows");
+    clear();
+    jog_click();                                        /* (the file row: into the slot) */
+    a = last(RFM_MOVE_ACT_LOOP_FILE);
+    CHECK(a && a->index == 22 && a->value == RFM_MOVE_KIT_PL_SAMPLES && a->take == 77 && !M.loop.br && !M.kit.lbr);
+    {
+        uint8_t pk[RFM_MOVE_LOOP_PEAKS];
+        memset(pk, 90, sizeof pk);
+        rfm_move_loop_recorded(&M, 22, RFM_MOVE_LOOP_OK, "@/Loops/Breakbeat.wav", 4 * 88200, 44100, 4, 1200,
+                               RFM_MOVE_LOOP_PEAKS, pk);
+    }
+    CHECK(!strcmp(M.loop.slot[22].path, "@/Loops/Breakbeat.wav") && M.loop.slot[22].bars == 4 && M.loop.und &&
+          !strcmp(M.loop.msg, "Loaded") && M.loop.slot[22].v[RFM_MOVE_LOOP_P_LENGTH] == 64);
+    clear();
+    press(MR_CC_UNDO);                                  /* (Undo: the slot as it was, empty) */
+    CHECK(!M.loop.slot[22].path[0] && last(RFM_MOVE_ACT_LOOP_LOAD) && last(RFM_MOVE_ACT_LOOP_LOAD)->index == 22);
+    /* Back closes the browser */
+    rest(), clear();
+    jog_click();
+    CHECK(M.loop.br);
+    press(MR_CC_BACK);
+    CHECK(!M.loop.br && !M.kit.lbr);
+    /* items 3, 6: the Record page: Count-in (3), In Level (4) and Monitor (5) are the sampler's own settings */
+    rest(), clear();
+    jog(2), rest();
+    CHECK(M.loop.page == 2);
+    knob(3, 4);
+    CHECK(M.s.smp[RFM_MOVE_SMP_INPUT] == 2 && last(RFM_MOVE_ACT_SMP_SET) && last(RFM_MOVE_ACT_SMP_SET)->index == RFM_MOVE_SMP_INPUT &&
+          last(RFM_MOVE_ACT_SMP_SET)->value == 2);
+    knob(4, 10);
+    CHECK(M.s.smp[RFM_MOVE_SMP_MONITOR] == 2 && rfm_move_smp_value(&M, RFM_MOVE_SMP_MONITOR) == 2);   /* (Auto) */
+    knob(2, 10);
+    CHECK(M.loop.cin == 2);
+    rest();
+    screen();
+    dump("recpage2");
+    /* item 4: armed while stopped, Play: a 2-bar count-in, its clicks (each bar's first accented), then bar 1 */
+    clear();
+    M.seq.metro = 1;
+    tap(1, 1);
+    CHECK(M.loop.rs[9] == RFM_MOVE_LOOP_RS_ARMED && rfm_move_loop_count_in(&M) == 2 && !M.seq.playing);
+    press(MR_CC_PLAY);
+    CHECK(M.seq.start_pending == 3 && M.seq.count_in == 2 * 384 + 1);
+    adv_ms(1000);
+    {
+        uint8_t w[RFM_MOVE_NLEDS][3];
+        leds(w);
+        CHECK(lit(w[L_STEP0]) && !w[L_STEP0][1] && !M.seq.playing);   /* (the steps count the beats, red) */
+    }
+    adv_ms(3100);
+    for (i = 0, n = 0; i < nact; i++)
+        n += A[i].kind == RFM_MOVE_ACT_CLICK && A[i].value == 1;
+    CHECKF(M.seq.playing && count(RFM_MOVE_ACT_CLICK) >= 8 && n >= 2, "playing %d clicks %d accents %d", M.seq.playing,
+           count(RFM_MOVE_ACT_CLICK), n);
+    M.seq.metro = 0;
+}
+
+/* ---- 10. (round 2, item 9) the step looper: the keys, their states and colours, over the FM-1 layout */
+static void t_steploop(void)
+{
+    uint8_t w[RFM_MOVE_NLEDS][3];
+    const rfm_move_act_t *a;
+    int keys0;
+    fresh_caps(LCAPS);                                  /* (the FM-1 layout: the steps are its white keys) */
+    CHECK(M.s.mode == RFM_MOVE_MODE_FM1);
+    tap_step(2);
+    keys0 = count(RFM_MOVE_ACT_KEY);
+    CHECK(keys0 > 0);                                   /* (off: an FM-1 key) */
+    /* on: Track 4 held + step 13 (the FM-1 layout's Shift is GLO); the card */
+    clear();
+    hold_track(3), step(12, 1), step(12, 0), track(3, 0);
+    CHECK(M.loop.to_on && rfmv_loop_to_steps(&M));
+    screen();
+    dump("to_card");
+    CHECK(lit_n(0, 0, 128, 16) > 60 && lit_n(0, 18, 128, 64) > 150);
+    rest(), clear();
+    /* the colours: Okabe-Ito, a lane a group, very dim while empty */
+    leds(w);
+    CHECK(lit(w[L_STEP0 + 0]) && w[L_STEP0 + 0][2] > w[L_STEP0 + 0][0]);   /* (blue) */
+    CHECK(w[L_STEP0 + 4][0] > w[L_STEP0 + 4][2]);       /* (orange) */
+    /* key 1 of lane 1: records at the bar into the lane's first empty slot; stopped: the transport starts */
+    tap_step(0);
+    a = last(RFM_MOVE_ACT_LOOP_REC);
+    CHECK(a && a->index == 0 && a->param == RFM_MOVE_LOOP_R_START && a->vel == RFM_MOVE_LOOP_SRC_PLAYED &&
+          !count(RFM_MOVE_ACT_KEY) && (M.seq.playing || M.seq.start_pending));
+    leds(w);
+    CHECK(w[L_STEP0 + 0][0] && !w[L_STEP0 + 0][1]);    /* (armed: key 1 red) */
+    screen();
+    dump("to_overlay");
+    CHECK(lit_n(0, 0, 128, 11) > 30);                   /* ("Lane 1 REC") */
+    /* the host: recording, bar 2 */
+    adv_ms(50);
+    st_reset();
+    ST.rec[0].slot = 0, ST.rec[0].state = RFM_MOVE_LOOP_RS_RECORDING, ST.rec[0].bar = 2;
+    st_send();
+    leds(w);
+    CHECK(is_rgb(w[L_STEP0 + 0], 255, 0, 0) || (w[L_STEP0 + 0][0] > 50 && !w[L_STEP0 + 0][1]));   /* (bar 1 done: red) */
+    clear();
+    tap_step(0);                                        /* (the pedal again: it ends at the bar, loops) */
+    CHECK(last(RFM_MOVE_ACT_LOOP_REC) && last(RFM_MOVE_ACT_LOOP_REC)->param == RFM_MOVE_LOOP_R_END);
+    st_reset();
+    loop_in(0, 1);
+    ST.lane[0].play = 0, ST.lane[0].pos = 40000;
+    st_send();
+    rest();
+    leds(w);
+    CHECK(is_rgb(w[L_STEP0 + 2], 0, 114, 178) && !is_rgb(w[L_STEP0 + 0], 0, 114, 178) && lit(w[L_STEP0 + 0]));   /* (its
+                                                         * third quarter: key 3 bright, the others dim) */
+    /* key 2: overdub on / off (its answer keeps the loop's settings; one Undo) */
+    clear();
+    M.loop.slot[0].v[RFM_MOVE_LOOP_P_LEVEL] = 90;
+    tap_step(1);
+    a = last(RFM_MOVE_ACT_LOOP_DUB);
+    CHECK(a && a->index == 0 && a->down == 1 && M.loop.to_dub[0] == 1);
+    tap_step(1);
+    a = last(RFM_MOVE_ACT_LOOP_DUB);
+    CHECK(a && a->down == 0 && !M.loop.to_dub[0] && (M.loop.dubq & 1));
+    rfm_move_loop_recorded(&M, 0, RFM_MOVE_LOOP_OK, "@/Loops/1-1 120bpm 1b 2.wav", 88200, 44100, 1, 1200, 0, NULL);
+    CHECK(!strcmp(M.loop.slot[0].path, "@/Loops/1-1 120bpm 1b 2.wav") && M.loop.slot[0].v[RFM_MOVE_LOOP_P_LEVEL] == 90 &&
+          M.loop.und && !(M.loop.dubq & 1));
+    /* key 4: Next (the lane's next empty slot is the pedal's); a double tap: Stop */
+    rest(), clear();
+    tap_step(3);
+    CHECK(M.loop.to_target[0] == 2 && !count(RFM_MOVE_ACT_LOOP_LAUNCH));
+    now_ms += 50;
+    tap_step(3);
+    a = last(RFM_MOVE_ACT_LOOP_LAUNCH);
+    CHECK(a && a->down == 0 && a->index / 8 == 0 && M.loop.to_target[0] == 1);   /* (the pedal's slot as before Next) */
+    /* key 3: Replace: records over the playing loop from the next bar */
+    rest(), clear();
+    st_send();
+    tap_step(2);
+    a = last(RFM_MOVE_ACT_LOOP_REC);
+    CHECK(a && a->index == 0 && a->param == RFM_MOVE_LOOP_R_START);
+    tap_step(0);                                        /* (armed: the pedal cancels) */
+    CHECK(last(RFM_MOVE_ACT_LOOP_REC)->param == RFM_MOVE_LOOP_R_CANCEL);
+    /* a group key held + the volume knob: the lane's level */
+    rest(), clear();
+    step(7, 1), raw(0xB0, MR_CC_VOLUME, 2);
+    a = last(RFM_MOVE_ACT_LOOP_SET);
+    CHECK(a && a->index == RFM_MOVE_LOOP_LANE0 + 1 && M.loop.lane[1][RFM_MOVE_LOOP_L_LEVEL] > 100);
+    screen();
+    dump("to_level");
+    step(7, 0);
+    /* Shift-less shortcuts: Track 4 held + a step stays the shortcuts; off again: the steps are the FM-1's */
+    rest(), clear();
+    hold_track(3), step(12, 1), step(12, 0), track(3, 0);
+    CHECK(!M.loop.to_on);
+    rest(), clear();
+    tap_step(2);
+    CHECK(count(RFM_MOVE_ACT_KEY) > 0 && !count(RFM_MOVE_ACT_LOOP_REC));
+    /* the Record page's knob 6 too, in the Sequencer */
+    looper_view();
+    jog(2), rest();
+    knob(5, 5);
+    CHECK(M.loop.to_on && !rfmv_loop_to_steps(&M));     /* (the Looper view keeps its scenes on the steps) */
+}
+
 int main(void)
 {
     t_cap();
@@ -705,5 +942,7 @@ int main(void)
     t_edit();
     t_tab();
     t_project();
+    t_round2();
+    t_steploop();
     return check_done("move_looper");
 }

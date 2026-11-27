@@ -1134,7 +1134,8 @@ static void message_popup(const rfm_move_t *m, mr_canvas_t *cv)
 static void count_popup(const rfm_move_t *m, mr_canvas_t *cv)
 {
     char b[4];
-    const int go = clampi((m->seq.count_in - 2) / 96 + 1, 1, 4);   /* (a bar: 4 .. 1) */
+    const int go = clampi(((m->seq.count_in - 2) % 384) / 96 + 1, 1, 4);   /* (a bar: 4 .. 1; looper round 2: each
+                                                         * bar of a 2-bar count-in) */
     snprintf(b, sizeof b, "%d", go);
     mr_gfx_clear(cv, 0);
     v2_ic(cv, V2I_REC, 14, 22, 1);
@@ -1527,10 +1528,29 @@ int rfm_move_screen_timed(const rfm_move_t *m)
            (q->projects && q->proj_pending >= 0) || rfmv_fw_timed(m) || rfmv_pfw_timed(m) || rfmv_st_timed(m) ||
            rfmv_smp_timed(m) ||                         /* (0.15.0: the sampler's three rows, message, a take) */
            rfmv_kit_timed(m) ||                         /* (stage 3a: the kit's rows, popups, messages, lights) */
-           rfmv_loop_timed(m);                          /* (looper stage 1: its lanes, popups, blinking pads) */
+           rfmv_loop_timed(m) ||                        /* (looper stage 1: its lanes, popups, blinking pads) */
+           rfmv_loop_to_timed(m);                       /* (round 2: the step looper's card, overlay, keys) */
 }
 
+static void screen_body(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREEN_BYTES]);
+/* (looper round 2, item 9) the step looper's card (the whole screen) or overlay (rows 0..10) over whatever shows */
 void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREEN_BYTES])
+{
+    mr_canvas_t cv;
+    screen_body(m, rgb565, out);
+    if (!m->pw_ask && rfmv_loop_to_screen(m, &cv)) {
+        static uint8_t o2[MR_SCREEN_BYTES];
+        const int full = m->loop.card_ms && rfmv_now_ms(m) - m->loop.card_ms < 1500;
+        int x;
+        mr_gfx_pack(&cv, o2);
+        if (full || m->loop.to_lvl)
+            memcpy(out, o2, MR_SCREEN_BYTES);
+        else
+            for (x = 0; x < 128; x++)
+                out[x] = o2[x], out[128 + x] = (uint8_t)((out[128 + x] & ~7u) | (o2[128 + x] & 7u));
+    }
+}
+static void screen_body(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREEN_BYTES])
 {
     mr_canvas_t cv;                                     /* (8 KB of stack) */
     int t, x, y;

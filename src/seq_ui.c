@@ -33,7 +33,7 @@ static rgb_t sv_col_rgb(const rfm_move_t *m, int track);
  * source), 3 Workflow Settings, 5 Tempo, 6 Metronome, 7 Groove, 8 Layout, 9 Keys & Scales, 10 Full Velocity (our Velocity menu),
  * 11 Repeat (our arp), 14 New Clip, 15 Double Loop, 16 Quantize */
 enum { SH_PROJECTS = 0, SH_CLOCK = 1, SH_WORKFLOW = 2, SH_TEMPO = 4, SH_METRO = 5, SH_GROOVE = 6, SH_LAYOUT = 7,
-       SH_KEYS = 8, SH_FIXVEL = 9, SH_ARP = 10, SH_NEWCLIP = 13, SH_DOUBLE = 14, SH_QUANT = 15 };
+       SH_KEYS = 8, SH_FIXVEL = 9, SH_ARP = 10, SH_STEPLOOP = 12, SH_NEWCLIP = 13, SH_DOUBLE = 14, SH_QUANT = 15 };
 static int sh_menu(int s)                               /* the menu a Shift + step opens, 0 none */
 {
     switch (s) {
@@ -66,8 +66,10 @@ void rfmv_shift_icons(const rfm_move_t *m, uint8_t icon[16])
     }
     for (i = 0; i < RFM_MOVE_NSTEPS; i++) {
         const int job = i == SH_PROJECTS || i == SH_CLOCK || i == SH_FIXVEL || i == SH_DOUBLE || i == SH_QUANT ||
-                        i == SH_METRO || i == SH_NEWCLIP || sh_menu(i);   /* (0.12.0, q2: step 13 none) */
+                        i == SH_METRO || i == SH_NEWCLIP || sh_menu(i) || (i == SH_STEPLOOP && rfmv_loop_cap(m));   /* (0.12.0,
+                                                         * q2: step 13 none; looper round 2: the step looper) */
         const int on = (i == SH_FIXVEL && m->s.vel_mode == RFM_MOVE_VEL_FIXED) || (i == SH_METRO && q->metro) || (i == SH_CLOCK && q->following) ||
+                       (i == SH_STEPLOOP && m->loop.to_on) ||
                        (i == SH_PROJECTS && q->projects) || (sh_menu(i) && sh_menu(i) == q->smenu) ||
                        (i == SH_ARP && q->tr[q->sel_track].arp.mode != RFM_MOVE_AM_OFF);   /* (0.11.0: the arp on) */
         icon[i] = (uint8_t)(!job ? 0 : on ? 127 : 24);
@@ -1279,6 +1281,11 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
                 rfmv_seq_msg(m, SEQ_MSG_NOCLIP);
             break;
         }
+        case SH_STEPLOOP:                               /* (looper round 2, item 9) the step keys' looper takeover;
+                                                         * in the FM-1 layout Track 4 held + step 13 */
+            if (rfmv_loop_cap(m))
+                rfmv_loop_to_set(m, !m->loop.to_on);
+            break;
         case SH_QUANT:
             rfmv_seq_group(m);
             rfmv_seq_clip_quantize(m, clip);
@@ -1978,6 +1985,8 @@ int rfmv_seq_button(rfm_move_t *m, int cc, int down, uint32_t now)
             rfmv_seq_stop(m);
         else if (q->rec && q->rec_mode == RFM_MOVE_RM_RECORD)
             rfmv_seq_count_in(m);                       /* (Rec armed while stopped: Play gives the bar's count-in) */
+        else if (rfm_move_loop_count_in(m))             /* (looper round 2) a loop armed, its Count-in on */
+            rfmv_seq_count_in_bars(m, rfm_move_loop_count_in(m));
         else
             rfmv_seq_start(m);
         return 1;
@@ -3492,8 +3501,10 @@ void rfmv_seq_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 v = rfmv_seq_src_page(m, clip, i) == 2 ? sc(RFMV_RED, bl ? 220 : 60) : sc(RFMV_WHITE, bl ? 256 : 30);
         } else if (q->mods & SEQ_M_SHIFT) {             /* the shortcuts */
             if (i == SH_PROJECTS || i == SH_CLOCK || i == SH_FIXVEL || i == SH_DOUBLE || i == SH_QUANT || sh_menu(i) ||
-                i == SH_METRO || i == SH_NEWCLIP)
+                i == SH_METRO || i == SH_NEWCLIP || (i == SH_STEPLOOP && rfmv_loop_cap(m)))
                 v = sc(RFMV_WHITE, 96);
+            if (i == SH_STEPLOOP && m->loop.to_on)
+                v = RFMV_WHITE;
             if (sh_menu(i) && sh_menu(i) == q->smenu)
                 v = rfmv_mode_rgb[RFM_MOVE_MODE_SEQ];
             if (i == SH_METRO && q->metro)

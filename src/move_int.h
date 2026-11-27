@@ -161,6 +161,7 @@ void rfmv_seq_clip_dup(rfm_move_t *m, int from, int to);   /* Copy alone: the cl
 void rfmv_seq_start(rfm_move_t *m);                    /* Play: now, or at the external clock's next bar */
 void rfmv_seq_stop(rfm_move_t *m);                     /* everything sounding let go, recordings finished */
 void rfmv_seq_count_in(rfm_move_t *m);                 /* Rec from stopped: start a bar from now */
+void rfmv_seq_count_in_bars(rfm_move_t *m, int bars);   /* (looper round 2) .. so many bars from now (1, 2) */
 void rfmv_seq_restart(rfm_move_t *m);                  /* Shift + Play: every clip from its start */
 void rfmv_seq_release(rfm_move_t *m, int track);       /* the track's sounding notes off (-1 all) */
 void rfmv_seq_launch(rfm_move_t *m, int track, int scene);   /* scene -1: stop the track */
@@ -536,8 +537,8 @@ void rfmv_loop_poll(rfm_move_t *m);                     /* (advance) */
 int rfmv_loop_volume(rfm_move_t *m, int d);             /* Track 4 held + the volume knob in the Looper view: the strip */
 void rfmv_loop_clear(rfm_move_t *m);                    /* (project.c) an empty looper */
 void rfmv_loop_write(const rfm_move_t *m, uint8_t *p);  /* .. RFM_MOVE_LOOP_BYTES */
-int rfmv_loop_check(const uint8_t *p);                  /* .. 0 valid */
-void rfmv_loop_read(rfm_move_t *m, const uint8_t *p);
+int rfmv_loop_check(const uint8_t *p, int ver);         /* .. 0 valid (version 19 or 20) */
+void rfmv_loop_read(rfm_move_t *m, const uint8_t *p, int ver);
 void rfmv_loop_loaded_project(rfm_move_t *m);           /* .. loaded or made: the host told */
 int rfmv_loop_base_words(const rfm_move_t *m, char *o, int cap);   /* (speech) */
 int rfmv_loop_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);
@@ -553,6 +554,23 @@ int rfmv_loop_tab_words(const rfm_move_t *m, char *o, int cap);
 void rfmv_loop_tab_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0]);   /* knobs 1..4 */
 int rfmv_loop_tab_timed(const rfm_move_t *m);
 int rfmv_loop_recording(const rfm_move_t *m);           /* a recording armed or running (Sample's light) */
+/* (looper round 2) the kit's Files for the looper (kit.c): open, closed, the jog, the click (1: a sound's row: its
+ * place, id, name), Back (0: closed), the screen, timed, the marquee */
+void rfmv_kit_lbr_open(rfm_move_t *m);
+void rfmv_kit_lbr_close(rfm_move_t *m);
+void rfmv_kit_lbr_turn(rfm_move_t *m, int d);
+int rfmv_kit_lbr_click(rfm_move_t *m, int *place, uint32_t *id, char *name, int cap);
+int rfmv_kit_lbr_back(rfm_move_t *m);
+void rfmv_kit_lbr_screen(const rfm_move_t *m, mr_canvas_t *cv);
+int rfmv_kit_lbr_timed(const rfm_move_t *m);
+void rfmv_kit_lbr_poll(rfm_move_t *m);
+/* (looper round 2, item 9) the step keys' looper takeover: over every mode but the Looper view */
+int rfmv_loop_to_input(rfm_move_t *m, const mr_event_t *ev);   /* 1 taken */
+void rfmv_loop_to_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0]);   /* the steps (last) */
+int rfmv_loop_to_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* its card / overlay over the screen: 1 drawn */
+int rfmv_loop_to_timed(const rfm_move_t *m);
+void rfmv_loop_to_set(rfm_move_t *m, int on);           /* on / off (its card) */
+int rfmv_loop_to_steps(const rfm_move_t *m);            /* 1: the step keys are the takeover's now */
 /* (seq_ui.c) the TRIG page's knob k turned d on the held steps (bits of the page shown) of clip, or (none held) the
  * selected track's defaults for new steps: its popup, as a firmware track's */
 void rfmv_seq_trig_knob(rfm_move_t *m, int clip, int k, int d, uint16_t held);

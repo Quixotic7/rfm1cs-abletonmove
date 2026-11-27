@@ -132,7 +132,7 @@ static int in_range(int k, int v)
     case RFM_MOVE_SMP_LENGTH: return v >= 0 && v < RFM_MOVE_SMP_LENGTHS;
     case RFM_MOVE_SMP_THRESHOLD: return v >= RFM_MOVE_SMP_THR_MIN && v <= 0;
     case RFM_MOVE_SMP_INPUT: return v >= RFM_MOVE_SMP_IN_MIN && v <= RFM_MOVE_SMP_IN_MAX;
-    case RFM_MOVE_SMP_MONITOR: return v == 0 || v == 1;
+    case RFM_MOVE_SMP_MONITOR: return v >= 0 && v <= 2;   /* (looper round 2: Off, On, Auto) */
     case RFM_MOVE_SMP_TO: return v >= 0 && v < RFM_MOVE_SMP_TO_N;
     default: return 0;
     }
@@ -552,6 +552,7 @@ static int stepv(const rfm_move_t *m, int k, int v, int d)   /* a value d detent
     case RFM_MOVE_SMP_LENGTH: return clampi(v + d, 0, RFM_MOVE_SMP_LENGTHS - 1);
     case RFM_MOVE_SMP_THRESHOLD: return clampi(v + d, RFM_MOVE_SMP_THR_MIN, 0);
     case RFM_MOVE_SMP_INPUT: return clampi(v + d, RFM_MOVE_SMP_IN_MIN, RFM_MOVE_SMP_IN_MAX);
+    case RFM_MOVE_SMP_MONITOR: return clampi(v + d, 0, 2);
     default: return clampi(v + d, 0, 1);
     }
 }
@@ -1323,7 +1324,7 @@ static void val_text(const rfm_move_t *m, int k, int pop, char *o, int cap)
     }
     case RFM_MOVE_SMP_THRESHOLD: snprintf(o, (size_t)cap, pop ? "%d" : "%d dB", v); break;
     case RFM_MOVE_SMP_INPUT: snprintf(o, (size_t)cap, v ? (pop ? "%+d" : "%+d dB") : (pop ? "%d" : "%d dB"), v); break;
-    case RFM_MOVE_SMP_MONITOR: snprintf(o, (size_t)cap, "%s", v ? "On" : "Off"); break;
+    case RFM_MOVE_SMP_MONITOR: snprintf(o, (size_t)cap, "%s", v == 2 ? "Auto" : v ? "On" : "Off"); break;
     default:
         if (v == RFM_MOVE_SMP_TO_KIT && rfmv_kit_cap(m))
             rfmv_kit_to_text(m, o, cap);                /* (stage 3b, board U: the next empty pad) */

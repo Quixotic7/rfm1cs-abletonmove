@@ -1649,7 +1649,8 @@ static void tick(rfm_move_t *m, uint32_t frame)
             i++;
     arp_ends(m);                                        /* (0.14.0: the clips' notes ending now leave their arps) */
     if (q->metro && q->start_pending == 3 && q->count_in > 0 && (q->count_in - 1) % (BAR / 4) == 0)
-        rfmv_emit(m, RFM_MOVE_ACT_CLICK, 0, 0, 0, q->count_in - 1 == BAR);   /* (the count-in's beats) */
+        rfmv_emit(m, RFM_MOVE_ACT_CLICK, 0, 0, 0, (q->count_in - 1) % BAR == 0);   /* (the count-in's beats; each bar's
+                                                         * first accented) */
     if (q->playing && m->clk_on && !q->following && (q->T + 1) % 4 == 0)
         clk_out(m, 0xF8);                               /* (0.9.0: 24 PPQN, the first with Start) */
     if (q->playing)
@@ -1668,7 +1669,9 @@ void rfmv_seq_start(rfm_move_t *m)
 
 /* Rec from stopped (Move's count-in): the transport starts a bar from now; following an external clock, at its
  * next bar (as Play) */
-void rfmv_seq_count_in(rfm_move_t *m)
+void rfmv_seq_count_in(rfm_move_t *m) { rfmv_seq_count_in_bars(m, 1); }
+/* (looper round 2) the looper's Count-in: 1 or 2 bars */
+void rfmv_seq_count_in_bars(rfm_move_t *m, int bars)
 {
     rfm_move_seq_t *q = &m->seq;
     if (q->playing || q->start_pending)
@@ -1677,7 +1680,8 @@ void rfmv_seq_count_in(rfm_move_t *m)
         rfmv_seq_start(m);
         return;
     }
-    q->start_pending = 3, q->count_in = BAR + 1;       /* (the first tick is due at once: a bar of ticks to T 0) */
+    q->start_pending = 3, q->count_in = (int16_t)((bars > 1 ? 2 : 1) * BAR + 1), q->cin_go = 1;   /* (the first tick is due at once:
+                                                         * the bars of ticks to T 0) */
 }
 
 static void rec_finish(rfm_move_t *m, int pad);
@@ -2051,8 +2055,8 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
     num = (uint64_t)(q->following ? clampi(ext_bpm10(q), 10, 30000) : q->bpm10) * 96u;
     q->num_last = (uint32_t)num;
     cap = q->following ? q->ext_clocks * 4 + 3 : INT32_MAX;
-    if (q->start_pending == 1 || (q->start_pending == 3 && q->count_in > BAR))
-        q->ph = den;                                    /* Play (or a count-in): the first tick is due at once */
+    if (q->start_pending == 1 || (q->start_pending == 3 && q->cin_go))
+        q->ph = den, q->cin_go = 0;                     /* Play (or a count-in): the first tick is due at once */
     for (;;) {
         uint64_t need;
         if (q->ph >= den) {

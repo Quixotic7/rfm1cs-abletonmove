@@ -215,7 +215,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
     ver = b[4];
     if (ver < 1 || ver > RFM_MOVE_PROJECT_VERSION)
         return -2;
-    ext = ver >= 19 ? RFM_MOVE_PROJECT_EXT : ver == 18 ? RFM_MOVE_PROJECT_EXT_V18 : ver == 17 ? RFM_MOVE_PROJECT_EXT_V17 : ver >= 15 ? RFM_MOVE_PROJECT_EXT_V15 : ver == 14 ? RFM_MOVE_PROJECT_EXT_V14 : ver >= 12 ? RFM_MOVE_PROJECT_EXT_V12 : ver == 11 ? RFM_MOVE_PROJECT_EXT_V11 : ver >= 9 ? RFM_MOVE_PROJECT_EXT_V10 : ver == 8 ? RFM_MOVE_PROJECT_EXT_V8 : ver == 7 ? RFM_MOVE_PROJECT_EXT_V7 : ver == 6 ? RFM_MOVE_PROJECT_EXT_V6 : ver == 5 ? RFM_MOVE_PROJECT_EXT_V5 : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
+    ext = ver >= 20 ? RFM_MOVE_PROJECT_EXT : ver == 19 ? RFM_MOVE_PROJECT_EXT_V19 : ver == 18 ? RFM_MOVE_PROJECT_EXT_V18 : ver == 17 ? RFM_MOVE_PROJECT_EXT_V17 : ver >= 15 ? RFM_MOVE_PROJECT_EXT_V15 : ver == 14 ? RFM_MOVE_PROJECT_EXT_V14 : ver >= 12 ? RFM_MOVE_PROJECT_EXT_V12 : ver == 11 ? RFM_MOVE_PROJECT_EXT_V11 : ver >= 9 ? RFM_MOVE_PROJECT_EXT_V10 : ver == 8 ? RFM_MOVE_PROJECT_EXT_V8 : ver == 7 ? RFM_MOVE_PROJECT_EXT_V7 : ver == 6 ? RFM_MOVE_PROJECT_EXT_V6 : ver == 5 ? RFM_MOVE_PROJECT_EXT_V5 : ver == 4 ? RFM_MOVE_PROJECT_EXT_V4 : ver == 3 ? RFM_MOVE_PROJECT_EXT_V3 :
           ver == 2 ? RFM_MOVE_PROJECT_EXT_V2 : 0;
     ab = ver >= 3 ? RFM_MOVE_ARP_BYTES : RFM_MOVE_ARP_BYTES_V2;   /* (an arp's bytes) */
     fixed = RFM_MOVE_PROJECT_FIXED - RFM_MOVE_PROJECT_EXT + ext;
@@ -324,7 +324,7 @@ static int parse(const uint8_t *b, uint32_t n, rfm_move_seq_t *q)
             return -9;                                  /* (0.13.0: the firmwares) */
         if (ver >= 11 && rfmv_kit_check(x + RFM_MOVE_PROJECT_EXT_V10, ver) != 0)
             return -9;                                  /* (stage 3a: the kit) */
-        if (ver >= 19 && rfmv_loop_check(x + RFM_MOVE_PROJECT_EXT_V18) != 0)
+        if (ver >= 19 && rfmv_loop_check(x + RFM_MOVE_PROJECT_EXT_V18, ver) != 0)
             return -9;                                  /* (looper stage 1) */
         for (i = 0; i < RFM_MOVE_SEQ_TRACKS; i++) {      /* (each track's layout and CC numbers) */
             const uint8_t *l = x + RFM_MOVE_SEQ_CLIPS + RFM_MOVE_SEQ_CLIPS / 8 + RFM_MOVE_SEQ_TRACKS * (2 + ab) +
@@ -433,7 +433,7 @@ static uint32_t kit_bytes(int ver)
 {
     return ver >= 18 ? RFM_MOVE_KIT_BYTES : ver == 17 ? RFM_MOVE_KIT_BYTES_V17 : ver >= 15 ? RFM_MOVE_KIT_BYTES_V15 : ver == 14 ? RFM_MOVE_KIT_BYTES_V14 : ver >= 12 ? RFM_MOVE_KIT_BYTES_V12 : ver == 11 ? RFM_MOVE_KIT_BYTES_V11 : 0;
 }
-static uint32_t loop_bytes(int ver) { return ver >= 19 ? RFM_MOVE_LOOP_BYTES : 0; }   /* (looper stage 1) */
+static uint32_t loop_bytes(int ver) { return ver >= 20 ? RFM_MOVE_LOOP_BYTES : ver == 19 ? RFM_MOVE_LOOP_BYTES_V19 : 0; }   /* (looper stage 1) */
 /* a checked blob's firmware part (version 9..12; NULL before), its kit part (version 11, 12; NULL before), its looper
  * part (version 19; NULL before) */
 static const uint8_t *pfw_part(const uint8_t *b, uint32_t n)
@@ -544,7 +544,7 @@ int rfm_move_project_load(rfm_move_t *m, int slot, const uint8_t *b, uint32_t n)
     else if (b && n)
         rfmv_kit_clear(m);
     if (b && n && loop_part(b, n))                      /* (looper stage 1) its looper (older: an empty one) */
-        rfmv_loop_read(m, loop_part(b, n));
+        rfmv_loop_read(m, loop_part(b, n), b[4]);
     else
         rfmv_loop_clear(m);
     rfmv_pfw_loaded(m, slot, b && n ? pfw_part(b, n) : NULL);   /* (0.13.0: its

@@ -252,10 +252,25 @@ static int pad_db10(int v) { return v <= LEVEL_MIN ? RFMV_DB_INF : v * 10; }   /
 #define NOASK 0xFFFFu
 #define GLOW_MS 150                                     /* a pad sounds: bright so long after its note */
 /* (2026-11-26) the browser's root: My Samples, then the Move Library when the host has it */
-static int root_n(const rfm_move_t *m) { return m->kit.core_lib ? 2 : 1; }
-static int root_pl(int i) { return i ? RFM_MOVE_KIT_PL_CORE : RFM_MOVE_KIT_PL_SAMPLES; }
-static int root_of(int pl) { return pl == RFM_MOVE_KIT_PL_CORE ? 1 : 0; }
-static const char *root_name(int i) { return i ? "Move Library" : "My Samples"; }
+/* the root's places: My Samples, the Move Library; (looper round 2) the looper's: Takes first (the take library's) */
+static int root_tk(const rfm_move_t *m) { return m->kit.lbr && rfmv_smp_cap(m) && (m->smp.tabs >> RFM_MOVE_SMP_TAB_TAKES & 1); }
+static int root_n(const rfm_move_t *m) { return (m->kit.core_lib ? 2 : 1) + root_tk(m); }
+static int root_pl(const rfm_move_t *m, int i)
+{
+    if (root_tk(m) && !i--)
+        return RFM_MOVE_KIT_PL_TAKES;
+    return i ? RFM_MOVE_KIT_PL_CORE : RFM_MOVE_KIT_PL_SAMPLES;
+}
+static int root_of(const rfm_move_t *m, int pl)
+{
+    return pl == RFM_MOVE_KIT_PL_TAKES ? 0 : (pl == RFM_MOVE_KIT_PL_CORE ? 1 : 0) + root_tk(m);
+}
+static const char *root_name(const rfm_move_t *m, int i)
+{
+    if (root_tk(m) && !i--)
+        return "Takes";
+    return i ? "Move Library" : "My Samples";
+}
 enum { KT_LOAD, KT_SAVE, KT_N };                        /* Kits' rows (pages: the right half, Trim on the KIT page) */
 #define MIX_LEVEL0 100                                  /* the kit's strip at first: as a firmware slot's */
 /* (3c) the Sound row's tools (board V): Play, Trim, Normalize, Reverse, Delete */
@@ -2271,14 +2286,14 @@ static void rows_forget(rfm_move_t *m)
         m->kit.rc[k].ok = 0;
     m->kit.ask_i = NOASK, m->kit.known = 0, m->kit.total = 0;
 }
-static int in_list(const rfm_move_t *m) { return m->kit.tab == 2 && m->kit.place; }
+static int in_list(const rfm_move_t *m) { return (m->kit.tab == 2 || m->kit.lbr) && m->kit.place; }
 static void need(rfm_move_t *m)
 {
     rfm_move_kit_t *t = K(m);
     const uint32_t f = t->folder[t->depth];
     const int sel = t->fsel[t->depth];
     int first, i, miss = 0;
-    if (!in_list(m) || !rfmv_kit_active(m))
+    if (!in_list(m) || (!rfmv_kit_active(m) && !t->lbr))
         return;
     if (t->known && !t->total)
         return;
@@ -2324,7 +2339,7 @@ int rfm_move_kit_rows(rfm_move_t *m, int place, uint32_t folder, int total, int 
     }
     need(m);
     rfmv_say_check(m);
-    return rfm_move_kit_shown(m) && in_list(m);
+    return (rfm_move_kit_shown(m) || (t->lbr && rfmv_loop_shown(m))) && in_list(m);
 }
 /* ---- (round A) pad-first loading */
 /* where the pad's sound sits asked (the answer moves Files there); an empty pad: Files stays where the last load was */
@@ -2377,7 +2392,7 @@ static void files_close(rfm_move_t *m)
     K(m)->br_pad = 0, K(m)->br_kept = 0, K(m)->br_own = 0, K(m)->land = 0, K(m)->find_pad = 0;
 }
 /* the jog moved in the list: the row it rests on loaded once it is at rest RFM_MOVE_KIT_LAND_MS */
-static void land_mark(rfm_move_t *m) { K(m)->land = 1, K(m)->land_ms = now(m); }
+static void land_mark(rfm_move_t *m) { K(m)->land = !K(m)->lbr, K(m)->land_ms = now(m); }   /* (the looper's: none) */
 /* a row's sound onto the browse's pad (its Undo kept at the first: one for the whole browse); heard once it comes */
 static void land_load(rfm_move_t *m, const rfm_move_kit_row_t *r, int heard)
 {
@@ -2426,7 +2441,7 @@ int rfm_move_kit_found(rfm_move_t *m, int pad, int place, int depth, const uint3
     if ((place != RFM_MOVE_KIT_PL_SAMPLES && !(place == RFM_MOVE_KIT_PL_CORE && t->core_lib)) || depth < 0 ||
         depth > RFM_MOVE_KIT_DEPTH || !folder || !sel || t->tab != 2)
         return 0;                                       /* (2026-11-26: the root's places only) */
-    t->place = (uint8_t)place, t->psel = (uint8_t)root_of(place), t->depth = (uint8_t)depth;
+    t->place = (uint8_t)place, t->psel = (uint8_t)root_of(m, place), t->depth = (uint8_t)depth;
     for (i = 0; i <= depth; i++)
         t->folder[i] = i ? folder[i] : 0, t->fsel[i] = sel[i] < 0 ? 0 : sel[i];
     t->land_id = id, t->land_pl = (uint8_t)place, t->land = 0;
@@ -2636,6 +2651,114 @@ static void turn(rfm_move_t *m, int d)
         t->turned = 1, t->turn_ms = now(m);
     }
 }
+/* (looper round 2: shared with the looper's browser) Files' click: a place opened, the Back row, a folder opened, a kit
+ * loaded, (the kit's) a folder's actions; 1: a sound's row clicked (*row) */
+static int files_nav(rfm_move_t *m, const rfm_move_kit_row_t **row)
+{
+    rfm_move_kit_t *t = K(m);
+    if (!t->place) {                                    /* a place */
+        t->place = (uint8_t)root_pl(m, clampi(t->psel, 0, root_n(m) - 1)), t->depth = 0, t->folder[0] = 0, t->fsel[0] = 0;
+        rows_forget(m);
+        need(m);
+        land_mark(m);                                   /* (as a folder's: the top row a sound: loaded) */
+        return 0;
+    }
+    if (t->fsel[t->depth] < 0) {                        /* (the owner's browser) the Back row: a folder up, the root */
+        preview_stop(m);
+        if (t->depth)
+            t->depth--, rows_forget(m), need(m);
+        else if (t->place == RFM_MOVE_KIT_PL_KITS)      /* (2026-11-26: the kits not in the root: back to Load) */
+            files_close(m), t->tab = 1, t->place = 0, rows_forget(m);
+        else
+            t->psel = (uint8_t)root_of(m, t->place), t->place = 0, rows_forget(m);
+        return 0;
+    }
+    {
+        const rfm_move_kit_row_t *r = row_get(m, t->place, t->folder[t->depth], t->fsel[t->depth]);
+        if (!r || r->kind == RFM_MOVE_KIT_ROW_NOTE)
+            return 0;                                   /* (not come yet; a dead row: nothing) */
+        if (r->kind == RFM_MOVE_KIT_ROW_DIR && (m->seq.mods & SEQ_M_SHIFT) && !t->lbr) {   /* (3b) Shift: its actions */
+            m->seq.mods_used |= SEQ_M_SHIFT;
+            preview_stop(m);
+            t->fact = 1, t->fai = 1, t->fact_id = r->id;
+            snprintf(t->fact_name, sizeof t->fact_name, "%s", r->name);
+            return 0;
+        }
+        if (r->kind == RFM_MOVE_KIT_ROW_KIT) {          /* (3b) a saved kit: loaded */
+            if (t->lbr)
+                return 0;
+            preview_stop(m);
+            act(m, RFM_MOVE_ACT_KIT_OPEN, 0, 0, 0, RFM_MOVE_KIT_PL_KITS, r->id, 0, 0, NULL);
+            msg(m, r->name, "Loading");
+            return 0;
+        }
+        if (r->kind == RFM_MOVE_KIT_ROW_DIR) {
+            if (t->depth >= RFM_MOVE_KIT_DEPTH)
+                return 0;
+            preview_stop(m);
+            t->depth++, t->folder[t->depth] = r->id, t->fsel[t->depth] = 0;
+            rows_forget(m);
+            need(m);
+            land_mark(m);                               /* (2026-11-26, the owner's: the top row a sound: loaded) */
+            return 0;
+        }
+        *row = r;
+        return 1;
+    }
+}
+/* ---- (looper round 2, the owner's: "load on takes from the sampler or load in a sample from files") the same Files
+ * for the looper: its state, rows and screen; the root Takes (with the take library), My Samples, the Move Library;
+ * no landing (a sound is the looper's only when clicked) */
+void rfmv_kit_lbr_open(rfm_move_t *m)
+{
+    rfm_move_kit_t *t = K(m);
+    t->lbr = 1, t->place = 0, t->psel = 0, t->depth = 0, t->fact = 0, t->land = 0;
+    rows_forget(m);
+    t->br_ms = 0;
+}
+void rfmv_kit_lbr_close(rfm_move_t *m)
+{
+    rfm_move_kit_t *t = K(m);
+    if (!t->lbr)
+        return;
+    t->lbr = 0, t->place = 0, t->depth = 0, t->land = 0;
+    rows_forget(m);
+}
+void rfmv_kit_lbr_turn(rfm_move_t *m, int d) { files_turn(m, d); }
+int rfmv_kit_lbr_click(rfm_move_t *m, int *place, uint32_t *id, char *name, int cap)
+{
+    const rfm_move_kit_row_t *r = NULL;
+    if (!files_nav(m, &r) || !r)
+        return 0;
+    *place = m->kit.place, *id = r->id;
+    snprintf(name, (size_t)cap, "%s", r->name);
+    return 1;
+}
+int rfmv_kit_lbr_back(rfm_move_t *m)                    /* 0: closed */
+{
+    rfm_move_kit_t *t = K(m);
+    if (t->depth)
+        t->depth--, rows_forget(m), need(m);
+    else if (t->place)
+        t->psel = (uint8_t)root_of(m, t->place), t->place = 0, rows_forget(m);
+    else {
+        rfmv_kit_lbr_close(m);
+        return 0;
+    }
+    return 1;
+}
+static void files_screen(const rfm_move_t *m, mr_canvas_t *cv);
+void rfmv_kit_lbr_screen(const rfm_move_t *m, mr_canvas_t *cv) { files_screen(m, cv); }
+int rfmv_kit_lbr_timed(const rfm_move_t *m) { return m->kit.lbr && (m->kit.br_ms || m->kit.ask_i != NOASK); }
+void rfmv_kit_lbr_poll(rfm_move_t *m)
+{
+    rfm_move_kit_t *t = K(m);
+    const uint32_t key = t->lbr ? 1u | (uint32_t)t->place << 1 | (uint32_t)t->depth << 4 |
+                                      (uint32_t)(uint16_t)(t->place ? t->fsel[t->depth] : t->psel) << 8 : 0;
+    const uint32_t f = t->place ? t->folder[t->depth] : 0;
+    if (t->lbr && (key != t->mq_key || f != t->mq_f))     /* (the marquee from the start) */
+        t->mq_key = key, t->mq_f = f, t->mq_ms = now(m);
+}
 static void click(rfm_move_t *m)
 {
     rfm_move_kit_t *t = K(m);
@@ -2721,50 +2844,10 @@ static void click(rfm_move_t *m)
         }
         return;
     }
-    if (!t->place) {                                    /* a place */
-        t->place = (uint8_t)root_pl(clampi(t->psel, 0, root_n(m) - 1)), t->depth = 0, t->folder[0] = 0, t->fsel[0] = 0;
-        rows_forget(m);
-        need(m);
-        land_mark(m);                                   /* (as a folder's: the top row a sound: loaded) */
-        return;
-    }
-    if (t->fsel[t->depth] < 0) {                        /* (the owner's browser) the Back row: a folder up, the root */
-        preview_stop(m);
-        if (t->depth)
-            t->depth--, rows_forget(m), need(m);
-        else if (t->place == RFM_MOVE_KIT_PL_KITS)      /* (2026-11-26: the kits not in the root: back to Load) */
-            files_close(m), t->tab = 1, t->place = 0, rows_forget(m);
-        else
-            t->psel = (uint8_t)root_of(t->place), t->place = 0, rows_forget(m);
-        return;
-    }
     {
-        const rfm_move_kit_row_t *r = row_get(m, t->place, t->folder[t->depth], t->fsel[t->depth]);
-        if (!r || r->kind == RFM_MOVE_KIT_ROW_NOTE)
-            return;                                     /* (not come yet; a dead row: nothing) */
-        if (r->kind == RFM_MOVE_KIT_ROW_DIR && (m->seq.mods & SEQ_M_SHIFT)) {   /* (3b) Shift: its actions */
-            m->seq.mods_used |= SEQ_M_SHIFT;
-            preview_stop(m);
-            t->fact = 1, t->fai = 1, t->fact_id = r->id;
-            snprintf(t->fact_name, sizeof t->fact_name, "%s", r->name);
+        const rfm_move_kit_row_t *r = NULL;
+        if (!files_nav(m, &r))
             return;
-        }
-        if (r->kind == RFM_MOVE_KIT_ROW_KIT) {          /* (3b) a saved kit: loaded */
-            preview_stop(m);
-            act(m, RFM_MOVE_ACT_KIT_OPEN, 0, 0, 0, RFM_MOVE_KIT_PL_KITS, r->id, 0, 0, NULL);
-            msg(m, r->name, "Loading");
-            return;
-        }
-        if (r->kind == RFM_MOVE_KIT_ROW_DIR) {
-            if (t->depth >= RFM_MOVE_KIT_DEPTH)
-                return;
-            preview_stop(m);
-            t->depth++, t->folder[t->depth] = r->id, t->fsel[t->depth] = 0;
-            rows_forget(m);
-            need(m);
-            land_mark(m);                               /* (2026-11-26, the owner's: the top row a sound: loaded) */
-            return;
-        }
         {                                               /* a sound: kept on the chosen pad (round A: loaded as the
                                                          * jog landed; not yet: now), Files closed: the page */
             char pn[8];
@@ -2808,7 +2891,7 @@ int rfmv_kit_back(rfm_move_t *m)
         else if (t->place == RFM_MOVE_KIT_PL_KITS)      /* (2026-11-26: the kits not in the root: back to Load) */
             files_close(m), t->tab = 1, t->place = 0, rows_forget(m);
         else if (t->place)
-            t->psel = (uint8_t)root_of(t->place), t->place = 0, rows_forget(m);
+            t->psel = (uint8_t)root_of(m, t->place), t->place = 0, rows_forget(m);
         else
             files_close(m), t->tab = 0;
     } else if (t->tab == 1)
@@ -4194,9 +4277,9 @@ static void files_screen(const rfm_move_t *m, mr_canvas_t *cv)
     if (!t->place) {                                    /* the root (2026-11-26): My Samples, the Move Library */
         for (i = 0; i < root_n(m); i++) {
             if (i == t->psel)
-                brow_sel(m, cv, BR_H + off, root_name(i));
+                brow_sel(m, cv, BR_H + off, root_name(m, i));
             else
-                brow(cv, BR_H + (i - t->psel) * BR_H + off, root_name(i));
+                brow(cv, BR_H + (i - t->psel) * BR_H + off, root_name(m, i));
         }
         chosen = &I_TRR;
     } else {                                            /* Back first (visual row 0), then the folder's own */
@@ -5111,7 +5194,7 @@ int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
     } else if (t->tab == 2) {
         const rfm_move_kit_row_t *r = t->place ? row_get(m, t->place, t->folder[t->depth], t->fsel[t->depth]) : NULL;
         if (!t->place)
-            snprintf(o, (size_t)cap, "%s", root_name(t->psel));
+            snprintf(o, (size_t)cap, "%s", root_name(m, t->psel));
         else if (t->known && !t->total)
             snprintf(o, (size_t)cap, "Empty");
         else if (r)

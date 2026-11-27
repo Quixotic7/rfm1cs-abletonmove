@@ -827,13 +827,13 @@ static void test_file(void)
                                                          * since 0.5.0's 128 FX values, 39416
                                                          * since 0.4.0's FX setup, 39200
                                                          * before: the web had 39072 written down) */
-    CHECK(RFM1CS_FILE_MAX == 8 + 32 * (10 + 55204));   /* (0.12.0: 40396, version 8's launch settings; 0.13.0: 40572,
+    CHECK(RFM1CS_FILE_MAX == 8 + 32 * (10 + 55460));   /* (0.12.0: 40396, version 8's launch settings; 0.13.0: 40572,
                                                          * version 9's firmwares; stage 3a: 43524, version 11's kit;
                                                          * stage 3b: 43684, version 12's; round B: 43812, version 14's; pages v2: 44612, version 15's;
                                                          * 2026-11-26: 48708, version 16's 8-byte notes; 48740,
                                                          * version 17's Scan; 51300, version 18's original places; 55204,
-                                                         * version 19's looper) */
-    bad_file(g, RFM1CS_FILE_MAX + 1, "Not a Move project file: it is 1766857 bytes, more than a full set (1766856).");
+                                                         * version 19's looper; 55460, version 20's markers) */
+    bad_file(g, RFM1CS_FILE_MAX + 1, "Not a Move project file: it is 1775049 bytes, more than a full set (1775048).");
     MUT(g[40] ^= 0x55, "Not a Move project file: project 1 (slot 4) is damaged.");
     bad_file(f, 8, "Not a Move project file: project 1 is cut off.");
     bad_file(f, 0, "Not a Move project file: it does not start with RMVP.");

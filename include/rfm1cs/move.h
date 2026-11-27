@@ -228,7 +228,7 @@ enum {
 /* (0.15.0, the owner's 2026-11-24) the sampler app (README "The sampler"; only with RFM_MOVE_CAP_SAMPLER):
  *  - SMP_SET: index the setting (RFM_MOVE_SMP_*), value its value: Source RFM_MOVE_SMP_SRC_*, Mode RFM_MOVE_SMP_M_*,
  *    Length the bars (0 Open; in Capture mode Open is "Auto": as much as the buffer holds), Threshold dB -60..0, Input
- *    level dB -24..24, Monitor 0 / 1, To RFM_MOVE_SMP_TO_*. Sent at every change, and once for each setting when the
+ *    level dB -24..24, Monitor 0 Off / 1 On / 2 Auto (looper round 2: while an Input recording is armed or runs), To RFM_MOVE_SMP_TO_*. Sent at every change, and once for each setting when the
  *    capability is set (rfm_move_fw_caps) or the host asks (rfm_move_smp_sync, after settings it loaded itself).
  *  - SMP_PRESS: the record key (Sample, in the app) pressed: value the mode (as SMP_SET last said). Sent at the press,
  *    no release. The host's recorder does what the mode means (Capture: keep the buffer; Bars: arm, start on the bar,
@@ -382,12 +382,24 @@ enum {
  *  - LOOP_LOAD: index the slot, data / len its path (RFM_MOVE_KIT_OWN "@/Loops/..": the project's own folder), value
  *    its bars, take its tempo x 10 (as recorded); NULL: emptied (its voice stops). Answer: rfm_move_loop_loaded
  *  - LOOP_COPY: index the target slot, take the source slot: the same audio (no new file). Answer: rfm_move_loop_loaded
- *  - MIX with slot RFM_MOVE_LOOP_SLOT (4): the Loops strip (the Mixer's fifth): level, pan, sends 1..3 */
+ *  - MIX with slot RFM_MOVE_LOOP_SLOT (4): the Loops strip (the Mixer's fifth): level, pan, sends 1..3
+ *  - (round 2) LOOP_SET of RFM_MOVE_LOOP_P_MSTART / _MEND: the value in take (0..RFM_MOVE_LOOP_MK_ONE), value 0
+ *  - (round 2) LOOP_FILE: index the slot, value the place (RFM_MOVE_KIT_PL_TAKES, _SAMPLES, _CORE), take the row's id
+ *    (as the kit's Files rows): the host reads the file (any the kit reads, at the engine's rate), copies it into the
+ *    project's Loops/ folder (the original never changed), its bars its length at the tempo now rounded to whole bars
+ *    (1 at least; value of from: the tempo x 10). Answer: rfm_move_loop_recorded (as a recording's)
+ *  - (round 2) LOOP_PEAKS: index the slot, from / count its frames, value the columns: rfm_move_loop_peaks (the
+ *    markers' close-up)
+ *  - (round 2) LOOP_DUB: index the slot, down 1 overdub on (its lane's source layered onto it cycle by cycle from the
+ *    next cycle's start), 0 off (the layer kept: one Undo, LOOP_DUB down 2 brings the loop before it back) */
 #define RFM_MOVE_ACT_LOOP_REC 90
 #define RFM_MOVE_ACT_LOOP_LAUNCH 91
 #define RFM_MOVE_ACT_LOOP_SET 92
 #define RFM_MOVE_ACT_LOOP_LOAD 93
 #define RFM_MOVE_ACT_LOOP_COPY 94
+#define RFM_MOVE_ACT_LOOP_FILE 95
+#define RFM_MOVE_ACT_LOOP_PEAKS 96
+#define RFM_MOVE_ACT_LOOP_DUB 97
 enum { RFM_MOVE_LOOP_R_START, RFM_MOVE_LOOP_R_END, RFM_MOVE_LOOP_R_CANCEL };
 #define RFM_MOVE_LOOP_LANES 4
 #define RFM_MOVE_LOOP_SCENES 8
@@ -396,17 +408,26 @@ enum { RFM_MOVE_LOOP_R_START, RFM_MOVE_LOOP_R_END, RFM_MOVE_LOOP_R_CANCEL };
 #define RFM_MOVE_LOOP_SLOT 4                            /* MIX's slot for the Loops strip (the Mixer's fifth) */
 #define RFM_MOVE_LOOP_PATH 96                           /* a loop's path with its NUL ("@/Loops/1-1 120bpm 4b.wav") */
 #define RFM_MOVE_LOOP_PEAKS 64                          /* a loop's wave: its whole recording */
-#define RFM_MOVE_LOOP_STEPS 16                          /* Start and Length are in steps, 16 a bar */
+#define RFM_MOVE_LOOP_STEPS 16                          /* Length is in steps, 16 a bar */
+#define RFM_MOVE_LOOP_MK_ONE 16777216                   /* (round 2) a marker's whole sound (2^24: sample-accurate to
+                                                         * 16 M frames) */
+#define RFM_MOVE_LOOP_MAX_STEPS 1024                    /* (round 2) Length (Steps) 1..1024 */
 #define RFM_MOVE_LOOP_MAX_BARS 64
 #define RFM_MOVE_LOOP_SLIDE_MS 400                      /* a slide down a column: the pad below pressed this soon */
-/* a loop's settings (LOOP_SET's param): Start (steps 0.., the loop's own start, wrapping round the recording), Length
- * (steps 1..bars x 16: the part played), Pitch (cents -2400..2400: Repitch, still on the bar), Reverse 0/1, Warp
- * (RFM_MOVE_LOOP_W_*), Level 0..127 (100 = 0 dB), Pan 0..127 (64 centre), Send 1..3 0..127, Mute 0/1 */
+/* a loop's settings (LOOP_SET's param): Start (round 2: unused, 0; version 19's step offset becomes the markers),
+ * Length (round 2: Steps 1..RFM_MOVE_LOOP_MAX_STEPS: the markers' region fills exactly this many steps at the tempo
+ * now), Pitch (cents -2400..2400), Reverse 0/1, Warp (RFM_MOVE_LOOP_W_*), Level 0..127 (100 = 0 dB), Pan 0..127 (64
+ * centre), Send 1..3 0..127, Mute 0/1, (round 2) MStart / MEnd: the region's markers 0..RFM_MOVE_LOOP_MK_ONE of the
+ * sound (start < end; sent in LOOP_SET's take) */
 enum { RFM_MOVE_LOOP_P_START, RFM_MOVE_LOOP_P_LENGTH, RFM_MOVE_LOOP_P_PITCH, RFM_MOVE_LOOP_P_REVERSE, RFM_MOVE_LOOP_P_WARP,
        RFM_MOVE_LOOP_P_LEVEL, RFM_MOVE_LOOP_P_PAN, RFM_MOVE_LOOP_P_SEND1, RFM_MOVE_LOOP_P_SEND2, RFM_MOVE_LOOP_P_SEND3,
-       RFM_MOVE_LOOP_P_MUTE, RFM_MOVE_LOOP_P_N };
-enum { RFM_MOVE_LOOP_W_REPITCH, RFM_MOVE_LOOP_W_OFF, RFM_MOVE_LOOP_W_N };   /* Warp: Repitch (the song's tempo), Off
-                                                         * (its own rate, not on the song's position) */
+       RFM_MOVE_LOOP_P_MUTE, RFM_MOVE_LOOP_P_MSTART, RFM_MOVE_LOOP_P_MEND, RFM_MOVE_LOOP_P_N };
+#define RFM_MOVE_LOOP_P_N_V19 11
+/* Warp: Repitch (the region resampled to fill its steps: the pitch follows), Off (its own rate, round its region, not
+ * on the song's position), (round 2) Grains, Beats (the kit's time-stretch engines: the region fills its steps, the
+ * pitch kept) */
+enum { RFM_MOVE_LOOP_W_REPITCH, RFM_MOVE_LOOP_W_OFF, RFM_MOVE_LOOP_W_GRAINS, RFM_MOVE_LOOP_W_BEATS, RFM_MOVE_LOOP_W_N };
+#define RFM_MOVE_LOOP_COUNTINS 3                        /* (round 2) Count-in: Off, 1 bar, 2 bars */
 /* a lane's settings (LOOP_SET at RFM_MOVE_LOOP_LANE0 + lane): Source (RFM_MOVE_LOOP_SRC_*), Length (an index:
  * Open, 1, 2, 4, 8, 16 bars), Level 0..127 (100 = 0 dB) */
 enum { RFM_MOVE_LOOP_L_SOURCE, RFM_MOVE_LOOP_L_LENGTH, RFM_MOVE_LOOP_L_LEVEL, RFM_MOVE_LOOP_L_N };
@@ -421,10 +442,13 @@ enum { RFM_MOVE_LOOP_SRC_PLAYED, RFM_MOVE_LOOP_SRC_TRACK1, RFM_MOVE_LOOP_SRC_TRA
 enum { RFM_MOVE_LOOP_EMPTY, RFM_MOVE_LOOP_LOADING, RFM_MOVE_LOOP_OK, RFM_MOVE_LOOP_MISSING, RFM_MOVE_LOOP_FAILED,
        RFM_MOVE_LOOP_TOO_LONG, RFM_MOVE_LOOP_NOTHING };   /* (NOTHING: a recording ended with no whole bar) */
 enum { RFM_MOVE_LOOP_RS_NONE, RFM_MOVE_LOOP_RS_ARMED, RFM_MOVE_LOOP_RS_RECORDING, RFM_MOVE_LOOP_RS_ENDING };
-#define RFM_MOVE_LOOP_SLOT_BYTES (RFM_MOVE_LOOP_PATH + 1 + 2 + 2 * RFM_MOVE_LOOP_P_N)   /* (121) */
+#define RFM_MOVE_LOOP_SLOT_BYTES_V19 (RFM_MOVE_LOOP_PATH + 1 + 2 + 2 * RFM_MOVE_LOOP_P_N_V19)   /* (121) */
+#define RFM_MOVE_LOOP_SLOT_BYTES (RFM_MOVE_LOOP_SLOT_BYTES_V19 + 8)   /* (129, version 20: the markers u32) */
 /* (version 19) the project's looper part: { the part's own version 1, the chosen slot, the page, the strip (level, pan,
- * sends 1..3), 9 zero }, 4 lanes x { source, length, level, 0 }, 32 slots x { path, bars, bpm10 u16, settings i16 } */
-#define RFM_MOVE_LOOP_BYTES (16 + RFM_MOVE_LOOP_LANES * 4 + RFM_MOVE_LOOP_SLOTS * RFM_MOVE_LOOP_SLOT_BYTES)   /* (3904) */
+ * sends 1..3), (round 2, version 20) the Count-in 0..2, the takeover's on 0/1, 7 zero }, 4 lanes x { source, length,
+ * level, 0 }, 32 slots x { path, bars, bpm10 u16, settings 0..10 i16, (version 20) MStart, MEnd u32 } */
+#define RFM_MOVE_LOOP_BYTES_V19 (16 + RFM_MOVE_LOOP_LANES * 4 + RFM_MOVE_LOOP_SLOTS * RFM_MOVE_LOOP_SLOT_BYTES_V19)   /* (3904) */
+#define RFM_MOVE_LOOP_BYTES (16 + RFM_MOVE_LOOP_LANES * 4 + RFM_MOVE_LOOP_SLOTS * RFM_MOVE_LOOP_SLOT_BYTES)   /* (4160) */
 #define RFM_MOVE_POWER_DEBOUNCE_MS 120                  /* a press this soon after the last one taken: a bounce */
 #define RFM_MOVE_KIT_OWN "@/"
 #define RFM_MOVE_KIT_LAND_MS 120                        /* Files: the jog at rest so long on a sound: it is on the pad */
@@ -567,7 +591,7 @@ typedef struct {
                                                          * byte, bit 1 (no new version: older cores read bit 0 only) */
     /* (version 8, 0.15.0) the sampler app's settings, by RFM_MOVE_SMP_*: the source (RFM_MOVE_SMP_SRC_*), the mode
      * (RFM_MOVE_SMP_M_*), the length (an index: Open, 1, 2, 4, 8, 16, 32 bars), the threshold -60..0 dB, the input
-     * level -24..24 dB, the monitor 0 / 1, where a take goes (RFM_MOVE_SMP_TO_*). Older images load the defaults */
+     * level -24..24 dB, the monitor 0 / 1 / 2 (Auto), where a take goes (RFM_MOVE_SMP_TO_*). Older images load the defaults */
     int8_t smp[RFM_MOVE_SMP_N];
     /* (version 9, the kit: stage 3a) the view Track 4 was left on: 0 the Mixer or Routing (as fx_page says), 1 the Kit
      * view. Older images load 0 */
@@ -906,7 +930,7 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_SEQ_BPM10_MAX 3000
 #define RFM_MOVE_PROJECTS 32
 #define RFM_MOVE_SAMPLE_BARS 60                         /* the Sampling waveform's bars (2 px apart) */
-#define RFM_MOVE_PROJECT_VERSION 19                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
+#define RFM_MOVE_PROJECT_VERSION 20                     /* (versions 1..10 load too; 5 adds FX setup, 6 its 128
                                                          * values a slot, 7 the firmwares' MIDI routes, 8 the launch
                                                          * quantization and each clip's launch settings, 9 (0.13.0) the
                                                          * firmwares: each slot's id, level, settings and track, the
@@ -924,7 +948,8 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
                                                          * (2026-11-26) Granular's Scan: 46 settings a pad, 18
                                                          * (2026-11-26) each pad's original place (the kit part's
                                                          * end: 16 paths), 19 (looper stage 1) the looper
-                                                         * (RFM_MOVE_LOOP_BYTES after the kit's part) */
+                                                         * (RFM_MOVE_LOOP_BYTES after the kit's part), 20 (looper
+                                                         * round 2) the loops' markers, the Count-in, the takeover */
 #define RFM_MOVE_AUTOSAVE_MS 2000                       /* an edited project is saved this long after the last edit */
 /* the blob: header 24, tracks 16 x 4, clip lengths 256 x 2, notes 2 + n x 7 (version 16: x 8), locks 2 + n x 4, (version 2) loop
  * starts 256, clips made 32, track rates 16, grooves 16, arps 16 x 7, FNV-1a 4 */
@@ -977,7 +1002,8 @@ enum { RFM_MOVE_FN_NONE, RFM_MOVE_FN_RESTART, RFM_MOVE_FN_REVERSE, RFM_MOVE_FN_F
 #define RFM_MOVE_PROJECT_EXT_V15 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V15)
 #define RFM_MOVE_PROJECT_EXT_V17 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES_V17)
 #define RFM_MOVE_PROJECT_EXT_V18 (RFM_MOVE_PROJECT_EXT_V10 + RFM_MOVE_KIT_BYTES)
-#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V18 + RFM_MOVE_LOOP_BYTES)   /* (version 19: the looper) */
+#define RFM_MOVE_PROJECT_EXT_V19 (RFM_MOVE_PROJECT_EXT_V18 + RFM_MOVE_LOOP_BYTES_V19)   /* (version 19: the looper) */
+#define RFM_MOVE_PROJECT_EXT (RFM_MOVE_PROJECT_EXT_V18 + RFM_MOVE_LOOP_BYTES)   /* (version 20: its markers) */
 #define RFM_MOVE_PROJECT_FIXED (24 + RFM_MOVE_SEQ_TRACKS * 4 + RFM_MOVE_SEQ_CLIPS * 2 + 2 + 2 + RFM_MOVE_PROJECT_EXT + 4)
 #define RFM_MOVE_PROJECT_MAX (RFM_MOVE_PROJECT_FIXED + RFM_MOVE_SEQ_NOTES * 8 + RFM_MOVE_SEQ_LOCKS * 4)
 enum { RFM_MOVE_CLOCK_AUTO = 0, RFM_MOVE_CLOCK_INTERNAL = 1, RFM_MOVE_CLOCK_EXTERNAL = 2 };
@@ -1069,6 +1095,7 @@ typedef struct {
     int32_t T;                                          /* song tick while playing */
     uint8_t playing, start_pending, following, ext_run;   /* start_pending 1 now, 2 at the timeline's next bar, 3 count-in */
     int16_t count_in;                                   /* start_pending 3: ticks to go (Rec from stopped: a bar) */
+    uint8_t cin_go;                                     /* (looper round 2) the count-in's first tick not run yet */
     int32_t ext_clocks;                                 /* MIDI clocks since the reference (-1 before the first) */
     uint64_t ext_last_us, ext_win_us;
     int32_t ext_win_n;
@@ -1708,6 +1735,8 @@ typedef struct {                                        /* (kit.c) */
     uint32_t br_ms;                                     /* (pages v2) the browser's slide: since, its way (+1 down) */
     int8_t br_dir;
     uint8_t core_lib;                                   /* (2026-11-26) the host has the Move Library (PL_CORE) */
+    uint8_t lbr;                                        /* (looper round 2) Files open for the looper (its rows, its
+                                                         * screen; the root Takes, My Samples, the Move Library) */
     uint32_t mq_key, mq_f, mq_ms;                       /* .. the chosen row's marquee: the row, since */
     uint32_t st_ms[16];                                 /* (2026-11-26) each step's press (its click gated: a hold
                                                          * toggles nothing) */
@@ -1787,7 +1816,7 @@ typedef struct {                                        /* a slot (the project's
     uint8_t bars;                                       /* the bars recorded */
     uint16_t bpm10;                                     /* the tempo it was recorded at x 10 */
     uint32_t frames, rate;                              /* (not saved) */
-    int16_t v[RFM_MOVE_LOOP_P_N];
+    int32_t v[RFM_MOVE_LOOP_P_N];                       /* (round 2: int32, the markers 0..MK_ONE) */
     uint8_t npk, pk[RFM_MOVE_LOOP_PEAKS];               /* (not saved) its whole wave */
 } rfm_move_loop_slot_t;
 typedef struct {                                        /* (RAM, looper.c) */
@@ -1837,6 +1866,26 @@ typedef struct {                                        /* (RAM, looper.c) */
     uint8_t tab_slot, tab_kdown;
     int8_t tab_kpop;
     uint32_t tab_kpop_ms;
+    /* (round 2) */
+    uint8_t cin;                                        /* (saved) Count-in: 0 Off, 1, 2 bars */
+    uint8_t br;                                         /* the browser (the kit's Files) open for the chosen slot */
+    uint8_t ld_slot;                                    /* a file asked into a slot: its slot + 1 (its answer: "Loaded") */
+    uint8_t zslot;                                      /* the markers' close-up: the peaks given (slot + 1) */
+    uint32_t zfrom, zcount, za_from, za_count;
+    uint8_t zn, za_slot, zpk[RFM_MOVE_LOOP_PEAKS];
+    /* (round 2, item 9) the step keys' looper takeover: 4 lanes of 4 keys (pedal, overdub, replace, next) */
+    uint8_t to_on;                                      /* (saved) on */
+    uint8_t to_dub[RFM_MOVE_LOOP_LANES];                /* a lane's overdub on: its slot + 1 */
+    uint8_t to_target[RFM_MOVE_LOOP_LANES];             /* Next: the lane's slot ready to record (scene + 1) */
+    uint16_t to_down;                                   /* the steps the takeover took */
+    uint32_t to_ms;                                     /* its overlay: since this */
+    char to_msg[20];
+    uint32_t to_tap_ms[RFM_MOVE_LOOP_LANES];            /* key 4's tap (a double tap: Stop) */
+    uint32_t card_ms;                                   /* the takeover's full-screen card since this */
+    uint8_t to_prev[RFM_MOVE_LOOP_LANES];               /* Next's target before key 4's first tap (a double: Stop) */
+    uint32_t dubq;                                      /* an overdub's answer on its way: the slot's bit (its
+                                                         * settings kept) */
+    uint8_t to_lvl;                                     /* a group key held + the volume knob: its lane + 1 */
 } rfm_move_loop_t;
 
 /* ---- the state */
@@ -2626,6 +2675,11 @@ int rfm_move_loop_mix(const rfm_move_t *m, int which);  /* the Loops strip (RFM_
 /* the paths the looper refers to: every slot's and the Undo's. The host keeps those files of the project's Loops
  * folder when it cleans it; the count */
 int rfm_move_loop_refs(const rfm_move_t *m, const char **out, int cap);
+/* (round 2) LOOP_PEAKS's answer: the slot's frames [from, from + count) as n columns 0..255. Returns 1 when shown */
+int rfm_move_loop_peaks(rfm_move_t *m, int slot, uint32_t from, uint32_t count, int n, const uint8_t *peaks);
+/* (round 2) the Count-in a looper recording armed while stopped asks of Play: its bars (0: none, the sequencer's own
+ * then); the sequencer starts that many bars later, so everything starts together after it */
+int rfm_move_loop_count_in(const rfm_move_t *m);
 
 /* ---- the mapping, for hosts' help pages and the tests */
 int rfm_move_pad_key(int pad);                          /* FM-1 mode: the key a pad plays, -1 none */

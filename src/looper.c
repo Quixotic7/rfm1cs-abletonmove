@@ -52,6 +52,8 @@ static icon_t I_PLAY = { "...........", "..##.......", "..####.....", "..######.
                          "..######...", "..####.....", "..##.......", "...........", "..........." };
 static icon_t I_STOP = { "...........", "...........", "..#######..", "..#######..", "..#######..", "..#######..",
                          "..#######..", "..#######..", "..#######..", "...........", "..........." };
+static icon_t I_CIN = { "....###....", "....#.#....", "...#...#...", "...#..##...", "..#..#..#..", "..#.#...#..",
+                        ".#.......#.", ".#.......#.", "#.........#", "###########", "..........." };
 static icon_t I_IN = { "....###....", "....###....", "....###....", "....###....", "..#.###.#..", "..#.###.#..",
                        "...#...#...", "....###....", ".....#.....", "...#####...", "..........." };
 static icon_t PI_MIX = { ".....#.....", ".....#.....", ".....#.....", "...#####...", "...#####...", ".....#.....",
@@ -92,18 +94,25 @@ static icon_t *const PG_ICON[PG_N] = { &PI_LANES, &I_LOOP, &PI_REC, &PI_MIX, &PI
 static const char *const PG_NAME[PG_N] = { "Loops", "Loop", "Record", "Loop Mix", "Looper Mix" };
 /* a knob's job on a page: a slot's setting (0..), a lane's (KL_SOURCE.. of the chosen slot's lane), the lanes' levels
  * (KL_LVL0 + lane), the strip's (KS_*), -1 dark and dead */
-enum { KL_SOURCE = 100, KL_LENGTH, KL_LVL0 = 110, KS_LEVEL = 120, KS_PAN, KS_SEND1, KS_SEND2, KS_SEND3 };
+/* (round 2) KG_*: the looper's own (Count-in, the step keys' takeover) and the sampler's input settings (its In Level,
+ * Monitor: one setting, shown in both places) */
+enum { KL_SOURCE = 100, KL_LENGTH, KG_CIN, KG_INLVL, KG_MON, KG_STEPS, KL_LVL0 = 110, KS_LEVEL = 120, KS_PAN, KS_SEND1,
+       KS_SEND2, KS_SEND3 };
 static const int16_t PAGE_K[PG_N][8] = {
     { KL_LVL0, KL_LVL0 + 1, KL_LVL0 + 2, KL_LVL0 + 3, -1, -1, -1, -1 },
-    { RFM_MOVE_LOOP_P_START, RFM_MOVE_LOOP_P_LENGTH, RFM_MOVE_LOOP_P_PITCH, RFM_MOVE_LOOP_P_REVERSE, RFM_MOVE_LOOP_P_WARP,
-      -1, -1, -1 },                                     /* (6: Launch mode, stage 2) */
-    { KL_SOURCE, KL_LENGTH, -1, -1, -1, -1, -1, -1 },
+    { RFM_MOVE_LOOP_P_MSTART, RFM_MOVE_LOOP_P_MEND, RFM_MOVE_LOOP_P_LENGTH, RFM_MOVE_LOOP_P_PITCH, RFM_MOVE_LOOP_P_REVERSE,
+      RFM_MOVE_LOOP_P_WARP, -1, -1 },                   /* (round 2: the markers, Steps; 7: Launch mode, stage 2) */
+    { KL_SOURCE, KL_LENGTH, KG_CIN, KG_INLVL, KG_MON, KG_STEPS, -1, -1 },
     { RFM_MOVE_LOOP_P_LEVEL, RFM_MOVE_LOOP_P_PAN, RFM_MOVE_LOOP_P_SEND1, RFM_MOVE_LOOP_P_SEND2, RFM_MOVE_LOOP_P_SEND3,
       RFM_MOVE_LOOP_P_MUTE, -1, -1 },
     { KL_LVL0, KL_LVL0 + 1, KL_LVL0 + 2, KL_LVL0 + 3, KS_LEVEL, KS_PAN, KS_SEND1, KS_SEND2 },
 };
-static const char *const P_NAME[RFM_MOVE_LOOP_P_N] = { "Start", "Length", "Pitch", "Reverse", "Warp", "Level", "Pan",
-                                                       "Send 1", "Send 2", "Send 3", "Mute" };
+static const char *const P_NAME[RFM_MOVE_LOOP_P_N] = { "Offset", "Steps", "Pitch", "Reverse", "Warp", "Level", "Pan",
+                                                       "Send 1", "Send 2", "Send 3", "Mute", "Start", "End" };
+/* (round 2) Warp's values in the knob's order (Off, Repitch, then the stretch engines) */
+static const uint8_t WARP_ORDER[RFM_MOVE_LOOP_W_N] = { RFM_MOVE_LOOP_W_OFF, RFM_MOVE_LOOP_W_REPITCH, RFM_MOVE_LOOP_W_GRAINS,
+                                                       RFM_MOVE_LOOP_W_BEATS };
+static const char *const WARP_NAME[RFM_MOVE_LOOP_W_N] = { "Repitch", "Off", "Grains", "Beats" };
 static const char *const SRC_NAME[RFM_MOVE_LOOP_SRC_N] = { "Played", "Track 1", "Track 2", "Track 3", "Kit", "Input",
                                                            "Mix", "Loops" };
 static const uint8_t LEN_BARS[RFM_MOVE_LOOP_LENGTHS] = { 0, 1, 2, 4, 8, 16 };
@@ -134,18 +143,21 @@ int rfm_move_loop_shown(const rfm_move_t *m) { return rfmv_loop_shown(m) && !m->
 static int running(const rfm_move_t *m) { return m->seq.playing || m->seq.start_pending; }
 static void slot_name(int s, char *o, int cap) { snprintf(o, (size_t)cap, "%d-%d", lane_of(s) + 1, scene_of(s) + 1); }
 static int loop_steps(const rfm_move_loop_slot_t *d) { return d->bars ? d->bars * RFM_MOVE_LOOP_STEPS : RFM_MOVE_LOOP_STEPS; }
-static void defaults(int16_t v[RFM_MOVE_LOOP_P_N], int bars)
+static void defaults(int32_t v[RFM_MOVE_LOOP_P_N], int bars)
 {
-    memset(v, 0, sizeof(int16_t) * RFM_MOVE_LOOP_P_N);
-    v[RFM_MOVE_LOOP_P_LENGTH] = (int16_t)((bars > 0 ? bars : 1) * RFM_MOVE_LOOP_STEPS);
+    memset(v, 0, sizeof(int32_t) * RFM_MOVE_LOOP_P_N);
+    v[RFM_MOVE_LOOP_P_LENGTH] = (bars > 0 ? bars : 1) * RFM_MOVE_LOOP_STEPS;
     v[RFM_MOVE_LOOP_P_LEVEL] = 100, v[RFM_MOVE_LOOP_P_PAN] = 64;
+    v[RFM_MOVE_LOOP_P_MEND] = RFM_MOVE_LOOP_MK_ONE;     /* (round 2: the whole sound) */
 }
-static int p_min(int p) { return p == RFM_MOVE_LOOP_P_PITCH ? -2400 : p == RFM_MOVE_LOOP_P_LENGTH ? 1 : 0; }
+static int p_min(int p) { return p == RFM_MOVE_LOOP_P_PITCH ? -2400 : p == RFM_MOVE_LOOP_P_LENGTH || p == RFM_MOVE_LOOP_P_MEND ? 1 : 0; }
 static int p_max(const rfm_move_loop_slot_t *d, int p)
 {
     switch (p) {
     case RFM_MOVE_LOOP_P_START: return loop_steps(d) - 1;
-    case RFM_MOVE_LOOP_P_LENGTH: return loop_steps(d);
+    case RFM_MOVE_LOOP_P_LENGTH: return RFM_MOVE_LOOP_MAX_STEPS;
+    case RFM_MOVE_LOOP_P_MSTART: return RFM_MOVE_LOOP_MK_ONE - 1;
+    case RFM_MOVE_LOOP_P_MEND: return RFM_MOVE_LOOP_MK_ONE;
     case RFM_MOVE_LOOP_P_PITCH: return 2400;
     case RFM_MOVE_LOOP_P_REVERSE:
     case RFM_MOVE_LOOP_P_MUTE: return 1;
@@ -176,7 +188,13 @@ static void act(rfm_move_t *m, int kind, int index, int down, int vel, int value
     if (m->fn)
         m->fn(m->ctx, &a);
 }
-static void send_set(rfm_move_t *m, int s, int p) { act(m, RFM_MOVE_ACT_LOOP_SET, s, 0, 0, CSL(m, s)->v[p], p, 0, NULL); }
+static void send_set(rfm_move_t *m, int s, int p)
+{
+    if (p >= RFM_MOVE_LOOP_P_MSTART)                    /* (round 2: a marker in take) */
+        act(m, RFM_MOVE_ACT_LOOP_SET, s, 0, 0, 0, p, (uint32_t)CSL(m, s)->v[p], NULL);
+    else
+        act(m, RFM_MOVE_ACT_LOOP_SET, s, 0, 0, CSL(m, s)->v[p], p, 0, NULL);
+}
 static void send_lane(rfm_move_t *m, int l, int p)
 {
     act(m, RFM_MOVE_ACT_LOOP_SET, RFM_MOVE_LOOP_LANE0 + l, 0, 0, m->loop.lane[l][p], p, 0, NULL);
@@ -316,9 +334,12 @@ void rfmv_loop_clear(rfm_move_t *m)
     t->mix[RFM_MOVE_KIT_MIX_LEVEL] = 100, t->mix[RFM_MOVE_KIT_MIX_PAN] = 64;
     t->cur = 0, t->page = PG_LOOPS;
     t->und = 0, t->und_rec = 0;
+    t->cin = 0, t->to_on = 0;
 }
 static void w16(uint8_t *p, int v) { p[0] = (uint8_t)(v & 0xFF), p[1] = (uint8_t)((v >> 8) & 0xFF); }
 static int r16s(const uint8_t *p) { return (int16_t)(uint16_t)(p[0] | p[1] << 8); }
+static void w32(uint8_t *p, uint32_t v) { w16(p, (int)(v & 0xFFFF)), w16(p + 2, (int)(v >> 16)); }
+static uint32_t r32(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
 void rfmv_loop_write(const rfm_move_t *m, uint8_t *p)
 {
     const rfm_move_loop_t *t = &m->loop;
@@ -327,6 +348,7 @@ void rfmv_loop_write(const rfm_move_t *m, uint8_t *p)
     p[0] = 1, p[1] = t->cur, p[2] = t->page;
     for (j = 0; j < RFM_MOVE_KIT_MIX_N; j++)
         p[3 + j] = t->mix[j];
+    p[8] = t->cin, p[9] = t->to_on;                     /* (version 20) */
     p += 16;
     for (l = 0; l < LANES; l++, p += 4)
         p[0] = t->lane[l][0], p[1] = t->lane[l][1], p[2] = t->lane[l][2];
@@ -338,8 +360,10 @@ void rfmv_loop_write(const rfm_move_t *m, uint8_t *p)
         p[RFM_MOVE_LOOP_PATH - 1] = 0;
         p[RFM_MOVE_LOOP_PATH] = d->bars;
         w16(p + RFM_MOVE_LOOP_PATH + 1, d->bpm10);
-        for (j = 0; j < RFM_MOVE_LOOP_P_N; j++)
+        for (j = 0; j < RFM_MOVE_LOOP_P_N_V19; j++)
             w16(p + RFM_MOVE_LOOP_PATH + 3 + 2 * j, d->v[j]);
+        for (j = 0; j < 2; j++)                         /* (version 20) the markers */
+            w32(p + RFM_MOVE_LOOP_SLOT_BYTES_V19 + 4 * j, (uint32_t)d->v[RFM_MOVE_LOOP_P_MSTART + j]);
     }
 }
 static int str_ok(const uint8_t *p, int cap)            /* printable, NUL padded */
@@ -353,10 +377,11 @@ static int str_ok(const uint8_t *p, int cap)            /* printable, NUL padded
     }
     return end;
 }
-int rfmv_loop_check(const uint8_t *p)
+int rfmv_loop_check(const uint8_t *p, int ver)
 {
+    const int sb = ver >= 20 ? RFM_MOVE_LOOP_SLOT_BYTES : RFM_MOVE_LOOP_SLOT_BYTES_V19;
     int s, l, j;
-    if (p[0] != 1 || p[1] >= NSLOT || p[2] >= PG_N)
+    if (p[0] != 1 || p[1] >= NSLOT || p[2] >= PG_N || (ver >= 20 && (p[8] >= RFM_MOVE_LOOP_COUNTINS || p[9] > 1)))
         return -1;
     for (j = 0; j < RFM_MOVE_KIT_MIX_N; j++)
         if (p[3 + j] > 127)
@@ -365,35 +390,47 @@ int rfmv_loop_check(const uint8_t *p)
     for (l = 0; l < LANES; l++, p += 4)
         if (p[0] >= RFM_MOVE_LOOP_SRC_N || p[1] >= RFM_MOVE_LOOP_LENGTHS || p[2] > 127)
             return -1;
-    for (s = 0; s < NSLOT; s++, p += RFM_MOVE_LOOP_SLOT_BYTES) {
+    for (s = 0; s < NSLOT; s++, p += sb) {
         rfm_move_loop_slot_t d;
         if (!str_ok(p, RFM_MOVE_LOOP_PATH))
             return -1;
-        if (!p[0])
+        if (!p[0]) {                                    /* (an empty slot: zeros) */
+            for (j = 0; j < sb; j++)
+                if (p[j])
+                    return -1;
             continue;
+        }
         if (!p[RFM_MOVE_LOOP_PATH] || p[RFM_MOVE_LOOP_PATH] > RFM_MOVE_LOOP_MAX_BARS)
             return -1;
         d.bars = p[RFM_MOVE_LOOP_PATH];
-        for (j = 0; j < RFM_MOVE_LOOP_P_N; j++) {
+        for (j = 0; j < RFM_MOVE_LOOP_P_N_V19; j++) {
             const int v = r16s(p + RFM_MOVE_LOOP_PATH + 3 + 2 * j);
-            if (v < p_min(j) || v > p_max(&d, j))
+            if (j == RFM_MOVE_LOOP_P_LENGTH && ver < 20 ? v < 1 || v > loop_steps(&d) : v < p_min(j) || v > p_max(&d, j))
+                return -1;
+        }
+        if (ver >= 20) {
+            const uint32_t a = r32(p + RFM_MOVE_LOOP_SLOT_BYTES_V19), b = r32(p + RFM_MOVE_LOOP_SLOT_BYTES_V19 + 4);
+            if (a >= b || b > RFM_MOVE_LOOP_MK_ONE)
                 return -1;
         }
     }
     return 0;
 }
-void rfmv_loop_read(rfm_move_t *m, const uint8_t *p)
+void rfmv_loop_read(rfm_move_t *m, const uint8_t *p, int ver)
 {
     rfm_move_loop_t *t = LP(m);
+    const int sb = ver >= 20 ? RFM_MOVE_LOOP_SLOT_BYTES : RFM_MOVE_LOOP_SLOT_BYTES_V19;
     int s, l, j;
     rfmv_loop_clear(m);
     t->cur = p[1], t->page = p[2];
     for (j = 0; j < RFM_MOVE_KIT_MIX_N; j++)
         t->mix[j] = p[3 + j];
+    if (ver >= 20)
+        t->cin = p[8], t->to_on = p[9];
     p += 16;
     for (l = 0; l < LANES; l++, p += 4)
         t->lane[l][0] = p[0], t->lane[l][1] = p[1], t->lane[l][2] = p[2];
-    for (s = 0; s < NSLOT; s++, p += RFM_MOVE_LOOP_SLOT_BYTES) {
+    for (s = 0; s < NSLOT; s++, p += sb) {
         rfm_move_loop_slot_t *d = &t->slot[s];
         if (!p[0])
             continue;
@@ -401,8 +438,19 @@ void rfmv_loop_read(rfm_move_t *m, const uint8_t *p)
         d->path[RFM_MOVE_LOOP_PATH - 1] = 0;
         d->bars = p[RFM_MOVE_LOOP_PATH];
         d->bpm10 = (uint16_t)r16s(p + RFM_MOVE_LOOP_PATH + 1);
-        for (j = 0; j < RFM_MOVE_LOOP_P_N; j++)
-            d->v[j] = (int16_t)r16s(p + RFM_MOVE_LOOP_PATH + 3 + 2 * j);
+        for (j = 0; j < RFM_MOVE_LOOP_P_N_V19; j++)
+            d->v[j] = r16s(p + RFM_MOVE_LOOP_PATH + 3 + 2 * j);
+        if (ver >= 20)
+            for (j = 0; j < 2; j++)
+                d->v[RFM_MOVE_LOOP_P_MSTART + j] = (int32_t)r32(p + RFM_MOVE_LOOP_SLOT_BYTES_V19 + 4 * j);
+        else {                                          /* (version 19: Start steps into the recording, Length the steps
+                                                         * played: that part as the markers, played over Length's steps) */
+            const int64_t tot = loop_steps(d), st = d->v[RFM_MOVE_LOOP_P_START], len = d->v[RFM_MOVE_LOOP_P_LENGTH];
+            const int64_t e = st + len > tot ? tot : st + len;
+            d->v[RFM_MOVE_LOOP_P_MSTART] = (int32_t)(st * RFM_MOVE_LOOP_MK_ONE / tot);
+            d->v[RFM_MOVE_LOOP_P_MEND] = (int32_t)(e * RFM_MOVE_LOOP_MK_ONE / tot);
+            d->v[RFM_MOVE_LOOP_P_START] = 0;
+        }
         d->st = RFM_MOVE_LOOP_LOADING;
     }
 }
@@ -415,6 +463,10 @@ static void live_reset(rfm_move_t *m)                   /* what was asked or hel
     memset(t->rs, 0, sizeof t->rs);
     t->st_ok = 0, t->copy_src = -1, t->tap_slot = -1, t->kpop = -1, t->lvl = 0;
     t->und = 0, t->und_rec = 0;
+    if (t->br)
+        rfmv_kit_lbr_close(m);
+    t->br = 0, t->ld_slot = 0, t->zslot = 0, t->za_slot = 0;
+    memset(t->to_dub, 0, sizeof t->to_dub), memset(t->to_target, 0, sizeof t->to_target);
 }
 void rfmv_loop_loaded_project(rfm_move_t *m)
 {
@@ -476,6 +528,8 @@ void rfmv_loop_close(rfm_move_t *m, int restore)
     if (!t->on)
         return;
     t->on = 0, t->kpop = -1, t->copy_src = -1, t->down = 0, t->st_down = 0, t->lvl = 0;
+    if (t->br)                                          /* (round 2: the browser closed with the view) */
+        rfmv_kit_lbr_close(m), t->br = 0;
     if (restore && t->prev_ok) {
         if (t->prev_mode != RFM_MOVE_MODE_SEQ)
             rfmv_mode_set(m, t->prev_mode);
@@ -491,9 +545,9 @@ void rfmv_loop_close(rfm_move_t *m, int restore)
 static void choose(rfm_move_t *m, int s, int page_follows)
 {
     rfm_move_loop_t *t = LP(m);
+    (void)page_follows;                                 /* (round 2, the owner's: the page stays; an empty slot's Loop
+                                                         * page shows it empty) */
     t->cur = (uint8_t)(s & (NSLOT - 1));
-    if (page_follows && !has_loop(CSL(m, s)) && (t->page == PG_LOOP || t->page == PG_LOOPMIX))
-        t->page = PG_RECORD;                            /* (an empty slot chosen opens on Record) */
     rfmv_seq_dirty(m);
     touched(m);
 }
@@ -588,7 +642,7 @@ static void tap_mark(rfm_move_t *m, int slot, int kind, int was_dbl)
     t->tap_slot = (int8_t)(was_dbl ? -1 : slot), t->tap_kind = (uint8_t)kind, t->tap_ms = now(m);
 }
 /* a pad's tap on slot s (the gestures card lp_rec_gesture a, lp_launch a) */
-static void slot_tap(rfm_move_t *m, int s)
+static void slot_tap(rfm_move_t *m, int s, int rec_empty)
 {
     const int l = lane_of(s), rs = rec_state(m, s);
     if (rs == RFM_MOVE_LOOP_RS_ARMED) {                 /* (armed: tapped again, it goes) */
@@ -604,7 +658,11 @@ static void slot_tap(rfm_move_t *m, int s)
     if (rs == RFM_MOVE_LOOP_RS_ENDING)
         return;
     if (!has_loop(CSL(m, s))) {
-        rec_start(m, s);
+        if (rec_empty)
+            rec_start(m, s);
+        else                                            /* (round 2, the owner's: off the Record page an empty slot's
+                                                         * tap chooses it; the jog's click loads into it) */
+            choose(m, s, 0), touched(m);
         return;
     }
     choose(m, s, 0);
@@ -735,6 +793,10 @@ static void pad_down(rfm_move_t *m, int p)
     t->down |= 1u << p;
     t->pad_ms[p] = at;
     t->msg_ms = 0;
+    if (t->br) {                                        /* (round 2) the browser open: a pad chooses where it loads */
+        choose(m, s, 0), touched(m);
+        return;
+    }
     if (q->mods & SEQ_M_COPY) {                         /* Copy held: the source, then each slot a target */
         q->mods_used |= SEQ_M_COPY;
         if (t->copy_src < 0) {
@@ -780,7 +842,7 @@ static void pad_down(rfm_move_t *m, int p)
             return;
         }
     }
-    slot_tap(m, s);
+    slot_tap(m, s, t->page == PG_RECORD);
 }
 static void pad_up(rfm_move_t *m, int p)
 {
@@ -815,9 +877,41 @@ static int knob_job(const rfm_move_t *m, int k)
 {
     const rfm_move_loop_t *t = &m->loop;
     const int j = PAGE_K[t->page % PG_N][k & 7];
+    if (t->br)
+        return -1;                                      /* (the browser: no knobs) */
     if (j >= 0 && j < RFM_MOVE_LOOP_P_N && !has_loop(CSL(m, t->cur)))
         return -1;                                      /* (an empty slot: its settings dark) */
+    if ((j == KG_INLVL || j == KG_MON) && !rfmv_smp_cap(m))
+        return -1;
     return j;
+}
+static int warp_rank(int w)
+{
+    int i;
+    for (i = 0; i < RFM_MOVE_LOOP_W_N; i++)
+        if (WARP_ORDER[i] == w)
+            return i;
+    return 0;
+}
+/* (round 2) a marker's frame and back (0..MK_ONE of the sound's frames; 0 frames: of 1024) */
+static uint32_t mk_frames(const rfm_move_loop_slot_t *d) { return d->frames ? d->frames : 1024u; }
+static uint32_t mk_frame(const rfm_move_loop_slot_t *d, int32_t v)
+{
+    return (uint32_t)(((uint64_t)(uint32_t)v * mk_frames(d) + RFM_MOVE_LOOP_MK_ONE / 2) / RFM_MOVE_LOOP_MK_ONE);
+}
+static int32_t mk_of(const rfm_move_loop_slot_t *d, uint64_t f)
+{
+    const uint64_t n = mk_frames(d);
+    return (int32_t)((f >= n ? n : f) * RFM_MOVE_LOOP_MK_ONE / n);
+}
+/* the close-up's window: frames [lo, lo + span) about the marker (Shift: nearer), the zoom 8 (Shift 256) */
+static void mk_win(const rfm_move_t *m, int j, int64_t *lo, uint32_t *span)
+{
+    const rfm_move_loop_slot_t *d = CSL(m, m->loop.cur);
+    uint32_t sp = mk_frames(d) / ((m->seq.mods & SEQ_M_SHIFT) ? 256u : 8u);
+    if (sp < 64)
+        sp = 64;
+    *span = sp, *lo = (int64_t)mk_frame(d, d->v[j]) - sp / 2;
 }
 static int job_val(const rfm_move_t *m, int j)
 {
@@ -833,6 +927,14 @@ static int job_val(const rfm_move_t *m, int j)
         return t->lane[j - KL_LVL0][RFM_MOVE_LOOP_L_LEVEL];
     if (j >= KS_LEVEL && j <= KS_SEND3)
         return t->mix[j - KS_LEVEL];
+    if (j == KG_CIN)
+        return t->cin;
+    if (j == KG_INLVL)
+        return m->s.smp[RFM_MOVE_SMP_INPUT];
+    if (j == KG_MON)
+        return m->s.smp[RFM_MOVE_SMP_MONITOR];
+    if (j == KG_STEPS)
+        return t->to_on;
     return 0;
 }
 static int div_of(int j)
@@ -842,24 +944,29 @@ static int div_of(int j)
     case RFM_MOVE_LOOP_P_WARP:
     case RFM_MOVE_LOOP_P_MUTE:
     case KL_SOURCE:
-    case KL_LENGTH: return 5;
+    case KL_LENGTH:
+    case KG_CIN:
+    case KG_MON:
+    case KG_STEPS: return 5;
     case RFM_MOVE_LOOP_P_START:
     case RFM_MOVE_LOOP_P_LENGTH:
+    case KG_INLVL:
     case RFM_MOVE_LOOP_P_PITCH: return 2;
     default: return 1;
     }
 }
-/* Length's values: a beat, half a bar, then each whole bar up to the bars recorded */
-static int len_step(const rfm_move_loop_slot_t *d, int v, int n)
+/* (round 2) Steps: a step a detent to 16, a beat to 64, then a bar (Shift: a step) */
+static int len_step(int v, int n, int fine)
 {
-    int vals[RFM_MOVE_LOOP_MAX_BARS + 2], k = 0, i, at = 0;
-    vals[k++] = 4, vals[k++] = 8;
-    for (i = 1; i <= (d->bars ? d->bars : 1); i++)
-        vals[k++] = i * RFM_MOVE_LOOP_STEPS;
-    for (i = 0; i < k; i++)
-        if (vals[i] <= v)
-            at = i;
-    return vals[clampi(at + n, 0, k - 1)];
+    for (; n; n += n > 0 ? -1 : 1) {
+        const int up = n > 0, at = up ? v : v - 1;
+        const int st = fine ? 1 : at < 16 ? 1 : at < 64 ? 4 : RFM_MOVE_LOOP_STEPS;
+        v = up ? (v + st) / st * st : (v - 1) / st * st;
+        if (!fine && st > 1 && !up && v < 1)
+            v = 1;
+        v = clampi(v, 1, RFM_MOVE_LOOP_MAX_STEPS);
+    }
+    return v;
 }
 static void level_set(rfm_move_t *m, int j, int v)
 {
@@ -886,17 +993,54 @@ static void job_turn(rfm_move_t *m, int j, int n, int fine)
         else if (j == RFM_MOVE_LOOP_P_PITCH)
             v = fine ? v + n : (v >= 0 ? (v + 50) / 100 : (v - 50) / 100) * 100 + 100 * n;
         else if (j == RFM_MOVE_LOOP_P_LENGTH)
-            v = len_step(d, v, n);
+            v = len_step(v, n, fine);
+        else if (j == RFM_MOVE_LOOP_P_WARP)
+            v = WARP_ORDER[clampi(warp_rank(v) + n, 0, RFM_MOVE_LOOP_W_N - 1)];
+        else if (j == RFM_MOVE_LOOP_P_MSTART || j == RFM_MOVE_LOOP_P_MEND) {   /* (a column of the close-up a detent;
+                                                         * Shift: a frame) */
+            int64_t lo, f;
+            uint32_t span;
+            mk_win(m, j, &lo, &span);
+            f = (int64_t)mk_frame(d, v) + (int64_t)n * (fine ? 1 : (span / 64 ? span / 64 : 1));
+            if (j == RFM_MOVE_LOOP_P_MSTART)
+                f = f < 0 ? 0 : f >= (int64_t)mk_frame(d, d->v[RFM_MOVE_LOOP_P_MEND]) ? (int64_t)mk_frame(d, d->v[RFM_MOVE_LOOP_P_MEND]) - 1 : f;
+            else
+                f = f <= (int64_t)mk_frame(d, d->v[RFM_MOVE_LOOP_P_MSTART]) ? (int64_t)mk_frame(d, d->v[RFM_MOVE_LOOP_P_MSTART]) + 1
+                    : f > (int64_t)mk_frames(d) ? (int64_t)mk_frames(d) : f;
+            v = mk_of(d, (uint64_t)(f < 0 ? 0 : f));
+            if (j == RFM_MOVE_LOOP_P_MSTART && v >= d->v[RFM_MOVE_LOOP_P_MEND])
+                v = d->v[RFM_MOVE_LOOP_P_MEND] - 1;
+            if (j == RFM_MOVE_LOOP_P_MEND && v <= d->v[RFM_MOVE_LOOP_P_MSTART])
+                v = d->v[RFM_MOVE_LOOP_P_MSTART] + 1;
+        }
         else if (j == RFM_MOVE_LOOP_P_PAN)
             v = v + n;
         else
             v = v + n;
         v = clampi(v, p_min(j), p_max(d, j));
         if (v != d->v[j]) {
-            d->v[j] = (int16_t)v;
+            d->v[j] = v;
             send_set(m, s, j);
             rfmv_seq_dirty(m);
         }
+        return;
+    }
+    if (j == KG_CIN) {                                  /* (round 2) Count-in: Off, 1, 2 bars (the looper's, global) */
+        v = clampi(t->cin + n, 0, RFM_MOVE_LOOP_COUNTINS - 1);
+        if (v != t->cin)
+            t->cin = (uint8_t)v, rfmv_seq_dirty(m);
+        return;
+    }
+    if (j == KG_INLVL || j == KG_MON) {                 /* (round 2, the owner's: one input setting) the sampler's */
+        const int k = j == KG_INLVL ? RFM_MOVE_SMP_INPUT : RFM_MOVE_SMP_MONITOR;
+        v = j == KG_INLVL ? clampi(m->s.smp[k] + n, RFM_MOVE_SMP_IN_MIN, RFM_MOVE_SMP_IN_MAX) : clampi(m->s.smp[k] + n, 0, 2);
+        rfm_move_smp_set(m, k, v);
+        return;
+    }
+    if (j == KG_STEPS) {                                /* (item 9) the step keys' takeover */
+        v = clampi(t->to_on + n, 0, 1);
+        if (v != t->to_on)
+            rfmv_loop_to_set(m, v);
         return;
     }
     if (j == KL_SOURCE || j == KL_LENGTH) {
@@ -944,7 +1088,7 @@ static void knob_turn(rfm_move_t *m, int k, int d)
         m->seq.mods_used |= SEQ_M_SHIFT;
     t->kpop = (int8_t)k, t->kpop_ms = now(m), t->msg_ms = 0, t->lvl = 0;
     touched(m);
-    if (fine && j == RFM_MOVE_LOOP_P_PITCH)
+    if ((fine && j == RFM_MOVE_LOOP_P_PITCH) || j == RFM_MOVE_LOOP_P_MSTART || j == RFM_MOVE_LOOP_P_MEND)
         n = d;
     else {
         a = t->kacc[k];
@@ -1005,6 +1149,10 @@ static void turn(rfm_move_t *m, int d)
     int pg = t->page % PG_N, n = d;
     t->msg_ms = 0, t->kpop = -1, t->lvl = 0;
     touched(m);
+    if (t->br) {                                        /* (round 2) the browser: its rows */
+        rfmv_kit_lbr_turn(m, d);
+        return;
+    }
     while (n) {
         const int st = n > 0 ? 1 : -1, nx = pg + st;
         if (nx < 0 || nx >= PG_N)
@@ -1022,18 +1170,54 @@ static void turn(rfm_move_t *m, int d)
 int rfmv_loop_back_has(const rfm_move_t *m)
 {
     const rfm_move_loop_t *t = &m->loop;
-    return rfmv_loop_active(m) && (kpop_up(m) || msg_up(m) || (t->turned && now(m) - t->turn_ms < RFM_MOVE_POPUP_MS));
+    return rfmv_loop_active(m) && (t->br || kpop_up(m) || msg_up(m) || (t->turned && now(m) - t->turn_ms < RFM_MOVE_POPUP_MS));
 }
 int rfmv_loop_back(rfm_move_t *m)
 {
     rfm_move_loop_t *t = LP(m);
     if (!rfmv_loop_shown(m) || !rfmv_loop_back_has(m))
         return 0;
+    if (t->br) {                                        /* (round 2) the browser: a folder up, the places, closed */
+        if (!rfmv_kit_lbr_back(m))
+            t->br = 0;
+        t->msg_ms = 0;
+        touched(m);
+        return 1;
+    }
     t->kpop = -1, t->msg_ms = 0, t->turned = 0;
     touched(m);
     return 1;
 }
 
+/* (round 2, the owner's: "load on takes from the sampler or load in a sample from files") the jog's click: the kit's
+ * Files for the chosen slot (Takes, My Samples, the Move Library); a sound's row clicked: LOOP_FILE into the slot (the
+ * host copies it into the project's Loops/; Undo brings back what the slot had), the browser closed */
+static void jog_click(rfm_move_t *m)
+{
+    rfm_move_loop_t *t = LP(m);
+    int place;
+    uint32_t id;
+    char name[RFM_MOVE_KIT_NAME], nm[8];
+    t->msg_ms = 0, t->kpop = -1, t->turned = 0;
+    touched(m);
+    if (!t->br) {
+        if (rec_state(m, t->cur))
+            return;                                     /* (recording there: nothing) */
+        t->br = 1;
+        rfmv_kit_lbr_open(m);
+        return;
+    }
+    if (!rfmv_kit_lbr_click(m, &place, &id, name, sizeof name))
+        return;
+    if (rec_state(m, t->cur))
+        rec_cancel(m, t->cur);
+    act(m, RFM_MOVE_ACT_LOOP_FILE, t->cur, 0, 0, place, 0, id, NULL);
+    t->ld_slot = (uint8_t)(t->cur + 1);
+    t->und_rec = (uint8_t)(t->cur + 1), t->und_rec_was = t->slot[t->cur];
+    rfmv_kit_lbr_close(m), t->br = 0;
+    slot_name(t->cur, nm, sizeof nm);
+    msg(m, name, nm);
+}
 /* ================================================================ the input === */
 int rfmv_loop_input(rfm_move_t *m, const mr_event_t *ev)
 {
@@ -1117,7 +1301,10 @@ int rfmv_loop_input(rfm_move_t *m, const mr_event_t *ev)
         turn(m, ev->value);
         return 1;
     case MR_EV_JOG_CLICK:
-        return ev->value && rfmv_loop_shown(m);         /* (stage 2: a loop's To Kit / To Takes) */
+        if (!ev->value || !rfmv_loop_shown(m))
+            return 0;
+        jog_click(m);                                   /* (round 2) the browser for the chosen slot; in it, a row */
+        return 1;
     case MR_EV_BUTTON:
         if (i == MR_CC_SAMPLE && !rfmv_smp_shown(m)) {
             const int h = held_slot(m), r = rec_any(m);
@@ -1165,11 +1352,17 @@ int rfmv_loop_input(rfm_move_t *m, const mr_event_t *ev)
     default: return 0;
     }
 }
+static void zoom_need(rfm_move_t *m);
 void rfmv_loop_poll(rfm_move_t *m)
 {
     rfm_move_loop_t *t = LP(m);
     if (t->copy_src >= 0 && !(m->seq.mods & SEQ_M_COPY))
         t->copy_src = -1;
+    if (t->br && !rfmv_loop_active(m))
+        rfmv_kit_lbr_close(m), t->br = 0;
+    if (t->br)
+        rfmv_kit_lbr_poll(m);
+    zoom_need(m);
 }
 
 /* ================================================================ the answers === */
@@ -1195,19 +1388,37 @@ int rfm_move_loop_recorded(rfm_move_t *m, int slot, int status, const char *path
             t->und = 1, t->und_n = 1, t->und_s[0] = (uint8_t)slot, t->und_slot[0] = t->und_rec_was;
             snprintf(t->und_what, sizeof t->und_what, "Loop %s", nm);
         }
+        int32_t keep[RFM_MOVE_LOOP_P_N];
+        const int dub = (t->dubq >> slot & 1) && has_loop(d);   /* (item 9: an overdub's file: its settings kept) */
+        memcpy(keep, d->v, sizeof keep);
+        t->dubq &= ~(1u << slot);
         memset(d, 0, sizeof *d);
         snprintf(d->path, sizeof d->path, "%s", path);
         d->st = RFM_MOVE_LOOP_OK, d->bars = (uint8_t)clampi(bars, 1, RFM_MOVE_LOOP_MAX_BARS);
         d->bpm10 = (uint16_t)clampi(bpm10, 0, 65535), d->frames = frames, d->rate = rate;
         defaults(d->v, d->bars);
+        if (dub)
+            memcpy(d->v, keep, sizeof keep);
         peaks_put(d, n, peaks);
         for (p = 0; p < RFM_MOVE_LOOP_P_N; p++)
             send_set(m, slot, p);
         if (t->ask[lane_of(slot)] >= 0)
             t->ask[lane_of(slot)] = -1;
         rfmv_seq_dirty(m);
+        if (t->ld_slot == slot + 1)
+            msg(m, "Loaded", nm);
     } else
-        msg(m, status == RFM_MOVE_LOOP_TOO_LONG ? "Too Long" : status == RFM_MOVE_LOOP_NOTHING ? "Nothing" : "Not Saved", nm);
+        msg(m, status == RFM_MOVE_LOOP_TOO_LONG ? "Too Long" : status == RFM_MOVE_LOOP_NOTHING ? "Nothing"
+               : t->ld_slot == slot + 1 ? "Not Loaded" : "Not Saved", nm);
+    t->dubq &= ~(1u << slot);
+    {                                                   /* (item 9: an overdub refused or done: off) */
+        int l;
+        for (l = 0; l < LANES; l++)
+            if (t->to_dub[l] == slot + 1 && status != RFM_MOVE_LOOP_OK)
+                t->to_dub[l] = 0;
+    }
+    if (t->ld_slot == slot + 1)
+        t->ld_slot = 0;
     if (t->und_rec == slot + 1)
         t->und_rec = 0;
     touched(m);
@@ -1269,6 +1480,67 @@ int rfm_move_loop_refs(const rfm_move_t *m, const char **out, int cap)
     return n;
 }
 
+/* (round 2) the markers' close-up: its peaks asked when the window moved a sixteenth (or its zoom changed) */
+static int mk_pop(const rfm_move_t *m)
+{
+    const int j = m->loop.kpop >= 0 ? knob_job(m, m->loop.kpop) : -1;
+    return kpop_up(m) && (j == RFM_MOVE_LOOP_P_MSTART || j == RFM_MOVE_LOOP_P_MEND) ? j : -1;
+}
+static void zoom_need(rfm_move_t *m)
+{
+    rfm_move_loop_t *t = LP(m);
+    const int j = mk_pop(m);
+    const rfm_move_loop_slot_t *d = CSL(m, t->cur);
+    int64_t lo, a, b;
+    uint32_t span;
+    if (j < 0 || !d->frames)
+        return;
+    mk_win(m, j, &lo, &span);
+    a = lo < 0 ? 0 : lo, b = lo + span > d->frames ? d->frames : lo + span;
+    if (b <= a)
+        return;
+    if (t->za_slot == t->cur + 1 && (a > t->za_from ? a - t->za_from : t->za_from - a) < span / 16 &&
+        ((b - a) > t->za_count ? (b - a) - t->za_count : t->za_count - (b - a)) < span / 16)
+        return;
+    t->za_slot = (uint8_t)(t->cur + 1), t->za_from = (uint32_t)a, t->za_count = (uint32_t)(b - a);
+    {
+        rfm_move_act_t x;
+        memset(&x, 0, sizeof x);
+        x.frame = m->seq.frame, x.kind = RFM_MOVE_ACT_LOOP_PEAKS, x.index = t->cur, x.value = RFM_MOVE_LOOP_PEAKS;
+        x.from = t->za_from, x.count = t->za_count;
+        if (m->fn)
+            m->fn(m->ctx, &x);
+    }
+}
+int rfm_move_loop_peaks(rfm_move_t *m, int slot, uint32_t from, uint32_t count, int n, const uint8_t *peaks)
+{
+    rfm_move_loop_t *t = LP(m);
+    if (!rfmv_loop_cap(m) || slot < 0 || slot >= NSLOT || !count || n <= 0 || !peaks)
+        return 0;
+    t->zslot = (uint8_t)(slot + 1), t->zfrom = from, t->zcount = count;
+    t->zn = (uint8_t)(n > RFM_MOVE_LOOP_PEAKS ? RFM_MOVE_LOOP_PEAKS : n);
+    memcpy(t->zpk, peaks, t->zn);
+    return mk_pop(m) >= 0 && slot == t->cur && rfmv_loop_shown(m);
+}
+/* (round 2, the owner's: "the countin should delay the playback when you press play") a recording armed while
+ * stopped, Count-in on: its bars */
+int rfm_move_loop_count_in(const rfm_move_t *m)
+{
+    int s;
+    if (!rfmv_loop_cap(m) || !m->loop.cin || running(m))
+        return 0;
+    for (s = 0; s < NSLOT; s++)
+        if (rec_state(m, s) == RFM_MOVE_LOOP_RS_ARMED)
+            return m->loop.cin;
+    return 0;
+}
+static int cin_beat(const rfm_move_t *m)                /* the count-in: its beats gone (-1 none) */
+{
+    const rfm_move_seq_t *q = &m->seq;
+    if (q->start_pending != 3 || q->count_in <= 0)
+        return -1;
+    return (int)((q->count_in - 1) / 96);               /* (the beats still to go) */
+}
 /* ================================================================ the lights === */
 static int blink(const rfm_move_t *m, uint32_t per) { return now(m) % per < per / 2; }
 static rgb_t slot_rgb(const rfm_move_t *m, int s)
@@ -1320,6 +1592,8 @@ void rfmv_loop_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
             }
             if (t->st_down >> i & 1)
                 v = RFMV_WHITE;
+            if (cin_beat(m) >= 0)                       /* (round 2) the count-in: a step a beat to go, red */
+                v = i < cin_beat(m) + 1 && i < 8 ? (i == cin_beat(m) ? RFMV_RED : sc(RFMV_RED, 50)) : RFMV_OFF;
             c[L_STEP0 + i] = v;
         }
     }
@@ -1500,13 +1774,12 @@ static double play_frac(const rfm_move_t *m, int s)
     double f;
     if (!m->loop.st_ok || lane_play(m, l) != scene_of(s) || !running(m))
         return -1;
-    f = (double)d->v[RFM_MOVE_LOOP_P_LENGTH] * m->loop.st.lane[l].pos / 65536.0;
+    (void)tot;
+    f = m->loop.st.lane[l].pos / 65536.0;               /* (round 2: its place in the markers' region) */
     if (d->v[RFM_MOVE_LOOP_P_REVERSE])
-        f = d->v[RFM_MOVE_LOOP_P_LENGTH] - f;
-    f += d->v[RFM_MOVE_LOOP_P_START];
-    while (f >= tot)
-        f -= tot;
-    return f / tot;
+        f = 1.0 - f;
+    return ((double)d->v[RFM_MOVE_LOOP_P_MSTART] + f * (d->v[RFM_MOVE_LOOP_P_MEND] - d->v[RFM_MOVE_LOOP_P_MSTART])) /
+           RFM_MOVE_LOOP_MK_ONE;
 }
 static void loop_page(const rfm_move_t *m, mr_canvas_t *cv)
 {
@@ -1524,9 +1797,28 @@ static void loop_page(const rfm_move_t *m, mr_canvas_t *cv)
         }
     } else
         bars_row(cv, 0, 130, 53, 9, n, 0);
+    {                                                   /* (round 2) the markers: a line each, outside dithered off */
+        const int a = (int)((int64_t)d->v[RFM_MOVE_LOOP_P_MSTART] * 128 / RFM_MOVE_LOOP_MK_ONE);
+        const int b = (int)((int64_t)d->v[RFM_MOVE_LOOP_P_MEND] * 128 / RFM_MOVE_LOOP_MK_ONE);
+        int x, y;
+        for (x = 0; x < 128; x++)
+            if (x < a || x >= b)
+                for (y = 16; y < 47; y++)
+                    if ((x + y) & 1)
+                        v2_px(cv, x, y, 0);
+        v2_R(cv, a < 127 ? a : 127, 14, 1, 35, 1), v2_R(cv, b > 0 ? b - 1 : 0, 14, 1, 35, 1);
+    }
     if (d->st == RFM_MOVE_LOOP_MISSING || d->st == RFM_MOVE_LOOP_FAILED)
         v2_TC(cv, 48, 2, d->st == RFM_MOVE_LOOP_MISSING ? "Missing" : "Failed", 1, 1);
+    else if (d->st == RFM_MOVE_LOOP_LOADING)
+        v2_TC(cv, 48, 2, "Loading", 1, 1);
     locator(m, cv, 96, 0, s);
+}
+static void empty_page(const rfm_move_t *m, mr_canvas_t *cv)   /* (round 2) an empty slot's Loop / Loop Mix page */
+{
+    v2_dotH(cv, 0, 31, 128);
+    v2_TC(cv, 48, 2, m->loop.ld_slot == m->loop.cur + 1 ? "Loading" : "Empty", 1, 1);
+    locator(m, cv, 96, 0, m->loop.cur);
 }
 /* a lane's Source as a row shows it: Played as the Track it means now ("Track 2"); long 1: the popup's ("Played 2") */
 static void src_text_l(const rfm_move_t *m, int src, char *o, int cap, int lng)
@@ -1545,16 +1837,27 @@ static void len_text(int li, char *o, int cap)
     else
         snprintf(o, (size_t)cap, "%d Bar%s", b, b > 1 ? "s" : "");
 }
+static void val_text(const rfm_move_t *m, int j, int v, char *o, int cap);
+/* (round 2) the lane's Source, Length, the Count-in; under them the input's Monitor and In Level (the sampler's) */
 static void record_page(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const int l = lane_of(m->loop.cur);
-    char v[16];
-    ic2(cv, PI_REC, 2, 2, 1);
-    locator(m, cv, 96, 0, m->loop.cur);
+    char v[24], a[12], b[12];
     src_text(m, m->loop.lane[l][RFM_MOVE_LOOP_L_SOURCE], v, sizeof v);
-    rowi(cv, 31, I_SRC, v, 0);
+    rowi(cv, 1, I_SRC, v, 0);
     len_text(m->loop.lane[l][RFM_MOVE_LOOP_L_LENGTH], v, sizeof v);
-    rowi(cv, 48, I_LEN, v, 0);
+    rowi(cv, 17, I_LEN, v, 0);
+    val_text(m, KG_CIN, m->loop.cin, v, sizeof v);
+    rowi(cv, 33, I_CIN, v, 0);
+    if (rfmv_smp_cap(m)) {
+        val_text(m, KG_MON, m->s.smp[RFM_MOVE_SMP_MONITOR], a, sizeof a);
+        val_text(m, KG_INLVL, m->s.smp[RFM_MOVE_SMP_INPUT], b, sizeof b);
+        ic(cv, I_IN, 3, 52, 1);
+        snprintf(v, sizeof v, "Mon %s  %s", a, b);
+        v2_T(cv, 20, 54, v, 1, 1);
+    }
+    if (m->loop.to_on)
+        v2_T(cv, 110, 54, "STP", 1, 1);                 /* (the step keys' takeover on) */
 }
 static void fader(mr_canvas_t *cv, int x, int level, int pan, int hollow)
 {
@@ -1690,7 +1993,7 @@ static void val_text(const rfm_move_t *m, int j, int v, char *o, int cap)
         if (v % RFM_MOVE_LOOP_STEPS == 0)
             snprintf(o, (size_t)cap, "%d Bar%s", v / RFM_MOVE_LOOP_STEPS, v == RFM_MOVE_LOOP_STEPS ? "" : "s");
         else
-            snprintf(o, (size_t)cap, "%d Steps", v);
+            snprintf(o, (size_t)cap, "%d Step%s", v, v == 1 ? "" : "s");
         return;
     case RFM_MOVE_LOOP_P_PITCH:
         if (v % 100 == 0)
@@ -1702,7 +2005,17 @@ static void val_text(const rfm_move_t *m, int j, int v, char *o, int cap)
         return;
     case RFM_MOVE_LOOP_P_REVERSE:
     case RFM_MOVE_LOOP_P_MUTE: snprintf(o, (size_t)cap, v ? "On" : "Off"); return;
-    case RFM_MOVE_LOOP_P_WARP: snprintf(o, (size_t)cap, v == RFM_MOVE_LOOP_W_OFF ? "Off" : "Repitch"); return;
+    case RFM_MOVE_LOOP_P_WARP: snprintf(o, (size_t)cap, "%s", WARP_NAME[clampi(v, 0, RFM_MOVE_LOOP_W_N - 1)]); return;
+    case RFM_MOVE_LOOP_P_MSTART:
+    case RFM_MOVE_LOOP_P_MEND: {                        /* (round 2) the marker's time in the sound */
+        const uint32_t f = mk_frame(d, v), r = d->rate ? d->rate : 44100;
+        snprintf(o, (size_t)cap, "%u.%03u s", f / r, (unsigned)((uint64_t)(f % r) * 1000 / r));
+        return;
+    }
+    case KG_CIN: snprintf(o, (size_t)cap, v == 0 ? "Off" : v == 1 ? "1 Bar" : "2 Bars"); return;
+    case KG_MON: snprintf(o, (size_t)cap, v == 0 ? "Off" : v == 1 ? "On" : "Auto"); return;
+    case KG_STEPS: snprintf(o, (size_t)cap, v ? "On" : "Off"); return;
+    case KG_INLVL: snprintf(o, (size_t)cap, v ? "%+d dB" : "%d dB", v); return;
     case RFM_MOVE_LOOP_P_PAN:
     case KS_PAN:
         if (v == 64)
@@ -1730,6 +2043,8 @@ static void job_name(const rfm_move_t *m, int j, char *o, int cap)
         snprintf(o, (size_t)cap, "Source");
     else if (j == KL_LENGTH)
         snprintf(o, (size_t)cap, "Length");
+    else if (j >= KG_CIN && j <= KG_STEPS)
+        snprintf(o, (size_t)cap, "%s", j == KG_CIN ? "Count-in" : j == KG_INLVL ? "In Level" : j == KG_MON ? "Monitor" : "Step Looper");
     else if (j >= KL_LVL0 && j < KL_LVL0 + LANES)
         snprintf(o, (size_t)cap, "Lane %d", j - KL_LVL0 + 1);
     else
@@ -1760,6 +2075,44 @@ static void level_screen(const rfm_move_t *m, mr_canvas_t *cv, int j)
         snprintf(ttl, sizeof ttl, "Lane %d Level", j - KL_LVL0 + 1);
     rfmv_level_popup(cv, ttl, rfmv_lvl_db10(job_val(m, j)), NULL, sib, n, cur);
 }
+/* (round 2) the markers' close-up: the name and time on top, the frames round the marker (the host's peaks), the
+ * marker a line down the middle with a notch, what does not play dithered */
+static void mk_screen(const rfm_move_t *m, mr_canvas_t *cv, int j, const char *name, const char *val)
+{
+    const rfm_move_loop_t *t = &m->loop;
+    const rfm_move_loop_slot_t *d = CSL(m, t->cur);
+    int64_t lo, s0, e0;
+    uint32_t span;
+    int c, y;
+    char top[40];
+    snprintf(top, sizeof top, "%s %s", name, val);
+    v2_TC(cv, 64, 0, top, v2_tw(top, 2) <= 128 ? 2 : 1, 1);
+    mk_win(m, j, &lo, &span);
+    s0 = mk_frame(d, d->v[RFM_MOVE_LOOP_P_MSTART]), e0 = mk_frame(d, d->v[RFM_MOVE_LOOP_P_MEND]);
+    for (c = 0; c < 64; c++) {
+        const int64_t f0 = lo + (int64_t)span * c / 64, f1 = lo + (int64_t)span * (c + 1) / 64;
+        int pk = 0, a;
+        if (f1 <= 0 || f0 >= (int64_t)mk_frames(d))
+            continue;
+        if (t->zslot == t->cur + 1 && t->zn && t->zcount) {
+            int64_t i0 = (f0 - (int64_t)t->zfrom) * t->zn / (int64_t)t->zcount;
+            int64_t i1 = (f1 - (int64_t)t->zfrom) * t->zn / (int64_t)t->zcount, i;
+            if (i1 <= i0)
+                i1 = i0 + 1;
+            for (i = i0 < 0 ? 0 : i0; i < i1 && i < t->zn; i++)
+                pk = t->zpk[i] > pk ? t->zpk[i] : pk;
+        }
+        a = (pk * 16 + 127) / 255;
+        if (f0 >= s0 && f0 < e0)
+            v2_R(cv, c * 2, 44 - a, 1, a ? a * 2 : 1, 1);
+        else
+            for (y = 44 - a; y < (a ? 44 + a : 45); y++)
+                if (((y + c) & 1) == 0)
+                    v2_px(cv, c * 2, y, 1);
+    }
+    v2_R(cv, 64, 20, 1, 44, 1);
+    v2_R(cv, 61, 20, 7, 1, 1), v2_R(cv, 62, 21, 5, 1, 1), v2_R(cv, 63, 22, 3, 1, 1);
+}
 static void popup(const rfm_move_t *m, mr_canvas_t *cv, int j)
 {
     const rfm_move_loop_slot_t *d = CSL(m, m->loop.cur);
@@ -1772,12 +2125,17 @@ static void popup(const rfm_move_t *m, mr_canvas_t *cv, int j)
     }
     job_name(m, j, name, sizeof name);
     val_text(m, j, v, val, sizeof val);
+    if (j == RFM_MOVE_LOOP_P_MSTART || j == RFM_MOVE_LOOP_P_MEND) {   /* (round 2) the close-up, as the kit's trim */
+        mk_screen(m, cv, j, name, val);
+        return;
+    }
     v2_titleBox(cv, name, val, 64, 128);
     switch (j) {
     case RFM_MOVE_LOOP_P_PITCH: v2_vbar(cv, v / 2400.0, 1, 8, 112, 55); break;
-    case RFM_MOVE_LOOP_P_LENGTH: {                      /* (board E) the bars recorded, those played filled */
-        const int n = clampi(d->bars, 1, 16);
-        bars_row(cv, 8, 114, 54, 7, n, (v + RFM_MOVE_LOOP_STEPS - 1) / RFM_MOVE_LOOP_STEPS);
+    case RFM_MOVE_LOOP_P_LENGTH: {                      /* (board E; round 2: Steps) the bars it fills, a part bar
+                                                         * part filled */
+        const int n = clampi((v + RFM_MOVE_LOOP_STEPS - 1) / RFM_MOVE_LOOP_STEPS, 1, 16);
+        bars_row(cv, 8, 114, 54, 7, n, n);
         break;
     }
     case RFM_MOVE_LOOP_P_START: {                       /* (board F) a bar's 16 steps, the start on, still on the bar */
@@ -1809,6 +2167,10 @@ int rfmv_loop_screen(const rfm_move_t *m, mr_canvas_t *cv)
         v2_msg(cv, t->msg, t->msg2);
         return 1;
     }
+    if (t->br) {                                        /* (round 2) the kit's Files, for the chosen slot */
+        rfmv_kit_lbr_screen(m, cv);
+        return 1;
+    }
     if (m->seq.mods & SEQ_M_COPY) {
         copy_screen(m, cv);
         return 1;
@@ -1835,14 +2197,14 @@ int rfmv_loop_screen(const rfm_move_t *m, mr_canvas_t *cv)
         if (has_loop(CSL(m, t->cur)))
             loop_page(m, cv);
         else
-            record_page(m, cv);
+            empty_page(m, cv);
         break;
     case PG_RECORD: record_page(m, cv); break;
     case PG_LOOPMIX:
         if (has_loop(CSL(m, t->cur)))
             loopmix_page(m, cv);
         else
-            record_page(m, cv);
+            empty_page(m, cv);
         break;
     default: loopermix_page(m, cv); break;
     }
@@ -1865,7 +2227,7 @@ int rfmv_loop_timed(const rfm_move_t *m)
         return 1;
     if (!rfmv_loop_active(m))
         return 0;
-    if (msg_up(m) || pg_off(m) || (t->turned && now(m) - t->turn_ms < RFM_MOVE_POPUP_MS) ||
+    if (t->br || msg_up(m) || pg_off(m) || (t->turned && now(m) - t->turn_ms < RFM_MOVE_POPUP_MS) || cin_beat(m) >= 0 ||
         (t->kpop >= 0 && now(m) - t->kpop_ms < RFM_MOVE_POPUP_MS + 100) || rec_any(m) >= 0 || t->copy_src >= 0)
         return 1;
     for (l = 0; l < LANES; l++)
@@ -1978,7 +2340,7 @@ void rfmv_loop_tab_click(rfm_move_t *m)
 {
     rfm_move_loop_t *t = LP(m);
     t->tab_kpop = -1;
-    slot_tap(m, t->tab_slot);
+    slot_tap(m, t->tab_slot, 1);
     t->tap_slot = -1;                                   /* (no double click from the jog) */
 }
 int rfmv_loop_tab_sample(rfm_move_t *m)
@@ -2042,6 +2404,299 @@ int rfmv_loop_tab_timed(const rfm_move_t *m)
         return 1;
     for (l = 0; l < LANES; l++)
         if (lane_next(m, l) >= 0)
+            return 1;
+    return 0;
+}
+
+/* ================================================================ (round 2, item 9) the step looper === */
+/* The owner's: "a looper mode takeover feature you could enable that takes over the step keys. So I could basically jam
+ * inside a firmware and quickly record loops using the step keys", "similar to using a dedicated looper pedal". Steps
+ * 1-4, 5-8, 9-12, 13-16 are lanes 1..4, each group in its own Okabe-Ito colour (blue, orange, bluish green, reddish
+ * purple: neighbours far apart for colour-blind players). In a group: key 1 the pedal (empty or stopped: records at the
+ * bar, over the lane's slot (Undo), stopped: the transport with the Count-in; armed: cancelled; recording: it ends at
+ * the bar and plays at once; playing: an overdub ends), key 2 Overdub (on / off, one Undo), key 3 Replace (records
+ * over the playing loop from the next bar), key 4 Next (the lane's next empty slot is the pedal's; the old loop stops
+ * when the new recording starts), a double tap: Stop. A group key held + the volume knob: the lane's level. Over every
+ * mode and layout but the Looper view (its steps are the scenes) and the menus; Shift + a step (Track 4 held + a step
+ * in the FM-1 layout) stays the shortcuts. On / off: Shift + step 13 (the FM-1 layout: Track 4 held + step 13) or the
+ * Record page's knob 6; a full-screen card says it and the keys. The group shows its loop's place: a key a quarter of
+ * the loop, the one now bright; recording: the bars as red keys, the one now blinking; overdub: the key now blinking
+ * fast; waiting: blinking; a loop stopped: dim; empty: off. */
+static const rgb_t TO_RGB[LANES] = { { 0, 114, 178 }, { 230, 159, 0 }, { 0, 158, 115 }, { 204, 121, 167 } };
+#define TO_CARD_MS 1500
+#define TO_OVL_MS 1200
+static const char *const TO_KEY[4] = { "Rec", "Dub", "Replace", "Next" };
+int rfmv_loop_to_steps(const rfm_move_t *m)
+{
+    return rfmv_loop_cap(m) && m->loop.to_on && !rfmv_loop_active(m) && !m->seq.smenu && !m->seq.projects;
+}
+void rfmv_loop_to_set(rfm_move_t *m, int on)
+{
+    rfm_move_loop_t *t = LP(m);
+    if (!rfmv_loop_cap(m))
+        return;
+    t->to_on = (uint8_t)(on != 0), t->card_ms = now(m) ? now(m) : 1, t->to_ms = 0;
+    rfmv_seq_dirty(m);
+    rfmv_say_text(m, on ? "Step looper on" : "Step looper off");
+}
+static void to_say(rfm_move_t *m, int l, const char *what)
+{
+    rfm_move_loop_t *t = LP(m);
+    snprintf(t->to_msg, sizeof t->to_msg, "Lane %d %s", l + 1, what);
+    t->to_ms = now(m) ? now(m) : 1;
+}
+/* the lane's pedal slot: its recording, else its loop playing, else Next's (or the last recorded), else its first
+ * empty slot (none: scene 1) */
+static int to_slot(const rfm_move_t *m, int l)
+{
+    const rfm_move_loop_t *t = &m->loop;
+    int s;
+    for (s = l * SCENES; s < (l + 1) * SCENES; s++)
+        if (rec_state(m, s))
+            return s;
+    if (lane_play(m, l) >= 0)
+        return l * SCENES + lane_play(m, l);
+    if (t->to_target[l])
+        return l * SCENES + t->to_target[l] - 1;
+    for (s = l * SCENES; s < (l + 1) * SCENES; s++)
+        if (!has_loop(CSL(m, s)))
+            return s;
+    return l * SCENES;
+}
+static void to_go(rfm_move_t *m)                        /* stopped: the transport (with the Count-in) */
+{
+    if (running(m))
+        return;
+    if (m->loop.cin)
+        rfmv_seq_count_in_bars(m, m->loop.cin);
+    else
+        rfmv_seq_start(m);
+}
+static void to_dub_off(rfm_move_t *m, int l)
+{
+    rfm_move_loop_t *t = LP(m);
+    if (!t->to_dub[l])
+        return;
+    act(m, RFM_MOVE_ACT_LOOP_DUB, t->to_dub[l] - 1, 0, 0, 0, 0, 0, NULL);
+    t->dubq |= 1u << (t->to_dub[l] - 1);
+    t->to_dub[l] = 0;
+    to_say(m, l, "Dub off");
+}
+static void to_rec(rfm_move_t *m, int l, int s)
+{
+    rfm_move_loop_t *t = LP(m);
+    to_dub_off(m, l);
+    rec_start(m, s);
+    t->to_target[l] = (uint8_t)(scene_of(s) + 1);
+    to_go(m);
+    to_say(m, l, "REC");
+}
+static void to_key(rfm_move_t *m, int i)
+{
+    rfm_move_loop_t *t = LP(m);
+    const int l = i / 4, k = i % 4, s = to_slot(m, l), rs = rec_state(m, s);
+    const int plays = lane_play(m, l) >= 0;
+    switch (k) {
+    case 0:                                             /* the pedal */
+        if (rs == RFM_MOVE_LOOP_RS_ARMED)
+            rec_cancel(m, s), to_say(m, l, "Cancelled");
+        else if (rs == RFM_MOVE_LOOP_RS_RECORDING)
+            rec_end(m, s), to_say(m, l, "Loop");
+        else if (rs)
+            break;
+        else if (plays && t->to_dub[l])
+            to_dub_off(m, l);
+        else if (!plays)
+            to_rec(m, l, s);                            /* (empty or stopped: a fresh take there, Undo the old) */
+        break;
+    case 1:                                             /* Overdub */
+        if (t->to_dub[l])
+            to_dub_off(m, l);
+        else if (plays && !rs && has_loop(CSL(m, s))) {
+            act(m, RFM_MOVE_ACT_LOOP_DUB, s, 1, t->lane[l][RFM_MOVE_LOOP_L_SOURCE], 0, 0, 0, NULL);
+            t->to_dub[l] = (uint8_t)(s + 1);
+            t->und_rec = (uint8_t)(s + 1), t->und_rec_was = t->slot[s];
+            to_say(m, l, "Dub on");
+        } else
+            to_say(m, l, "Nothing");
+        break;
+    case 2:                                             /* Replace */
+        if (rs == RFM_MOVE_LOOP_RS_ARMED || rs == RFM_MOVE_LOOP_RS_RECORDING)
+            break;
+        to_rec(m, l, s);
+        to_say(m, l, "Replace");
+        break;
+    default:                                            /* Next; a double tap: Stop */
+        if (t->to_tap_ms[l] && now(m) - t->to_tap_ms[l] < RFM_MOVE_DOUBLE_MS) {
+            t->to_tap_ms[l] = 0;
+            t->to_target[l] = t->to_prev[l];
+            to_dub_off(m, l);
+            if (rs == RFM_MOVE_LOOP_RS_ARMED || rs == RFM_MOVE_LOOP_RS_RECORDING)
+                rec_cancel(m, s);
+            if (lane_play(m, l) >= 0 || lane_next(m, l) >= 0)
+                stop_lane(m, l, 0);
+            to_say(m, l, "Stop");
+            break;
+        }
+        t->to_tap_ms[l] = now(m) ? now(m) : 1;
+        t->to_prev[l] = t->to_target[l];
+        {
+            int j;
+            for (j = 1; j <= SCENES; j++) {
+                const int c = l * SCENES + (scene_of(s) + j) % SCENES;
+                if (!has_loop(CSL(m, c)) && !rec_state(m, c)) {
+                    char w[12];
+                    t->to_target[l] = (uint8_t)(scene_of(c) + 1);
+                    snprintf(w, sizeof w, "> %d-%d", l + 1, scene_of(c) + 1);
+                    to_say(m, l, w);
+                    break;
+                }
+            }
+            if (j > SCENES)
+                to_say(m, l, "Full");
+        }
+        break;
+    }
+    touched(m);
+}
+int rfmv_loop_to_input(rfm_move_t *m, const mr_event_t *ev)
+{
+    rfm_move_loop_t *t = LP(m);
+    const int i = ev->index;
+    if (!rfmv_loop_cap(m))
+        return 0;
+    if (ev->type == MR_EV_STEP && !ev->value && i >= 0 && i < 16 && (t->to_down >> i & 1)) {
+        t->to_down &= (uint16_t)~(1u << i);
+        if (!t->to_down)
+            t->to_lvl = 0;
+        return 1;                                       /* (a key the takeover took: its release too) */
+    }
+    if (!rfmv_loop_to_steps(m))
+        return 0;
+    if (ev->type == MR_EV_STEP && ev->value && i >= 0 && i < 16) {
+        if ((m->seq.mods & SEQ_M_SHIFT) || m->track_held)
+            return 0;                                   /* (the shortcuts) */
+        t->to_down |= (uint16_t)(1u << i);
+        to_key(m, i);
+        return 1;
+    }
+    if (t->to_down && ((ev->type == MR_EV_KNOB && i == 8) || (ev->type == MR_EV_TOUCH && i == 8))) {
+        int l;                                          /* a group key held + the volume knob: the lane's level */
+        for (l = 0; l < LANES && !(t->to_down >> (4 * l) & 15); l++) {}
+        if (l < LANES) {
+            t->to_lvl = (uint8_t)(l + 1);
+            if (ev->type == MR_EV_KNOB && ev->value)
+                level_set(m, KL_LVL0 + l, rfmv_lvl_step(t->lane[l][RFM_MOVE_LOOP_L_LEVEL], ev->value));
+            t->to_ms = now(m) ? now(m) : 1;
+            touched(m);
+            return 1;
+        }
+    }
+    return 0;
+}
+void rfmv_loop_to_leds(const rfm_move_t *m, rgb_t c[L_WHITE0])
+{
+    const rfm_move_loop_t *t = &m->loop;
+    int l, k;
+    if (!rfmv_loop_to_steps(m) || (m->seq.mods & SEQ_M_SHIFT) || m->track_held)
+        return;                                         /* (Shift, a Track held: the shortcuts' lights) */
+    for (l = 0; l < LANES; l++) {
+        const rgb_t lc = TO_RGB[l];
+        const int s = to_slot(m, l), rs = rec_state(m, s), pl = lane_play(m, l), nx = lane_next(m, l);
+        int any = 0, j;
+        rgb_t v[4];
+        for (j = l * SCENES; j < (l + 1) * SCENES; j++)
+            any |= has_loop(CSL(m, j));
+        for (k = 0; k < 4; k++)
+            v[k] = any ? sc(lc, 40) : sc(lc, 8);        /* (a loop stopped: dim; empty: very dim) */
+        if (rs == RFM_MOVE_LOOP_RS_ARMED) {
+            for (k = 0; k < 4; k++)
+                v[k] = blink(m, 500) ? lc : sc(lc, 20);
+            v[0] = blink(m, 500) ? RFMV_RED : sc(RFMV_RED, 30);
+        } else if (rs) {                                /* recording: the bars as red keys, the one now blinking */
+            int bar = 1, i2;
+            for (i2 = 0; i2 < 2 && t->st_ok; i2++)
+                if (t->st.rec[i2].slot == s && t->st.rec[i2].bar)
+                    bar = t->st.rec[i2].bar;
+            for (k = 0; k < 4; k++)
+                v[k] = k < (bar - 1) % 4 ? sc(RFMV_RED, 90) : k == (bar - 1) % 4 ? (blink(m, 200) ? RFMV_RED : sc(RFMV_RED, 40))
+                                                                               : sc(lc, 20);
+        } else if (pl >= 0 && running(m)) {             /* playing: a key a quarter of its loop, the one now bright */
+            const int at = t->st_ok ? t->st.lane[l].pos * 4 / 65536 : 0;
+            const int wait = nx >= 0 && nx != pl;
+            for (k = 0; k < 4; k++)
+                v[k] = sc(lc, 50);
+            v[at & 3] = t->to_dub[l] ? (blink(m, 160) ? RFMV_WHITE : lc) : wait ? (blink(m, 400) ? lc : sc(lc, 60)) : lc;
+        } else if (nx >= 0 && nx != STOP) {             /* waiting to start */
+            for (k = 0; k < 4; k++)
+                v[k] = blink(m, 400) ? lc : sc(lc, 30);
+        }
+        for (k = 0; k < 4; k++)
+            c[L_STEP0 + 4 * l + k] = (t->to_down >> (4 * l + k) & 1) ? RFMV_WHITE : v[k];
+    }
+}
+/* its card on toggle (the keys' jobs in four boxes), then while a group key is held its lane's keys, a change's
+ * overlay (a box on top) */
+int rfmv_loop_to_screen(const rfm_move_t *m, mr_canvas_t *cv)
+{
+    const rfm_move_loop_t *t = &m->loop;
+    int k, l;
+    if (!rfmv_loop_cap(m))
+        return 0;
+    if (t->card_ms && now(m) - t->card_ms < TO_CARD_MS) {
+        mr_gfx_clear(cv, 0);
+        v2_TC(cv, 64, 0, t->to_on ? "Step Looper On" : "Step Looper Off", v2_tw("Step Looper Off", 2) <= 128 ? 2 : 1, 1);
+        if (t->to_on)
+            for (k = 0; k < 4; k++) {                   /* (a group, a lane: its four keys' jobs) */
+                static const char *const J[4] = { "1 Rec", "2 Dub", "3 Rpl", "4 Nxt" };
+                int j;
+                char n[8];
+                v2_O(cv, k * 32, 18, 31, 46, 1);
+                for (j = 0; j < 4; j++)
+                    v2_T(cv, k * 32 + 2, 20 + j * 9, J[j], 1, 1);
+                snprintf(n, sizeof n, "L%d", k + 1);
+                v2_R(cv, k * 32 + 1, 55, 29, 8, 1);
+                v2_TC(cv, k * 32 + 15, 56, n, 1, 0);
+            }
+        else
+            v2_TC(cv, 64, 30, "Steps: sequencer", 1, 1);
+        return 1;
+    }
+    if (!rfmv_loop_to_steps(m))
+        return 0;
+    for (l = 0; l < LANES && !(t->to_down >> (4 * l) & 15); l++) {}
+    if (l < LANES && t->to_lvl) {                       /* (the lane's level) */
+        mr_gfx_clear(cv, 0);
+        level_screen(m, cv, KL_LVL0 + t->to_lvl - 1);
+        return 1;
+    }
+    if (l < LANES || (t->to_ms && now(m) - t->to_ms < TO_OVL_MS)) {
+        char w[40];
+        if (l < LANES)                                  /* (a key held: the lane's keys) */
+            snprintf(w, sizeof w, "L%d %s %s %s %s", l + 1, TO_KEY[0], TO_KEY[1], TO_KEY[2], TO_KEY[3]);
+        else
+            snprintf(w, sizeof w, "%s", t->to_msg);
+        v2_R(cv, 0, 0, 128, 11, 0);
+        v2_O(cv, 0, 0, 128, 11, 1);
+        v2_TC(cv, 64, 2, w, 1, 1);
+        return 1;
+    }
+    return 0;
+}
+int rfmv_loop_to_timed(const rfm_move_t *m)
+{
+    const rfm_move_loop_t *t = &m->loop;
+    int l;
+    if (!rfmv_loop_cap(m))
+        return 0;
+    if ((t->card_ms && now(m) - t->card_ms < TO_CARD_MS + 100) || (t->to_ms && now(m) - t->to_ms < TO_OVL_MS + 100))
+        return 1;
+    if (!rfmv_loop_to_steps(m))
+        return 0;
+    if (rec_any(m) >= 0)
+        return 1;
+    for (l = 0; l < LANES; l++)
+        if (lane_next(m, l) >= 0 || (lane_play(m, l) >= 0 && running(m)))
             return 1;
     return 0;
 }
