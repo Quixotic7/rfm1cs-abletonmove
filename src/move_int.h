@@ -539,6 +539,8 @@ void rfmv_loop_clear(rfm_move_t *m);                    /* (project.c) an empty 
 void rfmv_loop_write(const rfm_move_t *m, uint8_t *p);  /* .. RFM_MOVE_LOOP_BYTES */
 int rfmv_loop_check(const uint8_t *p, int ver);         /* .. 0 valid (version 19 or 20) */
 void rfmv_loop_read(rfm_move_t *m, const uint8_t *p, int ver);
+void rfmv_kit_rec_src_turn(rfm_move_t *m, int d);      /* (hf_kit_3) the kit's pad recording source a step on */
+const char *rfmv_kit_rec_src_name(const rfm_move_t *m, int brief);   /* .. its name ("Input"; brief "In") */
 void rfmv_loop_drop_live(rfm_move_t *m);                /* (hf_looper_10) before a project load: recordings and
                                                          * overdubs cancelled at the host */
 void rfmv_loop_loaded_project(rfm_move_t *m);           /* .. loaded or made: the host told */

@@ -2623,6 +2623,32 @@ static void rec_src_step(rfm_move_t *m, int d)
     rfmv_seq_dirty(m);
     touched(m);
 }
+/* (hf_kit_3, the owner's) the kit track's settings' Rec Source row (Shift + step 3, the jog): the source a step on;
+ * a take running: only while armed (its sign is always what is recorded) */
+void rfmv_kit_rec_src_turn(rfm_move_t *m, int d)
+{
+    rfm_move_kit_t *t = K(m);
+    int i, j = 0;
+    if (!d)
+        return;
+    if (rec_running(m)) {
+        rec_src_step(m, d);
+        return;
+    }
+    for (i = 0; i < NREC_SRCS; i++)
+        if (REC_SRCS[i] == t->rec_src)
+            j = i;
+    j = ((j + (d > 0 ? 1 : -1)) % NREC_SRCS + NREC_SRCS) % NREC_SRCS;
+    t->rec_src = REC_SRCS[j];
+    rfmv_seq_dirty(m);
+}
+const char *rfmv_kit_rec_src_name(const rfm_move_t *m, int brief)
+{
+    static const char *const W[RFM_MOVE_SMP_SRC_N] = { "Master", "Track 1", "Track 2", "Track 3", "Input", "Stems", "Looper",
+                                                       "Kit" };
+    static const char *const B[RFM_MOVE_SMP_SRC_N] = { "Mst", "T1", "T2", "T3", "In", "St", "Lp", "Kit" };
+    return (brief ? B : W)[m->kit.rec_src % RFM_MOVE_SMP_SRC_N];
+}
 static void turn(rfm_move_t *m, int d)
 {
     rfm_move_kit_t *t = K(m);
@@ -5209,10 +5235,8 @@ int rfmv_kit_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
         snprintf(o, (size_t)cap, "%s%s%s", t->msg, t->msg2[0] ? " " : "", t->msg2);
         *subj = 0xA00, *stamp = t->msg_ms;
     } else if (rec_running(m)) {
-        static const char *const SRCW[RFM_MOVE_SMP_SRC_N] = { "Master", "Track 1", "Track 2", "Track 3", "Input", "Stems",
-                                                               "Looper", "Kit" };
         snprintf(o, (size_t)cap, "%s pad %d, %s", m->smp.st.state == RFM_MOVE_SMP_ST_ARMED ? "Armed," : "Recording,",
-                 t->rec_pad, SRCW[t->rec_src % RFM_MOVE_SMP_SRC_N]);
+                 t->rec_pad, rfmv_kit_rec_src_name(m, 0));
         *subj = 0xA01, *stamp = 0;
     } else if (merge_up(m)) {                           /* (3c) */
         if (t->mg_a)

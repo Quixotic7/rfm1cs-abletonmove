@@ -2826,11 +2826,16 @@ static int smenu_jogsel(const rfm_move_seq_t *q)
  * the kit as a group") the rows the jog moves over: the menu's knobs; a kit track's settings (Workflow) also row 5,
  * Export Samples (the jog's only: knob 5 stays dark; its click exports) */
 #define WF_EXPORT 4
+#define WF_RECSRC 5                                     /* (2026-11-27, hf_kit_3, the owner's) Rec Source: the kit's
+                                                         * pad recordings' source (Input, Master, Track 1-3, Kit) */
 static int wf_export(const rfm_move_t *m)
 {
     return m->seq.smenu == RFM_MOVE_SM_WORKFLOW && rfmv_kit_routed(m, m->seq.sel_track);
 }
-static int smenu_rows(const rfm_move_t *m) { return rfmv_seq_menu_knobs(m) | (wf_export(m) ? 1 << WF_EXPORT : 0); }
+static int smenu_rows(const rfm_move_t *m)
+{
+    return rfmv_seq_menu_knobs(m) | (wf_export(m) ? 1 << WF_EXPORT | 1 << WF_RECSRC : 0);
+}
 static int smenu_sel(const rfm_move_t *m)              /* the selected knob (-1: the menu has none: Tempo following) */
 {
     const int mk = smenu_rows(m), s = m->seq.sm_sel;
@@ -2862,6 +2867,13 @@ static void smenu_jog_turn(rfm_move_t *m, int d)
     char w[64];
     if (k < 0 || !d)
         return;
+    if (q->sm_edit && k == WF_RECSRC && wf_export(m)) {   /* (hf_kit_3) the kit's Rec Source (no knob) */
+        rfmv_kit_rec_src_turn(m, d);
+        q->sm_k = (int8_t)k, q->sm_ms = rfmv_now_ms(m);
+        smenu_sel_words(m, k, "", w, sizeof w);
+        rfmv_say_text(m, w);
+        return;
+    }
     if (q->sm_edit || !(mk & (mk - 1))) {               /* (2026-11-26, the owner's: a menu of one setting, as Layout:
                                                          * the turn changes it, no click first) */
         smenu_turn(m, k, d, 1);
@@ -4402,6 +4414,8 @@ static void smenu_head(const rfm_move_t *m, int k, char *o, int cap)   /* knob k
     case RFM_MOVE_SM_WORKFLOW:
         if (k == WF_EXPORT)
             snprintf(o, (size_t)cap, "Export Samples");
+        else if (k == WF_RECSRC)
+            snprintf(o, (size_t)cap, "Rec Source %s", rfmv_kit_rec_src_name(m, 0));
         else if (k == 0)
             snprintf(o, (size_t)cap, "Channel %d", t->ch + 1);
         else if (k == 1)
@@ -4524,6 +4538,12 @@ static void wf_row(const rfm_move_t *m, int i, char *b, int cap, int w)
         snprintf(b, (size_t)cap, "%s", v2_tw("Export Samples", 2) <= w ? "Export Samples" : "Export");
         return;
     }
+    if (i == WF_RECSRC) {                               /* (2026-11-27, hf_kit_3) its pad recordings' source */
+        snprintf(b, (size_t)cap, "Rec %s", rfmv_kit_rec_src_name(m, 0));
+        if (v2_tw(b, 2) > w)
+            snprintf(b, (size_t)cap, "Rec %s", rfmv_kit_rec_src_name(m, 1));
+        return;
+    }
     if (i == 0)
         snprintf(v, sizeof v, "%d", t->ch + 1);
     else if (i == 1)
@@ -4537,7 +4557,7 @@ static void wf_row(const rfm_move_t *m, int i, char *b, int cap, int w)
         snprintf(b, (size_t)cap, "%s", v);
 }
 static int wf_top(int cur) { return cur >= 3 ? cur - 2 : 0; }   /* (three rows shown: Quant's selection scrolls one,
-                                                         * a kit track's Export two) */
+                                                         * a kit track's Export two, its Rec Source three) */
 static void smenu_screen(const rfm_move_t *m, mr_canvas_t *cv)
 {
     const rfm_move_seq_t *q = &m->seq;
@@ -4880,6 +4900,8 @@ void rfmv_seq_smenu_words(const rfm_move_t *m, int k, char *o, int cap)
     case RFM_MOVE_SM_WORKFLOW:
         if (k == WF_EXPORT)
             snprintf(o, (size_t)cap, "Export samples");
+        else if (k == WF_RECSRC)
+            snprintf(o, (size_t)cap, "Pad recording source: %s", rfmv_kit_rec_src_name(m, 0));
         else if (k == 1)
             snprintf(o, (size_t)cap, "Rate: %s", rfm_move_seq_rate_name(t->rate));
         else if (k == 2)

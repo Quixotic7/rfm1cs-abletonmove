@@ -3192,6 +3192,19 @@ static void t_owner_four(void)
         CHECK(e >= 0 && count(RFM_MOVE_ACT_KIT_EXPORT) == 1 && !M.seq.sm_edit && !strcmp(D[e], "Project 01"));
         CHECK(e >= 0 && A[e].len == strlen("Project 01") + 1 + strlen("Kick trim") + 1 + 3 + strlen("Hat") + 1 + 11);
     }
+    /* (2026-11-27, hf_kit_3) its sixth row: Rec Source, the pad recordings' (Input; the click, the jog: Master) */
+    M.kit.rec_src = RFM_MOVE_SMP_SRC_INPUT;
+    jog(1);
+    CHECK(rfmv_seq_menu_sel(&M) == 5);
+    jog_click();
+    CHECK(M.seq.sm_edit);
+    jog(1);
+    CHECK(M.kit.rec_src == RFM_MOVE_SMP_SRC_MASTER);
+    dump("recsrc_row");
+    jog(-1), jog(-1);
+    CHECK(M.kit.rec_src == RFM_MOVE_SMP_SRC_KIT);       /* (round: Input back to Kit) */
+    jog_click();
+    M.kit.rec_src = RFM_MOVE_SMP_SRC_INPUT;
     press(MR_CC_BACK), rest();
 }
 
