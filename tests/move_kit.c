@@ -944,14 +944,14 @@ static void t_project(void)
     for (i = 0; i < 4; i++) {
         uint32_t k;
         memcpy(c, b, (size_t)n);
-        CHECK(i || (b[n - 4 - RFM_MOVE_KIT_BYTES + 3] == 3 && b[n - 4 - RFM_MOVE_KIT_BYTES + 4] == 100 &&
-                    b[n - 4 - RFM_MOVE_KIT_BYTES + 5] == 64));   /* (12: the chosen pad, the kit's strip) */
+        CHECK(i || (b[n - 4 - RFM_MOVE_LOOP_BYTES - RFM_MOVE_KIT_BYTES + 3] == 3 && b[n - 4 - RFM_MOVE_LOOP_BYTES - RFM_MOVE_KIT_BYTES + 4] == 100 &&
+                    b[n - 4 - RFM_MOVE_LOOP_BYTES - RFM_MOVE_KIT_BYTES + 5] == 64));   /* (12: the chosen pad, the kit's strip) */
         switch (i) {
-        case 0: c[n - 4 - RFM_MOVE_KIT_BYTES] = 9; break;              /* (no such layout) */
-        case 1: c[n - 4 - RFM_MOVE_KIT_BYTES + 1] = 1; break;          /* (track 1 to the kit) */
-        case 2: c[n - 4 - RFM_MOVE_KIT_BYTES + 40 + 159] = 'x'; break; /* (a path with no NUL) */
-        default: c[n - 4 - RFM_MOVE_KIT_BYTES + 40 + 160 + 2 * RFM_MOVE_KIT_P_START] = 0xFF,
-                 c[n - 4 - RFM_MOVE_KIT_BYTES + 40 + 160 + 2 * RFM_MOVE_KIT_P_START + 1] = 0x7F; break;   /* (start past
+        case 0: c[n - 4 - RFM_MOVE_LOOP_BYTES - RFM_MOVE_KIT_BYTES] = 9; break;              /* (no such layout) */
+        case 1: c[n - 4 - RFM_MOVE_LOOP_BYTES - RFM_MOVE_KIT_BYTES + 1] = 1; break;          /* (track 1 to the kit) */
+        case 2: c[n - 4 - RFM_MOVE_LOOP_BYTES - RFM_MOVE_KIT_BYTES + 40 + 159] = 'x'; break; /* (a path with no NUL) */
+        default: c[n - 4 - RFM_MOVE_LOOP_BYTES - RFM_MOVE_KIT_BYTES + 40 + 160 + 2 * RFM_MOVE_KIT_P_START] = 0xFF,
+                 c[n - 4 - RFM_MOVE_LOOP_BYTES - RFM_MOVE_KIT_BYTES + 40 + 160 + 2 * RFM_MOVE_KIT_P_START + 1] = 0x7F; break;   /* (start past
                                                          * the end) */
         }
         for (h = 2166136261u, k = 0; k < (uint32_t)n - 4; k++)
@@ -3120,13 +3120,13 @@ static void t_owner_four(void)
     }
     jog_click(), rest();                                /* (kept: Files closed) */
     n = rfm_move_project_save(&M, b, sizeof b);
-    CHECK(n > 0 && b[4] == 18 && rfm_move_project_check(b, (uint32_t)n) == 0);
+    CHECK(n > 0 && b[4] == RFM_MOVE_PROJECT_VERSION && rfm_move_project_check(b, (uint32_t)n) == 0);
     rfm_move_init(&M2, NULL, on_act, NULL);
     rfm_move_fw_caps(&M2, KCAPS);
     CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n) == 0 && !strcmp(M2.kit.pad[0].orig, kick) &&
           !strcmp(M2.kit.pad[0].path, "@/Kick.wav"));
     n0 = (int)proj_v17(b, (uint32_t)n);                 /* (version 17: no original places) */
-    CHECK(n0 == n - RFM_MOVE_KIT_PADS * RFM_MOVE_KIT_PATH && rfm_move_project_check(b, (uint32_t)n0) == 0);
+    CHECK(n0 == n - RFM_MOVE_LOOP_BYTES - RFM_MOVE_KIT_PADS * RFM_MOVE_KIT_PATH && rfm_move_project_check(b, (uint32_t)n0) == 0);
     rfm_move_init(&M2, NULL, on_act, NULL);
     rfm_move_fw_caps(&M2, KCAPS);
     CHECK(rfm_move_project_load(&M2, 1, b, (uint32_t)n0) == 0 && !M2.kit.pad[0].orig[0] &&

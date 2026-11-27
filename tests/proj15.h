@@ -28,10 +28,22 @@ static inline void proj_sum(uint8_t *b, uint32_t n)
     for (i = 0; i < 4; i++)
         b[n - 4 + i] = (uint8_t)(h >> (8 * i));
 }
+/* (looper stage 1) a version 19 blob as version 18: the looper's part (after the kit's) gone */
+static inline uint32_t proj_v18(uint8_t *b, uint32_t n)
+{
+    if (b[4] < 19 || n < RFM_MOVE_LOOP_BYTES + 4)
+        return n;
+    memmove(b + n - 4 - RFM_MOVE_LOOP_BYTES, b + n - 4, 4);
+    n -= RFM_MOVE_LOOP_BYTES;
+    b[4] = 18;
+    proj_sum(b, n);
+    return n;
+}
 /* (2026-11-26) a version 18 blob as version 17: the pads' original places (the kit part's last 16 paths) gone */
 static inline uint32_t proj_v17(uint8_t *b, uint32_t n)
 {
     const uint32_t o = RFM_MOVE_KIT_PADS * RFM_MOVE_KIT_PATH;
+    n = proj_v18(b, n);
     if (b[4] < 18 || n < o + 4)
         return n;
     memmove(b + n - 4 - o, b + n - 4, 4);

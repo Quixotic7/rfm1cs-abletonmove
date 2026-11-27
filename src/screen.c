@@ -353,8 +353,8 @@ static void track_menu(const rfm_move_t *m, mr_canvas_t *cv, int t)
     slot_title(m, t % 3, nm, sizeof nm);
     if (t == 3) {
         if (rfmv_fx_ok(m))
-            rfmv_pop_screen(cv, "Track 4", rfmv_t4_page(m) == 2 ? "Kit" : rfmv_t4_page(m) ? "Routing" : "Mixer",
-                            rfmv_kit_cap(m) ? 3 : 2, rfmv_t4_page(m), NULL);
+            rfmv_pop_screen(cv, "Track 4", rfmv_t4_page(m) == 3 ? "Looper" : rfmv_t4_page(m) == 2 ? "Kit" : rfmv_t4_page(m) ? "Routing" : "Mixer",
+                            rfmv_loop_cap(m) ? 4 : rfmv_kit_cap(m) ? 3 : 2, rfmv_t4_page(m), NULL);
         else
             rfmv_pop_screen(cv, "Track 4", "Shift", 0, 0, NULL);
         return;
@@ -1260,7 +1260,8 @@ static void popups(const rfm_move_t *m, mr_canvas_t *cv)
                 break;
             case POP_JOG: rfmv_pop_screen(cv, "Jog", rfmv_jog_name(i), 3, i % 3, NULL); break;
             case POP_T4:                                /* (stage 3a: the Kit, the round's third) */
-                rfmv_pop_screen(cv, "Track 4", i == 2 ? "Kit" : i ? "Routing" : "Mixer", rfmv_kit_cap(m) ? 3 : 2, i, NULL);
+                rfmv_pop_screen(cv, "Track 4", i == 3 ? "Looper" : i == 2 ? "Kit" : i ? "Routing" : "Mixer",
+                                rfmv_loop_cap(m) ? 4 : rfmv_kit_cap(m) ? 3 : 2, i, NULL);
                 break;
             case POP_CCNUM:
                 slot_title(m, m->fw.active % 3, nm, sizeof nm);
@@ -1525,7 +1526,8 @@ int rfm_move_screen_timed(const rfm_move_t *m)
            (m->menu_what && rfmv_now_ms(m) - m->menu_ms < RFM_MOVE_POPUP_MS) ||
            (q->projects && q->proj_pending >= 0) || rfmv_fw_timed(m) || rfmv_pfw_timed(m) || rfmv_st_timed(m) ||
            rfmv_smp_timed(m) ||                         /* (0.15.0: the sampler's three rows, message, a take) */
-           rfmv_kit_timed(m);                           /* (stage 3a: the kit's rows, popups, messages, lights) */
+           rfmv_kit_timed(m) ||                         /* (stage 3a: the kit's rows, popups, messages, lights) */
+           rfmv_loop_timed(m);                          /* (looper stage 1: its lanes, popups, blinking pads) */
 }
 
 void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREEN_BYTES])
@@ -1556,7 +1558,8 @@ void rfm_move_screen(rfm_move_t *m, const uint16_t *rgb565, uint8_t out[MR_SCREE
         mr_gfx_pack(&cv, out);
         return;
     }
-    if (rfmv_kit_level_screen(m, &cv)) {                /* (2026-11-26) the volume knob on the kit's level (Track 4
+    if (rfmv_loop_level_screen(m, &cv) || rfmv_kit_level_screen(m, &cv)) {   /* (looper stage 1: a held slot's, the
+                                                         * Loops strip's) */                /* (2026-11-26) the volume knob on the kit's level (Track 4
                                                          * held) or a held pad's: its popup, over the held Track's menu */
         mr_gfx_pack(&cv, out);
         return;

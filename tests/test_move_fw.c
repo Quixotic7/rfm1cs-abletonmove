@@ -896,8 +896,8 @@ static void test_mroute(void)
     /* saved and loaded (version 7; the load tells the host; 0.12.0: version 8's launch settings after them) */
     n = rfm_move_project_save(m, blob, sizeof blob);
     {                                                   /* (0.13.0: made a version 8 blob, version 9's firmwares off) */
-        memmove(blob + n - 4 - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES, blob + n - 4, 4);
-        n -= RFM_MOVE_PFW_BYTES + RFM_MOVE_KIT_BYTES, blob[4] = 8;   /* (stage 3a: nor the kit) */
+        memmove(blob + n - 4 - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES - RFM_MOVE_LOOP_BYTES, blob + n - 4, 4);
+        n -= RFM_MOVE_PFW_BYTES + RFM_MOVE_KIT_BYTES + RFM_MOVE_LOOP_BYTES, blob[4] = 8;   /* (stage 3a: nor the kit) */
         for (h = 2166136261u, k = 0; k < n - 4; k++)
             h = (h ^ blob[k]) * 16777619u;
         for (k = 0; k < 4; k++)
@@ -1118,7 +1118,7 @@ static void test_old_formats(void)
     rfmv_seq_note_put(m, 0, 3, 64, 90, 24, 0);
     m->seq.fx.send[0][1] = 33;
     n = rfm_move_project_save(m, blob, sizeof blob);
-    CHECK(blob[4] == RFM_MOVE_PROJECT_VERSION && RFM_MOVE_PROJECT_VERSION == 18);
+    CHECK(blob[4] == RFM_MOVE_PROJECT_VERSION && RFM_MOVE_PROJECT_VERSION == 19);
     n = (int)proj_v15(blob, (uint32_t)n);               /* (2026-11-26: 7 bytes a note before 16) */
     n4 = n - RFM_MOVE_FXSET_BYTES - RFM_MOVE_FW_SLOTS - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES_V15;   /* a version 4 blob: no FX setup (0.6.6:
                                                          * nor MIDI routes; 0.12.0: nor launch settings) */
@@ -2002,7 +2002,7 @@ static void test_fx_pages(void)
     CHECK(!memcmp(M2.seq.fx.afx[0].val, sl->val, 16) && M2.seq.fx.afx[0].val[14] == 99);
     CHECK(M2.seq.fx.mfx[2].val[9] == 20);               /* (page 2's knob 2 turned +1) */
     /* a version 5 project (8 values a slot): those 8, the rest the defaults */
-    body = n - 4 - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_FW_SLOTS - RFM_MOVE_FXSET_BYTES - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES;   /* (0.6.6: the MIDI routes after FX
+    body = n - 4 - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_FW_SLOTS - RFM_MOVE_FXSET_BYTES - RFM_MOVE_PFW_BYTES - RFM_MOVE_KIT_BYTES - RFM_MOVE_LOOP_BYTES;   /* (0.6.6: the MIDI routes after FX
                                                          * setup; 0.12.0: the launch settings after them) */
     memcpy(b5, blob, (size_t)body);
     {
@@ -2018,7 +2018,7 @@ static void test_fx_pages(void)
         n5 = (int)(o - b5) + 4;
     }
     CHECK(n5 == n - 1 - RFM_MOVE_SEQ_CLIPS - RFM_MOVE_FW_SLOTS - (RFM_MOVE_FXSET_BYTES - RFM_MOVE_FXSET_BYTES_V5) - RFM_MOVE_PFW_BYTES -
-          RFM_MOVE_KIT_BYTES);
+          RFM_MOVE_KIT_BYTES - RFM_MOVE_LOOP_BYTES);
     b5[4] = 5;
     for (h = 2166136261u, k = 0; k < n5 - 4; k++)
         h = (h ^ b5[k]) * 16777619u;

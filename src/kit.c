@@ -772,8 +772,17 @@ void rfmv_kit_open(rfm_move_t *m)
     if (q->projects)
         rfmv_view_close(m);                             /* (out of the Mixer / Routing / the projects first) */
     rfmv_seq_menu_close(m);
+    if (m->loop.on) {                                   /* (looper stage 1: from the Looper view, what it was opened
+                                                         * over is the kit's now) */
+        if (!t->on && m->loop.prev_ok)
+            t->prev_mode = m->loop.prev_mode, t->prev_track = m->loop.prev_track, t->prev_view = m->loop.prev_view,
+            t->prev_ok = 1;
+        m->loop.prev_ok = 0;
+        rfmv_loop_close(m, 0);
+    }
     if (!t->on) {
-        t->prev_mode = m->s.mode, t->prev_track = q->sel_track, t->prev_view = q->view, t->prev_ok = 1;
+        if (!t->prev_ok)
+            t->prev_mode = m->s.mode, t->prev_track = q->sel_track, t->prev_view = q->view, t->prev_ok = 1;
         t->tools = 0, t->turned = 0, t->kpop = -1;
     }
     t->on = 1;
@@ -783,7 +792,7 @@ void rfmv_kit_open(rfm_move_t *m)
     rfmv_seq_select(m, trk(t->cur));
     if (t->tab == 2 && !t->br_pad)
         files_open(m, t->cur);                          /* (round A: Files on the pad's sound) */
-    if (!m->s.t4_kit)
+    if (m->s.t4_kit != 1)
         m->s.t4_kit = 1, rfmv_changed(m);
     rfmv_pop(m, POP_T4, 2);
     touched(m);
@@ -819,7 +828,7 @@ void rfmv_kit_caps(rfm_move_t *m, int was)
         rfm_move_kit_sync(m);
     } else if (!rfmv_kit_cap(m) && was) {
         m->kit.on = 0;
-        if (m->s.t4_kit)
+        if (m->s.t4_kit == 1)
             m->s.t4_kit = 0;
     }
 }

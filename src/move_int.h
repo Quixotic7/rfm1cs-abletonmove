@@ -515,6 +515,43 @@ int rfmv_kit_trig_first(const rfm_move_t *m);
 int rfmv_kit_held_pop(const rfm_move_t *m, int *abs, int *v, int *has);   /* (2026-11-26) a held step + the jog / the
                                                          * arrows: its Length / Nudge popup */
 void rfmv_kit_page_cells(const rfm_move_t *m, int *n, int *cur);   /* .. its pages shown, the one shown */
+/* ---- looper.c: (looper stage 1) the looper (RFM_MOVE_CAP_LOOPER) */
+int rfmv_loop_cap(const rfm_move_t *m);
+void rfmv_loop_init(rfm_move_t *m);                     /* (rfm_move_init) an empty looper */
+void rfmv_loop_caps(rfm_move_t *m, int was);            /* the caps set (was: the looper's before) */
+int rfmv_loop_active(const rfm_move_t *m);              /* the Looper view is the view */
+int rfmv_loop_shown(const rfm_move_t *m);               /* .. and its screen shows */
+void rfmv_loop_open(rfm_move_t *m);                     /* Track 4's Looper view */
+void rfmv_loop_close(rfm_move_t *m, int restore);
+int rfmv_loop_input(rfm_move_t *m, const mr_event_t *ev);   /* 1 taken */
+int rfmv_loop_back(rfm_move_t *m);                      /* Back's click: 1 taken */
+int rfmv_loop_back_has(const rfm_move_t *m);
+void rfmv_loop_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0], uint8_t wv[13]);
+void rfmv_loop_leds_w(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3]);   /* Sample, Track 4, the icons */
+int rfmv_loop_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* 1 drawn */
+int rfmv_loop_level_screen(const rfm_move_t *m, mr_canvas_t *cv);   /* the volume knob's popup over everything: 1 */
+int rfmv_loop_timed(const rfm_move_t *m);
+void rfmv_loop_poll(rfm_move_t *m);                     /* (advance) */
+int rfmv_loop_volume(rfm_move_t *m, int d);             /* Track 4 held + the volume knob in the Looper view: the strip */
+void rfmv_loop_clear(rfm_move_t *m);                    /* (project.c) an empty looper */
+void rfmv_loop_write(const rfm_move_t *m, uint8_t *p);  /* .. RFM_MOVE_LOOP_BYTES */
+int rfmv_loop_check(const uint8_t *p);                  /* .. 0 valid */
+void rfmv_loop_read(rfm_move_t *m, const uint8_t *p);
+void rfmv_loop_loaded_project(rfm_move_t *m);           /* .. loaded or made: the host told */
+int rfmv_loop_base_words(const rfm_move_t *m, char *o, int cap);   /* (speech) */
+int rfmv_loop_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);
+void rfmv_loop_mix_turn(rfm_move_t *m, int par, int d); /* (fw.c) the Mixer's Loops strip: a value (RFM_MOVE_MIXP_*) */
+/* (sampler.c) the sampler's Loops tab: its screen under the tabs line, the jog's turn (1 taken; d past the first slot:
+ * 0, the tabs), the click, Sample (1 taken), a knob 1..4 touched / turned (the lanes' levels), its words */
+void rfmv_loop_tab_screen(const rfm_move_t *m, mr_canvas_t *cv);
+int rfmv_loop_tab_turn(rfm_move_t *m, int d);
+void rfmv_loop_tab_click(rfm_move_t *m);
+int rfmv_loop_tab_sample(rfm_move_t *m);
+int rfmv_loop_tab_knob(rfm_move_t *m, int k, int touch, int d);
+int rfmv_loop_tab_words(const rfm_move_t *m, char *o, int cap);
+void rfmv_loop_tab_leds(const rfm_move_t *m, rfmv_rgb_t c[L_WHITE0]);   /* knobs 1..4 */
+int rfmv_loop_tab_timed(const rfm_move_t *m);
+int rfmv_loop_recording(const rfm_move_t *m);           /* a recording armed or running (Sample's light) */
 /* (seq_ui.c) the TRIG page's knob k turned d on the held steps (bits of the page shown) of clip, or (none held) the
  * selected track's defaults for new steps: its popup, as a firmware track's */
 void rfmv_seq_trig_knob(rfm_move_t *m, int clip, int k, int d, uint16_t held);

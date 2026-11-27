@@ -187,7 +187,8 @@ int rfmv_back_has(const rfm_move_t *m)
 {
     return m->seq.smenu || m->seq.projects || rfmv_seq_layer_open(m) || rfmv_st_on(m) ||   /* (0.13.0: States) */
            rfmv_fwp_locked(m) || rfmv_smp_shown(m) ||   /* (0.14.0: the FM-1 page's lock; 0.15.0: the sampler) */
-           rfmv_kit_back_has(m);                        /* (stage 3a: the kit's popup, tools, folders, tabs) */
+           rfmv_kit_back_has(m) ||                      /* (stage 3a: the kit's popup, tools, folders, tabs) */
+           rfmv_loop_back_has(m);                       /* (looper stage 1: its popup, message, page switcher) */
 }
 int rfmv_seq_layer_open(const rfm_move_t *m)
 {
@@ -4807,6 +4808,7 @@ void rfmv_seq_screen(const rfm_move_t *m, mr_canvas_t *cv)
             for (r = 0; r < 4; r++)
                 held_icon(cv, hi == 1 ? IC_CUT : IC_COPY, RFM_MOVE_SV_COLS * 16 + 3, 4 + r * 15 + 1);
     } else if (rfmv_kit_screen(m, cv)) {             /* (stage 3a) the Kit view */
+    } else if (rfmv_loop_screen(m, cv)) {            /* (looper stage 1) the Looper view */
     } else if (!(rfmv_ep_list_shown(m) && rfmv_ep_list_screen(m, cv))) {   /* (0.14.0: the ENGINE page's list) */
         track_screen(m, cv);
         if (hi)                                         /* (the roll's top right) */

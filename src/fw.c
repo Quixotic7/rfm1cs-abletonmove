@@ -742,11 +742,13 @@ void rfm_move_fw_caps(rfm_move_t *m, int caps)
     rfm_move_fw_state_t *f = F(m);
     int s;
     const int smp = rfmv_smp_cap(m);
-    const int kit = rfmv_kit_cap(m);
-    f->caps = (uint8_t)(caps & (RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW | RFM_MOVE_CAP_SAMPLER | RFM_MOVE_CAP_KIT | RFM_MOVE_CAP_EXIT));
+    const int kit = rfmv_kit_cap(m), loop = rfmv_loop_cap(m);
+    f->caps = (uint8_t)(caps & (RFM_MOVE_CAPS_ALL | RFM_MOVE_CAP_PROJFW | RFM_MOVE_CAP_SAMPLER | RFM_MOVE_CAP_KIT | RFM_MOVE_CAP_EXIT |
+                                RFM_MOVE_CAP_LOOPER));
                                                         /* (0.13.0: PROJFW; 0.15.0: SAMPLER; stage 3a: KIT) */
     rfmv_smp_caps(m, smp);
     rfmv_kit_caps(m, kit);
+    rfmv_loop_caps(m, loop);                            /* (looper stage 1) */
     if (!(f->caps & RFM_MOVE_CAP_PROJFW))
         rfmv_st_close(m), m->pfw_on = 0, m->pfw_msg = 0;
     if (!(f->caps & RFM_MOVE_CAP_SLOTS)) {             /* one slot: the others emptied, slot 0 played */
@@ -1233,7 +1235,7 @@ int rfmv_fw_volume(rfm_move_t *m, int d)
 {
     int t;
     if (!m->fw.host)
-        return rfmv_track_held(m, 3) && rfmv_kit_volume(m, d);
+        return rfmv_track_held(m, 3) && (rfmv_loop_volume(m, d) || rfmv_kit_volume(m, d));
     for (t = 0; t < nslots(m); t++)
         if (rfmv_track_held(m, t) && slot_loaded(m, t)) {
             set_level(m, t, d);
@@ -1242,7 +1244,8 @@ int rfmv_fw_volume(rfm_move_t *m, int d)
     /* (2026-11-26, the owner's: "Holding track 4 button and turning volume knob should change the drum kit level")
      * Track 4 held: the kit's level, as a firmware Track's slot level, wherever Track 4's views include the kit; its
      * popup while the knob is touched (kit.c) */
-    return rfmv_track_held(m, 3) && rfmv_kit_volume(m, d);
+    return rfmv_track_held(m, 3) && (rfmv_loop_volume(m, d) || rfmv_kit_volume(m, d));   /* (looper stage 1: in the
+                                                         * Looper view, the Loops strip's) */
 }
 static void after_filter(rfm_move_t *m, int step)
 {
@@ -3384,7 +3387,9 @@ int rfmv_fw_pick_installed(rfm_move_t *m, char ids[RFM_MOVE_FW_SLOTS][RFM_MOVE_F
 }
 int rfmv_t4_page(const rfm_move_t *m)                  /* (stage 3a: 2 the Kit view, a host with the kit) */
 {
-    if (!(m->seq.projects && m->fw.fx) && rfmv_kit_cap(m) && m->s.t4_kit)
+    if (!(m->seq.projects && m->fw.fx) && rfmv_loop_cap(m) && m->s.t4_kit == 2)
+        return 3;                                       /* (looper stage 1: 3 the Looper view) */
+    if (!(m->seq.projects && m->fw.fx) && rfmv_kit_cap(m) && m->s.t4_kit == 1)
         return 2;
     return m->s.fx_page == PG_MIX ? 0 : 1;
 }

@@ -1358,7 +1358,7 @@ static void test_blob(void)
     CHECK(rfm_move_project_save(m, a, sizeof a) == RFM_MOVE_PROJECT_FIXED);   /* an empty project: 608 bytes */
     rich_project(m, 7);
     n = rfm_move_project_save(m, a, sizeof a);
-    CHECK(n == RFM_MOVE_PROJECT_FIXED + m->seq.nnotes * 8 + m->seq.nlocks * 4 && n < 8000 + 720 + RFM_MOVE_KIT_BYTES + m->seq.nnotes);   /* (0.5.0: 720 more FX values;
+    CHECK(n == RFM_MOVE_PROJECT_FIXED + m->seq.nnotes * 8 + m->seq.nlocks * 4 && n < 8000 + 720 + RFM_MOVE_KIT_BYTES + RFM_MOVE_LOOP_BYTES + m->seq.nnotes);   /* (0.5.0: 720 more FX values;
                                                          * stage 3a: the kit) */
     printf("blob: empty %d bytes, %d notes + %d locks %d bytes, worst case %d\n", RFM_MOVE_PROJECT_FIXED,
            m->seq.nnotes, m->seq.nlocks, n, RFM_MOVE_PROJECT_MAX);

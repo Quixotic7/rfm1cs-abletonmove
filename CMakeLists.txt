@@ -46,7 +46,7 @@ set_target_properties(moveremote_gfx moveremote PROPERTIES C_STANDARD 99 C_STAND
 
 # ---- the core
 add_library(rfm1cs_move STATIC
-    src/move.c src/screen.c src/v2.c src/seq.c src/seq_ui.c src/project.c src/fw.c src/speech.c src/takeover.c src/projfw.c src/engine.c src/sampler.c src/kit.c)
+    src/move.c src/screen.c src/v2.c src/seq.c src/seq_ui.c src/project.c src/fw.c src/speech.c src/takeover.c src/projfw.c src/engine.c src/sampler.c src/kit.c src/looper.c)
 target_include_directories(rfm1cs_move PUBLIC ${RFM1CS_DIR}/include ${MR_DIR}/include)
 target_link_libraries(rfm1cs_move PUBLIC moveremote_gfx)
 target_compile_options(rfm1cs_move PRIVATE -Wall -Wextra -Wshadow -Wstrict-prototypes)

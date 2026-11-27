@@ -2093,6 +2093,7 @@ void rfm_move_seq_advance(rfm_move_t *m, uint32_t frames, uint32_t rate)
     rfmv_ep_sync(m, 1);                                 /* (0.14.0: the ENGINE page after the host's ep1 calls) */
     rfmv_smp_poll(m);                                   /* (0.15.0, stage 2: the sampler's Trim zoom, timed) */
     rfmv_kit_poll(m);                                   /* (stage 3a: the kit's timed parts) */
+    rfmv_loop_poll(m);                                  /* (looper stage 1) */
     rfmv_say_tick(m);                                  /* (0.6.0: speech: the transport, popups the clock brings up) */
 }
 

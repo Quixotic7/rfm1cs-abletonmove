@@ -105,6 +105,8 @@ static int base_words(const rfm_move_t *m, char *o, int cap)
     }
     if (rfmv_kit_base_words(m, o, cap))                 /* (stage 3a) the Kit view */
         return S_SAMPLER + 1;
+    if (rfmv_loop_base_words(m, o, cap))                /* (looper stage 1) the Looper view */
+        return S_SAMPLER + 2;
     if (m->seq.smenu && !m->seq.projects) {             /* (0.6.1) a Shift menu open: its name */
         if (m->seq.smenu == RFM_MOVE_SM_GLOBAL) {       /* (0.6.10: its header, the battery; the rows as they move) */
             char r[64];
@@ -368,7 +370,7 @@ static void menu_words(const rfm_move_t *m, int t, char *o, int cap)
         return;                                         /* (a shortcut, a level: their own words) */
     if (m->menu_what == MENU_NONE) {                    /* (0.8.0) the menu shown, nothing changed yet */
         if (t == 3)
-            snprintf(o, (size_t)cap, "Track 4, %s", !rfmv_fx_ok(m) ? "Shift" : rfmv_t4_page(m) == 2 ? "Kit" : rfmv_t4_page(m) ? "Routing" : "Mixer");
+            snprintf(o, (size_t)cap, "Track 4, %s", !rfmv_fx_ok(m) ? "Shift" : rfmv_t4_page(m) == 3 ? "Looper" : rfmv_t4_page(m) == 2 ? "Kit" : rfmv_t4_page(m) ? "Routing" : "Mixer");
         else {                                          /* (0.9.0) one menu: the layout and the track */
             slot_words(m, sl, o, cap);
             snprintf(o + strlen(o), (size_t)cap - strlen(o), "layouts, %s, Track %d",
@@ -633,6 +635,9 @@ static int pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint
         return rfmv_smp_pop_words(m, o, cap, subj, stamp);
     if (rfmv_kit_shown(m) && !(m->pop && rfmv_pop_up(m, m->pop) && (int32_t)(m->pop_ms - m->kit.chg_ms) > 0) &&
         rfmv_kit_pop_words(m, o, cap, subj, stamp))     /* (stage 3a) the Kit view: its row, popup, file, message */
+        return 1;
+    if (rfmv_loop_shown(m) && !(m->pop && rfmv_pop_up(m, m->pop) && (int32_t)(m->pop_ms - m->loop.chg_ms) > 0) &&
+        rfmv_loop_pop_words(m, o, cap, subj, stamp))    /* (looper stage 1) the Looper view */
         return 1;
     up = m->pop && (m->pop != POP_SELECT || rfmv_half(m)) && rfmv_pop_up(m, m->pop) &&
          !(m->pop == POP_MODE && m->pop_i < 4 && rfmv_hold_shown(m, m->pop_i));
