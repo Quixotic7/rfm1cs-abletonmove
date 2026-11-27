@@ -10,7 +10,7 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
   the Record page's Count-in (Off, 1, 2 bars: Play counts in, everything starts together after it), In Level and
   Monitor (the sampler's own input settings; Monitor Off / On / Auto); Warp Grains and Beats; the Loop page's Start
   and End markers (sample-accurate, a close-up from `LOOP_PEAKS`) and Steps (the region fills them at the tempo);
-  the step looper (Shift + step 13; in the FM-1 layout Track 4 held + step 13): the step keys as a looper pedal,
+  the step looper (Shift + step 4, the cylinder icon; in the FM-1 layout Track 4 held + step 4): the step keys as a looper pedal,
   four lanes of Rec, Dub (`LOOP_DUB`), Replace, Next / Stop, in Okabe-Ito colours, the loops' places on the keys.
   Project version 20 (19 loads). README "The looper, round 2".
 - **The looper, stage 1 (the owner's 2026-11-26 design round: every card `lp_*` its option a; `lp_scene` "A and b and

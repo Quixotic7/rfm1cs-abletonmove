@@ -842,9 +842,9 @@ static void t_steploop(void)
     tap_step(2);
     keys0 = count(RFM_MOVE_ACT_KEY);
     CHECK(keys0 > 0);                                   /* (off: an FM-1 key) */
-    /* on: Track 4 held + step 13 (the FM-1 layout's Shift is GLO); the card */
+    /* on: Track 4 held + step 4 (the FM-1 layout's Shift is GLO); the card */
     clear();
-    hold_track(3), step(12, 1), step(12, 0), track(3, 0);
+    hold_track(3), step(3, 1), step(3, 0), track(3, 0);
     CHECK(M.loop.to_on && rfmv_loop_to_steps(&M));
     screen();
     dump("to_card");
@@ -920,7 +920,7 @@ static void t_steploop(void)
     step(7, 0);
     /* Shift-less shortcuts: Track 4 held + a step stays the shortcuts; off again: the steps are the FM-1's */
     rest(), clear();
-    hold_track(3), step(12, 1), step(12, 0), track(3, 0);
+    hold_track(3), step(3, 1), step(3, 0), track(3, 0);
     CHECK(!M.loop.to_on);
     rest(), clear();
     tap_step(2);

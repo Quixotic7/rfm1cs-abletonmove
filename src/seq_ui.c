@@ -33,7 +33,7 @@ static rgb_t sv_col_rgb(const rfm_move_t *m, int track);
  * source), 3 Workflow Settings, 5 Tempo, 6 Metronome, 7 Groove, 8 Layout, 9 Keys & Scales, 10 Full Velocity (our Velocity menu),
  * 11 Repeat (our arp), 14 New Clip, 15 Double Loop, 16 Quantize */
 enum { SH_PROJECTS = 0, SH_CLOCK = 1, SH_WORKFLOW = 2, SH_TEMPO = 4, SH_METRO = 5, SH_GROOVE = 6, SH_LAYOUT = 7,
-       SH_KEYS = 8, SH_FIXVEL = 9, SH_ARP = 10, SH_STEPLOOP = 12, SH_NEWCLIP = 13, SH_DOUBLE = 14, SH_QUANT = 15 };
+       SH_KEYS = 8, SH_FIXVEL = 9, SH_ARP = 10, SH_STEPLOOP = 3, SH_NEWCLIP = 13, SH_DOUBLE = 14, SH_QUANT = 15 };
 static int sh_menu(int s)                               /* the menu a Shift + step opens, 0 none */
 {
     switch (s) {
@@ -1282,7 +1282,7 @@ void rfmv_seq_step(rfm_move_t *m, int s, int down, uint32_t now)
             break;
         }
         case SH_STEPLOOP:                               /* (looper round 2, item 9) the step keys' looper takeover;
-                                                         * in the FM-1 layout Track 4 held + step 13 */
+                                                         * in the FM-1 layout Track 4 held + step 4 (the cylinder icon, the owner's) */
             if (rfmv_loop_cap(m))
                 rfmv_loop_to_set(m, !m->loop.to_on);
             break;

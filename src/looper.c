@@ -2418,7 +2418,7 @@ int rfmv_loop_tab_timed(const rfm_move_t *m)
  * over the playing loop from the next bar), key 4 Next (the lane's next empty slot is the pedal's; the old loop stops
  * when the new recording starts), a double tap: Stop. A group key held + the volume knob: the lane's level. Over every
  * mode and layout but the Looper view (its steps are the scenes) and the menus; Shift + a step (Track 4 held + a step
- * in the FM-1 layout) stays the shortcuts. On / off: Shift + step 13 (the FM-1 layout: Track 4 held + step 13) or the
+ * in the FM-1 layout) stays the shortcuts. On / off: Shift + step 4, the cylinder icon (the FM-1 layout: Track 4 held + step 4) or the
  * Record page's knob 6; a full-screen card says it and the keys. The group shows its loop's place: a key a quarter of
  * the loop, the one now bright; recording: the bars as red keys, the one now blinking; overdub: the key now blinking
  * fast; waiting: blinking; a loop stopped: dim; empty: off. */
