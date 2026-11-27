@@ -1941,6 +1941,8 @@ static void relocate(rfm_move_t *m, int32_t tl, int32_t clocks)
 static void tk_transport(rfm_move_t *m, const uint8_t *msg, int n)
 {
     rfm_move_seq_t *q = &m->seq;
+    if (msg[0] >= 0xFA && msg[0] <= 0xFC && m->tk_play_tl && q->tl - m->tk_play_tl < BAR / 8)
+        return;                                         /* (FW Play on Both did it: its own answer to that Play) */
     switch (msg[0]) {
     case 0xFA:
         if (!q->playing) {

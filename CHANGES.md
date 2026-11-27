@@ -24,7 +24,8 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
   sequencer's clock goes to every firmware as before, and while it is stopped to the takeover's firmware alone (24
   PPQN at the tempo: it shows the Move's tempo and knows the Move leads); the firmware's Start asks for Play (playing:
   from the top), Continue for Play, Stop for Stop; its F8 and song position are not followed; its SysEx
-  `RFM_MOVE_TEMPO_REQ` (F0 7D 52 54, tempo x 10, F7) sets the tempo. tests/move_takeover.c test 10; move_sessview's
+  `RFM_MOVE_TEMPO_REQ` (F0 7D 52 54, tempo x 10, F7) sets the tempo. With FW Play on Both the firmware's Start / Stop within half a beat of a Play the core toggled is
+  not taken again (`tk_play_tl`). tests/move_takeover.c test 10; move_sessview's
   takeover case plays on the Move's clock.
 - **Levels: 100 is 0 dB (the owner's, 2026-11-26).** A 0..127 level (a firmware slot's, the kit's strip) reads as the
   hosts now play it, a gain of level / 100: 20 log10(v / 100) dB, so 100 (the default) is 0 dB, 127 is +2.1 dB, 1 is

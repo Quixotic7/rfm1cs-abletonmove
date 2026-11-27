@@ -2062,6 +2062,8 @@ typedef struct {
     uint8_t tk_vtouch;                                  /* the volume knob touched now (volume + Back: out) */
     uint8_t tk_back;                                    /* Back held back (BUTTONS without TRACKS): 1 down, unsent */
     uint8_t tk_back_trk;                                /* .. a Track pressed meanwhile (nothing sent at its release) */
+    int32_t tk_play_tl;                                 /* (0.17.0) FW Play on Both toggled the transport at this tick:
+                                                         * the firmware's own Start / Stop for that press not taken */
     uint8_t tk_back_eat;                                /* Back's release is nobody's (volume + Back took its press) */
     /* (0.8.0) the Track buttons, proposal 2 (README "The Track buttons") */
     uint32_t tbtn_up[4];                                /* a tap's release (input ms; 0 none): a press this soon after is

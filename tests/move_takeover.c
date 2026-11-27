@@ -693,6 +693,19 @@ static void test_clock(void)
     adv_ms(10);
     CHECK(M.seq.playing && clk[2][0] == 2);
     fw_rt(0xFC);
+    adv_ms(300);
+    M.s.fw_play = 1;                                    /* FW Play on Both: the Move's Play toggles the transport, and
+                                                         * the firmware's answer to the same press is not taken again */
+    press(MR_CC_PLAY);
+    fw_rt(0xFA);
+    adv_ms(300);
+    i = M.seq.T;
+    CHECKF(M.seq.playing && i > 40, "FW Play on Both, Play: playing %d T %d", M.seq.playing, i);
+    press(MR_CC_PLAY);
+    fw_rt(0xFA);                                        /* (it saw the Stop first: a Start, within the press's half beat) */
+    adv_ms(300);
+    CHECK(!M.seq.playing);
+    M.s.fw_play = 0;
     adv_ms(100);
     rfm_move_set_takeover(&M, 0, 0, NULL);              /* gone: nothing of its transport taken (INTERNAL) */
     CHECK(rfm_move_tk_shown(&M) == -1);
