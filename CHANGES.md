@@ -5,6 +5,19 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`); hosts take this repository as a su
 
 ## Unreleased
 
+- **The looper, stage 1 (the owner's 2026-11-26 design round: every card `lp_*` its option a; `lp_scene` "A and b and
+  c").** `src/looper.c`, `RFM_MOVE_CAP_LOOPER` (64): Track 4's fourth view (the round Mixer, Routing, Kit, Looper;
+  held: pad 4): 4 lanes (the pad rows, lane 1 on top) x 8 scenes. A tap on an empty slot records from the next bar
+  (stopped: armed), the red pad or Sample ends it at the next bar; a lane's Source and Length; a slot held + Sample
+  records over it. A tap on a loop plays it at the Launch setting, a playing one stops, a double click: now. Scenes:
+  a column's left step, Shift + a pad of the column, a slide down the column; step 16 stops all; stopped, a scene
+  starts the transport. Choosing silently: Loop held + a pad, the arrows. Five pages on the jog (Loops, Loop, Record,
+  Loop Mix, Looper Mix); a held slot + the volume knob (its level), Track 4 held + the volume knob (the Loops strip).
+  Copy / Delete / Undo (one step), Mute + a loop. The sampler's Loops tab (`RFM_MOVE_SMP_TABS_BUILT` 0xF). The
+  Mixer's fifth strip (knob 5, `MIX` slot 4). Actions `LOOP_REC` .. `LOOP_COPY` (90..94); answers
+  `rfm_move_loop_status`, `_recorded`, `_loaded`, `_refs`. Project version 19 (the looper's part after the kit's;
+  18 and older load with an empty looper). README "The looper (stage 1)"; tests `move_looper`.
+
 - **Levels: 100 is 0 dB (the owner's, 2026-11-26).** A 0..127 level (a firmware slot's, the kit's strip) reads as the
   hosts now play it, a gain of level / 100: 20 log10(v / 100) dB, so 100 (the default) is 0 dB, 127 is +2.1 dB, 1 is
   -40 dB, 0 -inf (screen.c `LVL_DB10`; `rfmv_lvl_db10`, `rfmv_lvl_step`'s 0.5 dB detents, the popups, the Mixer's

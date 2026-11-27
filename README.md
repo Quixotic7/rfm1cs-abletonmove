@@ -1568,6 +1568,78 @@ remoteFM14Move-kit KIT-SPEC.md "Browser, 2026-11-26".
   `kp_mask` (bit per `RFM_MOVE_KIT_P_*`), `kp[]`, a locked Sync's microseconds in `from`. A tenth extra lock on one hit:
   "Locks full".
 
+## The looper (stage 1)
+
+The owner's 2026-11-26 design round (remoteFM14Move `docs/design/LOOPER-DESIGN.md`, cards `lp_*`; the built
+behaviour: `docs/design/LOOPER-SPEC.md`): every card approved as its option a, and `lp_scene` "A and b and c". Only for
+a host that sets `RFM_MOVE_CAP_LOOPER` (64; with `RFM_MOVE_CAP_KIT`); without it nothing changes. `src/looper.c`.
+
+**Where it lives.** Track 4's taps go round Mixer, Routing, Kit, Looper (held: pad 4, teal); `settings.t4_kit` 2 is
+the Looper view (Track 4 from elsewhere opens it). Like the Kit view it is a layer over the sequencer: it takes the
+pads, the steps (not with Shift), the knobs, the jog, Copy, Delete, Undo (when it has one), Loop, Mute, the arrows and
+Sample (when it has a job). Menu flips to session view and back to it.
+
+**The grid.** The pads' rows are 4 lanes (lane 1 the top row), the columns 8 scenes; slot = lane x 8 + scene; a lane
+plays one loop at a time. Lights: empty dark, a loop dim teal, playing green, waiting blinking green, about to stop
+blinking teal, armed blinking red, recording red, muted grey, the chosen slot white while idle.
+
+| Gesture | What |
+|---|---|
+| tap an empty slot | `LOOP_REC` `R_START` (value the lane's Length in bars, 0 Open; vel its Source; slot the firmware slot Played means now): records from the next bar (stopped: armed, from Play). Tapped again while armed: `R_CANCEL` |
+| tap the red pad, or Sample | `R_END`: it ends at the next bar; the host plays it at once (the lane's) |
+| a slot held + Sample | records into it, full or not (Undo brings back the loop it replaced) |
+| a tap on an empty slot while another records | that one `R_END`, this one `R_START` (the host starts it on the same bar line) |
+| tap a loop | `LOOP_LAUNCH` down 1, value the Launch setting (`RFM_MOVE_LQ_*`); a playing loop: down 0 (its lane stops). A second tap within `RFM_MOVE_DOUBLE_MS`: the same now (`RFM_MOVE_LQ_INSTANT`) |
+| the left step under a column (1, 3 .. 15) | (`lp_scene` a) its scene: each lane's loop in the column launched, a lane with none stopped; stopped: the transport starts. Step 16: every lane stops. A double click: now |
+| Shift + any pad of a column | (`lp_scene` b) its scene, as its step |
+| a slide down a column | (`lp_scene` c) a pad pressed while the pad above it (same column) is held or was let go under 80 ms ago, and pressed under `RFM_MOVE_LOOP_SLIDE_MS` (400 ms) ago: the column's scene; the first pad's own tap is overridden (a recording it armed cancelled) |
+| Loop held + a pad; the arrows | (the owner's addition: Shift + a pad launches) the slot chosen, nothing played; Left / Right a scene, Up / Down a lane |
+| Copy held + a loop, then slots | `LOOP_COPY` each (the same audio), its settings' `LOOP_SET`s; "Copied 1-1>2-3" |
+| Delete held + a loop / a scene's step | emptied (`LOOP_LOAD` none); a recording there: cancelled |
+| Undo | one step: the last recording, delete, copy or scene cleared (the slots as they were: `LOOP_LOAD` and `LOOP_SET`s) |
+| Mute held + a loop | its Mute |
+| a slot held + the volume knob | its Level; Track 4 held + the volume knob: the Loops strip (`rfmv_loop_volume`, before the kit's) |
+| the jog | the pages, as the kit's (the switcher's 2x icons); the click: nothing (stage 2) |
+
+**Pages.** Loops (lanes 1..4's levels), Loop (Start in steps, Length: a beat, half a bar or whole bars of those
+recorded, Pitch in cents (a semitone a step; Shift: a cent), Reverse, Warp Repitch / Off), Record (the lane's Source,
+Length), Loop Mix (Level, Pan, Send 1..3, Mute), Looper Mix (the lanes' levels, the Loops strip's level, pan, sends 1,
+2). Levels 0..127, 100 = 0 dB, the shared level popup. An empty slot's Loop and Loop Mix pages show Record (its knobs
+dark); an empty slot chosen silently on them opens Record. While a recording is armed or runs the view shows it
+(boards I, J, K).
+
+**The sampler's Loops tab** (`RFM_MOVE_SMP_TAB_LOOPS`; `RFM_MOVE_SMP_TABS_BUILT` 0xF, the tab shown only with the
+looper's capability): the grid in small, the jog's slot underlined, one row; the jog a slot (up past the first: the
+tabs), its click the slot's tap (record, end, play, stop: at the bar, no double click), Sample records into the jog's
+slot or ends the recording, knobs 1..4 the lanes' levels (5..8 dark, dead; the kit's and the looper's views under it
+yield the knobs: `rfmv_smp_loops_tab`). The pads stay the layer's under the app.
+
+**The Mixer's fifth strip:** knob 5 the Loops strip (`MIX` slot `RFM_MOVE_LOOP_SLOT`, 4; level, pan, sends); the
+screen's fifth strip "Loop"; its level popup "Loops Level" (the slots and the kit as siblings). Pad column 5 stays the
+Mixer's choice pads.
+
+**The host's part.** The capability: every slot's `LOOP_LOAD` and `LOOP_SET`s, the lanes' and the strip (also
+`rfm_move_loop_sync`). `rfm_move_loop_status(m, &st)` about 30 a second (each lane's `play`, `next` (a scene,
+`RFM_MOVE_LOOP_SCENES` a stop), `pos`, `level`; `rec[0..1]` slot, state, bar, bars; the source's `level`, the `beat`,
+the bar's `pk`; the memory); what the core asked and the host has not shown yet is drawn as asked.
+`rfm_move_loop_recorded(m, slot, status, path, frames, rate, bars, bpm10, n, peaks)` (status `RFM_MOVE_LOOP_OK`,
+`_TOO_LONG`, `_NOTHING`, `_FAILED`), `rfm_move_loop_loaded(...)` (`_OK`, `_MISSING`, `_FAILED`, `_TOO_LONG`),
+`rfm_move_loop_refs` (the project's Loops/ files to keep), `rfm_move_loop_path` / `_value` / `_lane` / `_mix`.
+
+| Action | Fields |
+|---|---|
+| `RFM_MOVE_ACT_LOOP_REC` (90) | `index` slot, `param` `RFM_MOVE_LOOP_R_START` (`value` bars, `vel` source, `slot` Played's slot) / `_END` / `_CANCEL` |
+| `RFM_MOVE_ACT_LOOP_LAUNCH` (91) | `down` 1: `index` the slot plays; 0: `index / 8`'s lane stops; `value` `RFM_MOVE_LQ_*` |
+| `RFM_MOVE_ACT_LOOP_SET` (92) | `index` slot, `param` `RFM_MOVE_LOOP_P_*`; `index` `RFM_MOVE_LOOP_LANE0` + lane: `RFM_MOVE_LOOP_L_*`; `value` |
+| `RFM_MOVE_ACT_LOOP_LOAD` (93) | `index` slot, `data` / `len` its path (`@/Loops/..`), `value` bars, `take` bpm x 10; no data: emptied |
+| `RFM_MOVE_ACT_LOOP_COPY` (94) | `index` the target, `take` the source |
+| `RFM_MOVE_ACT_MIX` slot 4 | the Loops strip |
+
+**The project** is version 19: `RFM_MOVE_LOOP_BYTES` (3904) after the kit's part (`rfm_move_loop_t`'s saved part:
+the chosen slot, the page, the strip, the lanes, each slot's path, bars, recorded tempo and 11 settings); 18 and older
+load with an empty looper; a bad looper part is refused. `rfm_move_t` grows by `rfm_move_loop_t`. Tests: `move_looper`
+(dumps `loop_*.pbm`).
+
 ## FX parameter pages (0.5.0)
 
 A module's own parameter pages, as Schwung's `ui_hierarchy` lays them out: each level's 8 knobs a page, its overflow
