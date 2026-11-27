@@ -1338,8 +1338,9 @@ enum { RFM_MOVE_SMP_M_CAPTURE, RFM_MOVE_SMP_M_BARS, RFM_MOVE_SMP_M_THRESHOLD, RF
 enum { RFM_MOVE_SMP_TO_FILES, RFM_MOVE_SMP_TO_LOOPER, RFM_MOVE_SMP_TO_KIT, RFM_MOVE_SMP_TO_N };   /* To's */
 enum { RFM_MOVE_SMP_TAB_RECORD, RFM_MOVE_SMP_TAB_TAKES, RFM_MOVE_SMP_TAB_TOOLS, RFM_MOVE_SMP_TAB_LOOPS,
        RFM_MOVE_SMP_TAB_N };                            /* the tabs (rfm_move_smp_offer's tabs: bit each) */
-#define RFM_MOVE_SMP_TABS_BUILT 0x7                     /* the tabs this core has (an offered tab it has not: not shown):
-                                                         * Record, (stage 2) Takes, Tools */
+#define RFM_MOVE_SMP_TABS_BUILT 0xF                     /* the tabs this core has (an offered tab it has not: not shown):
+                                                         * Record, (stage 2) Takes, Tools, (looper stage 1) Loops (with
+                                                         * RFM_MOVE_CAP_LOOPER) */
 #define RFM_MOVE_SMP_LENGTHS 7                          /* Length's: Open, 1, 2, 4, 8, 16, 32 bars */
 #define RFM_MOVE_SMP_THR_MIN (-60)                      /* Threshold, dB (1 a detent) */
 #define RFM_MOVE_SMP_IN_MIN (-24)                       /* Input level, dB (1 a detent) */

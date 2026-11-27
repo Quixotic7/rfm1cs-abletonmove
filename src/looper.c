@@ -32,6 +32,7 @@
 typedef rfmv_rgb_t rgb_t;
 
 static const rgb_t LOOPC = { 0, 210, 190 };             /* the looper's colour (card lp_colour: teal) */
+static const rgb_t LGREEN = { 0, 255, 60 };             /* playing (the mock-up's green) */
 #define LANES RFM_MOVE_LOOP_LANES
 #define SCENES RFM_MOVE_LOOP_SCENES
 #define NSLOT RFM_MOVE_LOOP_SLOTS
@@ -1070,6 +1071,8 @@ int rfmv_loop_input(rfm_move_t *m, const mr_event_t *ev)
     }
     if (!rfmv_loop_active(m) || m->track_held || rfmv_st_on(m) || q->smenu == RFM_MOVE_SM_GLOBAL)
         return 0;
+    if ((ev->type == MR_EV_KNOB || ev->type == MR_EV_TOUCH) && i >= 0 && i < 8 && rfmv_smp_loops_tab(m))
+        return 0;                                       /* (the sampler's Loops tab has the knobs) */
     switch (ev->type) {
     case MR_EV_PAD:
         if (i < 0 || i >= 32 || !ev->value || q->fill || q->smenu)
@@ -1282,10 +1285,10 @@ static rgb_t slot_rgb(const rfm_move_t *m, int s)
         const int nx = lane_next(m, l);
         if (nx >= 0 && nx != scene_of(s))
             return blink(m, 400) ? sc(LOOPC, 200) : sc(LOOPC, 50);   /* (about to stop) */
-        return d->v[RFM_MOVE_LOOP_P_MUTE] ? sc(RFMV_GREEN, 70) : RFMV_GREEN;
+        return d->v[RFM_MOVE_LOOP_P_MUTE] ? sc(LGREEN, 70) : LGREEN;
     }
     if (lane_next(m, l) == scene_of(s))
-        return blink(m, 400) ? RFMV_GREEN : sc(RFMV_GREEN, 40);   /* (lined up) */
+        return blink(m, 400) ? LGREEN : sc(LGREEN, 40);   /* (lined up) */
     return d->v[RFM_MOVE_LOOP_P_MUTE] ? sc(RFMV_WHITE, 40) : sc(LOOPC, 90);
 }
 void rfmv_loop_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
@@ -1313,7 +1316,7 @@ void rfmv_loop_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t wv[13])
                 int pl = 0, nx = 0, l;
                 for (l = 0; l < LANES; l++)
                     pl |= lane_play(m, l) == i / 2, nx |= lane_next(m, l) == i / 2;
-                v = nx ? (blink(m, 400) ? RFMV_GREEN : sc(RFMV_GREEN, 40)) : pl ? RFMV_GREEN : sc(RFMV_WHITE, 50);
+                v = nx ? (blink(m, 400) ? LGREEN : sc(LGREEN, 40)) : pl ? LGREEN : sc(RFMV_WHITE, 50);
             }
             if (t->st_down >> i & 1)
                 v = RFMV_WHITE;
@@ -1525,11 +1528,15 @@ static void loop_page(const rfm_move_t *m, mr_canvas_t *cv)
         v2_TC(cv, 48, 2, d->st == RFM_MOVE_LOOP_MISSING ? "Missing" : "Failed", 1, 1);
     locator(m, cv, 96, 0, s);
 }
-static void src_text(const rfm_move_t *m, int src, char *o, int cap)
+/* a lane's Source as a row shows it: Played as the Track it means now ("Track 2"); long 1: the popup's ("Played 2") */
+static void src_text_l(const rfm_move_t *m, int src, char *o, int cap, int lng)
 {
-    snprintf(o, (size_t)cap, "%s", SRC_NAME[clampi(src, 0, RFM_MOVE_LOOP_SRC_N - 1)]);
-    (void)m;
+    if (src == RFM_MOVE_LOOP_SRC_PLAYED)
+        snprintf(o, (size_t)cap, lng ? "Played %d" : "Track %d", m->fw.active % 3 + 1);
+    else
+        snprintf(o, (size_t)cap, "%s", SRC_NAME[clampi(src, 0, RFM_MOVE_LOOP_SRC_N - 1)]);
 }
+static void src_text(const rfm_move_t *m, int src, char *o, int cap) { src_text_l(m, src, o, cap, 0); }
 static void len_text(int li, char *o, int cap)
 {
     const int b = LEN_BARS[li % RFM_MOVE_LOOP_LENGTHS];
@@ -1709,7 +1716,7 @@ static void val_text(const rfm_move_t *m, int j, int v, char *o, int cap)
     case KS_SEND1:
     case KS_SEND2:
     case KS_SEND3: snprintf(o, (size_t)cap, "%d %%", (v * 100 + 63) / 127); return;
-    case KL_SOURCE: src_text(m, v, o, cap); return;
+    case KL_SOURCE: src_text_l(m, v, o, cap, 1); return;
     case KL_LENGTH: len_text(v, o, cap); return;
     default: rfmv_db_text(o, cap, rfmv_lvl_db10(v), 1); return;
     }
@@ -1943,12 +1950,12 @@ void rfmv_loop_tab_screen(const rfm_move_t *m, mr_canvas_t *cv)
             const int b = clampi(d->bars, 1, 99);
             snprintf(v, sizeof v, "%d Bar%s", b, b > 1 ? "s" : "");
             rowi(cv, 49, lane_play(m, l) == scene_of(s0) ? I_STOP : I_PLAY, v, 1);
-        } else {
-            char a[12], b[12];
-            src_text(m, t->lane[l][RFM_MOVE_LOOP_L_SOURCE], a, sizeof a);
+        } else {                                        /* (an empty slot: the source at 2x, its length at 1x) */
+            char b[12];
+            src_text(m, t->lane[l][RFM_MOVE_LOOP_L_SOURCE], v, sizeof v);
             len_text(t->lane[l][RFM_MOVE_LOOP_L_LENGTH], b, sizeof b);
-            snprintf(v, sizeof v, "%s  %s", a, b);
             rowi(cv, 49, I_DOT, v, 1);
+            v2_T(cv, 126 - v2_tw(b, 1), 53, b, 1, 0);
         }
     }
     if (t->tab_kpop >= 0 && (t->tab_kdown >> t->tab_kpop & 1 || now(m) - t->tab_kpop_ms < RFM_MOVE_POPUP_MS)) {

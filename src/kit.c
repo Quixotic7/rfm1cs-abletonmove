@@ -3540,6 +3540,8 @@ int rfmv_kit_input(rfm_move_t *m, const mr_event_t *ev)
     }
     if (!rfmv_kit_active(m) || m->track_held || rfmv_st_on(m) || q->smenu == RFM_MOVE_SM_GLOBAL)
         return 0;
+    if ((ev->type == MR_EV_KNOB || ev->type == MR_EV_TOUCH) && i >= 0 && i < 8 && rfmv_smp_loops_tab(m))
+        return 0;                                       /* (looper stage 1: the sampler's Loops tab has the knobs) */
     switch (ev->type) {
     case MR_EV_PAD:
         if (i < 0 || i >= 32 || !ev->value || rfmv_seq_al_holding(m) || q->fill)

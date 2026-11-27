@@ -2656,6 +2656,8 @@ static void wanted(const rfm_move_t *m, uint8_t w[RFM_MOVE_NLEDS][3])
         if (rfmv_seq_tflash_on(m))
             rfmv_seq_tflash_leds(m, c);                 /* (0.12.x) a Track's tap: the tracks a moment */
     }
+    if (rfmv_smp_loops_tab(m))                          /* (looper stage 1) the sampler's Loops tab: knobs 1..4 */
+        rfmv_loop_tab_leds(m, c);
     if (lm)
         lay_menu_leds(m, rfmv_lay_menu(m) - 1, c);
     else if (t4m)

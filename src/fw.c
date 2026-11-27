@@ -1707,7 +1707,8 @@ static int fx_knob_param(const rfm_move_t *m, int k)
     if (m->fw.browse >= 0 || k < 0 || k >= RFM_MOVE_NKNOBS)
         return 0;
     if (pg == PG_MIX)
-        return k < RFM_MOVE_FW_SLOTS || (k == RFM_MOVE_KIT_SLOT && rfmv_kit_cap(m));   /* (3b: knob 4 the kit's) */
+        return k < RFM_MOVE_FW_SLOTS || (k == RFM_MOVE_KIT_SLOT && rfmv_kit_cap(m)) ||   /* (3b: knob 4 the kit's) */
+               (k == RFM_MOVE_LOOP_SLOT && rfmv_loop_cap(m));   /* (looper stage 1: knob 5 the Loops strip's) */
     if (pg == PG_ROUTE)
         return k < RFM_MOVE_MIXP_N;
     if (pg == PG_MIDI || pg == PG_AUDIO)
@@ -1748,6 +1749,8 @@ static int mix_get(const rfm_move_t *m, int slot, int par)
 {
     if (slot == RFM_MOVE_KIT_SLOT)                      /* (stage 3b) the kit's own strip */
         return rfm_move_kit_mix(m, par);
+    if (slot == RFM_MOVE_LOOP_SLOT)                     /* (looper stage 1) the Loops strip */
+        return rfm_move_loop_mix(m, par);
     return par == RFM_MOVE_MIXP_LEVEL ? m->fw.level[slot] : mix_val((rfm_move_t *)m, slot, par)[0];
 }
 static void mix_turn(rfm_move_t *m, int slot, int par, int d)
@@ -1756,6 +1759,10 @@ static void mix_turn(rfm_move_t *m, int slot, int par, int d)
     int nv;
     if (slot == RFM_MOVE_KIT_SLOT) {
         rfmv_kit_mix_turn(m, par, d);
+        return;
+    }
+    if (slot == RFM_MOVE_LOOP_SLOT) {
+        rfmv_loop_mix_turn(m, par, d);
         return;
     }
     v = mix_val(m, slot, par);
@@ -2308,7 +2315,8 @@ static void fx_leds(const rfm_move_t *m, rgb_t c[L_WHITE0], uint8_t w[13])
                 if (MIXPAD[r][i] >= 0)
                     c[L_PAD0 + pad_of(r * 8 + 4 + i)] = lit(MIXCOL[MIXPAD[r][i]], f->mix_par == MIXPAD[r][i] ? 256 : A(0.25));
         for (i = 0; i < RFM_MOVE_NKNOBS; i++)
-            c[L_RING0 + i] = i < nslots(m) || (i == RFM_MOVE_KIT_SLOT && rfmv_kit_cap(m)) ? MIXCOL[f->mix_par] : OFF;   /* (0.6.13: every knob with a job, an
+            c[L_RING0 + i] = i < nslots(m) || (i == RFM_MOVE_KIT_SLOT && rfmv_kit_cap(m)) ||
+                             (i == RFM_MOVE_LOOP_SLOT && rfmv_loop_cap(m)) ? MIXCOL[f->mix_par] : OFF;   /* (0.6.13: every knob with a job, an
                                                          * empty slot's level too) */
         w[W_MENU] = 127, w[W_BACK] = wl(A(0.35));
         return;
@@ -2821,6 +2829,8 @@ static void fx_screen(B *g, const rfm_move_t *m)
             }
             if (sl == RFM_MOVE_KIT_SLOT)
                 snprintf(fn, sizeof fn, "Kit");         /* (stage 3b) the kit's strip */
+            else if (sl == RFM_MOVE_LOOP_SLOT)
+                snprintf(fn, sizeof fn, "Loops");       /* (looper stage 1) the Loops strip */
             else if (pg == PG_MIX) {
                 char nm[32];
                 if (slot_loaded(m, sl))
@@ -2936,14 +2946,19 @@ static void fx_screen(B *g, const rfm_move_t *m)
     if (pg == PG_MIX) {                                 /* (0.5.0) the Mixer: what knobs 1..3 set, each slot's */
         mix_words(m, 0, f->mix_par, t, sizeof t, v, sizeof v, 1);
         header(g, "Mixer", t);
-        for (r = 0; r < (rfmv_kit_cap(m) ? 4 : 3); r++) {   /* (stage 3b: the kit a fourth strip, narrower) */
-            const int SW = rfmv_kit_cap(m) ? 32 : 43;
+        const int ns = rfmv_loop_cap(m) ? 5 : rfmv_kit_cap(m) ? 4 : 3;   /* (looper stage 1: the Loops a fifth) */
+        for (r = 0; r < ns; r++) {                      /* (stage 3b: the kit a fourth strip, narrower) */
+            const int SW = ns == 5 ? 25 : ns == 4 ? 32 : 43;
             const int x0 = r * SW, val = mix_get(m, r, f->mix_par);
             const int wfill = rnd((SW - 6) * (f->mix_par == RFM_MOVE_MIXP_LEVEL ? rfmv_db_frac(rfmv_lvl_db10(val))
                                                                                : (double)val / 127));
             char ab[3], nm[12];
-            if (r == RFM_MOVE_KIT_SLOT)
+            if (r == RFM_MOVE_KIT_SLOT && !rfmv_kit_cap(m))
+                snprintf(nm, sizeof nm, "-");
+            else if (r == RFM_MOVE_KIT_SLOT)
                 snprintf(nm, sizeof nm, "Kit");
+            else if (r == RFM_MOVE_LOOP_SLOT)
+                snprintf(nm, sizeof nm, "Loop");
             else if (slot_loaded(m, r)) {
                 char sn[32];
                 slot_name(m, r, sn, sizeof sn);
@@ -3094,7 +3109,12 @@ int rfmv_fw_track_levels(const rfm_move_t *m, int sib[4])
 static void level_pop(B *g, const rfm_move_t *m, int tr)
 {
     char t[24], nm[32];
-    int sib[4], n = rfmv_fw_track_levels(m, sib);
+    int sib[5], n = rfmv_fw_track_levels(m, sib);
+    if (tr == RFM_MOVE_LOOP_SLOT) {                     /* (looper stage 1) the Loops strip: the fifth */
+        sib[n] = rfmv_lvl_db10(rfm_move_loop_mix(m, RFM_MOVE_KIT_MIX_LEVEL));
+        rfmv_level_popup(g, "Loops Level", sib[n], "Looper", sib, n + 1, n);
+        return;
+    }
     if (tr == RFM_MOVE_KIT_SLOT) {
         const char *kn = rfm_move_kit_name(m);
         snprintf(nm, sizeof nm, "%s", kn && kn[0] ? kn : "Kit");
@@ -3679,10 +3699,14 @@ int rfmv_fw_say_pop(const rfm_move_t *m, char *o, int cap)
                     rfmv_db_text(v, sizeof v, rfmv_lvl_db10(mix_get(m, sl, RFM_MOVE_MIXP_LEVEL)), 1);
                     if (sl == RFM_MOVE_KIT_SLOT)
                         snprintf(o, (size_t)cap, "Kit Level: %s", v);
+                    else if (sl == RFM_MOVE_LOOP_SLOT)
+                        snprintf(o, (size_t)cap, "Loops Level: %s", v);
                     else
                         snprintf(o, (size_t)cap, "Track %d Level: %s", sl + 1, v);
                 } else if (sl == RFM_MOVE_KIT_SLOT)
                     snprintf(o, (size_t)cap, "Kit %s: %s", t, v);
+                else if (sl == RFM_MOVE_LOOP_SLOT)
+                    snprintf(o, (size_t)cap, "Loops %s: %s", t, v);
                 else
                     snprintf(o, (size_t)cap, "Slot %d %s: %s", sl + 1, t, v);
             } else {

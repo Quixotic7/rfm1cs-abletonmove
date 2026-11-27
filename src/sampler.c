@@ -198,7 +198,10 @@ static void fit_row(rfm_move_t *m)
     for (k = 0; k < RFM_MOVE_SMP_N && !(S(m)->sets >> k & 1); k++) {}
     S(m)->row = (uint8_t)(k < RFM_MOVE_SMP_N ? k : 0);
 }
-static unsigned tabs(const rfm_move_t *m) { return S(m)->tabs & RFM_MOVE_SMP_TABS_BUILT; }
+static unsigned tabs(const rfm_move_t *m)
+{
+    return S(m)->tabs & RFM_MOVE_SMP_TABS_BUILT & (rfmv_loop_cap(m) ? 0xFu : ~(1u << RFM_MOVE_SMP_TAB_LOOPS));
+}
 /* (stage 2) the takes are offered: the Takes or the Tools tab */
 static int takes_on(const rfm_move_t *m)
 {
@@ -673,6 +676,17 @@ static void turn(rfm_move_t *m, int d)
         need(m);
         return;
     }
+    if (p->tab == RFM_MOVE_SMP_TAB_LOOPS) {             /* (looper stage 1) Loops: a slot a detent; up past the
+                                                         * first: the tabs */
+        if (p->on_tabs) {
+            if (d <= 0)
+                return;
+            p->on_tabs = 0, m->loop.tab_slot = 0, d--;
+        }
+        if (d && !rfmv_loop_tab_turn(m, d))
+            p->on_tabs = 1;
+        return;
+    }
     if (p->tab == RFM_MOVE_SMP_TAB_TOOLS) {             /* Tools: an icon (no tools: nothing but the tabs above) */
         if (p->on_tabs) {
             if (d <= 0)
@@ -775,7 +789,9 @@ static void click(rfm_move_t *m)
             del(m, r);
         else if (is_take(r))
             act_open(m, r, 0);
-    } else if (p->tab == RFM_MOVE_SMP_TAB_TOOLS) {
+    } else if (p->tab == RFM_MOVE_SMP_TAB_LOOPS)       /* (looper stage 1) the jog's slot: record, end, play, stop */
+        rfmv_loop_tab_click(m);
+    else if (p->tab == RFM_MOVE_SMP_TAB_TOOLS) {
         if (!tools_ok(m))
             return;
         switch (p->ti) {
@@ -858,6 +874,19 @@ static int smp_knob(rfm_move_t *m, const mr_event_t *ev)
     const int k = ev->index;
     if (k < 0 || k > 7)
         return 0;
+    if (ev->type == MR_EV_TOUCH && !ev->value && k < 4 && (m->loop.tab_kdown >> k & 1)) {
+        rfmv_loop_tab_knob(m, k, 0, 0);                 /* (looper stage 1: the Loops tab's knob let go) */
+        need(m);
+        return 1;
+    }
+    if (rfmv_smp_loops_tab(m)) {                        /* (looper stage 1) the Loops tab: knobs 1..4 the lanes'
+                                                         * levels, the others dark and dead (R3) */
+        if (k < 4 && ev->value)
+            rfmv_loop_tab_knob(m, k, ev->type == MR_EV_TOUCH ? 1 : -1, ev->type == MR_EV_TOUCH ? 0 : ev->value);
+        touched(m);
+        need(m);
+        return 1;
+    }
     if (ev->type == MR_EV_TOUCH && !ev->value) {
         if (!(p->kdown >> k & 1))
             return 0;
@@ -923,6 +952,12 @@ int rfmv_smp_input(rfm_move_t *m, const mr_event_t *ev)
                 app_open(m, -1);
                 if (rec)
                     rfmv_emit(m, RFM_MOVE_ACT_SMP_PRESS, 0, 1, 0, m->s.smp[RFM_MOVE_SMP_MODE]);
+            } else if (p->tab == RFM_MOVE_SMP_TAB_LOOPS && p->scr == SCR_TAB && rfmv_loop_cap(m) && !running(m)) {
+                p->msg = 0;                             /* (looper stage 1) Loops: records into the jog's slot or
+                                                         * ends the recording */
+                touched(m);
+                rfmv_loop_tab_sample(m);
+                need(m);
             } else if (takes_on(m) && undo_ours(m) && !running(m) && !yield(m)) {
                 /* (the owner, 2026-11-25: "If not in the sampling tab I think the sampling button should play the clip
                  * I'm on or editing") Takes, Tools, a take's actions, Trim: Sample plays that take, or stops it */
@@ -988,7 +1023,8 @@ int rfmv_smp_back(rfm_move_t *m)
             trim_leave(m);
     } else if (p->scr == SCR_ACT)                       /* the list (or the tab a preview came over) */
         play_stop(m), p->scr = SCR_TAB;
-    else if (takes_on(m) && p->tab != RFM_MOVE_SMP_TAB_RECORD && !p->on_tabs && !p->picking) {
+    else if ((takes_on(m) || p->tab == RFM_MOVE_SMP_TAB_LOOPS) && p->tab != RFM_MOVE_SMP_TAB_RECORD && !p->on_tabs &&
+             !p->picking) {
         /* (the owner, 2026-11-25: "press back when I am not at the root tab level and it should take me back to the
          * root, not exit the sampler. First tab though back should always exit") Takes, Tools: the tabs, the jog
          * choosing one at once; there, and in Record, Back closes the app */
@@ -1389,6 +1425,9 @@ int rfmv_smp_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, ui
         else if (is_take(r))
             take_words(r, o, cap);
         *subj = (uint16_t)(p->days ? 0x881 : 0x880), *stamp = 0;
+    } else if (p->tab == RFM_MOVE_SMP_TAB_LOOPS) {      /* (looper stage 1) Loops: the jog's slot */
+        rfmv_loop_tab_words(m, o, cap);
+        *subj = (uint16_t)(0x8A0 | (m->loop.tab_slot & 15)), *stamp = 0;
     } else if (p->tab == RFM_MOVE_SMP_TAB_TOOLS) {      /* Tools: the chosen tool */
         if (tools_ok(m))
             snprintf(o, (size_t)cap, "%s", TOOL_SAY[p->ti % T_N]);
@@ -1709,6 +1748,11 @@ int rfmv_smp_screen(const rfm_move_t *m, mr_canvas_t *cv)
         act_screen(m, cv);
         return 1;
     }
+    if (p->tab == RFM_MOVE_SMP_TAB_LOOPS && rfmv_loop_cap(m)) {   /* (looper stage 1, boards O, P) */
+        top(m, cv, p->on_tabs || p->picking);
+        rfmv_loop_tab_screen(m, cv);
+        return 1;
+    }
     if (p->tab == RFM_MOVE_SMP_TAB_TAKES) {
         takes_screen(m, cv);
         return 1;
@@ -1780,5 +1824,11 @@ int rfmv_smp_timed(const rfm_move_t *m)
     return rfmv_smp_shown(m) && ((p->turned && now(m) - p->turn_ms < RFM_MOVE_POPUP_MS) ||
                                  (p->msg && now(m) - p->msg_ms < RFM_MOVE_POPUP_MS) || running(m) ||
                                  (p->t_turned && now(m) - p->t_turn_ms < RFM_MOVE_POPUP_MS) ||
-                                 (p->play_id && p->st.play_take == p->play_id));
+                                 (p->play_id && p->st.play_take == p->play_id) ||
+                                 (rfmv_smp_loops_tab(m) && rfmv_loop_tab_timed(m)));
+}
+int rfmv_smp_loops_tab(const rfm_move_t *m)
+{
+    const rfm_move_smp_t *p = &m->smp;
+    return rfmv_loop_cap(m) && rfmv_smp_shown(m) && p->tab == RFM_MOVE_SMP_TAB_LOOPS && p->scr == SCR_TAB && !p->edit;
 }

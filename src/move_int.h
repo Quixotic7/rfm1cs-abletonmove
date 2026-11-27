@@ -462,7 +462,8 @@ int rfmv_smp_timed(const rfm_move_t *m);
 int rfmv_smp_tick(rfm_move_t *m);                       /* (speech) a message's second over: 1 once (words due) */
 void rfmv_smp_poll(rfm_move_t *m);                      /* (stage 2, the clock) Trim's zoom after a knob's turn ends */
 int rfmv_smp_pop_words(const rfm_move_t *m, char *o, int cap, uint16_t *subj, uint32_t *stamp);   /* 1 up */
-int rfmv_smp_lvpx(int level, int w);                    /* (tests) a level 0..32767 as pixels of a -60..0 dB scale */
+int rfmv_smp_lvpx(int level, int w);
+int rfmv_smp_loops_tab(const rfm_move_t *m);            /* (looper stage 1) the Loops tab shows: it takes knobs 1..4 */                    /* (tests) a level 0..32767 as pixels of a -60..0 dB scale */
 /* ---- kit.c: (stage 3a) the kit (RFM_MOVE_CAP_KIT) */
 int rfmv_kit_cap(const rfm_move_t *m);
 void rfmv_kit_init(rfm_move_t *m);                      /* (rfm_move_init) an empty kit */
