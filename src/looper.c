@@ -197,7 +197,7 @@ static void send_slot(rfm_move_t *m, int s)             /* its sound and setting
 {
     const rfm_move_loop_slot_t *d = CSL(m, s);
     int p;
-    act(m, RFM_MOVE_ACT_LOOP_LOAD, s, 0, 0, 0, 0, 0, has_loop(d) ? d->path : NULL);
+    act(m, RFM_MOVE_ACT_LOOP_LOAD, s, 0, 0, has_loop(d) ? d->bars : 0, 0, has_loop(d) ? d->bpm10 : 0u, has_loop(d) ? d->path : NULL);
     for (p = 0; p < RFM_MOVE_LOOP_P_N; p++)
         send_set(m, s, p);
 }

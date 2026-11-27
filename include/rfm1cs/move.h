@@ -379,8 +379,8 @@ enum {
  *    (RFM_MOVE_LQ_*: Instant = now, in phase with the bar); down 0: index's lane (index / 8) stops at it. A loop's
  *    position is the song's (it never drifts); the transport stopped: it waits for Play
  *  - LOOP_SET: index a slot, param RFM_MOVE_LOOP_P_*, value; index RFM_MOVE_LOOP_LANE0 + lane: param RFM_MOVE_LOOP_L_*
- *  - LOOP_LOAD: index the slot, data / len its path (RFM_MOVE_KIT_OWN "@/Loops/..": the project's own folder); NULL:
- *    emptied (its voice stops). Answer: rfm_move_loop_loaded
+ *  - LOOP_LOAD: index the slot, data / len its path (RFM_MOVE_KIT_OWN "@/Loops/..": the project's own folder), value
+ *    its bars, take its tempo x 10 (as recorded); NULL: emptied (its voice stops). Answer: rfm_move_loop_loaded
  *  - LOOP_COPY: index the target slot, take the source slot: the same audio (no new file). Answer: rfm_move_loop_loaded
  *  - MIX with slot RFM_MOVE_LOOP_SLOT (4): the Loops strip (the Mixer's fifth): level, pan, sends 1..3 */
 #define RFM_MOVE_ACT_LOOP_REC 90
